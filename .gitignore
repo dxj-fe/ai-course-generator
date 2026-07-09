@@ -1,41 +1,96 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# dependencies
-/node_modules
-/.pnp
+# Diagnostic reports
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Dependency directories
+node_modules/
+jspm_packages/
+bower_components/
+web_modules/
+
+# Package manager state
+.pnp
 .pnp.*
+.pnpm-store
 .yarn/*
 !.yarn/patches
 !.yarn/plugins
 !.yarn/releases
+!.yarn/sdks
 !.yarn/versions
+.yarn-integrity
+.npm
 
-# testing
-/coverage
+# Coverage
+coverage/
+*.lcov
+.nyc_output
 
-# next.js
-/.next/
-/out/
+# Build output
+.next/
+out/
+build/
+dist/
+.output
+.nuxt
+lib-cov
+build/Release
 
-# production
-/build
+# Framework caches
+.cache/
+.parcel-cache
+.temp
+.svelte-kit/
+.docusaurus
+.firebase/
+.fusebox/
+.grunt
+.serverless/
+**/.vitepress/dist
+**/.vitepress/cache
+.vuepress/dist
+.vite/
 
-# misc
-.DS_Store
-*.pem
+# Environment variables
+.env
+.env.*
+!.env.example
 
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-
-# env files (can opt-in for committing if needed)
-.env*
-
-# vercel
-.vercel
-
-# typescript
+# Tool caches and generated files
 *.tsbuildinfo
 next-env.d.ts
+.eslintcache
+.stylelintcache
+.tern-port
+.lock-wscript
+.node_repl_history
+*.tgz
+
+# Local services
+.dynamodb/
+
+# Editor and platform files
+.DS_Store
+*.pem
+.vscode-test
+
+# Deployments
+.vercel
+
+# Vite timestamp files
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
