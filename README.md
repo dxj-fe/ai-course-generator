@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话生成一门由多页关联 HTML 组成的课程。当前 Day 01 版本先完成 Next.js 项目、OpenAI-compatible 模型适配层、普通文本接口和最小流式接口。
+一句话生成一门由多页关联 HTML 组成的课程。当前 Day 02 版本在 Day 01 的最小模型调用基础上，补齐 AI Client 抽象、system prompt、采样参数、traceId、超时和错误分类。
 
 ## Day 01 交付
 
@@ -10,6 +10,14 @@
 - `POST /api/ai/stream` 返回 AI SDK UI message stream。
 - 首页可以输入 prompt，并分别验证普通生成与流式输出。
 - 项目已迁移到 `src/` 分层架构，目录规范见 `docs/architecture/directory-structure.md`。
+
+## Day 02 交付
+
+- AI 调用已抽到 `src/server/ai/client.ts`，提供 `generateTextSafe` 和 `streamTextSafe`。
+- API 请求支持 `systemPrompt`、`temperature`、`maxTokens` 和 `traceId`。
+- 错误响应统一为 `{ code, message, traceId }`，用于前端展示和服务端日志定位。
+- Playground 支持编辑 system prompt、切换 temperature、调整 max tokens。
+- Day 02 复盘记录见 `notes/day-02.md`。
 
 ## 启动
 

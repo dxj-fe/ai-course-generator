@@ -11,9 +11,20 @@ import {
 } from "../lib/messages";
 
 const defaultPrompt = "用三句话介绍什么是 AI Agent。";
+const defaultSystemPrompt =
+  "你是 AI Course Generator 的课程助手。回答要清晰、准确、适合前端工程学习。";
+
+const temperatureOptions = [
+  { label: "稳定 0.2", value: 0.2 },
+  { label: "均衡 0.7", value: 0.7 },
+  { label: "发散 1.1", value: 1.1 },
+];
 
 export function AiPlayground() {
   const [prompt, setPrompt] = useState(defaultPrompt);
+  const [systemPrompt, setSystemPrompt] = useState(defaultSystemPrompt);
+  const [temperature, setTemperature] = useState(0.7);
+  const [maxTokens, setMaxTokens] = useState(500);
   const [generateResult, setGenerateResult] = useState("");
   const [generateError, setGenerateError] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -39,6 +50,26 @@ export function AiPlayground() {
 
     return latest ? getMessageText(latest) : "";
   }, [messages]);
+  const streamErrorText = useMemo(() => {
+    if (!streamError) {
+      return "";
+    }
+
+    try {
+      return getErrorText(JSON.parse(streamError.message));
+    } catch {
+      return streamError.message;
+    }
+  }, [streamError]);
+
+  function getRequestOptions() {
+    return {
+      maxTokens,
+      systemPrompt,
+      temperature,
+      traceId: crypto.randomUUID(),
+    };
+  }
 
   async function runGenerate() {
     if (!trimmedPrompt) {
@@ -54,7 +85,10 @@ export function AiPlayground() {
       const response = await fetch("/api/ai/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: [createUserMessage(trimmedPrompt)] }),
+        body: JSON.stringify({
+          messages: [createUserMessage(trimmedPrompt)],
+          ...getRequestOptions(),
+        }),
       });
 
       if (!response.ok) {
@@ -84,7 +118,12 @@ export function AiPlayground() {
     }
 
     clearError();
-    sendMessage({ text: trimmedPrompt });
+    sendMessage(
+      { text: trimmedPrompt },
+      {
+        body: getRequestOptions(),
+      },
+    );
   }
 
   return (
@@ -92,7 +131,7 @@ export function AiPlayground() {
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-5 py-8 sm:px-8">
         <header className="flex flex-col gap-2 border-b border-[#d8dee8] pb-5">
           <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#436b8f]">
-            Day 01
+            Day 02
           </p>
           <h1 className="text-3xl font-semibold text-[#101827]">
             AI Course Generator
@@ -112,10 +151,66 @@ export function AiPlayground() {
             </label>
             <textarea
               id="prompt"
-              className="min-h-44 flex-1 resize-none rounded-md border border-[#cbd5e1] bg-[#fbfdff] p-3 text-base leading-7 text-[#172033] outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#bfdbfe]"
+              className="min-h-36 flex-1 resize-none rounded-md border border-[#cbd5e1] bg-[#fbfdff] p-3 text-base leading-7 text-[#172033] outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#bfdbfe]"
               value={prompt}
               onChange={(event) => setPrompt(event.currentTarget.value)}
             />
+
+            <label
+              className="text-sm font-medium text-[#344054]"
+              htmlFor="system-prompt"
+            >
+              System Prompt
+            </label>
+            <textarea
+              id="system-prompt"
+              className="min-h-24 resize-none rounded-md border border-[#cbd5e1] bg-[#fbfdff] p-3 text-sm leading-6 text-[#172033] outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#bfdbfe]"
+              value={systemPrompt}
+              onChange={(event) => setSystemPrompt(event.currentTarget.value)}
+            />
+
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_9rem]">
+              <fieldset className="flex flex-col gap-2">
+                <legend className="text-sm font-medium text-[#344054]">
+                  Temperature
+                </legend>
+                <div className="grid grid-cols-3 gap-2">
+                  {temperatureOptions.map((option) => (
+                    <label
+                      className="flex min-h-10 cursor-pointer items-center justify-center rounded-md border border-[#cbd5e1] bg-[#fbfdff] px-2 text-sm font-medium text-[#344054] has-checked:border-[#2563eb] has-checked:bg-[#e0ecff] has-checked:text-[#1d4ed8]"
+                      key={option.value}
+                    >
+                      <input
+                        className="sr-only"
+                        type="radio"
+                        checked={temperature === option.value}
+                        onChange={() => setTemperature(option.value)}
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              <label className="flex flex-col gap-2 text-sm font-medium text-[#344054]">
+                Max Tokens
+                <input
+                  className="min-h-10 rounded-md border border-[#cbd5e1] bg-[#fbfdff] px-3 text-sm text-[#172033] outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#bfdbfe]"
+                  type="number"
+                  min={1}
+                  max={8000}
+                  value={maxTokens}
+                  onChange={(event) =>
+                    setMaxTokens(
+                      Math.min(
+                        8000,
+                        Math.max(1, Number(event.currentTarget.value)),
+                      ),
+                    )
+                  }
+                />
+              </label>
+            </div>
 
             <div className="flex flex-col gap-3 sm:flex-row">
               <button
@@ -161,7 +256,7 @@ export function AiPlayground() {
                 </span>
               </div>
               <pre className="min-h-36 whitespace-pre-wrap rounded-md bg-[#f1f5f9] p-3 text-sm leading-6 text-[#172033]">
-                {streamError?.message || latestAssistantText || "等待请求"}
+                {streamErrorText || latestAssistantText || "等待请求"}
               </pre>
             </div>
           </section>

@@ -1,57 +1,48 @@
 import {
-  convertToModelMessages,
   createUIMessageStreamResponse,
-  generateText,
-  streamText,
   toUIMessageStream,
 } from "ai";
 
-import { getErrorMessage } from "@/shared/errors/get-error-message";
-
-import { getLanguageModel } from "./model-provider";
-import { readMessages } from "./request";
+import { generateTextSafe, streamTextSafe } from "./client";
+import { createAiErrorResponse, toAiErrorPayload } from "./error";
+import { readAiRequest } from "./request";
 
 export async function handleGenerateTextRequest(req: Request) {
-  const messages = await readMessages(req);
+  const aiRequest = await readAiRequest(req);
 
-  if (messages instanceof Response) {
-    return messages;
+  if (aiRequest instanceof Response) {
+    return aiRequest;
   }
 
   try {
-    const { text } = await generateText({
-      model: getLanguageModel(),
-      messages: await convertToModelMessages(messages),
-    });
+    const { text } = await generateTextSafe(aiRequest);
 
     return new Response(text, {
       headers: { "Content-Type": "text/plain; charset=utf-8" },
     });
   } catch (error) {
-    return Response.json({ error: getErrorMessage(error) }, { status: 500 });
+    return createAiErrorResponse(error, aiRequest.traceId);
   }
 }
 
 export async function handleStreamTextRequest(req: Request) {
-  const messages = await readMessages(req);
+  const aiRequest = await readAiRequest(req);
 
-  if (messages instanceof Response) {
-    return messages;
+  if (aiRequest instanceof Response) {
+    return aiRequest;
   }
 
   try {
-    const result = streamText({
-      model: getLanguageModel(),
-      messages: await convertToModelMessages(messages),
-    });
+    const result = await streamTextSafe(aiRequest);
 
     return createUIMessageStreamResponse({
       stream: toUIMessageStream({
         stream: result.stream,
-        onError: getErrorMessage,
+        onError: (error) =>
+          JSON.stringify(toAiErrorPayload(error, aiRequest.traceId)),
       }),
     });
   } catch (error) {
-    return Response.json({ error: getErrorMessage(error) }, { status: 500 });
+    return createAiErrorResponse(error, aiRequest.traceId);
   }
 }

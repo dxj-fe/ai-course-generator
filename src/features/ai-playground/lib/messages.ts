@@ -18,6 +18,24 @@ export function getErrorText(payload: unknown) {
   if (
     payload &&
     typeof payload === "object" &&
+    "message" in payload &&
+    typeof payload.message === "string"
+  ) {
+    const code =
+      "code" in payload && typeof payload.code === "string"
+        ? `[${payload.code}] `
+        : "";
+    const traceId =
+      "traceId" in payload && typeof payload.traceId === "string"
+        ? ` traceId: ${payload.traceId}`
+        : "";
+
+    return `${code}${payload.message}${traceId}`;
+  }
+
+  if (
+    payload &&
+    typeof payload === "object" &&
     "error" in payload &&
     typeof payload.error === "string"
   ) {
