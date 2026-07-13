@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话生成一门由多页关联 HTML 组成的课程。当前 Day 04 版本将 CourseIntent Agent 的 Prompt 升级为可版本化、可测试、可审查的工程资产。
+一句话生成一门由多页关联 HTML 组成的课程。当前 Day 05 版本新增 Tool Calling 与 Skill Registry，让模型可以选择并调用经过 Schema 校验的项目能力。
 
 ## Day 01 交付
 
@@ -34,6 +34,14 @@
 - 用户原始需求通过 JSON string 注入，Prompt 明确隔离不可信输入并拒绝角色越权。
 - 新增 Prompt Review Checklist、5 个固定 bad case 与 Prompt Loader 单元测试。
 - AI 日志只记录 Prompt 长度、版本、traceId、耗时和错误，不记录 Prompt 正文或私有推理过程。
+
+## Day 05 交付
+
+- 新增 Skill 契约和 Skill Registry，执行前后分别校验输入与输出。
+- 新增功能模板搜索、样式模板搜索和 CourseIntent 校验三个 Skill。
+- 新增 `POST /api/demo/tool-call`，由模型选择工具、后端执行并返回 Tool Result。
+- 工具调用日志记录 `toolName`、输入、输出、耗时、成功状态和 `traceId`。
+- Day 05 面试复盘见 `notes/day-05.md`。
 
 ## 启动
 
@@ -88,6 +96,14 @@ Intent Agent 接口：
 curl -X POST http://localhost:3000/api/agents/intent \
   -H "Content-Type: application/json" \
   -d '{"userPrompt":"给 8 岁小朋友做一门太阳系入门课，要有互动问答。"}'
+```
+
+Tool Calling Demo：
+
+```bash
+curl -X POST http://localhost:3000/api/demo/tool-call \
+  -H "Content-Type: application/json" \
+  -d '{"pagePurpose":"为 8 岁儿童设计一个互动问答页面"}'
 ```
 
 流式接口：
