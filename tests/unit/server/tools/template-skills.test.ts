@@ -35,7 +35,22 @@ describe("template skills", () => {
       context,
     );
 
-    expect(result.templates[0].id).toBe("minimal-professional");
+    expect(result.templates[0].id).toBe("minimal");
+    expect(result.templates[0].visualStyle).toBe("minimal");
+  });
+
+  it("maps the professional CourseIntent style to minimal", async () => {
+    const registry = new SkillRegistry(() => {}).register(
+      searchStyleTemplateSkill,
+    );
+    const result = await registry.execute<TemplateSearchOutput>(
+      searchStyleTemplateSkill.name,
+      { visualStyle: "professional", audience: "企业管理者", limit: 1 },
+      context,
+    );
+
+    expect(result.templates[0].id).toBe("minimal");
+    expect(result.templates[0].reason).toContain("visualStyle");
   });
 
   it("reports an invalid CourseIntent", async () => {

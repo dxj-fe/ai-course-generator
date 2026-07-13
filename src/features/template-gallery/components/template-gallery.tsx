@@ -6,6 +6,8 @@ import {
   type FunctionalTemplate,
 } from "@/shared/templates/functional";
 
+import { StyleTemplateGallery } from "./style-template-gallery";
+
 /** 展示共享 Registry 中的全部功能模板和 PagePlan mock。 */
 export function TemplateGallery() {
   const templates = listFunctionalTemplates();
@@ -17,10 +19,10 @@ export function TemplateGallery() {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#436b8f]">
-                Day 08 · Functional Template Registry
+                Day 09 · Template Registries
               </p>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight text-[#101827] sm:text-4xl">
-                功能模板清单
+                模板系统清单
               </h1>
             </div>
             <Link
@@ -31,29 +33,44 @@ export function TemplateGallery() {
             </Link>
           </div>
           <p className="max-w-3xl text-sm leading-7 text-[#64748b]">
-            功能模板只定义页面承担的教学任务、内容槽位和使用边界，不定义颜色、字体、组件树或 HTML。当前 Registry 覆盖 Day 07 的全部 8 种 pageType。
+            功能模板定义教学任务，样式模板定义视觉语言。两个 Registry 相互独立，并通过 PagePlan、Theme 和 CSS Variables 组合。
           </p>
           <div className="flex flex-wrap gap-2 text-xs font-medium">
             <span className="rounded-full bg-[#ede9fe] px-3 py-1.5 text-[#6d28d9]">
-              {templates.length} 个模板
+              {templates.length} 个功能模板
             </span>
             <span className="rounded-full bg-[#e0f2fe] px-3 py-1.5 text-[#0369a1]">
-              共享 Registry
+              6 个样式模板
             </span>
             <span className="rounded-full bg-[#dcfce7] px-3 py-1.5 text-[#15803d]">
-              PagePlan mocks 已校验
+              48 种组合已校验
             </span>
           </div>
         </header>
 
-        <section
-          className="grid items-start gap-6 lg:grid-cols-2"
-          aria-label="功能模板列表"
-        >
-          {templates.map((template) => (
-            <TemplateCard key={template.id} template={template} />
-          ))}
+        <section className="flex flex-col gap-6" aria-labelledby="functional-templates">
+          <header>
+            <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#436b8f]">
+              Day 08 · Functional Template Registry
+            </p>
+            <h2
+              className="mt-2 text-2xl font-semibold text-[#101827]"
+              id="functional-templates"
+            >
+              功能模板清单
+            </h2>
+          </header>
+          <div
+            className="grid items-start gap-6 lg:grid-cols-2"
+            aria-label="功能模板列表"
+          >
+            {templates.map((template) => (
+              <TemplateCard key={template.id} template={template} />
+            ))}
+          </div>
         </section>
+
+        <StyleTemplateGallery />
       </div>
     </main>
   );

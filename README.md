@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话生成一门由多页关联 HTML 组成的课程。当前 Day 08 版本在课程领域模型之上新增功能模板系统，让页面先确定教学任务和结构槽位，再生成具体内容。
+一句话生成一门由多页关联 HTML 组成的课程。当前 Day 09 版本新增基于 Design Tokens 的样式模板系统，使不同教学功能页面能够共享一致视觉语言。
 
 ## Day 01 交付
 
@@ -68,6 +68,17 @@
 - Day 05 `searchFunctionalTemplateSkill` 改为查询共享 Registry，并返回候选、分数和匹配理由。
 - 新增 `/templates` TemplateGallery，前端可查看槽位、适用场景、约束和 PagePlan 示例。
 - 设计说明见 `docs/templates-functional.md`，面试复盘见 `notes/day-08.md`。
+
+## Day 09 交付
+
+- 新增共享 `StyleTemplateSchema`，覆盖颜色、排版、间距、表面、装饰、动效、密度和素材指导。
+- 实现科幻、童趣、极简、自然、黑板和游戏任务六套样式模板。
+- 新增 Style Registry，并将 `professional` CourseIntent 兼容映射到 `minimal`。
+- 新增 StyleTemplate 到 CSS Variables、CSS 文本和 Day 07 Theme 的转换器。
+- Day 05 `searchStyleTemplateSkill` 改为查询共享 Registry 并返回候选、分数和理由。
+- 通过测试验证全部 48 种功能模板和样式模板组合。
+- `/templates` 新增六张由真实 CSS Variables 驱动的风格预览卡。
+- 设计说明见 `docs/templates-style.md`，面试复盘见 `notes/day-09.md`。
 
 ## 启动
 

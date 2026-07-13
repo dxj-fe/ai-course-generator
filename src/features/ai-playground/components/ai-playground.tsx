@@ -175,20 +175,20 @@ export function AiPlayground() {
         <header className="flex flex-wrap items-end justify-between gap-4 border-b border-[#d8dee8] pb-5">
           <div className="flex flex-col gap-2">
             <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#436b8f]">
-              Day 08
+              Day 09
             </p>
             <h1 className="text-3xl font-semibold text-[#101827]">
               AI Course Generator
             </h1>
             <p className="text-sm text-[#64748b]">
-              Day 01–08 工程训练台
+              Day 01–09 工程训练台
             </p>
           </div>
           <Link
             className="rounded-full border border-[#cbd5e1] bg-white px-4 py-2 text-sm font-medium text-[#344054] transition hover:border-[#7c3aed] hover:text-[#6d28d9]"
             href="/templates"
           >
-            查看功能模板
+            查看模板系统
           </Link>
         </header>
 
