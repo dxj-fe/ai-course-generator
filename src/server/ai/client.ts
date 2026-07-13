@@ -28,6 +28,7 @@ export type StructuredAiClientRequest<T> = {
   maxTokens?: number;
   model?: LanguageModel;
   prompt: string;
+  promptVersion?: string;
   schema: z.ZodType<T>;
   schemaDescription?: string;
   schemaName: string;
@@ -152,6 +153,7 @@ function logStructuredAiEvent<T>(
     event,
     traceId: request.traceId,
     promptLength: request.prompt.length,
+    promptVersion: request.promptVersion,
     schemaName: request.schemaName,
     hasSystemPrompt: Boolean(request.systemPrompt),
     temperature: request.temperature,

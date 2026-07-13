@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话生成一门由多页关联 HTML 组成的课程。当前 Day 03 版本在模型调用抽象基础上，新增结构化输出与 CourseIntent Agent，把用户一句话稳定解析成后续课程规划可消费的任务规格。
+一句话生成一门由多页关联 HTML 组成的课程。当前 Day 04 版本将 CourseIntent Agent 的 Prompt 升级为可版本化、可测试、可审查的工程资产。
 
 ## Day 01 交付
 
@@ -26,6 +26,14 @@
 - 新增 `POST /api/agents/intent`，把 `userPrompt` 解析为结构化 CourseIntent。
 - Playground 增加 CourseIntent JSON 展示，便于观察结构化输出和 schema 错误。
 - Day 03 复盘记录见 `notes/day-03.md`。
+
+## Day 04 交付
+
+- Intent Agent 的 system/user Prompt 已迁移到带版本号的 Markdown 模板。
+- 新增 `PromptTemplate` 契约与服务端 Prompt Loader，校验缺失变量和未知变量。
+- 用户原始需求通过 JSON string 注入，Prompt 明确隔离不可信输入并拒绝角色越权。
+- 新增 Prompt Review Checklist、5 个固定 bad case 与 Prompt Loader 单元测试。
+- AI 日志只记录 Prompt 长度、版本、traceId、耗时和错误，不记录 Prompt 正文或私有推理过程。
 
 ## 启动
 
@@ -111,6 +119,7 @@ curl -N -X POST http://localhost:3000/api/ai/stream \
 ## 验证命令
 
 ```bash
+pnpm test
 pnpm lint
 pnpm build
 ```
