@@ -2,6 +2,7 @@ export type AiErrorCode =
   | "CONFIG_ERROR"
   | "MODEL_ERROR"
   | "REQUEST_ERROR"
+  | "SCHEMA_ERROR"
   | "TIMEOUT_ERROR"
   | "UNKNOWN_ERROR";
 
@@ -24,6 +25,16 @@ export class AiRequestError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "AiRequestError";
+  }
+}
+
+export class AiSchemaValidationError extends Error {
+  readonly code = "SCHEMA_ERROR" as const;
+  readonly status = 502;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "AiSchemaValidationError";
   }
 }
 
@@ -66,11 +77,20 @@ function classifyAiError(error: unknown): ClassifiedAiError {
     };
   }
 
+  if (error instanceof AiSchemaValidationError) {
+    return {
+      code: error.code,
+      message: error.message,
+      status: error.status,
+    };
+  }
+
   if (error instanceof Error) {
     if (isConfigError(error)) {
       return {
         code: "CONFIG_ERROR",
-        message: "模型配置缺失，请检查 MODEL_API_KEY、MODEL_BASE_URL 和 MODEL_NAME。",
+        message:
+          "模型配置缺失，请优先检查 ARK_API_KEY、ARK_MODEL_ID 和可选 ARK_BASE_URL；或检查通用 MODEL_API_KEY、MODEL_BASE_URL、MODEL_NAME。",
         status: 500,
       };
     }

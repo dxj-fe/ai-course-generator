@@ -9,6 +9,7 @@ import {
   getErrorText,
   getMessageText,
 } from "../lib/messages";
+import { JsonInspector } from "./json-inspector";
 
 const defaultPrompt = "用三句话介绍什么是 AI Agent。";
 const defaultSystemPrompt =
@@ -28,6 +29,9 @@ export function AiPlayground() {
   const [generateResult, setGenerateResult] = useState("");
   const [generateError, setGenerateError] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [intentResult, setIntentResult] = useState<unknown>();
+  const [intentError, setIntentError] = useState("");
+  const [isParsingIntent, setIsParsingIntent] = useState(false);
 
   const {
     messages,
@@ -110,6 +114,42 @@ export function AiPlayground() {
     }
   }
 
+  async function runIntent() {
+    if (!trimmedPrompt) {
+      setIntentError("请输入 prompt。");
+      return;
+    }
+
+    setIsParsingIntent(true);
+    setIntentError("");
+    setIntentResult(undefined);
+
+    try {
+      const response = await fetch("/api/agents/intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userPrompt: trimmedPrompt,
+          traceId: crypto.randomUUID(),
+        }),
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(getErrorText(payload));
+      }
+
+      setIntentResult(payload);
+    } catch (error) {
+      setIntentError(
+        error instanceof Error ? error.message : "Intent Agent 请求失败。",
+      );
+    } finally {
+      setIsParsingIntent(false);
+    }
+  }
+
   function runStream(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -131,7 +171,7 @@ export function AiPlayground() {
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-5 py-8 sm:px-8">
         <header className="flex flex-col gap-2 border-b border-[#d8dee8] pb-5">
           <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#436b8f]">
-            Day 02
+            Day 03
           </p>
           <h1 className="text-3xl font-semibold text-[#101827]">
             AI Course Generator
@@ -214,6 +254,14 @@ export function AiPlayground() {
 
             <div className="flex flex-col gap-3 sm:flex-row">
               <button
+                className="min-h-11 rounded-md bg-[#7c3aed] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#6d28d9] disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
+                type="button"
+                disabled={isParsingIntent || !trimmedPrompt}
+                onClick={runIntent}
+              >
+                {isParsingIntent ? "解析中..." : "解析意图"}
+              </button>
+              <button
                 className="min-h-11 rounded-md bg-[#1d4ed8] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#1e40af] disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
                 type="button"
                 disabled={isGenerating || !trimmedPrompt}
@@ -232,6 +280,22 @@ export function AiPlayground() {
           </form>
 
           <section className="grid gap-5">
+            <div className="rounded-lg border border-[#d8dee8] bg-white p-5 shadow-sm">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold text-[#101827]">
+                  CourseIntent
+                </h2>
+                <span className="rounded-full bg-[#ede9fe] px-3 py-1 text-xs font-medium text-[#6d28d9]">
+                  /api/agents/intent
+                </span>
+              </div>
+              <JsonInspector
+                error={intentError}
+                placeholder="等待解析"
+                value={intentResult}
+              />
+            </div>
+
             <div className="rounded-lg border border-[#d8dee8] bg-white p-5 shadow-sm">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <h2 className="text-lg font-semibold text-[#101827]">

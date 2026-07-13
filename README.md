@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话生成一门由多页关联 HTML 组成的课程。当前 Day 02 版本在 Day 01 的最小模型调用基础上，补齐 AI Client 抽象、system prompt、采样参数、traceId、超时和错误分类。
+一句话生成一门由多页关联 HTML 组成的课程。当前 Day 03 版本在模型调用抽象基础上，新增结构化输出与 CourseIntent Agent，把用户一句话稳定解析成后续课程规划可消费的任务规格。
 
 ## Day 01 交付
 
@@ -19,6 +19,14 @@
 - Playground 支持编辑 system prompt、切换 temperature、调整 max tokens。
 - Day 02 复盘记录见 `notes/day-02.md`。
 
+## Day 03 交付
+
+- 新增 `CourseIntentSchema`，约束 `topic`、`audienceAgeRange`、`courseLength`、`visualStyle`、`difficulty`、`mustInclude`、`avoid` 和 `language`。
+- AI Client 新增 `generateStructuredObjectSafe`，通过 AI SDK structured output 生成并校验对象。
+- 新增 `POST /api/agents/intent`，把 `userPrompt` 解析为结构化 CourseIntent。
+- Playground 增加 CourseIntent JSON 展示，便于观察结构化输出和 schema 错误。
+- Day 03 复盘记录见 `notes/day-03.md`。
+
 ## 启动
 
 ```bash
@@ -36,11 +44,19 @@ http://localhost:3000
 
 ## 环境变量
 
-复制示例文件后填写真实模型配置：
+复制示例文件后填写真实模型配置。当前优先使用火山方舟 / 豆包的 OpenAI-compatible 配置：
 
 ```bash
 cp .env.local.example .env.local
 ```
+
+```env
+ARK_API_KEY=your_volcengine_ark_api_key
+ARK_MODEL_ID=your_doubao_model_id
+ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+```
+
+如果没有设置 `ARK_API_KEY`，才会回退到通用 OpenAI-compatible 配置：
 
 ```env
 MODEL_API_KEY=your_api_key
@@ -56,6 +72,14 @@ MODEL_NAME=your_model_name
 curl -X POST http://localhost:3000/api/ai/generate \
   -H "Content-Type: application/json" \
   -d '{"prompt":"用三句话介绍什么是 AI Agent。"}'
+```
+
+Intent Agent 接口：
+
+```bash
+curl -X POST http://localhost:3000/api/agents/intent \
+  -H "Content-Type: application/json" \
+  -d '{"userPrompt":"给 8 岁小朋友做一门太阳系入门课，要有互动问答。"}'
 ```
 
 流式接口：
