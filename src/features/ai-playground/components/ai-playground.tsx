@@ -10,6 +10,8 @@ import {
   getMessageText,
 } from "../lib/messages";
 import { JsonInspector } from "./json-inspector";
+import { SinglePageAgentInspector } from "./single-page-agent-inspector";
+import { ToolCallInspector } from "./tool-call-inspector";
 
 const defaultPrompt = "用三句话介绍什么是 AI Agent。";
 const defaultSystemPrompt =
@@ -171,11 +173,14 @@ export function AiPlayground() {
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-5 py-8 sm:px-8">
         <header className="flex flex-col gap-2 border-b border-[#d8dee8] pb-5">
           <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#436b8f]">
-            Day 03
+            Day 06
           </p>
           <h1 className="text-3xl font-semibold text-[#101827]">
             AI Course Generator
           </h1>
+          <p className="text-sm text-[#64748b]">
+            Day 01–06 可运行验收台
+          </p>
         </header>
 
         <section className="grid flex-1 gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
@@ -324,6 +329,25 @@ export function AiPlayground() {
               </pre>
             </div>
           </section>
+        </section>
+
+        <section className="flex flex-col gap-5 border-t border-[#d8dee8] pt-7">
+          <header>
+            <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#436b8f]">
+              Agent Engineering Acceptance
+            </p>
+            <h2 className="mt-1 text-2xl font-semibold text-[#101827]">
+              Day 05–06 UI 验收
+            </h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#64748b]">
+              Day 5 验证模型是否选择正确工具；Day 6 验证 AgentState、PagePlan
+              与 Timeline 事件协议。当前 Timeline 在请求完成后一次性展示。
+            </p>
+          </header>
+          <div className="grid items-start gap-5 xl:grid-cols-2">
+            <ToolCallInspector />
+            <SinglePageAgentInspector />
+          </div>
         </section>
       </div>
     </main>

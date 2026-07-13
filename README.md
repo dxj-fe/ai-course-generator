@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话生成一门由多页关联 HTML 组成的课程。当前 Day 05 版本新增 Tool Calling 与 Skill Registry，让模型可以选择并调用经过 Schema 校验的项目能力。
+一句话生成一门由多页关联 HTML 组成的课程。当前 Day 06 版本新增不依赖 LangGraph 的最小 Agent Loop，通过可序列化状态和事件生成结构化单页计划。
 
 ## Day 01 交付
 
@@ -42,6 +42,14 @@
 - 新增 `POST /api/demo/tool-call`，由模型选择工具、后端执行并返回 Tool Result。
 - 工具调用日志记录 `toolName`、输入、输出、耗时、成功状态和 `traceId`。
 - Day 05 面试复盘见 `notes/day-05.md`。
+
+## Day 06 交付
+
+- 新增最小 `Agent<State>`、AgentState、AgentEvent 和手写循环引擎。
+- SinglePageAgent 先调用 Day 5 模板 Tool，再生成结构化 PagePlan 草稿。
+- AgentState 包含步骤预算、模板选择、PagePlan、事件和可序列化错误。
+- 新增 `POST /api/agents/single-page`，返回最终状态与 Timeline 事件数组。
+- Day 06 面试复盘见 `notes/day-06.md`。
 
 ## 启动
 
@@ -104,6 +112,14 @@ Tool Calling Demo：
 curl -X POST http://localhost:3000/api/demo/tool-call \
   -H "Content-Type: application/json" \
   -d '{"pagePurpose":"为 8 岁儿童设计一个互动问答页面"}'
+```
+
+SinglePageAgent：
+
+```bash
+curl -X POST http://localhost:3000/api/agents/single-page \
+  -H "Content-Type: application/json" \
+  -d '{"pageGoal":"设计一个太阳系互动问答页面","audience":"8 岁儿童"}'
 ```
 
 流式接口：

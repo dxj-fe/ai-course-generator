@@ -11,3 +11,8 @@ export {
   type CourseLanguage,
   type VisualStyle,
 } from "./intent";
+export {
+  PagePlanDraftSchema,
+  PagePlanSectionSchema,
+  type PagePlanDraft,
+} from "./page-plan-draft";
