@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { AssetRoleSchema, AssetTypeSchema } from "./asset";
+
 /**
  * 定义 Planner 和模板系统共同理解的页面教学类型。
  * 枚举保持稳定，避免不同 Agent 为同一页面类型创造不同名称。
@@ -23,6 +25,28 @@ export const PageStatusSchema = z.enum([
   "failed",
 ]);
 
+/** 描述页面在课程规划阶段需要的主要交互方式。 */
+export const PageInteractionTypeSchema = z.enum([
+  "none",
+  "navigate",
+  "reveal",
+  "choice",
+  "sort",
+  "input",
+  "explore",
+]);
+
+/**
+ * 描述 Planner 预期后续素材 Agent 提供的素材。
+ * 它表达“需要什么”，与已经落库的 assetIds 分离。
+ */
+export const PageAssetNeedSchema = z.object({
+  type: AssetTypeSchema,
+  role: AssetRoleSchema,
+  purpose: z.string().min(2).max(240),
+  required: z.boolean(),
+});
+
 /**
  * 保存 HTML Engineer Agent 的可版本化输出。
  * generatedAt 和 version 用于缓存失效、审计和重新生成。
@@ -45,6 +69,8 @@ export const PagePlanSchema = z
     title: z.string().min(1).max(120),
     learningObjective: z.string().min(5).max(300),
     contentSummary: z.string().min(5).max(500),
+    interactionType: PageInteractionTypeSchema,
+    assetNeeds: z.array(PageAssetNeedSchema).max(12),
     functionalTemplateId: z.string().min(1).max(80),
     styleTemplateId: z.string().min(1).max(80),
     assetIds: z.array(z.string().min(1).max(80)).max(20),
@@ -92,5 +118,7 @@ export const PagePlanSchema = z
 
 export type PageType = z.infer<typeof PageTypeSchema>;
 export type PageStatus = z.infer<typeof PageStatusSchema>;
+export type PageInteractionType = z.infer<typeof PageInteractionTypeSchema>;
+export type PageAssetNeed = z.infer<typeof PageAssetNeedSchema>;
 export type HtmlOutput = z.infer<typeof HtmlOutputSchema>;
 export type PagePlan = z.infer<typeof PagePlanSchema>;

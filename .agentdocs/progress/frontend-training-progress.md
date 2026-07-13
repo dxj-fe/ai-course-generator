@@ -4,9 +4,9 @@ source_doc: `.agentdocs/prd/AI_Agent_Frontend_Training_Handbook_V5.docx`
 timezone: `Asia/Shanghai`
 daily_run_time: `09:30`
 start_date: `2026-07-09`
-last_delivered_day: `9`
+last_delivered_day: `10`
 last_delivered_date: `2026-07-13`
-next_training_day: `10`
+next_training_day: `11`
 
 ## Notes
 
@@ -23,3 +23,5 @@ next_training_day: `10`
 - 2026-07-13: Implemented Day 8 with eight validated functional templates, a shared Registry, candidate-search integration, eight PagePlan mocks, `/templates` Gallery, tests, documentation, and browser acceptance.
 - 2026-07-13: Delivered Day 9 plan for a shared Style Template Registry, six token-driven visual styles, style candidate search, CSS variable conversion, composability checks, and TemplateGallery previews.
 - 2026-07-13: Implemented Day 9 with six validated StyleTemplates, CSS/Theme conversion, shared style search, 48 functional-style combinations, Gallery previews, documentation, tests, and browser acceptance.
+- 2026-07-13: Delivered Day 10 plan for a structured Course Planner Agent, 3–12 page learning sequences, dependency-aware PagePlans, five topic cases, and CourseOutline/PagePlan frontend inspection.
+- 2026-07-13: Implemented Day 10 with a structured CoursePlannerAgent, deterministic PagePlan materialization, 3–12 page learning-rhythm validation, five topic cases, CourseOutline/PagePlan UI, detailed interview answers, and real-model browser acceptance.

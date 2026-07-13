@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话生成一门由多页关联 HTML 组成的课程。当前 Day 09 版本新增基于 Design Tokens 的样式模板系统，使不同教学功能页面能够共享一致视觉语言。
+一句话生成一门由多页关联 HTML 组成的课程。当前 Day 10 版本新增 Course Planner Agent，把自然语言课程需求转换为带学习节奏和页面依赖的结构化课程大纲。
 
 ## Day 01 交付
 
@@ -80,6 +80,16 @@
 - `/templates` 新增六张由真实 CSS Variables 驱动的风格预览卡。
 - 设计说明见 `docs/templates-style.md`，面试复盘见 `notes/day-09.md`。
 
+## Day 10 交付
+
+- `PagePlanSchema` 新增 `interactionType` 和规划阶段的 `assetNeeds`。
+- 新增 `CoursePlanSchema`，约束 3–12 页、连续顺序、合法依赖和“引入—讲解—互动—总结”节奏。
+- 新增版本化 Course Planner Prompt 和一步 `CoursePlannerAgent`。
+- Planner 使用 Day 08/09 Registry 校验功能模板、pageType、样式模板和全课程视觉一致性。
+- 新增 `POST /api/courses/plan`，支持一句话生成 CourseIntent 和 CoursePlan，也支持直接输入 CourseIntent。
+- 首页新增 CourseOutlinePanel、PagePlanList、Agent Timeline 和五个固定测试主题。
+- 设计决策和八道详细面试题见 `notes/day-10.md`。
+
 ## 启动
 
 ```bash
@@ -149,6 +159,14 @@ SinglePageAgent：
 curl -X POST http://localhost:3000/api/agents/single-page \
   -H "Content-Type: application/json" \
   -d '{"pageGoal":"设计一个太阳系互动问答页面","audience":"8 岁儿童"}'
+```
+
+Course Planner Agent：
+
+```bash
+curl -X POST http://localhost:3000/api/courses/plan \
+  -H "Content-Type: application/json" \
+  -d '{"userPrompt":"为 8 岁儿童设计一门 5 页太阳系入门课，包含互动问答，使用科幻风格。"}'
 ```
 
 流式接口：

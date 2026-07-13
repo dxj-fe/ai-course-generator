@@ -18,10 +18,14 @@ export {
 } from "./page-plan-draft";
 export {
   HtmlOutputSchema,
+  PageAssetNeedSchema,
+  PageInteractionTypeSchema,
   PagePlanSchema,
   PageStatusSchema,
   PageTypeSchema,
   type HtmlOutput,
+  type PageAssetNeed,
+  type PageInteractionType,
   type PagePlan,
   type PageStatus,
   type PageType,
@@ -68,3 +72,4 @@ export {
   type CourseOutline,
   type CourseStatus,
 } from "./course";
+export { CoursePlanSchema, type CoursePlan } from "./course-plan";

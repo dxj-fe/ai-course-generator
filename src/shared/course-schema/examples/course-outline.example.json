@@ -12,8 +12,17 @@
       "title": "太阳系探险启程",
       "learningObjective": "学习者能够说出本课程将探索太阳系中的哪些核心内容。",
       "contentSummary": "用太阳系主视觉、课程目标和开始按钮建立学习期待。",
+      "interactionType": "navigate",
+      "assetNeeds": [
+        {
+          "type": "illustration",
+          "role": "hero",
+          "purpose": "用太阳系全景建立课程主题和探索氛围。",
+          "required": true
+        }
+      ],
       "functionalTemplateId": "course-cover",
-      "styleTemplateId": "kids-space-adventure",
+      "styleTemplateId": "kids-playful",
       "assetIds": ["asset-solar-system-hero"],
       "dependsOnPageIds": [],
       "status": "ready",
@@ -30,8 +39,10 @@
       "title": "认识八颗行星",
       "learningObjective": "学习者能够按距离太阳由近到远排列八颗行星。",
       "contentSummary": "用可浏览的知识卡介绍行星顺序和一个典型特征。",
+      "interactionType": "reveal",
+      "assetNeeds": [],
       "functionalTemplateId": "knowledge-card-grid",
-      "styleTemplateId": "kids-space-adventure",
+      "styleTemplateId": "kids-playful",
       "assetIds": [],
       "dependsOnPageIds": ["page-cover"],
       "status": "planned"
@@ -43,8 +54,10 @@
       "title": "行星挑战赛",
       "learningObjective": "学习者能够在四道选择题中正确识别行星名称和特征。",
       "contentSummary": "通过即时反馈的选择题检查行星顺序和特征理解。",
+      "interactionType": "choice",
+      "assetNeeds": [],
       "functionalTemplateId": "interactive-quiz",
-      "styleTemplateId": "kids-space-adventure",
+      "styleTemplateId": "kids-playful",
       "assetIds": [],
       "dependsOnPageIds": ["page-planets"],
       "status": "planned"

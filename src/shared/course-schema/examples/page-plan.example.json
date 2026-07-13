@@ -5,8 +5,17 @@
   "title": "太阳系探险启程",
   "learningObjective": "学习者能够说出本课程将探索太阳系中的哪些核心内容。",
   "contentSummary": "用太阳系主视觉、课程目标和开始按钮建立学习期待。",
+  "interactionType": "navigate",
+  "assetNeeds": [
+    {
+      "type": "illustration",
+      "role": "hero",
+      "purpose": "用太阳系全景建立课程主题和探索氛围。",
+      "required": true
+    }
+  ],
   "functionalTemplateId": "course-cover",
-  "styleTemplateId": "kids-space-adventure",
+  "styleTemplateId": "kids-playful",
   "assetIds": ["asset-solar-system-hero"],
   "dependsOnPageIds": [],
   "status": "ready",
