@@ -11,6 +11,7 @@ import type {
 } from "@/shared/course-schema";
 
 import { CourseDesignTabs } from "./course-design-tabs";
+import { PageDSLViewer } from "./page-dsl-viewer";
 
 type CourseDesignResponse = {
   traceId: string;
@@ -128,14 +129,21 @@ export function CourseDesignRunner({
       ) : null}
 
       {result?.state.pageWorkerBriefs ? (
-        <details className="rounded-lg border border-[#d8dee8] bg-[#f8fafc] p-4">
-          <summary className="cursor-pointer text-sm font-semibold text-[#344054]">
-            查看 Page Worker 交接协议（{result.state.pageWorkerBriefs.length} 页）
-          </summary>
-          <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-[#eef2f7] p-3 font-mono text-xs leading-5 text-[#172033]">
-            {JSON.stringify(result.state.pageWorkerBriefs, null, 2)}
-          </pre>
-        </details>
+        <>
+          <details className="rounded-lg border border-[#d8dee8] bg-[#f8fafc] p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-[#344054]">
+              查看 Page Worker 交接协议（{result.state.pageWorkerBriefs.length} 页）
+            </summary>
+            <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-[#eef2f7] p-3 font-mono text-xs leading-5 text-[#172033]">
+              {JSON.stringify(result.state.pageWorkerBriefs, null, 2)}
+            </pre>
+          </details>
+          <PageDSLViewer
+            briefs={result.state.pageWorkerBriefs}
+            intent={intent}
+            pages={outline.pages}
+          />
+        </>
       ) : null}
     </section>
   );

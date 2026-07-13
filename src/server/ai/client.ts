@@ -11,7 +11,8 @@ import type { z } from "zod";
 import { getLanguageModel } from "./model-provider";
 import { AiSchemaValidationError, toAiErrorPayload } from "./error";
 
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TEXT_TIMEOUT_MS = 30_000;
+const DEFAULT_STRUCTURED_TIMEOUT_MS = 60_000;
 
 export type AiClientRequest = {
   messages: UIMessage[];
@@ -50,7 +51,7 @@ export async function generateTextSafe(request: AiClientRequest) {
       instructions: request.systemPrompt,
       temperature: request.temperature,
       maxOutputTokens: request.maxTokens,
-      timeout: DEFAULT_TIMEOUT_MS,
+      timeout: DEFAULT_TEXT_TIMEOUT_MS,
       abortSignal: request.abortSignal,
     });
 
@@ -75,7 +76,7 @@ export async function streamTextSafe(request: AiClientRequest) {
       instructions: request.systemPrompt,
       temperature: request.temperature,
       maxOutputTokens: request.maxTokens,
-      timeout: DEFAULT_TIMEOUT_MS,
+      timeout: DEFAULT_TEXT_TIMEOUT_MS,
       abortSignal: request.abortSignal,
       onError: ({ error }) => logAiError("stream:error", error, traceId, startedAt),
       onFinish: () => logAiFinish("stream:finish", traceId, startedAt),
@@ -105,7 +106,8 @@ export async function generateStructuredObjectSafe<T>(
       }),
       temperature: request.temperature,
       maxOutputTokens: request.maxTokens,
-      timeout: DEFAULT_TIMEOUT_MS,
+      // 课程规划类结构化响应比普通文本更长，30 秒会在模型仍正常输出时误杀请求。
+      timeout: DEFAULT_STRUCTURED_TIMEOUT_MS,
       abortSignal: request.abortSignal,
     });
     const parsed = request.schema.safeParse(result.output);
@@ -142,6 +144,7 @@ function logAiEvent(event: string, request: AiClientRequest) {
     hasSystemPrompt: Boolean(request.systemPrompt),
     temperature: request.temperature,
     maxTokens: request.maxTokens,
+    timeoutMs: DEFAULT_TEXT_TIMEOUT_MS,
   });
 }
 
@@ -158,6 +161,7 @@ function logStructuredAiEvent<T>(
     hasSystemPrompt: Boolean(request.systemPrompt),
     temperature: request.temperature,
     maxTokens: request.maxTokens,
+    timeoutMs: DEFAULT_STRUCTURED_TIMEOUT_MS,
   });
 }
 

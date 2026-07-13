@@ -4,9 +4,9 @@ source_doc: `.agentdocs/prd/AI_Agent_Frontend_Training_Handbook_V5.docx`
 timezone: `Asia/Shanghai`
 daily_run_time: `09:30`
 start_date: `2026-07-09`
-last_delivered_day: `11`
+last_delivered_day: `12`
 last_delivered_date: `2026-07-13`
-next_training_day: `12`
+next_training_day: `13`
 
 ## Notes
 
@@ -27,3 +27,5 @@ next_training_day: `12`
 - 2026-07-13: Implemented Day 10 with a structured CoursePlannerAgent, deterministic PagePlan materialization, 3–12 page learning-rhythm validation, five topic cases, CourseOutline/PagePlan UI, detailed interview answers, and real-model browser acceptance.
 - 2026-07-13: Delivered Day 11 plan for Pedagogy, Story, and Visual Director briefs, a serial post-Planner enrichment workflow, downstream Page Worker contracts, and three-tab frontend inspection.
 - 2026-07-13: Implemented Day 11 with PedagogyPlan, StoryArc, VisualBrief, three single-responsibility Agents, a fail-fast serial enrichment workflow, Page Worker handoffs, three-tab UI, detailed interview answers, automated tests, and real-model browser acceptance.
+- 2026-07-13: Delivered Day 12 plan for a hybrid PageContentDSL, one-page PageWriterAgent, eight functional-template DSL examples, a PageDSLViewer, explicit DSL/HTML boundaries, and detailed acceptance criteria.
+- 2026-07-13: Implemented Day 12 with a hybrid PageContentDSL, multi-question choice contracts, a one-page PageWriterAgent, eight template examples, PageDSLViewer, detailed interview answers, automated tests, and real-model browser acceptance.

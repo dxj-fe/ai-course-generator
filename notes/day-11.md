@@ -153,6 +153,8 @@ StyleTemplate 是设计系统的单一事实来源。如果 VisualBrief 复制�
 ## 验收结论
 
 - Schema、Agent 和工作流测试覆盖合法结果、颜色 Token 泄漏、无叙事模式、串行顺序、失败短路和 pageId 漂移。
+- 长结构化输出使用 60 秒单次调用预算；普通文本仍保持 30 秒预算，避免 Pedagogy 等正常生成过程在 30 秒边界被误判为超时。
+- 超时修复后用真实模型回归 `/api/courses/design`：三个专业 Agent 全部完成，共返回 9 条事件；服务端日志确认三次结构化调用均使用 `timeoutMs: 60000`。
 - 前后端共享 `CourseDesignBriefs` 与 `PageWorkerBrief` 类型。
 - 三个 Agent 均只产生自己的结构化 brief，不生成 HTML。
 - VisualBrief 只引用 Registry 中真实的 StyleTemplate。

@@ -1,6 +1,7 @@
 import type {
   CourseIntent,
   CoursePlan,
+  PageContentDSL,
   PedagogyPlan,
   StoryArc,
   VisualBrief,
@@ -192,4 +193,43 @@ export const visualBrief: VisualBrief = {
     "信息不能只依赖颜色区分。",
     "正文和交互文字必须保持可读对比度。",
   ],
+};
+
+export const pageContentDsl: PageContentDSL = {
+  version: 1,
+  pageId: "page-02-knowledge",
+  functionalTemplateId: "knowledge-card-grid",
+  title: "恒星与行星",
+  narration: ["先观察太阳，再与一颗行星比较它们是否会自己发光。"],
+  blocks: [
+    {
+      id: "block-01",
+      kind: "concept",
+      heading: "恒星",
+      body: "恒星会自己发光，太阳就是离我们最近的恒星。",
+      supportingPoints: ["太阳为太阳系提供光和热。"],
+    },
+    {
+      id: "block-02",
+      kind: "concept",
+      heading: "行星",
+      body: "行星不会自己发光，而是反射恒星的光。",
+      supportingPoints: ["地球是一颗围绕太阳运行的行星。"],
+    },
+  ],
+  interaction: {
+    type: "reveal",
+    prompt: "逐项揭示并比较恒星和行星。",
+    items: [
+      { id: "item-01", label: "恒星", content: "会自己发光" },
+      { id: "item-02", label: "行星", content: "反射恒星的光" },
+    ],
+  },
+  assetSlots: [],
+  layoutHints: {
+    contentDensity: "balanced",
+    visualPriority: "恒星与行星的核心差异优先",
+    groupingStrategy: "两个同层级概念保持清晰对照",
+    readingOrder: ["block-01", "block-02"],
+  },
 };

@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话生成一门由多页关联 HTML 组成的课程。当前 Day 11 版本在 Course Planner 之后增加教学、故事和视觉三个专业规划节点，为后续 Page Worker 提供稳定的逐页设计上下文。
+一句话生成一门由多页关联 HTML 组成的课程。当前 Day 12 版本新增 PageContentDSL 和 PageWriterAgent，把单页规划与专业 brief 转换为可校验、但不锁死 UI 的内容协议。
 
 ## Day 01 交付
 
@@ -100,6 +100,16 @@
 - 首页新增教学、故事、视觉三个 Tab、Professional Agent Timeline 和 Page Worker 交接协议检查器。
 - 实现说明和八道详细面试题见 `notes/day-11.md`。
 
+## Day 12 交付
+
+- 新增 `PageContentDSLSchema`，覆盖语义 blocks、七类 interaction、assetSlots 和弱 layoutHints。
+- 技术 ID、素材槽位和 readingOrder 由确定性代码从 PagePlan 补齐。
+- 实现一步 `PageWriterAgent`、版本化 Prompt 和 `POST /api/pages/write`。
+- Page Writer 校验 PagePlan、PageWorkerBrief、FunctionalTemplate、互动类型和素材需求的一致性。
+- 为八个 FunctionalTemplate 分别提供一份合法 DSL example。
+- 首页新增 PageDSLViewer，可选择任一页面生成并检查 DSL，并明确区分未来 HTML 输出。
+- 边界设计见 `docs/dsl-boundary.md`，实现说明和八道详细面试题见 `notes/day-12.md`。
+
 ## 启动
 
 ```bash
@@ -185,6 +195,14 @@ Day 11 专业设计工作流（`intent` 与 `outline` 使用 Planner 的真实�
 curl -X POST http://localhost:3000/api/courses/design \
   -H "Content-Type: application/json" \
   -d '{"intent": {"...": "CourseIntent"}, "outline": {"...": "CoursePlan"}}'
+```
+
+Day 12 单页 Page Writer（使用 Planner 和 Day 11 的真实返回值）：
+
+```bash
+curl -X POST http://localhost:3000/api/pages/write \
+  -H "Content-Type: application/json" \
+  -d '{"intent": {"...": "CourseIntent"}, "page": {"...": "PagePlan"}, "brief": {"...": "PageWorkerBrief"}}'
 ```
 
 流式接口：

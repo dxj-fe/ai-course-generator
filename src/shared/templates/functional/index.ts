@@ -18,3 +18,7 @@ export {
   functionalTemplateExamples,
   getFunctionalTemplateExample,
 } from "./examples";
+export {
+  functionalTemplateDslExamples,
+  getFunctionalTemplateDslExample,
+} from "./dsl-examples";
