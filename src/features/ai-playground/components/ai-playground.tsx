@@ -13,8 +13,6 @@ import {
   getMessageText,
 } from "../lib/messages";
 import { JsonInspector } from "./json-inspector";
-import { SinglePageAgentInspector } from "./single-page-agent-inspector";
-import { ToolCallInspector } from "./tool-call-inspector";
 
 const defaultPrompt = "用三句话介绍什么是 AI Agent。";
 const defaultSystemPrompt =
@@ -340,25 +338,6 @@ export function AiPlayground() {
               </pre>
             </div>
           </section>
-        </section>
-
-        <section className="flex flex-col gap-5 border-t border-[#d8dee8] pt-7">
-          <header>
-            <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#436b8f]">
-              Agent Engineering Acceptance
-            </p>
-            <h2 className="mt-1 text-2xl font-semibold text-[#101827]">
-              Day 05–06 UI 验收
-            </h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#64748b]">
-              Day 5 验证模型是否选择正确工具；Day 6 验证 AgentState、PagePlan
-              与 Timeline 事件协议。当前 Timeline 在请求完成后一次性展示。
-            </p>
-          </header>
-          <div className="grid items-start gap-5 xl:grid-cols-2">
-            <ToolCallInspector />
-            <SinglePageAgentInspector />
-          </div>
         </section>
 
         <CoursePlannerPanel />
