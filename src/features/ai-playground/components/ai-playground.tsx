@@ -173,13 +173,13 @@ export function AiPlayground() {
       <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-5 py-8 sm:px-8">
         <header className="flex flex-col gap-2 border-b border-[#d8dee8] pb-5">
           <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#436b8f]">
-            Day 06
+            Day 07
           </p>
           <h1 className="text-3xl font-semibold text-[#101827]">
             AI Course Generator
           </h1>
           <p className="text-sm text-[#64748b]">
-            Day 01–06 可运行验收台
+            Day 01–07 工程训练台
           </p>
         </header>
 

@@ -1,0 +1,22 @@
+{
+  "id": "theme-space-adventure",
+  "name": "儿童太空探险",
+  "styleTemplateId": "kids-space-adventure",
+  "visualDirection": "深蓝太空背景搭配明亮行星色，保持大字号、清晰层级和友好的圆角卡片。",
+  "tokens": {
+    "colors": {
+      "primary": "#4F46E5",
+      "accent": "#F59E0B",
+      "background": "#0F172A",
+      "surface": "#1E293B",
+      "text": "#F8FAFC",
+      "mutedText": "#CBD5E1"
+    },
+    "typography": {
+      "headingFont": "Nunito, sans-serif",
+      "bodyFont": "Noto Sans SC, sans-serif"
+    },
+    "density": "comfortable",
+    "radius": "1rem"
+  }
+}

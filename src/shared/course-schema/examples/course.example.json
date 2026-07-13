@@ -1,0 +1,153 @@
+{
+  "id": "course-solar-system",
+  "version": 1,
+  "title": "儿童太阳系探险课",
+  "goal": "帮助 8 岁儿童认识太阳系八颗行星，并能通过问答识别它们的典型特征。",
+  "audience": {
+    "description": "对太空感兴趣、具备基础阅读能力的儿童。",
+    "ageRange": {
+      "min": 7,
+      "max": 9,
+      "label": "7-9 岁"
+    },
+    "priorKnowledge": ["知道地球是一颗行星"],
+    "accessibilityNeeds": ["关键图片提供替代文本", "交互按钮具备清晰文字标签"]
+  },
+  "difficulty": "beginner",
+  "language": "zh-CN",
+  "status": "generating",
+  "outline": {
+    "overview": "通过导入、知识讲解和互动问答，帮助儿童建立太阳系的基础认知。",
+    "learningObjectives": [
+      "学习者能够按顺序说出太阳系八颗行星。",
+      "学习者能够通过互动问答区分行星的典型特征。"
+    ],
+    "pages": [
+      {
+        "id": "page-cover",
+        "order": 1,
+        "pageType": "cover",
+        "title": "太阳系探险启程",
+        "learningObjective": "学习者能够说出本课程将探索太阳系中的哪些核心内容。",
+        "contentSummary": "用太阳系主视觉、课程目标和开始按钮建立学习期待。",
+        "functionalTemplateId": "course-cover",
+        "styleTemplateId": "kids-space-adventure",
+        "assetIds": ["asset-solar-system-hero"],
+        "dependsOnPageIds": [],
+        "status": "ready",
+        "htmlOutput": {
+          "html": "<main><h1>太阳系探险启程</h1><button>开始探索</button></main>",
+          "generatedAt": "2026-07-13T08:00:00+08:00",
+          "version": 1
+        }
+      },
+      {
+        "id": "page-planets",
+        "order": 2,
+        "pageType": "knowledge_card",
+        "title": "认识八颗行星",
+        "learningObjective": "学习者能够按距离太阳由近到远排列八颗行星。",
+        "contentSummary": "用可浏览的知识卡介绍行星顺序和一个典型特征。",
+        "functionalTemplateId": "knowledge-card-grid",
+        "styleTemplateId": "kids-space-adventure",
+        "assetIds": [],
+        "dependsOnPageIds": ["page-cover"],
+        "status": "planned"
+      },
+      {
+        "id": "page-quiz",
+        "order": 3,
+        "pageType": "quiz",
+        "title": "行星挑战赛",
+        "learningObjective": "学习者能够在四道选择题中正确识别行星名称和特征。",
+        "contentSummary": "通过即时反馈的选择题检查行星顺序和特征理解。",
+        "functionalTemplateId": "interactive-quiz",
+        "styleTemplateId": "kids-space-adventure",
+        "assetIds": [],
+        "dependsOnPageIds": ["page-planets"],
+        "status": "planned"
+      }
+    ]
+  },
+  "theme": {
+    "id": "theme-space-adventure",
+    "name": "儿童太空探险",
+    "styleTemplateId": "kids-space-adventure",
+    "visualDirection": "深蓝太空背景搭配明亮行星色，保持大字号、清晰层级和友好的圆角卡片。",
+    "tokens": {
+      "colors": {
+        "primary": "#4F46E5",
+        "accent": "#F59E0B",
+        "background": "#0F172A",
+        "surface": "#1E293B",
+        "text": "#F8FAFC",
+        "mutedText": "#CBD5E1"
+      },
+      "typography": {
+        "headingFont": "Nunito, sans-serif",
+        "bodyFont": "Noto Sans SC, sans-serif"
+      },
+      "density": "comfortable",
+      "radius": "1rem"
+    }
+  },
+  "assets": [
+    {
+      "id": "asset-solar-system-hero",
+      "type": "illustration",
+      "role": "hero",
+      "source": "generated",
+      "status": "ready",
+      "uri": "/assets/courses/solar-system/hero.webp",
+      "altText": "太阳和八颗行星沿轨道排列的儿童科普插画",
+      "generationPrompt": "儿童科普风格的太阳系全景插画，深蓝背景，行星清晰可辨",
+      "mimeType": "image/webp",
+      "dimensions": {
+        "width": 1600,
+        "height": 900
+      },
+      "usedByPageIds": ["page-cover"]
+    }
+  ],
+  "qualityReports": [
+    {
+      "id": "quality-course-solar-system-v1",
+      "target": {
+        "type": "course",
+        "courseId": "course-solar-system"
+      },
+      "overallScore": 91,
+      "dimensions": {
+        "contentAccuracy": {
+          "score": 94,
+          "summary": "行星顺序和基础知识准确，表达适合儿童。"
+        },
+        "layoutQuality": {
+          "score": 90,
+          "summary": "标题、正文和互动区域层级清晰。"
+        },
+        "courseCoherence": {
+          "score": 92,
+          "summary": "页面按导入、讲解、练习的学习路径排列。"
+        },
+        "styleConsistency": {
+          "score": 88,
+          "summary": "共享主题稳定，个别页面的卡片间距仍可统一。"
+        }
+      },
+      "issues": [
+        {
+          "code": "STYLE_SPACING_DRIFT",
+          "severity": "warning",
+          "message": "互动问答页的卡片间距与知识卡页不一致。",
+          "suggestion": "统一使用 Theme.tokens 对应的舒适密度间距。",
+          "pageId": "page-quiz"
+        }
+      ],
+      "decision": "pass",
+      "createdAt": "2026-07-13T08:30:00+08:00"
+    }
+  ],
+  "createdAt": "2026-07-13T07:30:00+08:00",
+  "updatedAt": "2026-07-13T08:30:00+08:00"
+}

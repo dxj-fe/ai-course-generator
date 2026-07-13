@@ -4,9 +4,9 @@ source_doc: `.agentdocs/prd/AI_Agent_Frontend_Training_Handbook_V5.docx`
 timezone: `Asia/Shanghai`
 daily_run_time: `09:30`
 start_date: `2026-07-09`
-last_delivered_day: `6`
+last_delivered_day: `7`
 last_delivered_date: `2026-07-13`
-next_training_day: `7`
+next_training_day: `8`
 
 ## Notes
 
@@ -18,3 +18,4 @@ next_training_day: `7`
 - 2026-07-13: Delivered Day 4 plan for Prompt Engineering contracts, versioning, loading, review, and Intent Agent bad cases.
 - 2026-07-13: Delivered Day 5 plan for Tool Calling, Skill Registry, template search skills, validation, and tool-call observability.
 - 2026-07-13: Delivered Day 6 plan for a handwritten Agent Loop, serializable state, AgentEvent timeline data, and structured SinglePageAgent output.
+- 2026-07-13: Delivered and implemented Day 7 course domain modeling with shared Course, CourseOutline, PagePlan, Asset, Theme, and QualityReport schemas, validated examples, cross-entity checks, and schema documentation.

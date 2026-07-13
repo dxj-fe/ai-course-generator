@@ -1,0 +1,16 @@
+{
+  "id": "asset-solar-system-hero",
+  "type": "illustration",
+  "role": "hero",
+  "source": "generated",
+  "status": "ready",
+  "uri": "/assets/courses/solar-system/hero.webp",
+  "altText": "太阳和八颗行星沿轨道排列的儿童科普插画",
+  "generationPrompt": "儿童科普风格的太阳系全景插画，深蓝背景，行星清晰可辨",
+  "mimeType": "image/webp",
+  "dimensions": {
+    "width": 1600,
+    "height": 900
+  },
+  "usedByPageIds": ["page-cover"]
+}

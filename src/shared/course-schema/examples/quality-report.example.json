@@ -1,0 +1,37 @@
+{
+  "id": "quality-course-solar-system-v1",
+  "target": {
+    "type": "course",
+    "courseId": "course-solar-system"
+  },
+  "overallScore": 91,
+  "dimensions": {
+    "contentAccuracy": {
+      "score": 94,
+      "summary": "行星顺序和基础知识准确，表达适合儿童。"
+    },
+    "layoutQuality": {
+      "score": 90,
+      "summary": "标题、正文和互动区域层级清晰。"
+    },
+    "courseCoherence": {
+      "score": 92,
+      "summary": "页面按导入、讲解、练习的学习路径排列。"
+    },
+    "styleConsistency": {
+      "score": 88,
+      "summary": "共享主题稳定，个别页面的卡片间距仍可统一。"
+    }
+  },
+  "issues": [
+    {
+      "code": "STYLE_SPACING_DRIFT",
+      "severity": "warning",
+      "message": "互动问答页的卡片间距与知识卡页不一致。",
+      "suggestion": "统一使用 Theme.tokens 对应的舒适密度间距。",
+      "pageId": "page-quiz"
+    }
+  ],
+  "decision": "pass",
+  "createdAt": "2026-07-13T08:30:00+08:00"
+}

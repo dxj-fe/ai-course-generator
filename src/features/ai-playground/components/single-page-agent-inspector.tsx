@@ -2,6 +2,8 @@
 
 import { FormEvent, useState } from "react";
 
+import type { PagePlanDraft } from "@/shared/course-schema";
+
 import { getErrorText } from "../lib/messages";
 
 type AgentEvent = {
@@ -11,15 +13,6 @@ type AgentEvent = {
   timestamp: string;
   step: number;
   summary: string;
-};
-
-type PagePlan = {
-  title: string;
-  learningObjective: string;
-  sections: Array<{ title: string; purpose: string }>;
-  functionalTemplateId?: string;
-  styleTemplateId?: string;
-  visualDirection: string;
 };
 
 type SinglePageAgentResponse = {
@@ -35,7 +28,7 @@ type SinglePageAgentResponse = {
       templateName: string;
       reason: string;
     };
-    pagePlan?: PagePlan;
+    pagePlan?: PagePlanDraft;
     error?: { code: string; message: string };
   };
 };
@@ -303,7 +296,7 @@ function AgentTimeline({ events }: { events: AgentEvent[] }) {
   );
 }
 
-function PagePlanCard({ pagePlan }: { pagePlan: PagePlan }) {
+function PagePlanCard({ pagePlan }: { pagePlan: PagePlanDraft }) {
   return (
     <div className="rounded-lg border border-[#ddd6fe] bg-[#faf8ff] p-4">
       <p className="text-xs font-semibold uppercase tracking-wide text-[#7c3aed]">

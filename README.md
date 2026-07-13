@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话生成一门由多页关联 HTML 组成的课程。当前 Day 06 版本新增不依赖 LangGraph 的最小 Agent Loop，通过可序列化状态和事件生成结构化单页计划。
+一句话生成一门由多页关联 HTML 组成的课程。当前 Day 07 版本建立完整课程领域模型，为后续多页课程 Agent 提供稳定、可校验的共享数据协议。
 
 ## Day 01 交付
 
@@ -50,6 +50,15 @@
 - AgentState 包含步骤预算、模板选择、PagePlan、事件和可序列化错误。
 - 新增 `POST /api/agents/single-page`，返回最终状态与 Timeline 事件数组。
 - Day 06 面试复盘见 `notes/day-06.md`。
+
+## Day 07 交付
+
+- 新增 `Course`、`CourseOutline`、`PagePlan`、`Asset`、`Theme` 和 `QualityReport` Zod Schema。
+- `pageType` 明确覆盖封面、故事导入、知识卡、问答、对比、时间线、总结和成就页。
+- 核心 Schema 与 TypeScript 类型从 `src/shared/course-schema` 统一导出，前后端共享。
+- 为每个核心 Schema 提供受测试保护的 example JSON。
+- Course 聚合校验页面顺序与依赖、素材引用和质量报告目标。
+- 字段设计与 DSL 边界说明见 `docs/schema.md`，面试复盘见 `notes/day-07.md`。
 
 ## 启动
 
