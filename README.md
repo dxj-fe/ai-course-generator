@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话生成一门由多页关联 HTML 组成的课程。当前 Day 07 版本建立完整课程领域模型，为后续多页课程 Agent 提供稳定、可校验的共享数据协议。
+一句话生成一门由多页关联 HTML 组成的课程。当前 Day 08 版本在课程领域模型之上新增功能模板系统，让页面先确定教学任务和结构槽位，再生成具体内容。
 
 ## Day 01 交付
 
@@ -59,6 +59,15 @@
 - 为每个核心 Schema 提供受测试保护的 example JSON。
 - Course 聚合校验页面顺序与依赖、素材引用和质量报告目标。
 - 字段设计与 DSL 边界说明见 `docs/schema.md`，面试复盘见 `notes/day-07.md`。
+
+## Day 08 交付
+
+- 新增共享 `FunctionalTemplateSchema`、五种教学槽位和 Functional Template Registry。
+- 实现封面、故事导入、知识卡、对比、时间线、选择题、任务成就和总结 8 个模板。
+- 每个 Day 07 `pageType` 都有对应模板和通过 `PagePlanSchema` 的 mock。
+- Day 05 `searchFunctionalTemplateSkill` 改为查询共享 Registry，并返回候选、分数和匹配理由。
+- 新增 `/templates` TemplateGallery，前端可查看槽位、适用场景、约束和 PagePlan 示例。
+- 设计说明见 `docs/templates-functional.md`，面试复盘见 `notes/day-08.md`。
 
 ## 启动
 

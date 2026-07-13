@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { CourseIntentSchema } from "@/shared/course-schema";
+import { CourseIntentSchema, PageTypeSchema } from "@/shared/course-schema";
+import { searchFunctionalTemplates } from "@/shared/templates/functional";
 
 import type { Skill } from "./types";
 
@@ -25,6 +26,8 @@ const TemplateMatchSchema = z.object({
   description: z.string(),
   tags: z.array(z.string()),
   reason: z.string(),
+  pageType: PageTypeSchema.optional(),
+  score: z.number().min(0).optional(),
 });
 
 const TemplateSearchOutputSchema = z.object({
@@ -53,7 +56,7 @@ export type ValidateCourseIntentOutput = z.infer<
   typeof ValidateCourseIntentOutputSchema
 >;
 
-type TemplateDefinition = {
+type StyleTemplateDefinition = {
   id: string;
   name: string;
   description: string;
@@ -61,45 +64,7 @@ type TemplateDefinition = {
   keywords: string[];
 };
 
-const functionalTemplates: TemplateDefinition[] = [
-  {
-    id: "concept-intro",
-    name: "概念导入",
-    description: "通过问题、现象或生活场景引出一个新概念。",
-    tags: ["开场", "概念", "启发"],
-    keywords: ["导入", "开场", "概念", "引出", "是什么"],
-  },
-  {
-    id: "step-by-step",
-    name: "分步讲解",
-    description: "把复杂知识拆成连续步骤，并为每一步提供解释。",
-    tags: ["步骤", "过程", "讲解"],
-    keywords: ["步骤", "过程", "讲解", "推导", "怎么做"],
-  },
-  {
-    id: "interactive-quiz",
-    name: "互动问答",
-    description: "使用选择、判断或即时反馈检查学习者理解。",
-    tags: ["互动", "问答", "练习"],
-    keywords: ["互动", "问答", "选择", "判断", "练习", "反馈"],
-  },
-  {
-    id: "story-scenario",
-    name: "故事情境",
-    description: "用角色、任务和情节承载知识内容。",
-    tags: ["故事", "情境", "任务"],
-    keywords: ["故事", "情境", "角色", "任务", "冒险"],
-  },
-  {
-    id: "recap-summary",
-    name: "总结复习",
-    description: "提炼关键知识并提供回顾或自测提示。",
-    tags: ["总结", "复习", "回顾"],
-    keywords: ["总结", "复习", "回顾", "要点", "自测"],
-  },
-];
-
-const styleTemplates: TemplateDefinition[] = [
+const styleTemplates: StyleTemplateDefinition[] = [
   {
     id: "kids-playful",
     name: "儿童趣味",
@@ -146,7 +111,19 @@ export const searchFunctionalTemplateSkill: Skill<
     "当用户描述页面的教学目的、内容结构或互动方式时，搜索合适的功能模板。不要用它选择颜色、字体或视觉风格。",
   inputSchema: TemplateSearchInputSchema,
   outputSchema: TemplateSearchOutputSchema,
-  execute: (input) => searchTemplates(functionalTemplates, input),
+  execute: (input) => ({
+    templates: searchFunctionalTemplates(input).map(
+      ({ template, reason, score }) => ({
+        id: template.id,
+        name: template.name,
+        description: template.goal,
+        tags: [template.pageType, ...template.keywords.slice(0, 3)],
+        reason,
+        pageType: template.pageType,
+        score,
+      }),
+    ),
+  }),
 };
 
 export const searchStyleTemplateSkill: Skill<
@@ -187,8 +164,9 @@ export const validateCourseIntentSkill: Skill<
   },
 };
 
+/** 为 Day 09 之前的样式模板提供确定性关键词搜索。 */
 function searchTemplates(
-  templates: TemplateDefinition[],
+  templates: StyleTemplateDefinition[],
   input: TemplateSearchInput,
 ): TemplateSearchOutput {
   const text = `${input.query} ${input.audience ?? ""}`.toLowerCase();
@@ -218,6 +196,7 @@ function searchTemplates(
         name: template.name,
         description: template.description,
         tags: template.tags,
+        score: matchedKeywords.length,
         reason:
           matchedKeywords.length > 0
             ? `匹配关键词：${matchedKeywords.join("、")}`
