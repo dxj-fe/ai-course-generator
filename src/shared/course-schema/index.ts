@@ -73,3 +73,45 @@ export {
   type CourseStatus,
 } from "./course";
 export { CoursePlanSchema, type CoursePlan } from "./course-plan";
+export {
+  AgeAdaptationSchema,
+  CognitiveLevelSchema,
+  InteractionCadenceSchema,
+  MisconceptionStrategySchema,
+  PedagogyPageGuidanceSchema,
+  PedagogyPlanSchema,
+  type AgeAdaptation,
+  type CognitiveLevel,
+  type InteractionCadence,
+  type MisconceptionStrategy,
+  type PedagogyPageGuidance,
+  type PedagogyPlan,
+} from "./pedagogy";
+export {
+  NarrativeModeSchema,
+  StoryArcSchema,
+  StoryCharacterSchema,
+  StoryPageBeatSchema,
+  type NarrativeMode,
+  type StoryArc,
+  type StoryCharacter,
+  type StoryPageBeat,
+} from "./story";
+export {
+  VisualAssetDirectionSchema,
+  VisualBriefSchema,
+  VisualMotionIntensitySchema,
+  VisualMotionGuidanceSchema,
+  VisualPageGuidanceSchema,
+  type VisualAssetDirection,
+  type VisualBrief,
+  type VisualMotionIntensity,
+  type VisualMotionGuidance,
+  type VisualPageGuidance,
+} from "./visual";
+export {
+  CourseDesignBriefsSchema,
+  PageWorkerBriefSchema,
+  type CourseDesignBriefs,
+  type PageWorkerBrief,
+} from "./course-design";

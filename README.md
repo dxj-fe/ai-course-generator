@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话生成一门由多页关联 HTML 组成的课程。当前 Day 10 版本新增 Course Planner Agent，把自然语言课程需求转换为带学习节奏和页面依赖的结构化课程大纲。
+一句话生成一门由多页关联 HTML 组成的课程。当前 Day 11 版本在 Course Planner 之后增加教学、故事和视觉三个专业规划节点，为后续 Page Worker 提供稳定的逐页设计上下文。
 
 ## Day 01 交付
 
@@ -90,6 +90,16 @@
 - 首页新增 CourseOutlinePanel、PagePlanList、Agent Timeline 和五个固定测试主题。
 - 设计决策和八道详细面试题见 `notes/day-10.md`。
 
+## Day 11 交付
+
+- 新增 `PedagogyPlanSchema`、`StoryArcSchema`、`VisualBriefSchema` 和逐页 `PageWorkerBriefSchema`。
+- 实现单一职责的 PedagogyAgent、StoryAgent 和 VisualDirectorAgent，并使用独立版本化 Prompt。
+- 新增串行 Course Design Workflow，支持失败短路、公开事件聚合、pageId 对齐和 HTML 越界校验。
+- Visual Director 引用 Day 09 的真实 StyleTemplate，不复制颜色 Token。
+- 新增 `POST /api/courses/design`，消费已完成的 CourseIntent 与 CoursePlan。
+- 首页新增教学、故事、视觉三个 Tab、Professional Agent Timeline 和 Page Worker 交接协议检查器。
+- 实现说明和八道详细面试题见 `notes/day-11.md`。
+
 ## 启动
 
 ```bash
@@ -167,6 +177,14 @@ Course Planner Agent：
 curl -X POST http://localhost:3000/api/courses/plan \
   -H "Content-Type: application/json" \
   -d '{"userPrompt":"为 8 岁儿童设计一门 5 页太阳系入门课，包含互动问答，使用科幻风格。"}'
+```
+
+Day 11 专业设计工作流（`intent` 与 `outline` 使用 Planner 的真实返回值）：
+
+```bash
+curl -X POST http://localhost:3000/api/courses/design \
+  -H "Content-Type: application/json" \
+  -d '{"intent": {"...": "CourseIntent"}, "outline": {"...": "CoursePlan"}}'
 ```
 
 流式接口：

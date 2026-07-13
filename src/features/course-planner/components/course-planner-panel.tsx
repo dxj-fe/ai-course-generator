@@ -5,6 +5,7 @@ import { FormEvent, useState } from "react";
 import type { CourseIntent, CoursePlan } from "@/shared/course-schema";
 
 import { getErrorText } from "@/features/ai-playground/lib/messages";
+import { CourseDesignRunner } from "./course-design-runner";
 import { CourseOutlinePanel } from "./course-outline-panel";
 import { PagePlanList } from "./page-plan-list";
 
@@ -171,6 +172,11 @@ export function CoursePlannerPanel() {
             <>
               <CourseOutlinePanel outline={result.state.outline} />
               <PagePlanList pages={result.state.outline.pages} />
+              <CourseDesignRunner
+                intent={result.intent}
+                key={result.traceId}
+                outline={result.state.outline}
+              />
             </>
           ) : null}
           <details className="rounded-lg border border-[#d8dee8] bg-[#f8fafc] p-4">
