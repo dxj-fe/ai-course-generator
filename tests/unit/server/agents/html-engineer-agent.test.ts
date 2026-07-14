@@ -11,6 +11,7 @@ import {
   resolveHtmlEngineerInput,
   validateHtmlEngineerOutput,
 } from "../../../../src/server/agents/html-engineer-agent";
+import type { AssetGenerationResult } from "../../../../src/shared/course-schema";
 
 const input = { content: pageContentDsl, visualBrief };
 
@@ -100,5 +101,62 @@ describe("HtmlEngineerAgent", () => {
         },
       }),
     ).toThrow("VisualBrief 缺少页面");
+  });
+
+  it("requires an auditable marker when an image result uses fallback", () => {
+    const content = {
+      ...pageContentDsl,
+      assetSlots: [
+        {
+          id: "asset-slot-01" as const,
+          type: "image" as const,
+          role: "background" as const,
+          purpose: "课程背景",
+          required: true,
+          altTextGuidance: "柔和的课程背景",
+        },
+      ],
+    };
+    const fallbackResult: AssetGenerationResult = {
+      request: {
+        assetSlotId: "asset-slot-01",
+        assetType: "background",
+        usage: "课程背景",
+        prompt: "A calm educational background with an open text-safe area and no words.",
+        transparentBackground: false,
+        safeArea: {
+          position: "left",
+          coveragePercent: 40,
+          description: "为 HTML 标题保留左侧低细节区域。",
+        },
+        aspectRatio: "16:9",
+      },
+      status: "fallback",
+      fallback: {
+        kind: "css-gradient",
+        description: "使用低细节 CSS 渐变背景。",
+      },
+      durationMs: 1,
+      errorCode: "IMAGE_GENERATION_FAILED",
+    };
+    const html = buildValidGeneratedHtml(content).replace(
+      'data-asset-slot-id="asset-slot-01"',
+      'data-asset-slot-id="asset-slot-01" data-asset-fallback="css-gradient"',
+    );
+
+    expect(() =>
+      validateHtmlEngineerOutput(html, {
+        content,
+        visualBrief,
+        assets: [fallbackResult],
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validateHtmlEngineerOutput(buildValidGeneratedHtml(content), {
+        content,
+        visualBrief,
+        assets: [fallbackResult],
+      }),
+    ).toThrow('data-asset-fallback="css-gradient"');
   });
 });

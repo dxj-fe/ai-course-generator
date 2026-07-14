@@ -157,6 +157,7 @@ function buildTimelineSteps(run: SeacaCourseRun): TimelineStep[] {
   const pageIds = [
     ...outlinePages.map(({ id }) => id),
     ...Object.keys(run.pageWrites),
+    ...Object.keys(run.pageAssets),
     ...Object.keys(run.pageHtml),
     ...Object.keys(run.pageQa),
   ].filter((pageId, index, values) => values.indexOf(pageId) === index);
@@ -180,6 +181,7 @@ function buildTimelineSteps(run: SeacaCourseRun): TimelineStep[] {
     ...pageIds.flatMap((pageId) => {
       const page = outlinePages.find(({ id }) => id === pageId);
       const write = run.pageWrites[pageId];
+      const assets = run.pageAssets[pageId];
       const html = run.pageHtml[pageId];
       const qa = run.pageQa[pageId];
       const pageLabel = page
@@ -193,6 +195,13 @@ function buildTimelineSteps(run: SeacaCourseRun): TimelineStep[] {
           status: write?.status ?? "idle",
           summaries: write?.events.map(({ summary }) => summary) ?? [],
           error: write?.error ?? write?.data?.state.error?.message,
+        },
+        {
+          id: `image-assets-${pageId}`,
+          label: `Image Assets · ${pageLabel}`,
+          status: assets?.status ?? "idle",
+          summaries: assets?.events.map(({ summary }) => summary) ?? [],
+          error: assets?.error ?? assets?.data?.state.error?.message,
         },
         {
           id: `html-engineer-${pageId}`,

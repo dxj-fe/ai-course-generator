@@ -1,6 +1,8 @@
 import { getErrorText } from "@/features/ai-playground/lib/messages";
 import type {
   CourseDesignBriefs,
+  AssetGenerationResult,
+  AssetRequest,
   CourseIntent,
   CoursePlan,
   HtmlOutput,
@@ -78,6 +80,17 @@ export type HtmlEngineerResponse = {
   };
 };
 
+export type ImageAssetResponse = {
+  traceId: string;
+  state: {
+    status: "completed" | "failed";
+    events: PublicAgentEvent[];
+    requests?: AssetRequest[];
+    results?: AssetGenerationResult[];
+    error?: { code: string; message: string };
+  };
+};
+
 export type PageQAResponse = {
   traceId: string;
   state: {
@@ -133,11 +146,27 @@ export function generateCoursePageHtml(
   input: {
     content: PageContentDSL;
     visualBrief: CourseDesignBriefs["visual"];
+    assets?: AssetGenerationResult[];
   },
   options?: RequestOptions,
 ) {
   return postPlannerRequest<HtmlEngineerResponse>(
     "/api/pages/generate-html",
+    input,
+    options,
+  );
+}
+
+/** 将 Page DSL 素材槽编译为生图请求，并返回真实图片或可继续的 fallback。 */
+export function generateCoursePageAssets(
+  input: {
+    content: PageContentDSL;
+    visualBrief: CourseDesignBriefs["visual"];
+  },
+  options?: RequestOptions,
+) {
+  return postPlannerRequest<ImageAssetResponse>(
+    "/api/pages/generate-assets",
     input,
     options,
   );
@@ -150,6 +179,7 @@ export function evaluateCoursePage(
     content: PageContentDSL;
     html: string;
     visualBrief: CourseDesignBriefs["visual"];
+    assets?: AssetGenerationResult[];
     courseContext?: {
       learningObjectives: string[];
       previousPage?: PagePlan;

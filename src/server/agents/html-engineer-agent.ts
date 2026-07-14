@@ -5,6 +5,7 @@ import { AiSchemaValidationError } from "@/server/ai/error";
 import { buildHtmlEngineerPrompts } from "@/server/prompts/html-engineer";
 import {
   HtmlOutputSchema,
+  type AssetGenerationResult,
   type HtmlOutput,
   type PageContentDSL,
   type VisualBrief,
@@ -35,6 +36,7 @@ const MAX_GENERATED_HTML_LENGTH = 200_000;
 export type HtmlEngineerInput = {
   content: PageContentDSL;
   visualBrief: VisualBrief;
+  assets?: AssetGenerationResult[];
 };
 
 export type HtmlEngineerResolvedInput = HtmlEngineerInput & {
@@ -171,6 +173,7 @@ export function resolveHtmlEngineerInput(
 
   return {
     ...input,
+    assets: input.assets ?? [],
     functionalTemplate,
     styleTemplate,
     pageGuidance,
@@ -212,6 +215,8 @@ export function validateHtmlEngineerOutput(
     }
   }
 
+  validateAssetReferences(html, input.content, input.assets ?? [], issues);
+
   const visibleText = normalizeVisibleText(html);
   for (const text of collectRequiredContentText(input.content)) {
     if (!visibleText.includes(normalizeText(text))) {
@@ -241,6 +246,7 @@ async function generateHtml(
     styleTemplate: input.styleTemplate,
     visualBrief: input.visualBrief,
     pageGuidance: input.pageGuidance,
+    assets: input.assets ?? [],
   });
   const messages = [
     {
@@ -261,6 +267,67 @@ async function generateHtml(
   });
 
   return result.text;
+}
+
+function validateAssetReferences(
+  html: string,
+  content: PageContentDSL,
+  assets: AssetGenerationResult[],
+  issues: string[],
+) {
+  const slotIds = content.assetSlots.map(({ id }) => id);
+  const resultIds = assets.map(({ request }) => request.assetSlotId);
+
+  if (
+    resultIds.length !== slotIds.length ||
+    new Set(resultIds).size !== resultIds.length ||
+    resultIds.some((id) => !slotIds.includes(id))
+  ) {
+    issues.push("素材生成结果必须无重复地覆盖当前页面全部 assetSlots。");
+    return;
+  }
+
+  for (const result of assets) {
+    const uri = result.asset?.uri;
+    if (result.status === "ready" && (!uri || !html.includes(uri))) {
+      issues.push(`素材槽 ${result.request.assetSlotId} 没有引用已生成素材 URI。`);
+    }
+    if (
+      result.status === "fallback" &&
+      result.fallback &&
+      !hasAttributesOnSameTag(html, {
+        "data-asset-slot-id": result.request.assetSlotId,
+        "data-asset-fallback": result.fallback.kind,
+      })
+    ) {
+      issues.push(
+        `素材槽 ${result.request.assetSlotId} 缺少 data-asset-fallback="${result.fallback.kind}" 标记。`,
+      );
+    }
+  }
+
+  const allowedUris = new Set(
+    assets.flatMap(({ asset }) => (asset?.uri ? [asset.uri] : [])),
+  );
+  const imageSources = [...html.matchAll(/<img\b[^>]*\bsrc\s*=\s*(["'])([^"']+)\1/gi)]
+    .map((match) => match[2])
+    .filter(Boolean);
+  for (const source of imageSources) {
+    if (!allowedUris.has(source)) {
+      issues.push(`图片 src 不在已批准素材清单中：${source}`);
+    }
+  }
+}
+
+function hasAttributesOnSameTag(
+  html: string,
+  attributes: Record<string, string>,
+) {
+  return (html.match(/<[a-z][^>]*>/gi) ?? []).some((tag) =>
+    Object.entries(attributes).every(([attribute, value]) =>
+      hasDataAttribute(tag, attribute, value),
+    ),
+  );
 }
 
 function hasDataAttribute(html: string, attribute: string, value: string) {

@@ -17,6 +17,76 @@ export const AssetRoleSchema = z.enum([
   "decorative",
 ]);
 
+/** ImagePromptAgent 使用的四类生产素材，不与领域层的媒介 type 混用。 */
+export const GeneratedAssetKindSchema = z.enum([
+  "background",
+  "character_sticker",
+  "icon",
+  "texture",
+]);
+
+export const AssetAspectRatioSchema = z.enum(["1:1", "4:3", "3:4", "16:9"]);
+
+export const AssetSafeAreaSchema = z
+  .object({
+    position: z.enum(["left", "right", "top", "bottom", "center", "none"]),
+    coveragePercent: z.number().int().min(0).max(80),
+    description: z.string().min(2).max(240),
+  })
+  .strict();
+
+/** 从一个 DSL assetSlot 编译出的可执行生图请求。 */
+export const AssetRequestSchema = z
+  .object({
+    assetSlotId: z.string().regex(/^asset-slot-[0-9]{2}$/),
+    assetType: GeneratedAssetKindSchema,
+    usage: z.string().min(2).max(300),
+    prompt: z.string().min(20).max(1_800),
+    transparentBackground: z.boolean(),
+    safeArea: AssetSafeAreaSchema,
+    aspectRatio: AssetAspectRatioSchema,
+  })
+  .strict()
+  .superRefine((request, context) => {
+    if (
+      ["character_sticker", "icon"].includes(request.assetType) &&
+      !request.transparentBackground
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "角色贴纸和图标必须请求透明背景",
+        path: ["transparentBackground"],
+      });
+    }
+
+    if (
+      request.assetType === "background" &&
+      request.safeArea.position === "none"
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "背景素材必须声明 HTML 文本安全区",
+        path: ["safeArea", "position"],
+      });
+    }
+  });
+
+export const AssetFallbackSchema = z
+  .object({
+    kind: z.enum([
+      "css-gradient",
+      "css-texture",
+      "inline-svg",
+      "placeholder",
+    ]),
+    description: z.string().min(2).max(300),
+  })
+  .strict();
+
+export const AssetGenerationWarningSchema = z.enum([
+  "TRANSPARENCY_UNAVAILABLE",
+]);
+
 /**
  * 可被多个页面复用的视觉素材协议。
  * 页面只保存 assetId，素材地址和生成元数据由这里集中管理。
@@ -30,7 +100,7 @@ export const AssetSchema = z
     status: AssetStatusSchema,
     uri: z.string().min(1).max(2_000).optional(),
     altText: z.string().max(300).optional(),
-    generationPrompt: z.string().min(1).max(1_000).optional(),
+    generationPrompt: z.string().min(1).max(1_800).optional(),
     mimeType: z.string().min(1).max(100).optional(),
     dimensions: z
       .object({
@@ -82,8 +152,66 @@ export const AssetSchema = z
     }
   });
 
+/** 生图 Skill 的业务结果；provider 失败通过 fallback 返回，不阻塞 HTML。 */
+export const AssetGenerationResultSchema = z
+  .object({
+    request: AssetRequestSchema,
+    status: z.enum(["ready", "fallback"]),
+    asset: AssetSchema.optional(),
+    fallback: AssetFallbackSchema.optional(),
+    provider: z.string().min(1).max(80).optional(),
+    model: z.string().min(1).max(160).optional(),
+    durationMs: z.number().int().nonnegative(),
+    warnings: z.array(AssetGenerationWarningSchema).max(4).optional(),
+    errorCode: z.string().min(1).max(100).optional(),
+  })
+  .strict()
+  .superRefine((result, context) => {
+    if (result.status === "ready" && !result.asset) {
+      context.addIssue({
+        code: "custom",
+        message: "ready 结果必须包含 Asset",
+        path: ["asset"],
+      });
+    }
+
+    if (result.status === "ready" && result.fallback) {
+      context.addIssue({
+        code: "custom",
+        message: "ready 结果不能同时包含 fallback",
+        path: ["fallback"],
+      });
+    }
+
+    if (result.status === "fallback" && !result.fallback) {
+      context.addIssue({
+        code: "custom",
+        message: "fallback 结果必须包含降级方案",
+        path: ["fallback"],
+      });
+    }
+
+
+    if (result.status === "fallback" && result.asset) {
+      context.addIssue({
+        code: "custom",
+        message: "fallback 结果不能同时包含 Asset",
+        path: ["asset"],
+      });
+    }
+  });
+
 export type AssetType = z.infer<typeof AssetTypeSchema>;
 export type AssetSource = z.infer<typeof AssetSourceSchema>;
 export type AssetStatus = z.infer<typeof AssetStatusSchema>;
 export type AssetRole = z.infer<typeof AssetRoleSchema>;
 export type Asset = z.infer<typeof AssetSchema>;
+export type GeneratedAssetKind = z.infer<typeof GeneratedAssetKindSchema>;
+export type AssetAspectRatio = z.infer<typeof AssetAspectRatioSchema>;
+export type AssetSafeArea = z.infer<typeof AssetSafeAreaSchema>;
+export type AssetRequest = z.infer<typeof AssetRequestSchema>;
+export type AssetFallback = z.infer<typeof AssetFallbackSchema>;
+export type AssetGenerationWarning = z.infer<
+  typeof AssetGenerationWarningSchema
+>;
+export type AssetGenerationResult = z.infer<typeof AssetGenerationResultSchema>;

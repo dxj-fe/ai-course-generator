@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   evaluateCoursePage,
+  generateCoursePageAssets,
   generateCoursePageHtml,
   planCourse,
 } from "../../../src/features/course-planner/lib/course-planner-api";
@@ -107,6 +108,33 @@ describe("course planner API client", () => {
       traceId: "trace-html",
     });
     expect(body).not.toHaveProperty("userPrompt");
+  });
+
+  it("posts one page to the image asset workflow", async () => {
+    const payload = {
+      traceId: "trace-assets",
+      state: { status: "completed", events: [], requests: [], results: [] },
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await generateCoursePageAssets(
+      { content: pageContentDsl, visualBrief },
+      { traceId: "trace-assets" },
+    );
+
+    const [endpoint, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(endpoint).toBe("/api/pages/generate-assets");
+    expect(JSON.parse(String(init.body))).toEqual({
+      content: pageContentDsl,
+      visualBrief,
+      traceId: "trace-assets",
+    });
   });
 
   it("posts the current artifact and neighboring context to Page QA", async () => {

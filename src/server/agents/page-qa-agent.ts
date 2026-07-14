@@ -5,12 +5,14 @@ import { AiSchemaValidationError } from "@/server/ai/error";
 import { buildPageQAPrompts } from "@/server/prompts/page-qa";
 import {
   PageContentDSLSchema,
+  AssetGenerationResultSchema,
   PagePlanSchema,
   QualityDimensionNameSchema,
   QualityDimensionSchema,
   QualitySeveritySchema,
   VisualBriefSchema,
   type PageContentDSL,
+  type AssetGenerationResult,
   type PagePlan,
   type QualityIssue,
   type QualityReport,
@@ -72,6 +74,7 @@ export type PageQAInput = {
   content: PageContentDSL;
   html: string;
   visualBrief: VisualBrief;
+  assets?: AssetGenerationResult[];
   courseContext?: PageQACourseContext;
 };
 
@@ -101,6 +104,7 @@ export function createPageQAAgent(
       const heuristicIssues = basicLayoutHeuristics({
         content: state.task.content,
         html: state.task.html,
+        assets: state.task.assets,
       });
 
       emit({
@@ -171,6 +175,7 @@ export function validatePageQAInput(input: PageQAInput) {
       content: PageContentDSLSchema,
       html: z.string().min(1).max(200_000),
       visualBrief: VisualBriefSchema,
+      assets: z.array(AssetGenerationResultSchema).max(12).optional(),
     })
     .safeParse(input);
   const issues: string[] = [];
@@ -256,6 +261,7 @@ async function evaluate(
     visualBrief: input.visualBrief,
     courseContext: input.courseContext,
     heuristicIssues: input.heuristicIssues,
+    assets: input.assets ?? [],
   });
 
   return generateStructuredObjectSafe({

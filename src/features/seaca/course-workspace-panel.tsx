@@ -6,6 +6,7 @@ import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { HtmlPreviewFrame } from "@/features/seaca/html-preview-frame";
+import { AssetGallery } from "@/features/seaca/asset-gallery";
 import { PageQualityPanel } from "@/features/seaca/page-quality-panel";
 import type { PageContentDSL, PagePlan } from "@/shared/course-schema";
 import type {
@@ -17,6 +18,7 @@ type CourseWorkspacePanelProps = {
   run?: SeacaCourseRun;
   busy?: boolean;
   onGenerateDesign(): void;
+  onGenerateAssets(pageId: string): void;
   onGenerateHtml(pageId: string): void;
   onEvaluatePage(pageId: string): void;
   onGeneratePage(pageId: string): void;
@@ -35,6 +37,7 @@ export function CourseWorkspacePanel({
   run,
   busy = false,
   onGenerateDesign,
+  onGenerateAssets,
   onGenerateHtml,
   onEvaluatePage,
   onGeneratePage,
@@ -164,6 +167,7 @@ export function CourseWorkspacePanel({
                   }
                   key={page.id}
                   onGenerateHtml={() => onGenerateHtml(page.id)}
+                  onGenerateAssets={() => onGenerateAssets(page.id)}
                   onEvaluatePage={() => onEvaluatePage(page.id)}
                   onGenerate={() => onGeneratePage(page.id)}
                   onOpenHtmlPreview={() => onOpenHtmlPreview(page.id)}
@@ -252,6 +256,7 @@ function PageWorkspaceCard({
   canGenerate,
   onGenerate,
   onGenerateHtml,
+  onGenerateAssets,
   onEvaluatePage,
   onOpenHtmlPreview,
 }: {
@@ -260,6 +265,7 @@ function PageWorkspaceCard({
   canGenerate: boolean;
   onGenerate(): void;
   onGenerateHtml(): void;
+  onGenerateAssets(): void;
   onEvaluatePage(): void;
   onOpenHtmlPreview(): void;
 }) {
@@ -307,9 +313,11 @@ function PageWorkspaceCard({
           <PageDslResult
             canGenerateHtml={canGenerate}
             content={content}
+            assetStage={run.pageAssets[page.id]}
             htmlStage={run.pageHtml[page.id]}
             qaStage={run.pageQa[page.id]}
             onGenerateHtml={onGenerateHtml}
+            onGenerateAssets={onGenerateAssets}
             onEvaluatePage={onEvaluatePage}
             onOpenHtmlPreview={onOpenHtmlPreview}
           />
@@ -322,21 +330,31 @@ function PageWorkspaceCard({
 function PageDslResult({
   canGenerateHtml,
   content,
+  assetStage,
   htmlStage,
   qaStage,
   onGenerateHtml,
+  onGenerateAssets,
   onEvaluatePage,
   onOpenHtmlPreview,
 }: {
   canGenerateHtml: boolean;
   content: PageContentDSL;
+  assetStage?: SeacaCourseRun["pageAssets"][string];
   htmlStage?: SeacaCourseRun["pageHtml"][string];
   qaStage?: SeacaCourseRun["pageQa"][string];
   onGenerateHtml(): void;
+  onGenerateAssets(): void;
   onEvaluatePage(): void;
   onOpenHtmlPreview(): void;
 }) {
   const htmlOutput = htmlStage?.data?.state.htmlOutput;
+  const assetResults = assetStage?.data?.state.results;
+  const assetError = assetStage?.error ?? assetStage?.data?.state.error?.message;
+  const assetStatus = assetStage?.status ?? "idle";
+  const assetsReady =
+    content.assetSlots.length === 0 ||
+    (assetStatus === "completed" && Boolean(assetResults));
   const htmlError = htmlStage?.error ?? htmlStage?.data?.state.error?.message;
   const htmlStatus = htmlStage?.status ?? "idle";
   const qaReport = qaStage?.data?.state.report;
@@ -390,6 +408,51 @@ function PageDslResult({
           />
         </dl>
 
+        {content.assetSlots.length > 0 ? (
+          <section
+            aria-labelledby={`page-assets-${content.pageId}`}
+            className="border-t border-[#e6ddd1] pt-4"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h5
+                    className="text-sm font-semibold text-[#4c3e2b]"
+                    id={`page-assets-${content.pageId}`}
+                  >
+                    页面图片素材
+                  </h5>
+                  <StatusBadge status={assetStatus} />
+                </div>
+                <p className="mt-1 text-xs leading-5 text-[#988e80]">
+                  每个槽位独立生图；失败会降级，不会阻塞 HTML。
+                </p>
+              </div>
+              <ActionButton
+                disabled={!canGenerateHtml || assetStatus === "running"}
+                onClick={onGenerateAssets}
+              >
+                {assetStatus === "running"
+                  ? "正在生成素材…"
+                  : assetResults
+                    ? "重新生成素材"
+                    : "生成图片素材"}
+              </ActionButton>
+            </div>
+
+            {assetError ? (
+              <ErrorNotice>{assetError}</ErrorNotice>
+            ) : assetResults ? (
+              <AssetGallery results={assetResults} />
+            ) : (
+              <PendingNotice
+                idleCopy="先生成页面图片素材，再由 HTML Engineer 完成排版。"
+                status={assetStatus}
+              />
+            )}
+          </section>
+        ) : null}
+
         <section
           aria-labelledby={`html-engineer-${content.pageId}`}
           className="border-t border-[#e6ddd1] pt-4"
@@ -421,7 +484,7 @@ function PageDslResult({
                 </Button>
               ) : null}
               <ActionButton
-                disabled={!canGenerateHtml || htmlStatus === "running"}
+                disabled={!canGenerateHtml || !assetsReady || htmlStatus === "running"}
                 onClick={onGenerateHtml}
               >
                 {htmlStatus === "running"
@@ -444,7 +507,11 @@ function PageDslResult({
             </div>
           ) : (
             <PendingNotice
-              idleCopy="Page DSL 已就绪，可以继续生成完整 HTML 页面。"
+              idleCopy={
+                assetsReady
+                  ? "Page DSL 与素材已就绪，可以继续生成完整 HTML 页面。"
+                  : "请先生成当前页面的图片素材。"
+              }
               status={htmlStatus}
             />
           )}

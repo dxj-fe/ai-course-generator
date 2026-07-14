@@ -7,6 +7,7 @@ import {
   createTraceId,
 } from "@/server/ai/error";
 import {
+  AssetGenerationResultSchema,
   PageContentDSLSchema,
   PagePlanSchema,
   VisualBriefSchema,
@@ -19,6 +20,7 @@ const PageQARequestSchema = z.object({
   content: PageContentDSLSchema,
   html: z.string().min(1).max(200_000),
   visualBrief: VisualBriefSchema,
+  assets: z.array(AssetGenerationResultSchema).max(12).default([]),
   courseContext: z
     .object({
       learningObjectives: z.array(z.string().min(2).max(300)).max(20),
@@ -52,6 +54,7 @@ export async function POST(req: Request) {
         content: parsed.data.content,
         html: parsed.data.html,
         visualBrief: parsed.data.visualBrief,
+        assets: parsed.data.assets,
         courseContext: parsed.data.courseContext,
       },
       { abortSignal: req.signal, traceId },

@@ -1,4 +1,5 @@
 import type {
+  AssetGenerationResult,
   PageContentDSL,
   QualityDimensionName,
   QualityIssue,
@@ -12,6 +13,7 @@ import {
 type BasicLayoutHeuristicsInput = {
   content: PageContentDSL;
   html: string;
+  assets?: AssetGenerationResult[];
 };
 
 /**
@@ -20,6 +22,7 @@ type BasicLayoutHeuristicsInput = {
 export function basicLayoutHeuristics({
   content,
   html,
+  assets = [],
 }: BasicLayoutHeuristicsInput): QualityIssue[] {
   const issues: QualityIssue[] = [];
   const add = (
@@ -143,8 +146,86 @@ export function basicLayoutHeuristics({
     }
   });
 
-  for (const slot of content.assetSlots.filter(({ required }) => required)) {
-    if (!hasUsableAssetSlot(html, slot.id)) {
+  const assetResults = new Map(
+    assets.map((result) => [result.request.assetSlotId, result]),
+  );
+  for (const slot of content.assetSlots) {
+    const result = assetResults.get(slot.id);
+    if (!result) {
+      add(
+        "ASSET_RESULT_MISSING",
+        "assetUsability",
+        slot.required ? "error" : "warning",
+        `素材槽位 ${slot.id} 缺少生图结果或降级记录。`,
+        `先为 ${slot.id} 生成素材，或记录明确的 fallback 后再生成 HTML。`,
+        {
+          selector: `[data-asset-slot-id="${slot.id}"]`,
+          description: `素材槽位 ${slot.id}`,
+        },
+      );
+      if (slot.required && !hasUsableAssetSlot(html, slot.id)) {
+        add(
+          "ASSET_REQUIRED_SLOT_EMPTY",
+          "assetUsability",
+          "error",
+          `必需素材槽位 ${slot.id} 没有可识别的图片或矢量内容。`,
+          `为 ${slot.id} 提供与“${slot.purpose}”一致的可用素材。`,
+          {
+            selector: `[data-asset-slot-id="${slot.id}"]`,
+            description: `必需素材槽位 ${slot.id}`,
+          },
+        );
+      }
+      continue;
+    }
+
+    if (result.status === "fallback") {
+      if (
+        result.fallback &&
+        !hasAttributesOnSameTag(html, {
+          "data-asset-slot-id": slot.id,
+          "data-asset-fallback": result.fallback.kind,
+        })
+      ) {
+        add(
+          "ASSET_FALLBACK_NOT_RENDERED",
+          "assetUsability",
+          "error",
+          `素材槽位 ${slot.id} 没有按记录实现 ${result.fallback.kind} 降级。`,
+          "在素材根节点实现降级视觉，并写入匹配的 data-asset-fallback 标记。",
+          {
+            selector: `[data-asset-slot-id="${slot.id}"]`,
+            description: `素材槽位 ${slot.id}`,
+          },
+        );
+      }
+      add(
+        "ASSET_FALLBACK_USED",
+        "assetUsability",
+        "warning",
+        `素材槽位 ${slot.id} 使用 ${result.fallback?.kind ?? "fallback"} 降级。`,
+        "确认降级视觉不遮挡正文；需要更高保真度时可单独重试该素材。",
+        {
+          selector: `[data-asset-slot-id="${slot.id}"]`,
+          description: `素材槽位 ${slot.id}`,
+        },
+      );
+      continue;
+    }
+
+    if (result.asset?.uri && !html.includes(result.asset.uri)) {
+      add(
+        "ASSET_URI_NOT_REFERENCED",
+        "assetUsability",
+        "error",
+        `素材槽位 ${slot.id} 没有引用已生成图片。`,
+        `在 ${slot.id} 节点中使用已批准的内部素材 URI。`,
+        {
+          selector: `[data-asset-slot-id="${slot.id}"]`,
+          description: `素材槽位 ${slot.id}`,
+        },
+      );
+    } else if (slot.required && !hasUsableAssetSlot(html, slot.id)) {
       add(
         "ASSET_REQUIRED_SLOT_EMPTY",
         "assetUsability",
@@ -154,6 +235,20 @@ export function basicLayoutHeuristics({
         {
           selector: `[data-asset-slot-id="${slot.id}"]`,
           description: `必需素材槽位 ${slot.id}`,
+        },
+      );
+    }
+
+    if (result.warnings?.includes("TRANSPARENCY_UNAVAILABLE")) {
+      add(
+        "ASSET_TRANSPARENCY_UNAVAILABLE",
+        "assetUsability",
+        "warning",
+        `素材槽位 ${slot.id} 已生成图片，但供应商没有返回透明通道。`,
+        "把图片放在独立容器中，避免将不透明背景直接叠加在正文或复杂背景上。",
+        {
+          selector: `[data-asset-slot-id="${slot.id}"]`,
+          description: `素材槽位 ${slot.id}`,
         },
       );
     }
@@ -193,6 +288,21 @@ export function basicLayoutHeuristics({
   }
 
   return dedupeIssues(issues);
+}
+
+function hasAttributesOnSameTag(
+  html: string,
+  attributes: Record<string, string>,
+) {
+  return (html.match(/<[a-z][^>]*>/gi) ?? []).some((tag) =>
+    Object.entries(attributes).every(([attribute, value]) => {
+      const escapedValue = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(
+        `\\b${attribute}\\s*=\\s*(["'])${escapedValue}\\1`,
+        "i",
+      ).test(tag);
+    }),
+  );
 }
 
 function normalizeVisibleText(html: string) {

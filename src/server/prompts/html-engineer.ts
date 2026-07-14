@@ -8,7 +8,7 @@ const systemDefinition: PromptTemplateDefinition = {
   version: "1.0.0",
   role: "system",
   inputContract: [
-    "只接收 PageContentDSL、FunctionalTemplate、StyleTemplate 和 VisualBrief 页面指导。",
+    "只接收 PageContentDSL、FunctionalTemplate、StyleTemplate、VisualBrief 页面指导和已校验素材结果。",
   ],
   outputContract: [
     "只返回以 <!doctype html> 开始的完整、自包含、静态 HTML 文档。",
@@ -21,7 +21,7 @@ const userDefinition: PromptTemplateDefinition = {
   version: "1.0.0",
   role: "user",
   inputContract: [
-    "pageContentDslJson、functionalTemplateJson、styleTemplateJson、styleCssText、visualBriefJson 和 pageGuidanceJson 必须来自服务端已校验数据。",
+    "pageContentDslJson、functionalTemplateJson、styleTemplateJson、styleCssText、visualBriefJson、pageGuidanceJson 和 assetsJson 必须来自服务端已校验数据。",
   ],
   outputContract: ["只返回完整 HTML 文档，不返回 Markdown 或解释。"],
   fileName: "html-engineer.user.v1.md",
@@ -34,6 +34,7 @@ export async function buildHtmlEngineerPrompts(input: {
   styleTemplate: Parameters<typeof styleTemplateToCssText>[0];
   visualBrief: unknown;
   pageGuidance: unknown;
+  assets?: unknown;
 }) {
   const [systemTemplate, userTemplate] = await Promise.all([
     loadPromptTemplate(systemDefinition),
@@ -50,6 +51,7 @@ export async function buildHtmlEngineerPrompts(input: {
       styleCssText: styleTemplateToCssText(input.styleTemplate),
       visualBriefJson: JSON.stringify(input.visualBrief),
       pageGuidanceJson: JSON.stringify(input.pageGuidance),
+      assetsJson: JSON.stringify(input.assets ?? []),
     }),
   };
 }

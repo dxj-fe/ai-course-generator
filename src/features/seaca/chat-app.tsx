@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import {
   designCourse,
   evaluateCoursePage,
+  generateCoursePageAssets,
   generateCoursePageHtml,
   planCourse,
   writeCoursePage,
@@ -229,6 +230,7 @@ export function ChatApp({
       planner: { status: "running", events: [] },
       design: { status: "idle", events: [] },
       pageWrites: {},
+      pageAssets: {},
       pageHtml: {},
       pageQa: {},
     };
@@ -367,6 +369,7 @@ export function ChatApp({
               ...conversation.courseRun,
               design: { status: "running", events: [] },
               pageWrites: {},
+              pageAssets: {},
               pageHtml: {},
               pageQa: {},
             }
@@ -470,6 +473,10 @@ export function ChatApp({
                 ...conversation.courseRun.pageWrites,
                 [pageId]: { status: "running", events: [] },
               },
+              pageAssets: {
+                ...conversation.courseRun.pageAssets,
+                [pageId]: { status: "idle", events: [] },
+              },
               pageHtml: {
                 ...conversation.courseRun.pageHtml,
                 [pageId]: { status: "idle", events: [] },
@@ -565,13 +572,135 @@ export function ChatApp({
     }
   };
 
-  const handleGenerateHtml = async (pageId: string) => {
+  const handleGenerateAssets = async (pageId: string) => {
     const conversationId = selectedConversation?.id;
     const run = selectedConversation?.courseRun;
     const content = run?.pageWrites[pageId]?.data?.state.content;
     const visualBrief = run?.design.data?.state.briefs?.visual;
 
     if (!conversationId || !run || !content || !visualBrief || busy) return;
+
+    setBusyConversationId(conversationId);
+    setConversations((current) =>
+      updateConversation(current, conversationId, (conversation) => ({
+        ...conversation,
+        courseRun: conversation.courseRun
+          ? {
+              ...conversation.courseRun,
+              pageAssets: {
+                ...conversation.courseRun.pageAssets,
+                [pageId]: { status: "running", events: [] },
+              },
+              pageHtml: {
+                ...conversation.courseRun.pageHtml,
+                [pageId]: { status: "idle", events: [] },
+              },
+              pageQa: {
+                ...conversation.courseRun.pageQa,
+                [pageId]: { status: "idle", events: [] },
+              },
+            }
+          : conversation.courseRun,
+      })),
+    );
+    const controller = createController();
+
+    try {
+      const result = await generateCoursePageAssets(
+        { content, visualBrief },
+        { signal: controller.signal, traceId: run.traceId },
+      );
+      const completed =
+        result.state.status === "completed" && result.state.results;
+
+      if (!completed) {
+        const message =
+          result.state.error?.message ?? "页面图片素材没有生成有效结果。";
+        setConversations((current) =>
+          updateConversation(current, conversationId, (conversation) => ({
+            ...conversation,
+            courseRun: conversation.courseRun
+              ? {
+                  ...conversation.courseRun,
+                  pageAssets: {
+                    ...conversation.courseRun.pageAssets,
+                    [pageId]: {
+                      status: "failed",
+                      events: result.state.events,
+                      data: result,
+                      error: message,
+                    },
+                  },
+                }
+              : conversation.courseRun,
+          })),
+        );
+        return;
+      }
+
+      setConversations((current) =>
+        updateConversation(current, conversationId, (conversation) => ({
+          ...conversation,
+          courseRun: conversation.courseRun
+            ? {
+                ...conversation.courseRun,
+                pageAssets: {
+                  ...conversation.courseRun.pageAssets,
+                  [pageId]: {
+                    status: "completed",
+                    events: result.state.events,
+                    data: result,
+                  },
+                },
+              }
+            : conversation.courseRun,
+        })),
+      );
+    } catch (error) {
+      const message = getErrorMessage(error, "图片素材生成请求失败。");
+      setConversations((current) =>
+        updateConversation(current, conversationId, (conversation) => ({
+          ...conversation,
+          courseRun: conversation.courseRun
+            ? {
+                ...conversation.courseRun,
+                pageAssets: {
+                  ...conversation.courseRun.pageAssets,
+                  [pageId]: {
+                    ...conversation.courseRun.pageAssets[pageId],
+                    status: "failed",
+                    events:
+                      conversation.courseRun.pageAssets[pageId]?.events ?? [],
+                    error: message,
+                  },
+                },
+              }
+            : conversation.courseRun,
+        })),
+      );
+    } finally {
+      releaseController(controller);
+      setBusyConversationId((current) =>
+        current === conversationId ? null : current,
+      );
+    }
+  };
+
+  const handleGenerateHtml = async (pageId: string) => {
+    const conversationId = selectedConversation?.id;
+    const run = selectedConversation?.courseRun;
+    const content = run?.pageWrites[pageId]?.data?.state.content;
+    const visualBrief = run?.design.data?.state.briefs?.visual;
+    const assets = run?.pageAssets[pageId]?.data?.state.results;
+
+    if (
+      !conversationId ||
+      !run ||
+      !content ||
+      !visualBrief ||
+      (content.assetSlots.length > 0 && !assets) ||
+      busy
+    ) return;
 
     setBusyConversationId(conversationId);
     setConversations((current) =>
@@ -596,7 +725,7 @@ export function ChatApp({
 
     try {
       const result = await generateCoursePageHtml(
-        { content, visualBrief },
+        { content, visualBrief, assets: assets ?? [] },
         { signal: controller.signal, traceId: run.traceId },
       );
       const completed =
@@ -684,6 +813,7 @@ export function ChatApp({
     const content = run?.pageWrites[pageId]?.data?.state.content;
     const html = run?.pageHtml[pageId]?.data?.state.htmlOutput?.html;
     const visualBrief = run?.design.data?.state.briefs?.visual;
+    const assets = run?.pageAssets[pageId]?.data?.state.results ?? [];
 
     if (
       !conversationId ||
@@ -722,6 +852,7 @@ export function ChatApp({
           content,
           html,
           visualBrief,
+          assets,
           courseContext: {
             learningObjectives: outline.learningObjectives,
             previousPage: outline.pages[pageIndex - 1],
@@ -904,6 +1035,7 @@ export function ChatApp({
             <CourseWorkspacePanel
               busy={busy}
               onGenerateDesign={handleGenerateDesign}
+              onGenerateAssets={handleGenerateAssets}
               onGenerateHtml={handleGenerateHtml}
               onEvaluatePage={handleEvaluatePage}
               onGeneratePage={handleGeneratePage}

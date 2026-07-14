@@ -137,6 +137,17 @@
 - 独立预览缓存可携带经过 Schema 校验且指向当前页面的质量报告，并在顶部显示评分状态。
 - 十类固定失败分类、实现边界和详细面试复盘见 `notes/day-15.md`。
 
+## Day 16 交付
+
+- 新增 `AssetRequestSchema` 与 `AssetGenerationResultSchema`，明确素材用途、比例、透明背景、安全区、真实素材和 fallback。
+- 新增 `ImagePromptAgent`，把 Page DSL 素材槽编译为背景、角色贴纸、图标与纹理四类无文字生图请求。
+- 新增真实生图 Skill 和 `POST /api/pages/generate-assets`；服务端校验 PNG/JPEG/WebP 后写入 `.data/generated-assets`，通过随机 ID 路由读取。
+- 方舟模式默认复用现有 `ARK_API_KEY` 调用 `doubao-seedream-4-5-251128`；Seedream 返回 JPEG 时会保留图片并显式标注透明通道警告。
+- 图片服务未配置、调用失败、格式伪造或透明背景不满足时返回 CSS/SVG/占位降级，不阻塞 HTML Engineer。
+- HTML Engineer 只能消费当前页面批准的内部素材 URI；Page QA 会报告素材缺失、未引用和 fallback。
+- Seaca `/chat` 学习工作区增加逐页图片素材状态、公开事件与 AssetGallery，重新生图会失效旧 HTML 与 QA。
+- 素材边界、四类用例和详细面试复盘见 `notes/day-16.md`。
+
 ## 启动
 
 ```bash
@@ -172,6 +183,21 @@ ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 MODEL_API_KEY=your_api_key
 MODEL_BASE_URL=https://your-openai-compatible-endpoint/v1
 MODEL_NAME=your_model_name
+```
+
+真实图片生成默认复用现有 `ARK_API_KEY` 与 `ARK_BASE_URL`，使用 Seedream 4.5。只需在需要切换方舟图片模型时增加：
+
+```env
+ARK_IMAGE_MODEL_ID=doubao-seedream-4-5-251128
+```
+
+如果要使用独立图片供应商，再配置以下覆盖项；所有 key 都只存在服务端，不要暴露给浏览器：
+
+```env
+IMAGE_API_KEY=your_image_api_key
+IMAGE_BASE_URL=https://your-openai-compatible-image-endpoint/v1
+IMAGE_MODEL_ID=your_image_model_id
+IMAGE_PROVIDER_NAME=your_provider_label
 ```
 
 ## API 验收
@@ -232,12 +258,20 @@ curl -X POST http://localhost:3000/api/pages/write \
   -d '{"intent": {"...": "CourseIntent"}, "page": {"...": "PagePlan"}, "brief": {"...": "PageWorkerBrief"}}'
 ```
 
-Day 14 单页 HTML Engineer（使用 Page Writer 与 Visual Director 的真实返回值）：
+Day 16 单页图片素材（使用 Page Writer 与 Visual Director 的真实返回值）：
+
+```bash
+curl -X POST http://localhost:3000/api/pages/generate-assets \
+  -H "Content-Type: application/json" \
+  -d '{"content": {"...": "PageContentDSL"}, "visualBrief": {"...": "VisualBrief"}}'
+```
+
+Day 14/16 单页 HTML Engineer（同时传入素材工作流的 ready/fallback 结果）：
 
 ```bash
 curl -X POST http://localhost:3000/api/pages/generate-html \
   -H "Content-Type: application/json" \
-  -d '{"content": {"...": "PageContentDSL"}, "visualBrief": {"...": "VisualBrief"}}'
+  -d '{"content": {"...": "PageContentDSL"}, "visualBrief": {"...": "VisualBrief"}, "assets": [{"...": "AssetGenerationResult"}]}'
 ```
 
 Day 15 单页 Page QA（使用 Planner、Page Writer、HTML Engineer 与 Visual Director 的真实返回值）：
@@ -245,7 +279,7 @@ Day 15 单页 Page QA（使用 Planner、Page Writer、HTML Engineer 与 Visual 
 ```bash
 curl -X POST http://localhost:3000/api/pages/qa \
   -H "Content-Type: application/json" \
-  -d '{"page": {"...": "PagePlan"}, "content": {"...": "PageContentDSL"}, "html": "<!doctype html>...", "visualBrief": {"...": "VisualBrief"}, "courseContext": {"learningObjectives": ["..."]}}'
+  -d '{"page": {"...": "PagePlan"}, "content": {"...": "PageContentDSL"}, "html": "<!doctype html>...", "visualBrief": {"...": "VisualBrief"}, "assets": [{"...": "AssetGenerationResult"}], "courseContext": {"learningObjectives": ["..."]}}'
 ```
 
 流式接口：

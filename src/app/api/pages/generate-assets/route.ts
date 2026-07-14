@@ -1,47 +1,43 @@
 import { z } from "zod";
 
-import { runHtmlEngineerAgent } from "@/server/agents/html-engineer-agent";
 import {
   AiRequestError,
   createAiErrorResponse,
   createTraceId,
 } from "@/server/ai/error";
+import { runImageAssetWorkflow } from "@/server/workflows/image-asset-workflow";
 import {
-  AssetGenerationResultSchema,
   PageContentDSLSchema,
   VisualBriefSchema,
 } from "@/shared/course-schema";
 
 export const runtime = "nodejs";
 
-const HtmlEngineerRequestSchema = z.object({
+const ImageAssetRequestSchema = z.object({
   content: PageContentDSLSchema,
   visualBrief: VisualBriefSchema,
-  assets: z.array(AssetGenerationResultSchema).max(12).default([]),
   traceId: z.string().trim().min(1).optional(),
 });
 
-/** 将单页 DSL 与服务端模板实现为可安全预览的完整 HTML 文档。 */
+/** 为单页素材槽生成真实图片或可继续 HTML 流程的 fallback。 */
 export async function POST(req: Request) {
   const headerTraceId = req.headers.get("x-trace-id")?.trim() || createTraceId();
 
   try {
-    const parsed = HtmlEngineerRequestSchema.safeParse(await req.json());
-
+    const parsed = ImageAssetRequestSchema.safeParse(await req.json());
     if (!parsed.success) {
       throw new AiRequestError(
-        `请求必须包含有效的 PageContentDSL 和 VisualBrief：${parsed.error.issues
+        `请求必须包含有效的 PageContentDSL 与 VisualBrief：${parsed.error.issues
           .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
           .join("; ")}`,
       );
     }
 
     const traceId = parsed.data.traceId || headerTraceId;
-    const state = await runHtmlEngineerAgent(
+    const state = await runImageAssetWorkflow(
       {
         content: parsed.data.content,
         visualBrief: parsed.data.visualBrief,
-        assets: parsed.data.assets,
       },
       { abortSignal: req.signal, traceId },
     );

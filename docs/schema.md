@@ -70,6 +70,10 @@ Day 06 的 `PagePlanDraftSchema` 继续作为 SinglePageAgent 的中间输出。
 | `dimensions` / `mimeType` | 帮助 HTML 生成器预留空间并选择正确加载方式。 |
 | `usedByPageIds` | 表达一个素材被哪些页面复用。 |
 
+Day 16 在领域 `Asset` 之前增加两层执行协议。`AssetRequest` 由 ImagePromptAgent 从一个真实 `assetSlot` 编译，固定包含 `assetType`、`usage`、`prompt`、`transparentBackground`、`safeArea` 和 `aspectRatio`；背景必须保留 HTML 文本安全区，角色贴纸与图标必须请求透明背景。`AssetGenerationResult` 只允许 `ready + Asset` 或 `fallback + 降级描述`，并保留 provider、model、耗时和稳定错误码。这样下游 HTML Engineer 不需要猜测一次生图失败是否应该终止页面。
+
+四类生产素材保持为 HTML 的配件：背景提供氛围和安全区，角色贴纸辅助解释，图标标记语义，纹理提供低对比装饰。模型 Prompt 明确禁止文字、公式、按钮、卡片、导航和完整 UI；页面标题、正文、互动和响应式布局始终由 HTML 实现。
+
 ## ThemeSchema
 
 `styleTemplateId` 指向样式模板，`visualDirection` 保存人类可读的视觉原则，`tokens` 只约束跨页必须一致的颜色、字体、密度和圆角。Theme 不定义组件树、像素坐标或每个页面的布局，因此不会把 UI 表现锁死。

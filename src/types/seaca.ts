@@ -2,6 +2,7 @@ import type {
   CourseDesignResponse,
   CoursePlannerResponse,
   HtmlEngineerResponse,
+  ImageAssetResponse,
   PageQAResponse,
   PageWriterResponse,
   PublicAgentEvent,
@@ -67,6 +68,7 @@ export interface SeacaCourseRun {
   planner: CourseRunStage<CoursePlannerResponse>;
   design: CourseRunStage<CourseDesignResponse>;
   pageWrites: Record<string, CourseRunStage<PageWriterResponse>>;
+  pageAssets: Record<string, CourseRunStage<ImageAssetResponse>>;
   pageHtml: Record<string, CourseRunStage<HtmlEngineerResponse>>;
   pageQa: Record<string, CourseRunStage<PageQAResponse>>;
 }

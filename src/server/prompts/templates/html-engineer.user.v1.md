@@ -18,4 +18,7 @@ PageContentDSL：
 当前页面 VisualGuidance：
 {{pageGuidanceJson}}
 
+当前页面已校验素材结果（ready 使用唯一 URI；fallback 按描述降级）：
+{{assetsJson}}
+
 只返回以 `<!doctype html>` 开始的完整 HTML，不要返回 Markdown、解释或原始用户 Prompt。
