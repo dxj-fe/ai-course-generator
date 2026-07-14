@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话生成一门由多页关联 HTML 组成的课程。当前 Day 12 版本新增 PageContentDSL 和 PageWriterAgent，把单页规划与专业 brief 转换为可校验、但不锁死 UI 的内容协议。
+一句话生成一门由多页关联 HTML 组成的课程。当前 Day 13 版本在 PageContentDSL 之后增加 HTML 合同、安全预检和 sandboxed iframe，在 Seaca 学习工作区内隔离预览课程页面。
 
 ## Day 01 交付
 
@@ -109,6 +109,14 @@
 - 为八个 FunctionalTemplate 分别提供一份合法 DSL example。
 - 首页新增 PageDSLViewer，可选择任一页面生成并检查 DSL，并明确区分未来 HTML 输出。
 - 边界设计见 `docs/dsl-boundary.md`，实现说明和八道详细面试题见 `notes/day-12.md`。
+
+## Day 13 交付
+
+- 新增完整文档 `GeneratedHtmlContract`，校验 doctype、html/head/body、viewport 和内联 style。
+- 新增 `sanitizeHtmlLite`，拒绝外链脚本、外链 iframe、事件属性、危险 URL、跳转和主动嵌入内容。
+- 新增确定性 Day 13 demo builder，从已校验的 PageContentDSL 生成自包含静态 HTML，不提前实现 HtmlEngineerAgent。
+- Seaca `/chat` 右侧学习工作区使用 `srcDoc` 和空权限 `sandbox` 展示页面，生成 HTML 不进入主应用 DOM。
+- 安全策略见 `docs/html-preview-security.md`，实现说明和详细面试题见 `notes/day-13.md`。
 
 ## 启动
 

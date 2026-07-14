@@ -5,7 +5,9 @@ import type { ReactNode } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { HtmlPreviewFrame } from "@/features/seaca/html-preview-frame";
 import type { PageContentDSL, PagePlan } from "@/shared/course-schema";
+import { buildPagePreviewDemoHtml } from "@/shared/html-preview";
 import type {
   CourseRunStageStatus,
   SeacaCourseRun,
@@ -295,10 +297,12 @@ function PageWorkspaceCard({
 }
 
 function PageDslResult({ content }: { content: PageContentDSL }) {
+  const previewHtml = buildPagePreviewDemoHtml(content);
+
   return (
     <details className="mt-4 rounded-2xl bg-[#f8f3ec] p-4">
       <summary className="cursor-pointer text-sm font-semibold text-[#594a37] marker:text-[#77b95e]">
-        查看已生成的页面内容
+        查看页面内容与安全预览
       </summary>
       <div className="mt-4 grid gap-4">
         {content.narration.length > 0 ? (
@@ -341,6 +345,13 @@ function PageDslResult({ content }: { content: PageContentDSL }) {
             value={content.layoutHints.contentDensity}
           />
         </dl>
+
+        <div className="border-t border-[#e6ddd1] pt-4">
+          <HtmlPreviewFrame
+            html={previewHtml}
+            title={`${content.title} · 课程安全预览`}
+          />
+        </div>
       </div>
     </details>
   );

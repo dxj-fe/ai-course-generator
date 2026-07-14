@@ -47,7 +47,8 @@ const PageWriterInteractionDraftSchema = z.object({
   placeholder: z.string().max(160),
   evaluationCriteria: z.array(z.string().min(2).max(240)).max(6),
   actionLabel: z.string().max(80),
-  destination: z.enum(["next", "previous", "course-home"]),
+  // 对非 navigate 互动这是无意义占位字段，先兼容模型别名，再在适配层收敛。
+  destination: z.string().trim().max(80),
 });
 
 const PageWriterModelOutputSchema = z.object({
@@ -341,6 +342,23 @@ export function normalizePageContentDensity(
     : "balanced";
 }
 
+/** 将模型的导航别名或非导航占位值收敛为稳定协议值。 */
+export function normalizePageNavigationDestination(
+  value: string,
+): Extract<PageContentInteraction, { type: "navigate" }>["destination"] {
+  const normalized = value.trim().toLowerCase().replace(/[\s_-]+/g, "");
+
+  if (normalized === "previous" || normalized === "previouspage") {
+    return "previous";
+  }
+
+  if (normalized === "coursehome" || normalized === "home") {
+    return "course-home";
+  }
+
+  return "next";
+}
+
 /** 将兼容层草稿收敛为带稳定 blockId 的严格内容块。 */
 function normalizeBlocks(items: unknown[]) {
   return items.map((item, index) => {
@@ -384,7 +402,7 @@ function materializeInteraction(
       return {
         type: "navigate",
         actionLabel: usable(draft.actionLabel, "继续"),
-        destination: draft.destination,
+        destination: normalizePageNavigationDestination(draft.destination),
       };
     case "reveal":
       return {

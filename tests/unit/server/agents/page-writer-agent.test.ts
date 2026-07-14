@@ -12,6 +12,7 @@ import {
   createPageWriterAgent,
   createPageWriterAgentState,
   normalizePageContentDensity,
+  normalizePageNavigationDestination,
   validatePageWriterOutput,
 } from "../../../../src/server/agents/page-writer-agent";
 import type { PageWorkerBrief } from "../../../../src/shared/course-schema";
@@ -102,4 +103,17 @@ describe("PageWriterAgent", () => {
       "balanced",
     );
   });
+
+  it.each([
+    ["next", "next"],
+    ["nextPage", "next"],
+    ["previous-page", "previous"],
+    ["home", "course-home"],
+    ["unused choice placeholder", "next"],
+  ] as const)(
+    "normalizes model navigation placeholder %s to %s",
+    (modelValue, expected) => {
+      expect(normalizePageNavigationDestination(modelValue)).toBe(expected);
+    },
+  );
 });

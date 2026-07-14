@@ -20,6 +20,7 @@ The Seaca interface is the product shell. Training-day features extend its behav
 - Days 1–6: model calls, tool calls, and Agent events feed the `/chat` controller and public event timeline.
 - Days 7–12: `CourseIntent`, `CoursePlan`, professional briefs, and `PageContentDSL` render in the learning workspace.
 - Days 13–18: sandboxed HTML previews, assets, and multi-page results extend the learning workspace; generated HTML stays outside long-lived React UI state when persistence is available.
+- Day 13 (implemented): each completed Page DSL derives a deterministic demo document, passes the shared HTML contract and lightweight security preflight, then renders through an empty-policy `sandbox` iframe inside the `/chat` learning workspace. Day 14 will replace only the demo builder with HtmlEngineerAgent output; the workspace and security boundary stay unchanged.
 - Days 19–20: SSE replaces the Planner client's batch transport. Existing appendable event views remain unchanged.
 - Days 21–31: Supervisor, Page Worker, QA, Repair, and LangGraph events add typed timeline rows and page-level progress; the frontend never consumes framework-native chunks directly.
 - Days 32–33: uploads and reference/template retrieval use composer attachments and workspace reference panels.
