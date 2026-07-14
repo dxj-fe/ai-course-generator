@@ -158,6 +158,7 @@ function buildTimelineSteps(run: SeacaCourseRun): TimelineStep[] {
     ...outlinePages.map(({ id }) => id),
     ...Object.keys(run.pageWrites),
     ...Object.keys(run.pageHtml),
+    ...Object.keys(run.pageQa),
   ].filter((pageId, index, values) => values.indexOf(pageId) === index);
 
   return [
@@ -180,6 +181,7 @@ function buildTimelineSteps(run: SeacaCourseRun): TimelineStep[] {
       const page = outlinePages.find(({ id }) => id === pageId);
       const write = run.pageWrites[pageId];
       const html = run.pageHtml[pageId];
+      const qa = run.pageQa[pageId];
       const pageLabel = page
         ? `第 ${page.order} 页 · ${page.title}`
         : `页面 ${pageId}`;
@@ -198,6 +200,13 @@ function buildTimelineSteps(run: SeacaCourseRun): TimelineStep[] {
           status: html?.status ?? "idle",
           summaries: html?.events.map(({ summary }) => summary) ?? [],
           error: html?.error ?? html?.data?.state.error?.message,
+        },
+        {
+          id: `page-qa-${pageId}`,
+          label: `Page QA · ${pageLabel}`,
+          status: qa?.status ?? "idle",
+          summaries: qa?.events.map(({ summary }) => summary) ?? [],
+          error: qa?.error ?? qa?.data?.state.error?.message,
         },
       ] satisfies TimelineStep[];
     }),

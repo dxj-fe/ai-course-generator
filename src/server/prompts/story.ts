@@ -3,7 +3,7 @@ import type { PromptTemplateDefinition } from "./types";
 
 const systemDefinition: PromptTemplateDefinition = {
   name: "story-system",
-  version: "1.0.0",
+  version: "1.0.1",
   role: "system",
   inputContract: ["接收 CourseIntent、CoursePlan 和 PedagogyPlan。"],
   outputContract: ["只返回 StoryArc 内容草稿 JSON。"],

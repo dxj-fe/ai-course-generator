@@ -53,12 +53,16 @@ export {
 export {
   QualityDecisionSchema,
   QualityDimensionSchema,
+  QualityDimensionNameSchema,
   QualityIssueSchema,
+  QualityIssueLocationSchema,
   QualityReportSchema,
   QualitySeveritySchema,
   type QualityDecision,
   type QualityDimension,
+  type QualityDimensionName,
   type QualityIssue,
+  type QualityIssueLocation,
   type QualityReport,
   type QualitySeverity,
 } from "./quality";

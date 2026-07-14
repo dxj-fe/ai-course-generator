@@ -72,9 +72,22 @@ export function CoursePreviewPage({ previewId }: { previewId: string }) {
           </span>
         </div>
 
-        <span className="shrink-0 rounded-full bg-[#eff7e9] px-3 py-2 text-xs font-semibold text-[#5d9845]">
-          草稿
-        </span>
+        {preview?.qualityReport ? (
+          <span
+            className={`shrink-0 rounded-full px-3 py-2 text-xs font-semibold ${
+              preview.qualityReport.shouldRepair
+                ? "bg-[#fff0eb] text-[#a44f3d]"
+                : "bg-[#eff7e9] text-[#5d9845]"
+            }`}
+          >
+            质量 {preview.qualityReport.overallScore} ·{" "}
+            {preview.qualityReport.shouldRepair ? "待修复" : "已通过"}
+          </span>
+        ) : (
+          <span className="shrink-0 rounded-full bg-[#eff7e9] px-3 py-2 text-xs font-semibold text-[#5d9845]">
+            草稿
+          </span>
+        )}
       </header>
 
       <section className="flex min-h-0 flex-1 items-center justify-center p-3 sm:p-6 lg:p-8">

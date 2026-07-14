@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  evaluateCoursePage,
   generateCoursePageHtml,
   planCourse,
 } from "../../../src/features/course-planner/lib/course-planner-api";
 import {
+  courseDesignOutline,
   pageContentDsl,
   visualBrief,
 } from "../../fixtures/course-design";
@@ -103,6 +105,46 @@ describe("course planner API client", () => {
       content: pageContentDsl,
       visualBrief,
       traceId: "trace-html",
+    });
+    expect(body).not.toHaveProperty("userPrompt");
+  });
+
+  it("posts the current artifact and neighboring context to Page QA", async () => {
+    const payload = {
+      traceId: "trace-qa",
+      state: { status: "completed", events: [], report: {} },
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await evaluateCoursePage(
+      {
+        page: courseDesignOutline.pages[1]!,
+        content: pageContentDsl,
+        html: "<!doctype html><html></html>",
+        visualBrief,
+        courseContext: {
+          learningObjectives: courseDesignOutline.learningObjectives,
+          previousPage: courseDesignOutline.pages[0],
+          nextPage: courseDesignOutline.pages[2],
+        },
+      },
+      { traceId: "trace-qa" },
+    );
+
+    const [endpoint, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(endpoint).toBe("/api/pages/qa");
+    expect(body).toMatchObject({
+      page: courseDesignOutline.pages[1],
+      content: pageContentDsl,
+      visualBrief,
+      traceId: "trace-qa",
     });
     expect(body).not.toHaveProperty("userPrompt");
   });

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import qualityReportExample from "../../../src/shared/course-schema/examples/quality-report.example.json";
+import { QualityReportSchema } from "../../../src/shared/course-schema";
 import { pageContentDsl } from "../../fixtures/course-design";
 import { buildValidGeneratedHtml } from "../../fixtures/generated-html";
 import {
@@ -77,5 +79,32 @@ describe("generated HTML preview cache", () => {
 
     expect(loadGeneratedHtmlPreview(saved.id, storage)).toBeUndefined();
     expect(storage.values.has(key)).toBe(false);
+  });
+
+  it("stores only a validated quality report for the same page", () => {
+    const storage = createStorage();
+    const qualityReport = QualityReportSchema.parse({
+      ...qualityReportExample,
+      id: "quality-page-02",
+      target: { type: "page", pageId: pageContentDsl.pageId },
+      issues: qualityReportExample.issues.map((issue) => ({
+        ...issue,
+        location: { ...issue.location, pageId: pageContentDsl.pageId },
+      })),
+    });
+    const saved = saveGeneratedHtmlPreview(
+      {
+        html: buildValidGeneratedHtml(pageContentDsl),
+        pageId: pageContentDsl.pageId,
+        qualityReport,
+        title: pageContentDsl.title,
+      },
+      storage,
+    );
+
+    expect(saved.version).toBe(2);
+    expect(loadGeneratedHtmlPreview(saved.id, storage)?.qualityReport).toEqual(
+      qualityReport,
+    );
   });
 });

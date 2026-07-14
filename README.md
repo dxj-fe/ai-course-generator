@@ -127,6 +127,16 @@
 - 新增 `/preview/[previewId]` 独立预览路由；HTML 通过随机 ID 存入重新校验的浏览器临时缓存，不进入 URL。
 - 同一 DSL 的 sci-fi、kids-playful、minimal 三风格用例和详细面试复盘见 `notes/day-14.md`。
 
+## Day 15 交付
+
+- 在现有 `QualityReportSchema` 上增加六维评分、结构化问题位置、证据来源、`repairHint` 与确定性 `shouldRepair`。
+- 新增 `basicLayoutHeuristics`，检查 HTML 合同、安全、文本过载、固定宽度、裁切风险、低对比度和素材可用性。
+- 新增只读 `PageQAAgent`、版本化 Prompt 和 `POST /api/pages/qa`，语义模型不会修改 HTML。
+- 总分采用 30/22/17/13/10/8 权重，error 和关键低分通过程序硬门槛触发修复。
+- Seaca `/chat` 增加逐页 QA 状态、公开事件、六维评分和可执行问题列表；重新生成上游产物时旧报告自动失效。
+- 独立预览缓存可携带经过 Schema 校验且指向当前页面的质量报告，并在顶部显示评分状态。
+- 十类固定失败分类、实现边界和详细面试复盘见 `notes/day-15.md`。
+
 ## 启动
 
 ```bash
@@ -228,6 +238,14 @@ Day 14 单页 HTML Engineer（使用 Page Writer 与 Visual Director 的真实�
 curl -X POST http://localhost:3000/api/pages/generate-html \
   -H "Content-Type: application/json" \
   -d '{"content": {"...": "PageContentDSL"}, "visualBrief": {"...": "VisualBrief"}}'
+```
+
+Day 15 单页 Page QA（使用 Planner、Page Writer、HTML Engineer 与 Visual Director 的真实返回值）：
+
+```bash
+curl -X POST http://localhost:3000/api/pages/qa \
+  -H "Content-Type: application/json" \
+  -d '{"page": {"...": "PagePlan"}, "content": {"...": "PageContentDSL"}, "html": "<!doctype html>...", "visualBrief": {"...": "VisualBrief"}, "courseContext": {"learningObjectives": ["..."]}}'
 ```
 
 流式接口：

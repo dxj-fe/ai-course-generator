@@ -152,27 +152,43 @@ async function generateArc(input: {
 
   return StoryArcSchema.parse({
     ...draft,
-    characters: draft.characters.map((item) => {
-      const parsed = StoryCharacterSchema.safeParse(item);
-
-      if (parsed.success) {
-        return parsed.data;
-      }
-
-      if (typeof item === "string" && item.trim()) {
-        return {
-          name: item.trim(),
-          role: "连接课程任务并提供简短提示",
-        };
-      }
-
-      throw new AiSchemaValidationError(
-        "Story characters 必须是名称文字或包含 name/role 的对象。",
-      );
-    }),
+    characters: normalizeStoryCharacters(
+      draft.narrativeMode,
+      draft.characters,
+    ),
     pageBeats: draft.pageBeats.map((beat, index) => ({
       ...beat,
       pageId: input.outline.pages[index].id,
     })),
+  });
+}
+
+/**
+ * none 表示没有虚构角色；模型即使返回占位角色，也由适配层确定性丢弃。
+ * light/full 模式仍兼容名称字符串，并在进入领域 Schema 前补齐角色职责。
+ */
+export function normalizeStoryCharacters(
+  narrativeMode: z.infer<typeof NarrativeModeSchema>,
+  characters: unknown[],
+) {
+  if (narrativeMode === "none") return [];
+
+  return characters.map((item) => {
+    const parsed = StoryCharacterSchema.safeParse(item);
+
+    if (parsed.success) {
+      return parsed.data;
+    }
+
+    if (typeof item === "string" && item.trim()) {
+      return {
+        name: item.trim(),
+        role: "连接课程任务并提供简短提示",
+      };
+    }
+
+    throw new AiSchemaValidationError(
+      "Story characters 必须是名称文字或包含 name/role 的对象。",
+    );
   });
 }

@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   designCourse,
+  evaluateCoursePage,
   generateCoursePageHtml,
   planCourse,
   writeCoursePage,
@@ -229,6 +230,7 @@ export function ChatApp({
       design: { status: "idle", events: [] },
       pageWrites: {},
       pageHtml: {},
+      pageQa: {},
     };
 
     setConversations((current) => {
@@ -366,6 +368,7 @@ export function ChatApp({
               design: { status: "running", events: [] },
               pageWrites: {},
               pageHtml: {},
+              pageQa: {},
             }
           : conversation.courseRun,
       })),
@@ -469,6 +472,10 @@ export function ChatApp({
               },
               pageHtml: {
                 ...conversation.courseRun.pageHtml,
+                [pageId]: { status: "idle", events: [] },
+              },
+              pageQa: {
+                ...conversation.courseRun.pageQa,
                 [pageId]: { status: "idle", events: [] },
               },
             }
@@ -577,6 +584,10 @@ export function ChatApp({
                 ...conversation.courseRun.pageHtml,
                 [pageId]: { status: "running", events: [] },
               },
+              pageQa: {
+                ...conversation.courseRun.pageQa,
+                [pageId]: { status: "idle", events: [] },
+              },
             }
           : conversation.courseRun,
       })),
@@ -664,16 +675,147 @@ export function ChatApp({
     }
   };
 
+  const handleEvaluatePage = async (pageId: string) => {
+    const conversationId = selectedConversation?.id;
+    const run = selectedConversation?.courseRun;
+    const outline = run?.planner.data?.state.outline;
+    const pageIndex = outline?.pages.findIndex(({ id }) => id === pageId) ?? -1;
+    const page = pageIndex >= 0 ? outline?.pages[pageIndex] : undefined;
+    const content = run?.pageWrites[pageId]?.data?.state.content;
+    const html = run?.pageHtml[pageId]?.data?.state.htmlOutput?.html;
+    const visualBrief = run?.design.data?.state.briefs?.visual;
+
+    if (
+      !conversationId ||
+      !run ||
+      !outline ||
+      !page ||
+      !content ||
+      !html ||
+      !visualBrief ||
+      busy
+    ) {
+      return;
+    }
+
+    setBusyConversationId(conversationId);
+    setConversations((current) =>
+      updateConversation(current, conversationId, (conversation) => ({
+        ...conversation,
+        courseRun: conversation.courseRun
+          ? {
+              ...conversation.courseRun,
+              pageQa: {
+                ...conversation.courseRun.pageQa,
+                [pageId]: { status: "running", events: [] },
+              },
+            }
+          : conversation.courseRun,
+      })),
+    );
+    const controller = createController();
+
+    try {
+      const result = await evaluateCoursePage(
+        {
+          page,
+          content,
+          html,
+          visualBrief,
+          courseContext: {
+            learningObjectives: outline.learningObjectives,
+            previousPage: outline.pages[pageIndex - 1],
+            nextPage: outline.pages[pageIndex + 1],
+          },
+        },
+        { signal: controller.signal, traceId: run.traceId },
+      );
+      const completed =
+        result.state.status === "completed" && result.state.report;
+
+      if (!completed) {
+        const message = result.state.error?.message ?? "Page QA 未生成有效质量报告。";
+        setConversations((current) =>
+          updateConversation(current, conversationId, (conversation) => ({
+            ...conversation,
+            courseRun: conversation.courseRun
+              ? {
+                  ...conversation.courseRun,
+                  pageQa: {
+                    ...conversation.courseRun.pageQa,
+                    [pageId]: {
+                      status: "failed",
+                      events: result.state.events,
+                      data: result,
+                      error: message,
+                    },
+                  },
+                }
+              : conversation.courseRun,
+          })),
+        );
+        return;
+      }
+
+      setConversations((current) =>
+        updateConversation(current, conversationId, (conversation) => ({
+          ...conversation,
+          courseRun: conversation.courseRun
+            ? {
+                ...conversation.courseRun,
+                pageQa: {
+                  ...conversation.courseRun.pageQa,
+                  [pageId]: {
+                    status: "completed",
+                    events: result.state.events,
+                    data: result,
+                  },
+                },
+              }
+            : conversation.courseRun,
+        })),
+      );
+    } catch (error) {
+      const message = getErrorMessage(error, "Page QA 请求失败。");
+      setConversations((current) =>
+        updateConversation(current, conversationId, (conversation) => ({
+          ...conversation,
+          courseRun: conversation.courseRun
+            ? {
+                ...conversation.courseRun,
+                pageQa: {
+                  ...conversation.courseRun.pageQa,
+                  [pageId]: {
+                    ...conversation.courseRun.pageQa[pageId],
+                    status: "failed",
+                    events: conversation.courseRun.pageQa[pageId]?.events ?? [],
+                    error: message,
+                  },
+                },
+              }
+            : conversation.courseRun,
+        })),
+      );
+    } finally {
+      releaseController(controller);
+      setBusyConversationId((current) =>
+        current === conversationId ? null : current,
+      );
+    }
+  };
+
   const handleOpenHtmlPreview = (pageId: string) => {
     const page = selectedRun?.planner.data?.state.outline?.pages.find(
       ({ id }) => id === pageId,
     );
     const html = selectedRun?.pageHtml[pageId]?.data?.state.htmlOutput?.html;
+    const qualityReport = selectedRun?.pageQa[pageId]?.data?.state.report;
     if (!page || !html) return;
 
     const preview = saveGeneratedHtmlPreview({
       html,
       pageId,
+      qualityReport,
       title: page.title,
     });
     window.open(
@@ -763,6 +905,7 @@ export function ChatApp({
               busy={busy}
               onGenerateDesign={handleGenerateDesign}
               onGenerateHtml={handleGenerateHtml}
+              onEvaluatePage={handleEvaluatePage}
               onGeneratePage={handleGeneratePage}
               onOpenHtmlPreview={handleOpenHtmlPreview}
               run={selectedRun}

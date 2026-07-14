@@ -6,6 +6,7 @@ import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { HtmlPreviewFrame } from "@/features/seaca/html-preview-frame";
+import { PageQualityPanel } from "@/features/seaca/page-quality-panel";
 import type { PageContentDSL, PagePlan } from "@/shared/course-schema";
 import type {
   CourseRunStageStatus,
@@ -17,6 +18,7 @@ type CourseWorkspacePanelProps = {
   busy?: boolean;
   onGenerateDesign(): void;
   onGenerateHtml(pageId: string): void;
+  onEvaluatePage(pageId: string): void;
   onGeneratePage(pageId: string): void;
   onOpenHtmlPreview(pageId: string): void;
 };
@@ -34,6 +36,7 @@ export function CourseWorkspacePanel({
   busy = false,
   onGenerateDesign,
   onGenerateHtml,
+  onEvaluatePage,
   onGeneratePage,
   onOpenHtmlPreview,
 }: CourseWorkspacePanelProps) {
@@ -161,6 +164,7 @@ export function CourseWorkspacePanel({
                   }
                   key={page.id}
                   onGenerateHtml={() => onGenerateHtml(page.id)}
+                  onEvaluatePage={() => onEvaluatePage(page.id)}
                   onGenerate={() => onGeneratePage(page.id)}
                   onOpenHtmlPreview={() => onOpenHtmlPreview(page.id)}
                   page={page}
@@ -248,6 +252,7 @@ function PageWorkspaceCard({
   canGenerate,
   onGenerate,
   onGenerateHtml,
+  onEvaluatePage,
   onOpenHtmlPreview,
 }: {
   page: PagePlan;
@@ -255,6 +260,7 @@ function PageWorkspaceCard({
   canGenerate: boolean;
   onGenerate(): void;
   onGenerateHtml(): void;
+  onEvaluatePage(): void;
   onOpenHtmlPreview(): void;
 }) {
   const write = run.pageWrites[page.id];
@@ -302,7 +308,9 @@ function PageWorkspaceCard({
             canGenerateHtml={canGenerate}
             content={content}
             htmlStage={run.pageHtml[page.id]}
+            qaStage={run.pageQa[page.id]}
             onGenerateHtml={onGenerateHtml}
+            onEvaluatePage={onEvaluatePage}
             onOpenHtmlPreview={onOpenHtmlPreview}
           />
         ) : null}
@@ -315,18 +323,25 @@ function PageDslResult({
   canGenerateHtml,
   content,
   htmlStage,
+  qaStage,
   onGenerateHtml,
+  onEvaluatePage,
   onOpenHtmlPreview,
 }: {
   canGenerateHtml: boolean;
   content: PageContentDSL;
   htmlStage?: SeacaCourseRun["pageHtml"][string];
+  qaStage?: SeacaCourseRun["pageQa"][string];
   onGenerateHtml(): void;
+  onEvaluatePage(): void;
   onOpenHtmlPreview(): void;
 }) {
   const htmlOutput = htmlStage?.data?.state.htmlOutput;
   const htmlError = htmlStage?.error ?? htmlStage?.data?.state.error?.message;
   const htmlStatus = htmlStage?.status ?? "idle";
+  const qaReport = qaStage?.data?.state.report;
+  const qaError = qaStage?.error ?? qaStage?.data?.state.error?.message;
+  const qaStatus = qaStage?.status ?? "idle";
 
   return (
     <details className="mt-4 rounded-2xl bg-[#f8f3ec] p-4">
@@ -433,6 +448,51 @@ function PageDslResult({
               status={htmlStatus}
             />
           )}
+
+          {htmlOutput ? (
+            <section
+              aria-labelledby={`page-qa-${content.pageId}`}
+              className="mt-4 border-t border-[#e6ddd1] pt-4"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h5
+                      className="text-sm font-semibold text-[#4c3e2b]"
+                      id={`page-qa-${content.pageId}`}
+                    >
+                      页面质量评估
+                    </h5>
+                    <StatusBadge status={qaStatus} />
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-[#988e80]">
+                    QA 只报告问题，不会修改当前 HTML。
+                  </p>
+                </div>
+                <ActionButton
+                  disabled={!canGenerateHtml || qaStatus === "running"}
+                  onClick={onEvaluatePage}
+                >
+                  {qaStatus === "running"
+                    ? "正在评估…"
+                    : qaReport
+                      ? "重新评估"
+                      : "运行页面 QA"}
+                </ActionButton>
+              </div>
+
+              {qaError ? (
+                <ErrorNotice>{qaError}</ErrorNotice>
+              ) : qaReport ? (
+                <PageQualityPanel report={qaReport} />
+              ) : (
+                <PendingNotice
+                  idleCopy="HTML 已就绪，可以运行六维页面质量评估。"
+                  status={qaStatus}
+                />
+              )}
+            </section>
+          ) : null}
         </section>
       </div>
     </details>

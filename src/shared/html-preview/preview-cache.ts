@@ -2,16 +2,21 @@ import {
   sanitizeHtmlLite,
   validateGeneratedHtmlContract,
 } from "./validation";
+import {
+  QualityReportSchema,
+  type QualityReport,
+} from "@/shared/course-schema";
 
 const PREVIEW_STORAGE_PREFIX = "seaca:html-preview:";
 const PREVIEW_TTL_MS = 24 * 60 * 60 * 1_000;
 
 export type GeneratedHtmlPreviewRecord = {
-  version: 1;
+  version: 2;
   id: string;
   pageId: string;
   title: string;
   html: string;
+  qualityReport?: QualityReport;
   createdAt: string;
   expiresAt: string;
 };
@@ -20,7 +25,9 @@ type PreviewStorage = Pick<Storage, "getItem" | "removeItem" | "setItem">;
 
 /** 把已通过校验的 HTML 放入浏览器临时预览缓存，URL 中只暴露随机 ID。 */
 export function saveGeneratedHtmlPreview(
-  input: Pick<GeneratedHtmlPreviewRecord, "html" | "pageId" | "title">,
+  input: Pick<GeneratedHtmlPreviewRecord, "html" | "pageId" | "title"> & {
+    qualityReport?: QualityReport;
+  },
   storage: PreviewStorage = window.localStorage,
 ) {
   const contract = validateGeneratedHtmlContract(input.html);
@@ -31,12 +38,22 @@ export function saveGeneratedHtmlPreview(
   }
 
   const id = crypto.randomUUID();
+  if (
+    input.qualityReport &&
+    (!QualityReportSchema.safeParse(input.qualityReport).success ||
+      input.qualityReport.target.type !== "page" ||
+      input.qualityReport.target.pageId !== input.pageId)
+  ) {
+    throw new Error("独立预览的质量报告必须通过校验并指向当前页面。");
+  }
+
   const record: GeneratedHtmlPreviewRecord = {
-    version: 1,
+    version: 2,
     id,
     pageId: input.pageId,
     title: input.title,
     html: input.html,
+    qualityReport: input.qualityReport,
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + PREVIEW_TTL_MS).toISOString(),
   };
@@ -78,12 +95,18 @@ function isPreviewRecord(value: unknown): value is GeneratedHtmlPreviewRecord {
 
   const record = value as Record<string, unknown>;
   return (
-    record.version === 1 &&
+    record.version === 2 &&
     typeof record.id === "string" &&
     typeof record.pageId === "string" &&
     typeof record.title === "string" &&
     typeof record.html === "string" &&
     typeof record.createdAt === "string" &&
-    typeof record.expiresAt === "string"
+    typeof record.expiresAt === "string" &&
+    (record.qualityReport === undefined ||
+      (QualityReportSchema.safeParse(record.qualityReport).success &&
+        (record.qualityReport as QualityReport).target.type === "page" &&
+        (record.qualityReport as QualityReport & {
+          target: { type: "page"; pageId: string };
+        }).target.pageId === record.pageId))
   );
 }

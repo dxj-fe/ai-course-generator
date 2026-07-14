@@ -177,11 +177,18 @@ export const CourseSchema = z
       }
 
       report.issues.forEach((issue, issueIndex) => {
-        if (issue.pageId && !pageIds.has(issue.pageId)) {
+        if (issue.location.pageId && !pageIds.has(issue.location.pageId)) {
           context.addIssue({
             code: "custom",
-            message: `质量问题引用了不存在的页面 ${issue.pageId}`,
-            path: ["qualityReports", reportIndex, "issues", issueIndex, "pageId"],
+            message: `质量问题引用了不存在的页面 ${issue.location.pageId}`,
+            path: [
+              "qualityReports",
+              reportIndex,
+              "issues",
+              issueIndex,
+              "location",
+              "pageId",
+            ],
           });
         }
       });

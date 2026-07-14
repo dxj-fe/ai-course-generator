@@ -14,6 +14,7 @@ import {
 import {
   createStoryAgent,
   createStoryAgentState,
+  normalizeStoryCharacters,
 } from "../../../../src/server/agents/story-agent";
 import {
   createVisualDirectorAgent,
@@ -54,6 +55,14 @@ describe("Day 11 professional agents", () => {
     expect(generateArc).toHaveBeenCalledWith(
       expect.objectContaining({ pedagogy: pedagogyPlan }),
     );
+  });
+
+  it("drops model-invented characters when narrative mode is none", () => {
+    expect(
+      normalizeStoryCharacters("none", [
+        { name: "虚构导师", role: "推动故事情节" },
+      ]),
+    ).toEqual([]);
   });
 
   it("produces a VisualBrief that references a StyleTemplate", async () => {

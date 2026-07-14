@@ -7,6 +7,7 @@ import type {
   PageContentDSL,
   PagePlan,
   PageWorkerBrief,
+  QualityReport,
 } from "@/shared/course-schema";
 
 type AgentStatus = "idle" | "running" | "completed" | "failed";
@@ -77,6 +78,16 @@ export type HtmlEngineerResponse = {
   };
 };
 
+export type PageQAResponse = {
+  traceId: string;
+  state: {
+    status: AgentStatus;
+    events: PublicAgentEvent[];
+    report?: QualityReport;
+    error?: { code: string; message: string };
+  };
+};
+
 /** 调用现有课程规划接口；响应仍在请求完成后一次性返回。 */
 export function planCourse(
   input: { userPrompt?: string; intent?: CourseIntent },
@@ -130,6 +141,24 @@ export function generateCoursePageHtml(
     input,
     options,
   );
+}
+
+/** 评估一页已生成 HTML；接口只返回质量报告，不执行修复。 */
+export function evaluateCoursePage(
+  input: {
+    page: PagePlan;
+    content: PageContentDSL;
+    html: string;
+    visualBrief: CourseDesignBriefs["visual"];
+    courseContext?: {
+      learningObjectives: string[];
+      previousPage?: PagePlan;
+      nextPage?: PagePlan;
+    };
+  },
+  options?: RequestOptions,
+) {
+  return postPlannerRequest<PageQAResponse>("/api/pages/qa", input, options);
 }
 
 async function postPlannerRequest<Response>(

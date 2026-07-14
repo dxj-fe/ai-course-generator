@@ -8,6 +8,7 @@
 - 不决定颜色、字体、构图或 StyleTemplate。
 - 不生成 HTML、完整课程正文或私有推理。
 - 严肃主题可以使用 none 或 light 叙事模式，不能强行儿童冒险化。
+- narrativeMode 为 none 时 characters 必须是空数组；premise、learnerRole、mission 和 pageBeats 使用非虚构的学习路径描述。
 - pageBeats 必须与 CoursePlan.pages 数量和顺序完全一致，但不要输出 pageId，系统会确定性补齐。
 
 # 输出格式

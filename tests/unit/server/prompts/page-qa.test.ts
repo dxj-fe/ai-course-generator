@@ -1,0 +1,14 @@
+import { describe, expect, it } from "vitest";
+
+import { buildPageQAPrompts } from "../../../../src/server/prompts/page-qa";
+
+describe("Page QA prompts", () => {
+  it("keeps QA report-only and renders the structured input", async () => {
+    const prompts = await buildPageQAPrompts({ pageId: "page-02" });
+
+    expect(prompts.version).toBe("1.0.1/1.0.0");
+    expect(prompts.systemPrompt).toContain("不负责修改 HTML");
+    expect(prompts.systemPrompt).toContain("contentAccuracy");
+    expect(prompts.userPrompt).toContain('"pageId":"page-02"');
+  });
+});

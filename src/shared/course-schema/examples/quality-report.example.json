@@ -21,17 +21,32 @@
     "styleConsistency": {
       "score": 88,
       "summary": "共享主题稳定，个别页面的卡片间距仍可统一。"
+    },
+    "htmlRuntime": {
+      "score": 100,
+      "summary": "HTML 文档合同与安全预检全部通过。"
+    },
+    "assetUsability": {
+      "score": 96,
+      "summary": "必需素材可用，并具备清晰的替代文本。"
     }
   },
   "issues": [
     {
       "code": "STYLE_SPACING_DRIFT",
+      "dimension": "styleConsistency",
       "severity": "warning",
+      "source": "model",
       "message": "互动问答页的卡片间距与知识卡页不一致。",
-      "suggestion": "统一使用 Theme.tokens 对应的舒适密度间距。",
-      "pageId": "page-quiz"
+      "location": {
+        "pageId": "page-quiz",
+        "selector": "[data-page-id=\"page-quiz\"] .quiz-card",
+        "description": "互动问答页的题目卡片区域"
+      },
+      "repairHint": "统一使用 Theme.tokens 对应的舒适密度间距。"
     }
   ],
+  "shouldRepair": false,
   "decision": "pass",
   "createdAt": "2026-07-13T08:30:00+08:00"
 }

@@ -42,6 +42,13 @@ export function ChatThread({ conversation }: ChatThreadProps) {
             stage.events.length,
           ],
         ),
+        ...Object.entries(conversation.courseRun.pageQa).flatMap(
+          ([pageId, stage]) => [
+            pageId,
+            stage.status,
+            stage.events.length,
+          ],
+        ),
       ].join(":")
     : "";
 
