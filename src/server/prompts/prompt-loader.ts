@@ -25,7 +25,7 @@ export async function loadPromptTemplate(
     role: definition.role,
     inputContract: definition.inputContract,
     outputContract: definition.outputContract,
-    content: await readPromptContent(definition.fileName),
+    content: await readPromptContent(definition.fileName, definition.version),
   };
 }
 
@@ -62,14 +62,15 @@ export function renderPromptTemplate(
   );
 }
 
-function readPromptContent(fileName: string) {
-  let content = promptContentCache.get(fileName);
+function readPromptContent(fileName: string, version: string) {
+  const cacheKey = `${fileName}@${version}`;
+  let content = promptContentCache.get(cacheKey);
 
   if (!content) {
     content = readFile(path.join(PROMPT_DIRECTORY, fileName), "utf8").then(
       (value) => value.trim(),
     );
-    promptContentCache.set(fileName, content);
+    promptContentCache.set(cacheKey, content);
   }
 
   return content;

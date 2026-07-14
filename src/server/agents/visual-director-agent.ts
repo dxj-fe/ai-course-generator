@@ -24,7 +24,10 @@ import type {
 
 const VisualModelOutputSchema = z.object({
   visualConcept: z.string().min(5).max(400),
-  layoutPrinciples: z.array(z.string().min(2).max(240)).min(2).max(10),
+  layoutPrinciples: z
+    .array(z.string().trim().min(2).max(240))
+    .min(1)
+    .max(10),
   typographyGuidance: z.string().min(5).max(300),
   colorUsage: z.string().min(5).max(300),
   assetDirection: VisualAssetDirectionSchema,
@@ -62,6 +65,40 @@ export type VisualDirectorAgentDependencies = {
     traceId: string;
   }): Promise<unknown>;
 };
+
+const visualLayoutFallbacks = [
+  "跨页保持一致的内容网格、间距层级与清晰阅读顺序。",
+  "核心学习内容和交互区域始终优先于装饰元素。",
+] as const;
+
+/**
+ * 模型草稿允许偶发少一条原则，但最终领域对象仍必须满足两条独立规则。
+ * 空输出继续失败，避免用默认值替代整个 Visual Director 的工作。
+ */
+export function normalizeVisualLayoutPrinciples(
+  principles: readonly string[],
+) {
+  const normalized = principles
+    .map((principle) => principle.trim())
+    .filter(
+      (principle, index, values) =>
+        principle.length >= 2 && values.indexOf(principle) === index,
+    );
+
+  if (normalized.length === 0) {
+    throw new AiSchemaValidationError(
+      "Visual Director 至少包含一条布局原则。",
+    );
+  }
+
+  if (normalized.length === 1) {
+    for (const fallback of visualLayoutFallbacks) {
+      if (!normalized.includes(fallback)) normalized.push(fallback);
+    }
+  }
+
+  return normalized;
+}
 
 const defaultDependencies: VisualDirectorAgentDependencies = {
   generateBrief,
@@ -163,6 +200,7 @@ async function generateBrief(input: {
     courseIntent: input.intent,
     coursePlan: input.outline,
     pedagogyPlan: input.pedagogy,
+    pageCount: input.outline.pages.length,
     storyArc: input.story,
     styleTemplate: {
       id: styleTemplate.id,
@@ -196,6 +234,9 @@ async function generateBrief(input: {
 
   return VisualBriefSchema.parse({
     ...draft,
+    layoutPrinciples: normalizeVisualLayoutPrinciples(
+      draft.layoutPrinciples,
+    ),
     styleTemplateId,
     pageGuidance: draft.pageGuidance.map((guidance, index) => ({
       ...guidance,

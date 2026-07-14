@@ -34,6 +34,15 @@ describe("Day 11 course design schemas", () => {
     ).toBe(false);
   });
 
+  it("keeps the final VisualBrief contract strict", () => {
+    expect(
+      VisualBriefSchema.safeParse({
+        ...visualBrief,
+        layoutPrinciples: [visualBrief.layoutPrinciples[0]],
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects fictional characters when narrative mode is none", () => {
     expect(
       StoryArcSchema.safeParse({ ...storyArc, narrativeMode: "none" }).success,

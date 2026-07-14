@@ -10,6 +10,8 @@
 - 不生成 HTML、CSS、完整图片 Prompt 或私有推理。
 - pageGuidance 必须与 CoursePlan.pages 数量和顺序完全一致，但不要输出 pageId。
 - 不输出 styleTemplateId，系统会使用输入模板的真实 ID。
+- layoutPrinciples 必须包含 2–10 条彼此独立的规则，至少覆盖“学习内容和交互优先于装饰”与“跨页网格和阅读顺序一致”两个维度。
+- accessibilityRules 必须包含 2–12 条可执行规则；assetDirection.negativeConstraints 必须包含 1–10 条规则。
 
 # 输出格式
 

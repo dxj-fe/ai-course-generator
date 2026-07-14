@@ -5,6 +5,9 @@ import { DefaultChatTransport } from "ai";
 import Link from "next/link";
 import { FormEvent, useMemo, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { CoursePlannerPanel } from "@/features/course-planner/components/course-planner-panel";
 
 import {
@@ -203,7 +206,7 @@ export function AiPlayground() {
             >
               Prompt
             </label>
-            <textarea
+            <Textarea
               id="prompt"
               className="min-h-36 flex-1 resize-none rounded-md border border-[#cbd5e1] bg-[#fbfdff] p-3 text-base leading-7 text-[#172033] outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#bfdbfe]"
               value={prompt}
@@ -216,7 +219,7 @@ export function AiPlayground() {
             >
               System Prompt
             </label>
-            <textarea
+            <Textarea
               id="system-prompt"
               className="min-h-24 resize-none rounded-md border border-[#cbd5e1] bg-[#fbfdff] p-3 text-sm leading-6 text-[#172033] outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#bfdbfe]"
               value={systemPrompt}
@@ -248,7 +251,7 @@ export function AiPlayground() {
 
               <label className="flex flex-col gap-2 text-sm font-medium text-[#344054]">
                 Max Tokens
-                <input
+                <Input
                   className="min-h-10 rounded-md border border-[#cbd5e1] bg-[#fbfdff] px-3 text-sm text-[#172033] outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#bfdbfe]"
                   type="number"
                   min={1}
@@ -267,29 +270,29 @@ export function AiPlayground() {
             </div>
 
             <div className="flex flex-col gap-3 sm:flex-row">
-              <button
+              <Button
                 className="min-h-11 rounded-md bg-[#7c3aed] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#6d28d9] disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
                 type="button"
                 disabled={isParsingIntent || !trimmedPrompt}
                 onClick={runIntent}
               >
                 {isParsingIntent ? "解析中..." : "解析意图"}
-              </button>
-              <button
+              </Button>
+              <Button
                 className="min-h-11 rounded-md bg-[#1d4ed8] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#1e40af] disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
                 type="button"
                 disabled={isGenerating || !trimmedPrompt}
                 onClick={runGenerate}
               >
                 {isGenerating ? "生成中..." : "普通生成"}
-              </button>
-              <button
+              </Button>
+              <Button
                 className="min-h-11 rounded-md bg-[#0f766e] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#115e59] disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
                 type="submit"
                 disabled={streamBusy || !trimmedPrompt}
               >
                 {streamBusy ? "输出中..." : "流式输出"}
-              </button>
+              </Button>
             </div>
           </form>
 

@@ -2,33 +2,18 @@
 
 import { useState } from "react";
 
-import { getErrorText } from "@/features/ai-playground/lib/messages";
+import { Button } from "@/components/ui/button";
 import type {
-  CourseDesignBriefs,
   CourseIntent,
   CoursePlan,
-  PageWorkerBrief,
 } from "@/shared/course-schema";
 
+import {
+  designCourse,
+  type CourseDesignResponse,
+} from "../lib/course-planner-api";
 import { CourseDesignTabs } from "./course-design-tabs";
 import { PageDSLViewer } from "./page-dsl-viewer";
-
-type CourseDesignResponse = {
-  traceId: string;
-  state: {
-    status: "completed" | "failed";
-    events: Array<{
-      id: string;
-      sequence: number;
-      agent: "pedagogy" | "story" | "visual";
-      type: "start" | "model_call" | "tool_call" | "finish" | "error";
-      summary: string;
-    }>;
-    briefs?: CourseDesignBriefs;
-    pageWorkerBriefs?: PageWorkerBrief[];
-    error?: { agent: string; code: string; message: string };
-  };
-};
 
 const agentLabels = {
   pedagogy: "Pedagogy Agent",
@@ -55,22 +40,7 @@ export function CourseDesignRunner({
     setResult(undefined);
 
     try {
-      const response = await fetch("/api/courses/design", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          intent,
-          outline,
-          traceId: crypto.randomUUID(),
-        }),
-      });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(getErrorText(payload));
-      }
-
-      setResult(payload);
+      setResult(await designCourse({ intent, outline }));
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -103,14 +73,14 @@ export function CourseDesignRunner({
             组装为 Page Worker 可直接消费的稳定输入。
           </p>
         </div>
-        <button
+        <Button
           className="min-h-11 rounded-lg bg-[#6d28d9] px-5 py-2 text-sm font-semibold text-white transition hover:bg-[#5b21b6] disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
           disabled={isRunning}
           onClick={runCourseDesign}
           type="button"
         >
           {isRunning ? "正在生成专业 Briefs..." : "生成专业 Briefs"}
-        </button>
+        </Button>
       </header>
 
       {error ? (

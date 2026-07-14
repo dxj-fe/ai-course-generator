@@ -30,6 +30,15 @@ interaction.type 必须与 PagePlan.interactionType 完全一致，只能是 non
 - navigate：actionLabel 有实际含义，destination 只能是 next、previous、course-home。
 - none：未使用字段按上述占位规则返回。
 
+# layout hints
+
+contentDensity 只能是 sparse、balanced、dense：
+- sparse：封面、单题测验等需要单一焦点的页面。
+- balanced：知识讲解、故事、总结等常规页面。
+- dense：确实需要并列呈现较多信息的页面。
+
+visualPriority 和 groupingStrategy 必须使用简洁、可执行的自然语言描述。
+
 # 输出格式
 
 只返回 JSON object，根字段必须是 narration、blocks、interaction、contentDensity、visualPriority、groupingStrategy。

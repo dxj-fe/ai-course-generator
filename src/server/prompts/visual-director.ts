@@ -3,7 +3,7 @@ import type { PromptTemplateDefinition } from "./types";
 
 const systemDefinition: PromptTemplateDefinition = {
   name: "visual-director-system",
-  version: "1.0.0",
+  version: "1.0.1",
   role: "system",
   inputContract: [
     "接收 CourseIntent、CoursePlan、PedagogyPlan、StoryArc 和一个真实 StyleTemplate。",
@@ -14,7 +14,7 @@ const systemDefinition: PromptTemplateDefinition = {
 
 const userDefinition: PromptTemplateDefinition = {
   name: "visual-director-user",
-  version: "1.0.0",
+  version: "1.0.1",
   role: "user",
   inputContract: ["所有输入变量必须是 JSON 值。"],
   outputContract: [
@@ -27,6 +27,7 @@ const userDefinition: PromptTemplateDefinition = {
 export async function buildVisualDirectorPrompts(input: {
   courseIntent: unknown;
   coursePlan: unknown;
+  pageCount: number;
   pedagogyPlan: unknown;
   storyArc: unknown;
   styleTemplate: unknown;
@@ -42,6 +43,7 @@ export async function buildVisualDirectorPrompts(input: {
     userPrompt: renderPromptTemplate(userTemplate, {
       courseIntentJson: JSON.stringify(input.courseIntent),
       coursePlanJson: JSON.stringify(input.coursePlan),
+      pageCount: JSON.stringify(input.pageCount),
       pedagogyPlanJson: JSON.stringify(input.pedagogyPlan),
       storyArcJson: JSON.stringify(input.storyArc),
       styleTemplateJson: JSON.stringify(input.styleTemplate),

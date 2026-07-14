@@ -1,0 +1,469 @@
+"use client";
+
+import type { ReactNode } from "react";
+
+import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import type { PageContentDSL, PagePlan } from "@/shared/course-schema";
+import type {
+  CourseRunStageStatus,
+  SeacaCourseRun,
+} from "@/types/seaca";
+
+type CourseWorkspacePanelProps = {
+  run?: SeacaCourseRun;
+  busy?: boolean;
+  onGenerateDesign(): void;
+  onGeneratePage(pageId: string): void;
+};
+
+const statusCopy: Record<CourseRunStageStatus, string> = {
+  idle: "等待生成",
+  running: "生成中",
+  completed: "已生成",
+  failed: "生成失败",
+};
+
+/** 用 Seaca 的暖色工作区承载已存在的课程规划、专业设计和 Page DSL 结果。 */
+export function CourseWorkspacePanel({
+  run,
+  busy = false,
+  onGenerateDesign,
+  onGeneratePage,
+}: CourseWorkspacePanelProps) {
+  const plannerResult = run?.planner.data;
+  const outline = plannerResult?.state.outline;
+  const intent = plannerResult?.intent;
+  const designResult = run?.design.data;
+  const briefs = designResult?.state.briefs;
+  const designError = run?.design.error ?? designResult?.state.error?.message;
+  const canGenerateDesign = Boolean(outline && intent);
+
+  return (
+    <section
+      aria-labelledby="course-workspace-title"
+      className="min-h-full rounded-[22px] border border-[#e9dfd3] bg-[#fffdf8] shadow-[0_12px_40px_-32px_rgba(56,44,25,0.45)]"
+    >
+      <header className="border-b border-[#eee5da] py-5 pr-12 pl-4 sm:pl-6">
+        <p className="text-xs font-semibold tracking-[0.08em] text-[#77a863]">
+          课程工作区
+        </p>
+        <h2
+          className="mt-1 text-xl font-semibold text-[#382c19]"
+          id="course-workspace-title"
+        >
+          {intent?.topic ?? "等待生成课程规划"}
+        </h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-[#817568]">
+          {outline?.overview ??
+            "课程结构、专业设计与逐页内容会按生成顺序整理在这里。"}
+        </p>
+        {intent ? (
+          <div className="mt-3 flex flex-wrap gap-2 text-xs text-[#6f6355]">
+            <WarmTag>{intent.audienceAgeRange.label}</WarmTag>
+            <WarmTag>{intent.courseLength} 页</WarmTag>
+            <WarmTag>{intent.visualStyle}</WarmTag>
+            <WarmTag>{intent.language}</WarmTag>
+          </div>
+        ) : null}
+      </header>
+
+      <div className="grid gap-7 px-4 py-5 sm:px-6 sm:py-6">
+        <PlannerOutput run={run} />
+
+        <section aria-labelledby="professional-design-title">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3
+                className="text-base font-semibold text-[#493b29]"
+                id="professional-design-title"
+              >
+                专业设计
+              </h3>
+              <p className="mt-1 text-xs leading-5 text-[#988e80]">
+                规划确认后，手动生成教学、故事与视觉方案。
+              </p>
+            </div>
+            <ActionButton
+              disabled={
+                busy || !canGenerateDesign || run?.design.status === "running"
+              }
+              onClick={onGenerateDesign}
+            >
+              {run?.design.status === "running"
+                ? "正在生成设计…"
+                : briefs
+                  ? "重新生成设计"
+                  : "生成专业设计"}
+            </ActionButton>
+          </div>
+
+          {designError ? (
+            <ErrorNotice>{designError}</ErrorNotice>
+          ) : briefs ? (
+            <div className="mt-4 grid gap-3">
+              <BriefCard
+                eyebrow="教学设计"
+                title="学习节奏"
+                description={briefs.pedagogy.audienceSummary}
+                detail={`每 ${briefs.pedagogy.interactionCadence.recommendedIntervalPages} 页安排一次互动`}
+              />
+              <BriefCard
+                eyebrow="故事设计"
+                title={briefs.story.learnerRole}
+                description={briefs.story.premise}
+                detail={briefs.story.mission}
+              />
+              <BriefCard
+                eyebrow="视觉设计"
+                title={briefs.visual.styleTemplateId}
+                description={briefs.visual.visualConcept}
+                detail={briefs.visual.motionGuidance.strategy}
+              />
+            </div>
+          ) : (
+            <PendingNotice
+              status={run?.design.status ?? "idle"}
+              idleCopy={
+                canGenerateDesign
+                  ? "课程规划已就绪，可以继续生成专业设计。"
+                  : "请先完成课程规划。"
+              }
+            />
+          )}
+        </section>
+
+        <section aria-labelledby="page-content-title">
+          <div>
+            <h3
+              className="text-base font-semibold text-[#493b29]"
+              id="page-content-title"
+            >
+              课程页面
+            </h3>
+            <p className="mt-1 text-xs leading-5 text-[#988e80]">
+              每页独立生成 Page DSL，失败时只需重试当前页。
+            </p>
+          </div>
+
+          {run && outline?.pages.length ? (
+            <ol className="mt-4 grid gap-3">
+              {outline.pages.map((page) => (
+                <PageWorkspaceCard
+                  canGenerate={
+                    !busy && Boolean(designResult?.state.pageWorkerBriefs)
+                  }
+                  key={page.id}
+                  onGenerate={() => onGeneratePage(page.id)}
+                  page={page}
+                  run={run}
+                />
+              ))}
+            </ol>
+          ) : (
+            <PendingNotice
+              status={run?.planner.status ?? "idle"}
+              idleCopy="课程结构生成后，页面列表会显示在这里。"
+            />
+          )}
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function PlannerOutput({ run }: { run?: SeacaCourseRun }) {
+  const result = run?.planner.data;
+  const outline = result?.state.outline;
+  const error = run?.planner.error ?? result?.state.error?.message;
+
+  return (
+    <section aria-labelledby="planner-output-title">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3
+          className="text-base font-semibold text-[#493b29]"
+          id="planner-output-title"
+        >
+          课程规划
+        </h3>
+        <StatusBadge status={run?.planner.status ?? "idle"} />
+      </div>
+
+      {error ? (
+        <ErrorNotice>{error}</ErrorNotice>
+      ) : outline ? (
+        <div className="mt-4 grid gap-4 rounded-2xl bg-[#f8f3ec] p-4">
+          <div>
+            <h4 className="text-sm font-semibold text-[#594a37]">学习目标</h4>
+            <ul className="mt-2 grid gap-2 text-sm leading-6 text-[#786d5f]">
+              {outline.learningObjectives.map((objective) => (
+                <li className="flex gap-2" key={objective}>
+                  <span aria-hidden="true" className="text-[#77b95e]">
+                    ✓
+                  </span>
+                  <span>{objective}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          {result?.intent ? (
+            <dl className="grid content-start grid-cols-2 gap-x-4 gap-y-3 rounded-xl bg-[#fffdf8] p-3 text-xs">
+              <MetaField label="主题" value={result.intent.topic} />
+              <MetaField
+                label="难度"
+                value={result.intent.difficulty}
+              />
+              <MetaField
+                label="页数"
+                value={`${result.intent.courseLength} 页`}
+              />
+              <MetaField
+                label="视觉风格"
+                value={result.intent.visualStyle}
+              />
+            </dl>
+          ) : null}
+        </div>
+      ) : (
+        <PendingNotice
+          status={run?.planner.status ?? "idle"}
+          idleCopy="发送课程需求后，Agent 会先生成课程结构。"
+        />
+      )}
+    </section>
+  );
+}
+
+function PageWorkspaceCard({
+  page,
+  run,
+  canGenerate,
+  onGenerate,
+}: {
+  page: PagePlan;
+  run: SeacaCourseRun;
+  canGenerate: boolean;
+  onGenerate(): void;
+}) {
+  const write = run.pageWrites[page.id];
+  const content = write?.data?.state.content;
+  const error = write?.error ?? write?.data?.state.error?.message;
+  const status = write?.status ?? "idle";
+
+  return (
+    <li>
+      <article className="rounded-2xl border border-[#e9dfd3] bg-[#fffefa] p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-1 gap-3">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#eff7e9] text-xs font-semibold text-[#5d9845]">
+              {String(page.order).padStart(2, "0")}
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="font-semibold text-[#4c3e2b]">{page.title}</h4>
+                <StatusBadge status={status} />
+              </div>
+              <p className="mt-1 text-xs leading-5 text-[#988e80]">
+                {page.pageType} · {page.interactionType}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-[#786d5f]">
+                {page.contentSummary}
+              </p>
+            </div>
+          </div>
+          <ActionButton
+            disabled={!canGenerate || status === "running"}
+            onClick={onGenerate}
+          >
+            {status === "running"
+              ? "正在生成…"
+              : content
+                ? "重新生成"
+                : "生成 Page DSL"}
+          </ActionButton>
+        </div>
+
+        {error ? (
+          <ErrorNotice>{error}</ErrorNotice>
+        ) : content ? (
+          <PageDslResult content={content} />
+        ) : null}
+      </article>
+    </li>
+  );
+}
+
+function PageDslResult({ content }: { content: PageContentDSL }) {
+  return (
+    <details className="mt-4 rounded-2xl bg-[#f8f3ec] p-4">
+      <summary className="cursor-pointer text-sm font-semibold text-[#594a37] marker:text-[#77b95e]">
+        查看已生成的页面内容
+      </summary>
+      <div className="mt-4 grid gap-4">
+        {content.narration.length > 0 ? (
+          <p className="rounded-xl bg-[#fffdf8] p-3 text-sm leading-6 text-[#786d5f]">
+            {content.narration.join(" ")}
+          </p>
+        ) : null}
+
+        {content.blocks.length > 0 ? (
+          <ol className="grid gap-2">
+            {content.blocks.map((block) => (
+              <li
+                className="min-w-0 rounded-xl border border-[#e7ddd1] bg-[#fffdf8] p-3"
+                key={block.id}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge className="h-auto overflow-visible rounded-full border-0 bg-[#eef7e9] px-2 py-0.5 text-[10px] leading-normal font-semibold text-[#5d9845]">
+                    {block.kind}
+                  </Badge>
+                  <h5 className="text-sm font-semibold text-[#4c3e2b]">
+                    {block.heading}
+                  </h5>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-[#817568] [overflow-wrap:anywhere]">
+                  {block.body}
+                </p>
+              </li>
+            ))}
+          </ol>
+        ) : null}
+
+        <dl className="grid gap-3 text-xs">
+          <MetaField label="互动类型" value={content.interaction.type} />
+          <MetaField
+            label="素材位置"
+            value={`${content.assetSlots.length} 个`}
+          />
+          <MetaField
+            label="内容密度"
+            value={content.layoutHints.contentDensity}
+          />
+        </dl>
+      </div>
+    </details>
+  );
+}
+
+function ActionButton({
+  children,
+  disabled,
+  onClick,
+}: {
+  children: ReactNode;
+  disabled?: boolean;
+  onClick(): void;
+}) {
+  return (
+    <Button
+      className="min-h-10 shrink-0 rounded-full bg-[#77cc57] px-4 py-2 text-xs font-semibold text-[#24351d] transition-colors hover:bg-[#68bd49] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5ba83e] disabled:pointer-events-auto disabled:cursor-not-allowed disabled:bg-[#e4ded5] disabled:text-[#9a9185] disabled:opacity-100"
+      disabled={disabled}
+      onClick={onClick}
+      type="button"
+    >
+      {children}
+    </Button>
+  );
+}
+
+function StatusBadge({ status }: { status: CourseRunStageStatus }) {
+  const className =
+    status === "failed"
+      ? "bg-[#fff0eb] text-[#a44f3d]"
+      : status === "running"
+        ? "bg-[#fff4d9] text-[#8a6a23]"
+        : status === "completed"
+          ? "bg-[#eff7e9] text-[#5d9845]"
+          : "bg-[#f0ebe4] text-[#8d8172]";
+
+  return (
+    <Badge
+      className={`h-auto overflow-visible rounded-full border-0 px-2 py-0.5 text-[10px] leading-normal font-semibold ${className}`}
+      variant="secondary"
+    >
+      {statusCopy[status]}
+    </Badge>
+  );
+}
+
+function WarmTag({ children }: { children: ReactNode }) {
+  return (
+    <Badge
+      className="h-auto overflow-visible rounded-full border border-[#e6ddd1] bg-[#f8f3ec] px-3 py-1 text-xs font-normal text-[#6f6355]"
+      variant="outline"
+    >
+      {children}
+    </Badge>
+  );
+}
+
+function BriefCard({
+  eyebrow,
+  title,
+  description,
+  detail,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  detail: string;
+}) {
+  return (
+    <article className="min-w-0 rounded-2xl border border-[#e9dfd3] bg-[#fffefa] p-4">
+      <p className="text-[10px] font-semibold tracking-[0.08em] text-[#77a863]">
+        {eyebrow}
+      </p>
+      <h4 className="mt-1.5 text-sm font-semibold text-[#4c3e2b] [overflow-wrap:anywhere]">
+        {title}
+      </h4>
+      <p className="mt-2 text-xs leading-5 text-[#786d5f]">{description}</p>
+      <p className="mt-3 border-t border-[#eee5da] pt-3 text-xs leading-5 text-[#988e80]">
+        {detail}
+      </p>
+    </article>
+  );
+}
+
+function MetaField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-xl bg-[#fffdf8] p-3">
+      <dt className="text-[#9a9084]">{label}</dt>
+      <dd className="mt-1 font-semibold text-[#594a37] [overflow-wrap:anywhere]">
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+function PendingNotice({
+  status,
+  idleCopy,
+}: {
+  status: CourseRunStageStatus;
+  idleCopy: string;
+}) {
+  return (
+    <p
+      aria-live="polite"
+      className="mt-4 rounded-2xl bg-[#f8f3ec] px-4 py-4 text-sm leading-6 text-[#8d8172]"
+    >
+      {status === "running"
+        ? "Agent 正在生成，请稍候…"
+        : status === "failed"
+          ? "生成未完成，请稍后重试。"
+          : idleCopy}
+    </p>
+  );
+}
+
+function ErrorNotice({ children }: { children?: ReactNode }) {
+  return (
+    <Alert
+      className="mt-4 rounded-2xl border border-[#edc4b9] bg-[#fff0eb] px-4 py-3 text-sm leading-6 text-[#984735]"
+      variant="destructive"
+    >
+      {children ?? "生成失败，请稍后重试。"}
+    </Alert>
+  );
+}

@@ -31,6 +31,18 @@ describe("PageContentDSL", () => {
     expect(PageContentDSLSchema.safeParse(invalid).success).toBe(false);
   });
 
+  it("keeps contentDensity strict at the final DSL boundary", () => {
+    const invalid = {
+      ...pageContentDsl,
+      layoutHints: {
+        ...pageContentDsl.layoutHints,
+        contentDensity: "medium",
+      },
+    };
+
+    expect(PageContentDSLSchema.safeParse(invalid).success).toBe(false);
+  });
+
   it("provides one valid DSL example for every functional template", () => {
     expect(functionalTemplateDslExamples).toHaveLength(8);
 

@@ -3,7 +3,7 @@ import type { PromptTemplateDefinition } from "./types";
 
 const systemDefinition: PromptTemplateDefinition = {
   name: "page-writer-system",
-  version: "1.0.0",
+  version: "1.0.1",
   role: "system",
   inputContract: [
     "接收 CourseIntent、单个 PagePlan、对应 PageWorkerBrief 和真实 FunctionalTemplate。",

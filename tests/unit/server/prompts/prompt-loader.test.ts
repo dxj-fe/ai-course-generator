@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   loadPromptTemplate,
@@ -49,5 +49,33 @@ describe("prompt-loader", () => {
         unknown: "value",
       }),
     ).toThrow("未声明变量");
+  });
+
+  it("reloads prompt content when its version changes", async () => {
+    vi.resetModules();
+    const readFile = vi
+      .fn()
+      .mockResolvedValueOnce("first version")
+      .mockResolvedValueOnce("second version");
+    vi.doMock("node:fs/promises", () => ({ readFile }));
+
+    const { loadPromptTemplate: loadUncachedPromptTemplate } = await import(
+      "../../../../src/server/prompts/prompt-loader"
+    );
+    const first = await loadUncachedPromptTemplate({
+      ...userPromptDefinition,
+      version: "1.0.0",
+    });
+    const second = await loadUncachedPromptTemplate({
+      ...userPromptDefinition,
+      version: "1.0.1",
+    });
+
+    expect(first.content).toBe("first version");
+    expect(second.content).toBe("second version");
+    expect(readFile).toHaveBeenCalledTimes(2);
+
+    vi.doUnmock("node:fs/promises");
+    vi.resetModules();
   });
 });

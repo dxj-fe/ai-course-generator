@@ -55,7 +55,8 @@ const PageWriterModelOutputSchema = z.object({
   // 兼容部分模型把简单对象数组压缩为字符串数组；领域 Schema 仍保持严格。
   blocks: z.array(z.unknown()).max(12),
   interaction: PageWriterInteractionDraftSchema,
-  contentDensity: z.enum(["sparse", "balanced", "dense"]),
+  // 模型可能使用 medium、紧凑等同义标签；适配层会收敛为领域枚举。
+  contentDensity: z.string().trim().min(1).max(40),
   visualPriority: z.string().min(2).max(240),
   groupingStrategy: z.string().min(2).max(240),
 });
@@ -276,7 +277,10 @@ async function generateContent(
             : `描述素材如何实现以下教学用途：${need.purpose}`,
       })),
       layoutHints: {
-        contentDensity: draft.contentDensity,
+        contentDensity: normalizePageContentDensity(
+          draft.contentDensity,
+          input.page.pageType,
+        ),
         visualPriority: draft.visualPriority,
         groupingStrategy: draft.groupingStrategy,
         readingOrder: blocks.map(({ id }) => id),
@@ -284,6 +288,57 @@ async function generateContent(
     },
     input,
   );
+}
+
+const contentDensityAliases: Readonly<
+  Record<string, PageContentDSL["layoutHints"]["contentDensity"]>
+> = {
+  sparse: "sparse",
+  low: "sparse",
+  light: "sparse",
+  minimal: "sparse",
+  airy: "sparse",
+  spacious: "sparse",
+  lowdensity: "sparse",
+  稀疏: "sparse",
+  简洁: "sparse",
+  极简: "sparse",
+  低密度: "sparse",
+  balanced: "balanced",
+  medium: "balanced",
+  moderate: "balanced",
+  normal: "balanced",
+  standard: "balanced",
+  comfortable: "balanced",
+  mediumdensity: "balanced",
+  平衡: "balanced",
+  均衡: "balanced",
+  适中: "balanced",
+  中等: "balanced",
+  dense: "dense",
+  high: "dense",
+  compact: "dense",
+  highdensity: "dense",
+  密集: "dense",
+  紧凑: "dense",
+  高密度: "dense",
+};
+
+/** 将模型使用的内容密度别名收敛为严格 PageContentDSL 枚举。 */
+export function normalizePageContentDensity(
+  value: string,
+  pageType: PagePlan["pageType"],
+): PageContentDSL["layoutHints"]["contentDensity"] {
+  const normalized = value.trim().toLowerCase().replace(/[\s_-]+/g, "");
+  const aliased = contentDensityAliases[normalized];
+
+  if (aliased) {
+    return aliased;
+  }
+
+  return pageType === "cover" || pageType === "quiz"
+    ? "sparse"
+    : "balanced";
 }
 
 /** 将兼容层草稿收敛为带稳定 blockId 的严格内容块。 */

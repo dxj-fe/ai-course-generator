@@ -18,6 +18,7 @@ import {
 import {
   createVisualDirectorAgent,
   createVisualDirectorAgentState,
+  normalizeVisualLayoutPrinciples,
 } from "../../../../src/server/agents/visual-director-agent";
 
 describe("Day 11 professional agents", () => {
@@ -70,5 +71,33 @@ describe("Day 11 professional agents", () => {
     expect(result.status).toBe("completed");
     expect(result.brief?.styleTemplateId).toBe("sci-fi");
     expect(result.brief?.pageGuidance).toHaveLength(3);
+  });
+
+  it("completes a single model layout principle before domain validation", () => {
+    const principles = normalizeVisualLayoutPrinciples([
+      "核心学习内容优先于装饰元素。",
+    ]);
+
+    expect(principles).toHaveLength(3);
+    expect(new Set(principles).size).toBe(3);
+    expect(principles[0]).toBe("核心学习内容优先于装饰元素。");
+    expect(principles).toContain(
+      "跨页保持一致的内容网格、间距层级与清晰阅读顺序。",
+    );
+    expect(principles).toContain(
+      "核心学习内容和交互区域始终优先于装饰元素。",
+    );
+  });
+
+  it("preserves two valid model layout principles", () => {
+    const principles = ["规则一保持稳定。", "规则二保持清晰。"];
+
+    expect(normalizeVisualLayoutPrinciples(principles)).toEqual(principles);
+  });
+
+  it("does not invent a visual brief when the model returns no principle", () => {
+    expect(() => normalizeVisualLayoutPrinciples([])).toThrow(
+      "至少包含一条布局原则",
+    );
   });
 });

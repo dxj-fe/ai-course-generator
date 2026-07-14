@@ -11,6 +11,7 @@ import {
 import {
   createPageWriterAgent,
   createPageWriterAgentState,
+  normalizePageContentDensity,
   validatePageWriterOutput,
 } from "../../../../src/server/agents/page-writer-agent";
 import type { PageWorkerBrief } from "../../../../src/shared/course-schema";
@@ -77,5 +78,28 @@ describe("PageWriterAgent", () => {
         },
       }),
     ).toThrow("PageWorkerBrief 必须完整引用当前 pageId");
+  });
+
+  it.each([
+    ["low", "cover", "sparse"],
+    ["medium", "knowledge_card", "balanced"],
+    ["平衡", "knowledge_card", "balanced"],
+    ["comfortable", "story_intro", "balanced"],
+    ["spacious", "cover", "sparse"],
+    ["high", "knowledge_card", "dense"],
+    ["紧凑", "knowledge_card", "dense"],
+    ["Medium_Density", "knowledge_card", "balanced"],
+  ] as const)(
+    "normalizes model density alias %s for %s to %s",
+    (modelValue, pageType, expected) => {
+      expect(normalizePageContentDensity(modelValue, pageType)).toBe(expected);
+    },
+  );
+
+  it("uses a template-safe density when the model returns an unknown label", () => {
+    expect(normalizePageContentDensity("concise", "cover")).toBe("sparse");
+    expect(normalizePageContentDensity("regular", "story_intro")).toBe(
+      "balanced",
+    );
   });
 });

@@ -2,30 +2,16 @@
 
 import { FormEvent, useState } from "react";
 
-import type { CourseIntent, CoursePlan } from "@/shared/course-schema";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
-import { getErrorText } from "@/features/ai-playground/lib/messages";
+import {
+  planCourse,
+  type CoursePlannerResponse,
+} from "../lib/course-planner-api";
 import { CourseDesignRunner } from "./course-design-runner";
 import { CourseOutlinePanel } from "./course-outline-panel";
 import { PagePlanList } from "./page-plan-list";
-
-type PlannerEvent = {
-  id: string;
-  sequence: number;
-  type: "start" | "model_call" | "tool_call" | "finish" | "error";
-  summary: string;
-};
-
-type CoursePlannerResponse = {
-  traceId: string;
-  intent: CourseIntent;
-  state: {
-    status: "idle" | "running" | "completed" | "failed";
-    events: PlannerEvent[];
-    outline?: CoursePlan;
-    error?: { code: string; message: string };
-  };
-};
 
 const topicCases = [
   {
@@ -72,21 +58,7 @@ export function CoursePlannerPanel() {
     setResult(undefined);
 
     try {
-      const response = await fetch("/api/courses/plan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userPrompt: prompt,
-          traceId: crypto.randomUUID(),
-        }),
-      });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(getErrorText(payload));
-      }
-
-      setResult(payload);
+      setResult(await planCourse({ userPrompt: prompt }));
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -129,7 +101,7 @@ export function CoursePlannerPanel() {
         >
           课程需求
         </label>
-        <textarea
+        <Textarea
           className="mt-2 min-h-24 w-full resize-y rounded-lg border border-[#cbd5e1] bg-[#fbfdff] p-3 text-sm leading-6 text-[#172033] outline-none transition focus:border-[#16a34a] focus:ring-2 focus:ring-[#bbf7d0]"
           id="course-planner-prompt"
           value={userPrompt}
@@ -137,23 +109,23 @@ export function CoursePlannerPanel() {
         />
         <div className="mt-3 flex flex-wrap gap-2" aria-label="课程测试主题">
           {topicCases.map((item) => (
-            <button
+            <Button
               className="rounded-full border border-[#cbd5e1] bg-[#f8fafc] px-3 py-1.5 text-xs font-medium text-[#475569] transition hover:border-[#16a34a] hover:text-[#15803d]"
               key={item.label}
               type="button"
               onClick={() => setUserPrompt(item.prompt)}
             >
               {item.label}
-            </button>
+            </Button>
           ))}
         </div>
-        <button
+        <Button
           className="mt-4 min-h-11 rounded-lg bg-[#15803d] px-5 py-2 text-sm font-semibold text-white transition hover:bg-[#166534] disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
           type="submit"
           disabled={isRunning || !userPrompt.trim()}
         >
           {isRunning ? "正在规划课程..." : "生成 Course Outline"}
-        </button>
+        </Button>
       </form>
 
       {error ? (

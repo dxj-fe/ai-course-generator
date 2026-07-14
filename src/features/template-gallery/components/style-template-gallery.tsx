@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 
+import { Button } from "@/components/ui/button";
 import {
   listStyleTemplates,
   styleTemplateToCssText,
@@ -121,8 +122,8 @@ function StyleTemplateCard({ template }: { template: StyleTemplate }) {
               </div>
             ))}
           </div>
-          <button
-            className="mt-5 rounded-[var(--course-radius-control)] px-4 py-2 text-sm font-semibold"
+          <Button
+            className="mt-5 h-auto rounded-[var(--course-radius-control)] border-0 px-4 py-2 text-sm font-semibold"
             style={{
               backgroundColor: "var(--course-color-primary)",
               color: "var(--course-color-background)",
@@ -130,7 +131,7 @@ function StyleTemplateCard({ template }: { template: StyleTemplate }) {
             type="button"
           >
             开始任务
-          </button>
+          </Button>
         </div>
       </div>
 

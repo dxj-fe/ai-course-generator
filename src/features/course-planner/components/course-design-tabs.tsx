@@ -2,6 +2,12 @@
 
 import { useState } from "react";
 
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import type { CourseDesignBriefs } from "@/shared/course-schema";
 
 type BriefTab = keyof CourseDesignBriefs;
@@ -17,62 +23,72 @@ export function CourseDesignTabs({ briefs }: { briefs: CourseDesignBriefs }) {
   const [activeTab, setActiveTab] = useState<BriefTab>("pedagogy");
 
   return (
-    <section className="rounded-xl border border-[#d8dee8] bg-white shadow-sm">
-      <div
-        aria-label="专业设计 Brief"
-        className="flex gap-1 border-b border-[#d8dee8] p-2"
-        role="tablist"
-      >
-        {tabs.map((tab) => (
-          <button
-            aria-controls={`${tab.id}-brief-panel`}
-            aria-selected={activeTab === tab.id}
-            className={`min-h-10 flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition ${
-              activeTab === tab.id
-                ? "bg-[#ede9fe] text-[#6d28d9]"
-                : "text-[#64748b] hover:bg-[#f8fafc] hover:text-[#344054]"
-            }`}
-            id={`${tab.id}-brief-tab`}
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            role="tab"
-            type="button"
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+    <Tabs
+      asChild
+      className="block rounded-xl border border-[#d8dee8] bg-white shadow-sm"
+      onValueChange={(value) => setActiveTab(value as BriefTab)}
+      value={activeTab}
+    >
+      <section>
+        <TabsList
+          aria-label="专业设计 Brief"
+          className="flex h-auto w-full justify-stretch gap-1 rounded-none border-b border-[#d8dee8] bg-transparent p-2 text-inherit group-data-horizontal/tabs:h-auto"
+        >
+          {tabs.map((tab) => (
+            <TabsTrigger
+              aria-controls={`${tab.id}-brief-panel`}
+              aria-selected={activeTab === tab.id}
+              className={`h-auto min-h-10 flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                activeTab === tab.id
+                  ? "bg-[#ede9fe] text-[#6d28d9] hover:bg-[#ede9fe] hover:text-[#6d28d9]"
+                  : "text-[#64748b] hover:bg-[#f8fafc] hover:text-[#344054]"
+              }`}
+              id={`${tab.id}-brief-tab`}
+              key={tab.id}
+              value={tab.id}
+            >
+              {tab.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
 
-      <div className="p-5">
-        <div
-          aria-labelledby="pedagogy-brief-tab"
-          hidden={activeTab !== "pedagogy"}
-          id="pedagogy-brief-panel"
-          role="tabpanel"
-          tabIndex={0}
-        >
-          <PedagogyBrief brief={briefs.pedagogy} />
+        <div className="p-5">
+          <TabsContent
+            aria-labelledby="pedagogy-brief-tab"
+            className="text-inherit focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7c3aed]"
+            forceMount
+            hidden={activeTab !== "pedagogy"}
+            id="pedagogy-brief-panel"
+            tabIndex={0}
+            value="pedagogy"
+          >
+            <PedagogyBrief brief={briefs.pedagogy} />
+          </TabsContent>
+          <TabsContent
+            aria-labelledby="story-brief-tab"
+            className="text-inherit focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7c3aed]"
+            forceMount
+            hidden={activeTab !== "story"}
+            id="story-brief-panel"
+            tabIndex={0}
+            value="story"
+          >
+            <StoryBrief brief={briefs.story} />
+          </TabsContent>
+          <TabsContent
+            aria-labelledby="visual-brief-tab"
+            className="text-inherit focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7c3aed]"
+            forceMount
+            hidden={activeTab !== "visual"}
+            id="visual-brief-panel"
+            tabIndex={0}
+            value="visual"
+          >
+            <VisualBriefPanel brief={briefs.visual} />
+          </TabsContent>
         </div>
-        <div
-          aria-labelledby="story-brief-tab"
-          hidden={activeTab !== "story"}
-          id="story-brief-panel"
-          role="tabpanel"
-          tabIndex={0}
-        >
-          <StoryBrief brief={briefs.story} />
-        </div>
-        <div
-          aria-labelledby="visual-brief-tab"
-          hidden={activeTab !== "visual"}
-          id="visual-brief-panel"
-          role="tabpanel"
-          tabIndex={0}
-        >
-          <VisualBriefPanel brief={briefs.visual} />
-        </div>
-      </div>
-    </section>
+      </section>
+    </Tabs>
   );
 }
 

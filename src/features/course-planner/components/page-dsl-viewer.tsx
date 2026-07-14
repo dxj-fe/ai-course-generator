@@ -2,7 +2,11 @@
 
 import { useMemo, useState } from "react";
 
-import { getErrorText } from "@/features/ai-playground/lib/messages";
+import { Button } from "@/components/ui/button";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
 import type {
   CourseIntent,
   PageContentDSL,
@@ -10,20 +14,10 @@ import type {
   PageWorkerBrief,
 } from "@/shared/course-schema";
 
-type PageWriterResponse = {
-  traceId: string;
-  state: {
-    status: "idle" | "running" | "completed" | "failed";
-    events: Array<{
-      id: string;
-      sequence: number;
-      type: "start" | "model_call" | "tool_call" | "finish" | "error";
-      summary: string;
-    }>;
-    content?: PageContentDSL;
-    error?: { code: string; message: string };
-  };
-};
+import {
+  type PageWriterResponse,
+  writeCoursePage,
+} from "../lib/course-planner-api";
 
 /** 选择一个 PagePlan，生成并检查其 PageContentDSL 与 HTML 自由边界。 */
 export function PageDSLViewer({
@@ -60,23 +54,13 @@ export function PageDSLViewer({
     setResult(undefined);
 
     try {
-      const response = await fetch("/api/pages/write", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      setResult(
+        await writeCoursePage({
           intent,
           page: selectedPage,
           brief: selectedBrief,
-          traceId: crypto.randomUUID(),
         }),
-      });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(getErrorText(payload));
-      }
-
-      setResult(payload);
+      );
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -119,31 +103,31 @@ export function PageDSLViewer({
       <div className="flex flex-wrap items-end gap-3 rounded-xl border border-[#d8dee8] bg-white p-4 shadow-sm">
         <label className="grid min-w-64 flex-1 gap-1 text-sm font-semibold text-[#344054]">
           选择 PagePlan
-          <select
-            className="min-h-11 rounded-lg border border-[#cbd5e1] bg-[#fbfdff] px-3 text-sm font-normal outline-none focus:border-[#0284c7] focus:ring-2 focus:ring-[#bae6fd]"
+          <NativeSelect
+            className="w-full [&_select]:min-h-11 [&_select]:rounded-lg [&_select]:border-[#cbd5e1] [&_select]:bg-[#fbfdff] [&_select]:pl-3 [&_select]:text-sm [&_select]:font-normal [&_select]:outline-none [&_select]:focus:border-[#0284c7] [&_select]:focus:ring-2 [&_select]:focus:ring-[#bae6fd]"
             onChange={(event) => selectPage(event.currentTarget.value)}
             value={selectedPageId}
           >
             {pages.map((page) => (
-              <option key={page.id} value={page.id}>
+              <NativeSelectOption key={page.id} value={page.id}>
                 {String(page.order).padStart(2, "0")} · {page.title}
-              </option>
+              </NativeSelectOption>
             ))}
-          </select>
+          </NativeSelect>
         </label>
         {selectedPage ? (
           <span className="rounded-full bg-[#e0f2fe] px-3 py-2 text-xs font-semibold text-[#0369a1]">
             {selectedPage.functionalTemplateId}
           </span>
         ) : null}
-        <button
+        <Button
           className="min-h-11 rounded-lg bg-[#0369a1] px-5 py-2 text-sm font-semibold text-white transition hover:bg-[#075985] disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
           disabled={isRunning || !selectedPage || !selectedBrief}
           onClick={runPageWriter}
           type="button"
         >
           {isRunning ? "正在生成 Page DSL..." : "生成 Page DSL"}
-        </button>
+        </Button>
       </div>
 
       {error ? (
