@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import { pageContentDsl } from "../../fixtures/course-design";
+import { buildValidGeneratedHtml } from "../../fixtures/generated-html";
 import {
-  buildPagePreviewDemoHtml,
   sanitizeHtmlLite,
   validateGeneratedHtmlContract,
 } from "../../../src/shared/html-preview";
 
 describe("generated HTML preview", () => {
-  it("builds a complete, responsive, self-contained document from PageContentDSL", () => {
-    const html = buildPagePreviewDemoHtml(pageContentDsl);
+  it("accepts a complete, responsive, self-contained generated document", () => {
+    const html = buildValidGeneratedHtml(pageContentDsl);
 
     expect(validateGeneratedHtmlContract(html)).toEqual({
       valid: true,
@@ -38,7 +38,9 @@ describe("generated HTML preview", () => {
       "external_script",
       '<script src="https://evil.example/steal.js"></script>',
     ],
+    ["inline_script", "<script>document.body.textContent = 'bad'</script>"],
     ["external_iframe", '<iframe src="https://evil.example"></iframe>'],
+    ["external_asset", '<img alt="" src="https://evil.example/a.png">'],
     ["event_handler", '<img src="/safe.png" onerror="steal()">'],
     ["javascript_url", '<a href="javascript:steal()">继续</a>'],
     [

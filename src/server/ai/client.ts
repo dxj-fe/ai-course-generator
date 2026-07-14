@@ -17,8 +17,10 @@ const DEFAULT_STRUCTURED_TIMEOUT_MS = 60_000;
 export type AiClientRequest = {
   messages: UIMessage[];
   systemPrompt?: string;
+  promptVersion?: string;
   temperature?: number;
   maxTokens?: number;
+  timeoutMs?: number;
   traceId: string;
   model?: LanguageModel;
   abortSignal?: AbortSignal;
@@ -51,7 +53,7 @@ export async function generateTextSafe(request: AiClientRequest) {
       instructions: request.systemPrompt,
       temperature: request.temperature,
       maxOutputTokens: request.maxTokens,
-      timeout: DEFAULT_TEXT_TIMEOUT_MS,
+      timeout: request.timeoutMs ?? DEFAULT_TEXT_TIMEOUT_MS,
       abortSignal: request.abortSignal,
     });
 
@@ -76,7 +78,7 @@ export async function streamTextSafe(request: AiClientRequest) {
       instructions: request.systemPrompt,
       temperature: request.temperature,
       maxOutputTokens: request.maxTokens,
-      timeout: DEFAULT_TEXT_TIMEOUT_MS,
+      timeout: request.timeoutMs ?? DEFAULT_TEXT_TIMEOUT_MS,
       abortSignal: request.abortSignal,
       onError: ({ error }) => logAiError("stream:error", error, traceId, startedAt),
       onFinish: () => logAiFinish("stream:finish", traceId, startedAt),
@@ -143,8 +145,9 @@ function logAiEvent(event: string, request: AiClientRequest) {
     messageCount: request.messages.length,
     hasSystemPrompt: Boolean(request.systemPrompt),
     temperature: request.temperature,
-    maxTokens: request.maxTokens,
-    timeoutMs: DEFAULT_TEXT_TIMEOUT_MS,
+      maxTokens: request.maxTokens,
+      promptVersion: request.promptVersion,
+      timeoutMs: request.timeoutMs ?? DEFAULT_TEXT_TIMEOUT_MS,
   });
 }
 

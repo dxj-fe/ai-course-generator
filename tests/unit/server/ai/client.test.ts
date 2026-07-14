@@ -12,7 +12,10 @@ vi.mock("ai", () => ({
   streamText: vi.fn(),
 }));
 
-import { generateStructuredObjectSafe } from "../../../../src/server/ai/client";
+import {
+  generateStructuredObjectSafe,
+  generateTextSafe,
+} from "../../../../src/server/ai/client";
 
 describe("AI client", () => {
   beforeEach(() => {
@@ -28,6 +31,21 @@ describe("AI client", () => {
       schema: z.object({ value: z.string() }),
       schemaName: "course_brief",
       traceId: "structured-timeout-test",
+    });
+
+    expect(generateTextMock).toHaveBeenCalledWith(
+      expect.objectContaining({ timeout: 60_000 }),
+    );
+  });
+
+  it("allows a long raw HTML generation to request a 60 second timeout", async () => {
+    generateTextMock.mockResolvedValue({ text: "<!doctype html>" });
+
+    await generateTextSafe({
+      messages: [],
+      model: {} as never,
+      timeoutMs: 60_000,
+      traceId: "html-timeout-test",
     });
 
     expect(generateTextMock).toHaveBeenCalledWith(

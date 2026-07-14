@@ -8,7 +8,9 @@ export type GeneratedHtmlContractIssueCode =
 
 export type HtmlSafetyIssueCode =
   | "external_script"
+  | "inline_script"
   | "external_iframe"
+  | "external_asset"
   | "event_handler"
   | "javascript_url"
   | "meta_refresh"
@@ -77,13 +79,27 @@ export function sanitizeHtmlLite(html: string) {
   };
 
   if (/<script\b[^>]*\bsrc\s*=\s*(?:["'][^"']*["']|[^\s>]+)/i.test(html)) {
-    addIssue("external_script", "禁止加载外链脚本。生成页面只能使用受控的内联实现。");
+    addIssue("external_script", "禁止加载外链脚本。");
+  }
+
+  if (
+    /<script\b/i.test(html) &&
+    !/<script\b[^>]*\bsrc\s*=\s*(?:["'][^"']*["']|[^\s>]+)/i.test(html)
+  ) {
+    addIssue("inline_script", "Day 14 静态预览禁止任何内联脚本。");
   }
 
   if (
     /<iframe\b[^>]*\bsrc\s*=\s*(["'])\s*(?:https?:)?\/\//i.test(html)
   ) {
     addIssue("external_iframe", "禁止在生成页面中嵌套外链 iframe。");
+  }
+
+  if (
+    /\b(?:src|srcset|poster)\s*=\s*(["'])\s*(?:https?:)?\/\//i.test(html) ||
+    /url\s*\(\s*["']?(?:https?:)?\/\//i.test(html)
+  ) {
+    addIssue("external_asset", "禁止加载远程图片、媒体或 CSS 背景资源。");
   }
 
   if (/\son[a-z][a-z0-9_-]*\s*=/i.test(html)) {
@@ -122,4 +138,3 @@ export function sanitizeHtmlLite(html: string) {
 
   return { safe: issues.length === 0, issues };
 }
-

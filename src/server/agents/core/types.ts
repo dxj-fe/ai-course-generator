@@ -12,6 +12,7 @@ export type AgentEventType =
   | "start"
   | "model_call"
   | "tool_call"
+  | "validation"
   | "finish"
   | "error";
 

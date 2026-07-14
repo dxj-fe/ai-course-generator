@@ -1,18 +1,26 @@
 import { ShieldAlert, ShieldCheck } from "lucide-react";
 
 import { Alert } from "@/components/ui/alert";
+import { cn } from "@/lib/utils";
 import {
   sanitizeHtmlLite,
   validateGeneratedHtmlContract,
 } from "@/shared/html-preview";
 
 type HtmlPreviewFrameProps = {
+  className?: string;
+  frameClassName?: string;
   html: string;
   title: string;
 };
 
 /** 在不可信页面进入 srcDoc 前执行预检，并用最严格的空 sandbox 隔离展示。 */
-export function HtmlPreviewFrame({ html, title }: HtmlPreviewFrameProps) {
+export function HtmlPreviewFrame({
+  className,
+  frameClassName,
+  html,
+  title,
+}: HtmlPreviewFrameProps) {
   const contract = validateGeneratedHtmlContract(html);
   const safety = sanitizeHtmlLite(html);
   const issues = [...contract.issues, ...safety.issues];
@@ -44,7 +52,10 @@ export function HtmlPreviewFrame({ html, title }: HtmlPreviewFrameProps) {
   }
 
   return (
-    <section aria-label="HTML 安全预览" className="grid gap-3">
+    <section
+      aria-label="HTML 安全预览"
+      className={cn("grid gap-3", className)}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-xs font-semibold text-[#4f8938]">
           <ShieldCheck aria-hidden="true" size={15} strokeWidth={1.8} />
@@ -55,9 +66,9 @@ export function HtmlPreviewFrame({ html, title }: HtmlPreviewFrameProps) {
         </span>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-[#e2d7ca] bg-white shadow-[0_12px_32px_-28px_rgba(56,44,25,0.75)]">
+      <div className="min-h-0 overflow-hidden rounded-2xl border border-[#e2d7ca] bg-white shadow-[0_12px_32px_-28px_rgba(56,44,25,0.75)]">
         <iframe
-          className="block h-[480px] w-full bg-white"
+          className={cn("block h-[480px] w-full bg-white", frameClassName)}
           loading="lazy"
           referrerPolicy="no-referrer"
           sandbox=""
@@ -72,4 +83,3 @@ export function HtmlPreviewFrame({ html, title }: HtmlPreviewFrameProps) {
     </section>
   );
 }
-

@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话生成一门由多页关联 HTML 组成的课程。当前 Day 13 版本在 PageContentDSL 之后增加 HTML 合同、安全预检和 sandboxed iframe，在 Seaca 学习工作区内隔离预览课程页面。
+一句话生成一门由多页关联 HTML 组成的课程。当前 Day 14 版本由 HTML Engineer 把 PageContentDSL 实现为自包含单页 HTML，通过服务端合同与安全校验后，在 Seaca 学习工作区和独立预览路由中隔离展示。
 
 ## Day 01 交付
 
@@ -118,6 +118,15 @@
 - Seaca `/chat` 右侧学习工作区使用 `srcDoc` 和空权限 `sandbox` 展示页面，生成 HTML 不进入主应用 DOM。
 - 安全策略见 `docs/html-preview-security.md`，实现说明和详细面试题见 `notes/day-13.md`。
 
+## Day 14 交付
+
+- 新增一步 `HtmlEngineerAgent` 和版本化 Prompt，只消费 PageContentDSL、服务端 Registry 模板与 VisualBrief，不读取原始用户 Prompt。
+- 新增 `POST /api/pages/generate-html`，返回完整 `HtmlOutput` 与公开 Agent 事件。
+- 模型 HTML 在服务端立即执行完整文档合同、无脚本安全预检和 DSL 稳定标记检查。
+- Seaca `/chat` 支持逐页生成、失败重试、上游失效和空权限 iframe 快速预览。
+- 新增 `/preview/[previewId]` 独立预览路由；HTML 通过随机 ID 存入重新校验的浏览器临时缓存，不进入 URL。
+- 同一 DSL 的 sci-fi、kids-playful、minimal 三风格用例和详细面试复盘见 `notes/day-14.md`。
+
 ## 启动
 
 ```bash
@@ -211,6 +220,14 @@ Day 12 单页 Page Writer（使用 Planner 和 Day 11 的真实返回值）：
 curl -X POST http://localhost:3000/api/pages/write \
   -H "Content-Type: application/json" \
   -d '{"intent": {"...": "CourseIntent"}, "page": {"...": "PagePlan"}, "brief": {"...": "PageWorkerBrief"}}'
+```
+
+Day 14 单页 HTML Engineer（使用 Page Writer 与 Visual Director 的真实返回值）：
+
+```bash
+curl -X POST http://localhost:3000/api/pages/generate-html \
+  -H "Content-Type: application/json" \
+  -d '{"content": {"...": "PageContentDSL"}, "visualBrief": {"...": "VisualBrief"}}'
 ```
 
 流式接口：

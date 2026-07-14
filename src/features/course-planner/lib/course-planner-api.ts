@@ -3,6 +3,7 @@ import type {
   CourseDesignBriefs,
   CourseIntent,
   CoursePlan,
+  HtmlOutput,
   PageContentDSL,
   PagePlan,
   PageWorkerBrief,
@@ -13,6 +14,7 @@ type AgentEventType =
   | "start"
   | "model_call"
   | "tool_call"
+  | "validation"
   | "finish"
   | "error";
 type CourseDesignAgent = "pedagogy" | "story" | "visual";
@@ -65,6 +67,16 @@ export type PageWriterResponse = {
   };
 };
 
+export type HtmlEngineerResponse = {
+  traceId: string;
+  state: {
+    status: AgentStatus;
+    events: PublicAgentEvent[];
+    htmlOutput?: HtmlOutput;
+    error?: { code: string; message: string };
+  };
+};
+
 /** 调用现有课程规划接口；响应仍在请求完成后一次性返回。 */
 export function planCourse(
   input: { userPrompt?: string; intent?: CourseIntent },
@@ -100,6 +112,21 @@ export function writeCoursePage(
 ) {
   return postPlannerRequest<PageWriterResponse>(
     "/api/pages/write",
+    input,
+    options,
+  );
+}
+
+/** 调用 HTML Engineer，把一页 DSL 生成并校验为完整 HTML 文档。 */
+export function generateCoursePageHtml(
+  input: {
+    content: PageContentDSL;
+    visualBrief: CourseDesignBriefs["visual"];
+  },
+  options?: RequestOptions,
+) {
+  return postPlannerRequest<HtmlEngineerResponse>(
+    "/api/pages/generate-html",
     input,
     options,
   );

@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { planCourse } from "../../../src/features/course-planner/lib/course-planner-api";
+import {
+  generateCoursePageHtml,
+  planCourse,
+} from "../../../src/features/course-planner/lib/course-planner-api";
+import {
+  pageContentDsl,
+  visualBrief,
+} from "../../fixtures/course-design";
 
 describe("course planner API client", () => {
   afterEach(() => {
@@ -69,6 +76,35 @@ describe("course planner API client", () => {
         { traceId: "trace-failed" },
       ),
     ).resolves.toEqual(payload);
+  });
+
+  it("posts only DSL and VisualBrief to the HTML Engineer route", async () => {
+    const payload = {
+      traceId: "trace-html",
+      state: { status: "completed", events: [], htmlOutput: {} },
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await generateCoursePageHtml(
+      { content: pageContentDsl, visualBrief },
+      { traceId: "trace-html" },
+    );
+
+    const [endpoint, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(endpoint).toBe("/api/pages/generate-html");
+    expect(body).toEqual({
+      content: pageContentDsl,
+      visualBrief,
+      traceId: "trace-html",
+    });
+    expect(body).not.toHaveProperty("userPrompt");
   });
 
   it("turns a non-success API payload into a readable error", async () => {

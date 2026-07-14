@@ -1,6 +1,7 @@
 import type {
   CourseDesignResponse,
   CoursePlannerResponse,
+  HtmlEngineerResponse,
   PageWriterResponse,
   PublicAgentEvent,
 } from "@/features/course-planner/lib/course-planner-api";
@@ -65,6 +66,7 @@ export interface SeacaCourseRun {
   planner: CourseRunStage<CoursePlannerResponse>;
   design: CourseRunStage<CourseDesignResponse>;
   pageWrites: Record<string, CourseRunStage<PageWriterResponse>>;
+  pageHtml: Record<string, CourseRunStage<HtmlEngineerResponse>>;
 }
 
 export interface SeacaConversation {

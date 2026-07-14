@@ -20,7 +20,8 @@ The Seaca interface is the product shell. Training-day features extend its behav
 - Days 1–6: model calls, tool calls, and Agent events feed the `/chat` controller and public event timeline.
 - Days 7–12: `CourseIntent`, `CoursePlan`, professional briefs, and `PageContentDSL` render in the learning workspace.
 - Days 13–18: sandboxed HTML previews, assets, and multi-page results extend the learning workspace; generated HTML stays outside long-lived React UI state when persistence is available.
-- Day 13 (implemented): each completed Page DSL derives a deterministic demo document, passes the shared HTML contract and lightweight security preflight, then renders through an empty-policy `sandbox` iframe inside the `/chat` learning workspace. Day 14 will replace only the demo builder with HtmlEngineerAgent output; the workspace and security boundary stay unchanged.
+- Day 13 (implemented): each completed Page DSL established the shared HTML contract, lightweight security preflight, and empty-policy `sandbox` iframe boundary inside the `/chat` learning workspace.
+- Day 14 (implemented): `HtmlEngineerAgent` replaces the deterministic demo source with model-generated single-page HTML. Generation state and public validation events stay in `/chat`; the learning workspace provides quick preview, while `/preview/[previewId]` provides a large, session-local artifact view backed by revalidated browser storage. Neither surface relaxes the Day 13 iframe boundary.
 - Days 19–20: SSE replaces the Planner client's batch transport. Existing appendable event views remain unchanged.
 - Days 21–31: Supervisor, Page Worker, QA, Repair, and LangGraph events add typed timeline rows and page-level progress; the frontend never consumes framework-native chunks directly.
 - Days 32–33: uploads and reference/template retrieval use composer attachments and workspace reference panels.
@@ -43,3 +44,5 @@ The Seaca interface is the product shell. Training-day features extend its behav
 - Keep native semantic elements when a shadcn primitive would change the intended behavior, such as disclosure content or an existing radio group.
 
 When a later task needs a new panel, first place it in one of these surfaces. Add a new product route only when the artifact has its own durable URL and cannot be represented by the existing shell.
+
+The Day 14 preview route is the current exception for a generated artifact that benefits from a full canvas. Until backend run persistence exists, its random preview ID resolves through temporary browser storage; `/course` remains the future durable history owner.

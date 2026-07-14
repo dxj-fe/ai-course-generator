@@ -2,14 +2,16 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { pageContentDsl } from "../../fixtures/course-design";
+import { buildValidGeneratedHtml } from "../../fixtures/generated-html";
 import { HtmlPreviewFrame } from "../../../src/features/seaca/html-preview-frame";
-import { buildPagePreviewDemoHtml } from "../../../src/shared/html-preview";
 
 describe("HtmlPreviewFrame", () => {
   it("renders valid HTML only inside a no-permissions sandbox", () => {
     const markup = renderToStaticMarkup(
       <HtmlPreviewFrame
-        html={buildPagePreviewDemoHtml(pageContentDsl)}
+        className="h-full grid-rows-[auto_minmax(0,1fr)_auto]"
+        frameClassName="h-full min-h-0"
+        html={buildValidGeneratedHtml(pageContentDsl)}
         title="课程安全预览"
       />,
     );
@@ -18,6 +20,8 @@ describe("HtmlPreviewFrame", () => {
     expect(markup).toContain('sandbox=""');
     expect(markup).toContain('referrerPolicy="no-referrer"');
     expect(markup).toContain("srcDoc=");
+    expect(markup).toContain("grid-rows-[auto_minmax(0,1fr)_auto]");
+    expect(markup).toContain("h-full min-h-0");
     expect(markup).not.toContain("allow-scripts");
     expect(markup).not.toContain("allow-same-origin");
   });

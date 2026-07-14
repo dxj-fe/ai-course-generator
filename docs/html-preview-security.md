@@ -1,18 +1,19 @@
 # HTML Preview Security
 
-Day 13 adds a narrow preview boundary for AI-authored HTML. The product UI treats every generated document as untrusted, even when it was created from a validated `PageContentDSL`.
+Day 13 established the preview boundary; Day 14 routes real model output through it. The product UI treats every generated document as untrusted, even when it was created from a validated `PageContentDSL`.
 
 ## Preview pipeline
 
 ```text
 PageContentDSL
-  -> deterministic Day 13 demo HTML
-  -> GeneratedHtmlContract
-  -> sanitizeHtmlLite preflight
+  + server-resolved FunctionalTemplate / StyleTemplate / VisualBrief
+  -> HtmlEngineerAgent
+  -> GeneratedHtmlContract + DSL marker validation
+  -> sanitizeHtmlLite preflight on the server
+  -> optional revalidated browser preview cache
+  -> contract + preflight again on the client
   -> <iframe srcDoc sandbox="">
 ```
-
-The demo builder exists only to exercise the preview architecture before Day 14 introduces `HtmlEngineerAgent`. It is derived during render and is not stored as long-lived React state.
 
 ## Generated HTML contract
 
@@ -29,7 +30,7 @@ This contract is a quality and interoperability check. It does not decide whethe
 
 `sanitizeHtmlLite` rejects obvious capabilities that do not belong in a course preview:
 
-- external scripts
+- external and inline scripts
 - external nested iframes
 - inline `on*` event attributes
 - `javascript:` URLs
@@ -45,7 +46,7 @@ The function returns structured issues and never silently rewrites the document.
 
 | Capability | Day 13 policy | Reason |
 | --- | --- | --- |
-| Scripts | blocked | Day 13 preview is static; interactive HTML belongs to a later explicit policy decision. |
+| Scripts | blocked | Day 14 uses native static interaction patterns; executable interaction needs a later explicit policy decision. |
 | Same-origin identity | blocked | The preview receives an opaque origin instead of sharing the Seaca application origin. |
 | Forms | blocked | Generated content must not submit learner data. |
 | Popups and downloads | blocked | Preview content must not create new browsing or download flows. |
@@ -60,9 +61,8 @@ The iframe `sandbox` attribute is applied by the embedding product and is the pr
 
 ## Known limits and next steps
 
-- The Day 13 builder produces static HTML; it is not the final visual-quality generator.
 - Remote image asset allowlisting is deferred until the real asset pipeline is introduced.
 - The preview does not yet use `postMessage`; any future message must validate origin, type, and payload shape.
-- Resource size and DOM-complexity limits should be added before accepting arbitrary model HTML at scale.
-- Day 14 must run both validators on the server immediately after HTML generation and preserve the same iframe boundary in the client.
-
+- Day 14 caps a generated document at 200,000 characters; a future QA stage should add parsed DOM-complexity limits.
+- `/preview/[previewId]` uses temporary browser storage because course-run persistence is not implemented yet. The record is untrusted and is validated again on read and render.
+- Browser storage is not durable course history. Once persistence exists, `/course` should own the artifact and preview URLs should resolve through authorized backend records.

@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   designCourse,
+  generateCoursePageHtml,
   planCourse,
   writeCoursePage,
 } from "@/features/course-planner/lib/course-planner-api";
@@ -23,6 +24,7 @@ import { ChatSidebar } from "@/features/seaca/chat-sidebar";
 import { ChatThread } from "@/features/seaca/chat-thread";
 import { CourseWorkspacePanel } from "@/features/seaca/course-workspace-panel";
 import { conversations as initialConversations } from "@/data/seaca";
+import { saveGeneratedHtmlPreview } from "@/shared/html-preview";
 import type {
   SeacaChatMessage,
   SeacaConversation,
@@ -226,6 +228,7 @@ export function ChatApp({
       planner: { status: "running", events: [] },
       design: { status: "idle", events: [] },
       pageWrites: {},
+      pageHtml: {},
     };
 
     setConversations((current) => {
@@ -362,6 +365,7 @@ export function ChatApp({
               ...conversation.courseRun,
               design: { status: "running", events: [] },
               pageWrites: {},
+              pageHtml: {},
             }
           : conversation.courseRun,
       })),
@@ -463,6 +467,10 @@ export function ChatApp({
                 ...conversation.courseRun.pageWrites,
                 [pageId]: { status: "running", events: [] },
               },
+              pageHtml: {
+                ...conversation.courseRun.pageHtml,
+                [pageId]: { status: "idle", events: [] },
+              },
             }
           : conversation.courseRun,
       })),
@@ -550,6 +558,131 @@ export function ChatApp({
     }
   };
 
+  const handleGenerateHtml = async (pageId: string) => {
+    const conversationId = selectedConversation?.id;
+    const run = selectedConversation?.courseRun;
+    const content = run?.pageWrites[pageId]?.data?.state.content;
+    const visualBrief = run?.design.data?.state.briefs?.visual;
+
+    if (!conversationId || !run || !content || !visualBrief || busy) return;
+
+    setBusyConversationId(conversationId);
+    setConversations((current) =>
+      updateConversation(current, conversationId, (conversation) => ({
+        ...conversation,
+        courseRun: conversation.courseRun
+          ? {
+              ...conversation.courseRun,
+              pageHtml: {
+                ...conversation.courseRun.pageHtml,
+                [pageId]: { status: "running", events: [] },
+              },
+            }
+          : conversation.courseRun,
+      })),
+    );
+    const controller = createController();
+
+    try {
+      const result = await generateCoursePageHtml(
+        { content, visualBrief },
+        { signal: controller.signal, traceId: run.traceId },
+      );
+      const completed =
+        result.state.status === "completed" && result.state.htmlOutput;
+
+      if (!completed) {
+        const message =
+          result.state.error?.message ?? "HTML Engineer 未生成有效页面。";
+        setConversations((current) =>
+          updateConversation(current, conversationId, (conversation) => ({
+            ...conversation,
+            courseRun: conversation.courseRun
+              ? {
+                  ...conversation.courseRun,
+                  pageHtml: {
+                    ...conversation.courseRun.pageHtml,
+                    [pageId]: {
+                      status: "failed",
+                      events: result.state.events,
+                      data: result,
+                      error: message,
+                    },
+                  },
+                }
+              : conversation.courseRun,
+          })),
+        );
+        return;
+      }
+
+      setConversations((current) =>
+        updateConversation(current, conversationId, (conversation) => ({
+          ...conversation,
+          courseRun: conversation.courseRun
+            ? {
+                ...conversation.courseRun,
+                pageHtml: {
+                  ...conversation.courseRun.pageHtml,
+                  [pageId]: {
+                    status: "completed",
+                    events: result.state.events,
+                    data: result,
+                  },
+                },
+              }
+            : conversation.courseRun,
+        })),
+      );
+    } catch (error) {
+      const message = getErrorMessage(error, "HTML Engineer 请求失败。");
+      setConversations((current) =>
+        updateConversation(current, conversationId, (conversation) => ({
+          ...conversation,
+          courseRun: conversation.courseRun
+            ? {
+                ...conversation.courseRun,
+                pageHtml: {
+                  ...conversation.courseRun.pageHtml,
+                  [pageId]: {
+                    ...conversation.courseRun.pageHtml[pageId],
+                    status: "failed",
+                    events:
+                      conversation.courseRun.pageHtml[pageId]?.events ?? [],
+                    error: message,
+                  },
+                },
+              }
+            : conversation.courseRun,
+        })),
+      );
+    } finally {
+      releaseController(controller);
+      setBusyConversationId((current) =>
+        current === conversationId ? null : current,
+      );
+    }
+  };
+
+  const handleOpenHtmlPreview = (pageId: string) => {
+    const page = selectedRun?.planner.data?.state.outline?.pages.find(
+      ({ id }) => id === pageId,
+    );
+    const html = selectedRun?.pageHtml[pageId]?.data?.state.htmlOutput?.html;
+    if (!page || !html) return;
+
+    const preview = saveGeneratedHtmlPreview({
+      html,
+      pageId,
+      title: page.title,
+    });
+    window.open(
+      `/preview/${preview.id}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+  };
+
   return (
     <main className="fixed inset-0 flex overflow-hidden bg-[#fcf9f2] text-[#382c19]">
       <ChatSidebar
@@ -629,7 +762,9 @@ export function ChatApp({
             <CourseWorkspacePanel
               busy={busy}
               onGenerateDesign={handleGenerateDesign}
+              onGenerateHtml={handleGenerateHtml}
               onGeneratePage={handleGeneratePage}
+              onOpenHtmlPreview={handleOpenHtmlPreview}
               run={selectedRun}
             />
           </div>

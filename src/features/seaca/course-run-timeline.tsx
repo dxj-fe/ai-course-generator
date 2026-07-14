@@ -157,6 +157,7 @@ function buildTimelineSteps(run: SeacaCourseRun): TimelineStep[] {
   const pageIds = [
     ...outlinePages.map(({ id }) => id),
     ...Object.keys(run.pageWrites),
+    ...Object.keys(run.pageHtml),
   ].filter((pageId, index, values) => values.indexOf(pageId) === index);
 
   return [
@@ -175,17 +176,30 @@ function buildTimelineSteps(run: SeacaCourseRun): TimelineStep[] {
       summaries: run.design.events.map(({ summary }) => summary),
       error: run.design.error ?? run.design.data?.state.error?.message,
     },
-    ...pageIds.map((pageId) => {
+    ...pageIds.flatMap((pageId) => {
       const page = outlinePages.find(({ id }) => id === pageId);
       const write = run.pageWrites[pageId];
+      const html = run.pageHtml[pageId];
+      const pageLabel = page
+        ? `第 ${page.order} 页 · ${page.title}`
+        : `页面 ${pageId}`;
 
-      return {
-        id: `page-${pageId}`,
-        label: page ? `生成第 ${page.order} 页 · ${page.title}` : `生成页面 ${pageId}`,
-        status: write?.status ?? "idle",
-        summaries: write?.events.map(({ summary }) => summary) ?? [],
-        error: write?.error ?? write?.data?.state.error?.message,
-      } satisfies TimelineStep;
+      return [
+        {
+          id: `page-writer-${pageId}`,
+          label: `Page Writer · ${pageLabel}`,
+          status: write?.status ?? "idle",
+          summaries: write?.events.map(({ summary }) => summary) ?? [],
+          error: write?.error ?? write?.data?.state.error?.message,
+        },
+        {
+          id: `html-engineer-${pageId}`,
+          label: `HTML Engineer · ${pageLabel}`,
+          status: html?.status ?? "idle",
+          summaries: html?.events.map(({ summary }) => summary) ?? [],
+          error: html?.error ?? html?.data?.state.error?.message,
+        },
+      ] satisfies TimelineStep[];
     }),
   ];
 }

@@ -1,4 +1,3 @@
-export { buildPagePreviewDemoHtml } from "./demo-html";
 export {
   sanitizeHtmlLite,
   validateGeneratedHtmlContract,
@@ -6,3 +5,8 @@ export {
   type HtmlSafetyIssueCode,
   type HtmlValidationIssue,
 } from "./validation";
+export {
+  loadGeneratedHtmlPreview,
+  saveGeneratedHtmlPreview,
+  type GeneratedHtmlPreviewRecord,
+} from "./preview-cache";

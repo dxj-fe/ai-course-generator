@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { HtmlPreviewFrame } from "@/features/seaca/html-preview-frame";
 import type { PageContentDSL, PagePlan } from "@/shared/course-schema";
-import { buildPagePreviewDemoHtml } from "@/shared/html-preview";
 import type {
   CourseRunStageStatus,
   SeacaCourseRun,
@@ -17,7 +16,9 @@ type CourseWorkspacePanelProps = {
   run?: SeacaCourseRun;
   busy?: boolean;
   onGenerateDesign(): void;
+  onGenerateHtml(pageId: string): void;
   onGeneratePage(pageId: string): void;
+  onOpenHtmlPreview(pageId: string): void;
 };
 
 const statusCopy: Record<CourseRunStageStatus, string> = {
@@ -32,7 +33,9 @@ export function CourseWorkspacePanel({
   run,
   busy = false,
   onGenerateDesign,
+  onGenerateHtml,
   onGeneratePage,
+  onOpenHtmlPreview,
 }: CourseWorkspacePanelProps) {
   const plannerResult = run?.planner.data;
   const outline = plannerResult?.state.outline;
@@ -157,7 +160,9 @@ export function CourseWorkspacePanel({
                     !busy && Boolean(designResult?.state.pageWorkerBriefs)
                   }
                   key={page.id}
+                  onGenerateHtml={() => onGenerateHtml(page.id)}
                   onGenerate={() => onGeneratePage(page.id)}
+                  onOpenHtmlPreview={() => onOpenHtmlPreview(page.id)}
                   page={page}
                   run={run}
                 />
@@ -242,11 +247,15 @@ function PageWorkspaceCard({
   run,
   canGenerate,
   onGenerate,
+  onGenerateHtml,
+  onOpenHtmlPreview,
 }: {
   page: PagePlan;
   run: SeacaCourseRun;
   canGenerate: boolean;
   onGenerate(): void;
+  onGenerateHtml(): void;
+  onOpenHtmlPreview(): void;
 }) {
   const write = run.pageWrites[page.id];
   const content = write?.data?.state.content;
@@ -289,15 +298,35 @@ function PageWorkspaceCard({
         {error ? (
           <ErrorNotice>{error}</ErrorNotice>
         ) : content ? (
-          <PageDslResult content={content} />
+          <PageDslResult
+            canGenerateHtml={canGenerate}
+            content={content}
+            htmlStage={run.pageHtml[page.id]}
+            onGenerateHtml={onGenerateHtml}
+            onOpenHtmlPreview={onOpenHtmlPreview}
+          />
         ) : null}
       </article>
     </li>
   );
 }
 
-function PageDslResult({ content }: { content: PageContentDSL }) {
-  const previewHtml = buildPagePreviewDemoHtml(content);
+function PageDslResult({
+  canGenerateHtml,
+  content,
+  htmlStage,
+  onGenerateHtml,
+  onOpenHtmlPreview,
+}: {
+  canGenerateHtml: boolean;
+  content: PageContentDSL;
+  htmlStage?: SeacaCourseRun["pageHtml"][string];
+  onGenerateHtml(): void;
+  onOpenHtmlPreview(): void;
+}) {
+  const htmlOutput = htmlStage?.data?.state.htmlOutput;
+  const htmlError = htmlStage?.error ?? htmlStage?.data?.state.error?.message;
+  const htmlStatus = htmlStage?.status ?? "idle";
 
   return (
     <details className="mt-4 rounded-2xl bg-[#f8f3ec] p-4">
@@ -346,12 +375,65 @@ function PageDslResult({ content }: { content: PageContentDSL }) {
           />
         </dl>
 
-        <div className="border-t border-[#e6ddd1] pt-4">
-          <HtmlPreviewFrame
-            html={previewHtml}
-            title={`${content.title} · 课程安全预览`}
-          />
-        </div>
+        <section
+          aria-labelledby={`html-engineer-${content.pageId}`}
+          className="border-t border-[#e6ddd1] pt-4"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h5
+                  className="text-sm font-semibold text-[#4c3e2b]"
+                  id={`html-engineer-${content.pageId}`}
+                >
+                  HTML 页面
+                </h5>
+                <StatusBadge status={htmlStatus} />
+              </div>
+              <p className="mt-1 text-xs leading-5 text-[#988e80]">
+                HTML Engineer 只消费 DSL、模板和视觉 Brief。
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {htmlOutput ? (
+                <Button
+                  className="min-h-10 rounded-full border-[#d9cec0] bg-[#fffdf8] px-4 text-xs font-semibold text-[#5b4c3b] hover:bg-[#f3ede5]"
+                  onClick={onOpenHtmlPreview}
+                  type="button"
+                  variant="outline"
+                >
+                  独立预览
+                </Button>
+              ) : null}
+              <ActionButton
+                disabled={!canGenerateHtml || htmlStatus === "running"}
+                onClick={onGenerateHtml}
+              >
+                {htmlStatus === "running"
+                  ? "正在生成 HTML…"
+                  : htmlOutput
+                    ? "重新生成 HTML"
+                    : "生成 HTML 页面"}
+              </ActionButton>
+            </div>
+          </div>
+
+          {htmlError ? (
+            <ErrorNotice>{htmlError}</ErrorNotice>
+          ) : htmlOutput ? (
+            <div className="mt-4">
+              <HtmlPreviewFrame
+                html={htmlOutput.html}
+                title={`${content.title} · 课程安全预览`}
+              />
+            </div>
+          ) : (
+            <PendingNotice
+              idleCopy="Page DSL 已就绪，可以继续生成完整 HTML 页面。"
+              status={htmlStatus}
+            />
+          )}
+        </section>
       </div>
     </details>
   );
