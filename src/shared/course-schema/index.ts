@@ -179,3 +179,15 @@ export {
   type PageGenerationState,
   type PageGenerationStatus,
 } from "./course-generation-state";
+export {
+  CourseTaskCreateResponseSchema,
+  CourseTaskIdSchema,
+  CourseTaskRecordSchema,
+  CourseTaskStatusSchema,
+  CourseTaskStreamMessageSchema,
+  type CourseTaskCreateResponse,
+  type CourseTaskId,
+  type CourseTaskRecord,
+  type CourseTaskStatus,
+  type CourseTaskStreamMessage,
+} from "./course-task-event";

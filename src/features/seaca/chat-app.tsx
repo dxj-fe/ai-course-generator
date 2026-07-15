@@ -13,21 +13,26 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { useSSETask } from "@/features/course-planner/hooks/use-sse-task";
 import {
   designCourse,
   evaluateCoursePage,
-  generateCourseMvp,
   generateCoursePageAssets,
   generateCoursePageHtml,
   writeCoursePage,
 } from "@/features/course-planner/lib/course-planner-api";
 import { courseGenerationToSeacaRun } from "@/features/course-planner/lib/course-generation-adapter";
+import {
+  cancelCourseTask,
+  createCourseTask,
+} from "@/features/course-planner/lib/course-task-api";
 import { ChatComposer } from "@/features/seaca/chat-composer";
 import { ChatSidebar } from "@/features/seaca/chat-sidebar";
 import { ChatThread } from "@/features/seaca/chat-thread";
 import { CourseWorkspacePanel } from "@/features/seaca/course-workspace-panel";
 import { conversations as initialConversations } from "@/data/seaca";
 import { saveGeneratedHtmlPreview } from "@/shared/html-preview";
+import type { CourseGenerationState } from "@/shared/course-schema";
 import type {
   SeacaChatMessage,
   SeacaConversation,
@@ -104,6 +109,37 @@ interface ChatAppProps {
   initialPrompt?: string;
 }
 
+type ActiveCourseTask = {
+  taskId: string;
+  traceId: string;
+  conversationId: string;
+  assistantId: string;
+  runId: string;
+  prompt: string;
+  runStartedAt: number;
+  requestStartedAt: number;
+  mode: "create" | "resume";
+};
+
+function mapStreamedCourseRun(
+  state: CourseGenerationState,
+  task: ActiveCourseTask,
+) {
+  return courseGenerationToSeacaRun(
+    {
+      courseId: state.courseId,
+      traceId: state.traceId,
+      state,
+    },
+    {
+      id: task.runId,
+      taskId: task.taskId,
+      prompt: task.prompt,
+      startedAt: task.runStartedAt,
+    },
+  );
+}
+
 export function ChatApp({
   initialConversationId,
   initialPrompt = "",
@@ -123,6 +159,8 @@ export function ChatApp({
   const [busyConversationId, setBusyConversationId] = useState<string | null>(
     null,
   );
+  const [activeCourseTask, setActiveCourseTask] =
+    useState<ActiveCourseTask | null>(null);
   const requestControllers = useRef(new Set<AbortController>());
   const selectedIdRef = useRef(selectedId);
   const workspaceRef = useRef<HTMLElement>(null);
@@ -134,6 +172,73 @@ export function ChatApp({
     getServerWorkspaceOverlaySnapshot,
   );
   const workspaceIsModal = rightPanelOpen && workspaceOverlay;
+
+  const finishCourseTask = (state: CourseGenerationState) => {
+    const task = activeCourseTask;
+    if (!task || state.traceId !== task.traceId) return;
+
+    const mappedRun = mapStreamedCourseRun(state, task);
+    const completedPageCount = state.pages.filter(
+      ({ status }) => status === "completed",
+    ).length;
+    const duration = `${Math.max(
+      1,
+      Math.round((Date.now() - task.requestStartedAt) / 1_000),
+    )}s`;
+    const terminalMessage =
+      state.status === "completed"
+        ? task.mode === "resume"
+          ? `已从断点完成全部 ${completedPageCount} 页课程。`
+          : `已完成「${state.intent?.topic ?? task.prompt}」的 ${state.outline?.pages.length ?? completedPageCount} 页课程。右侧学习空间可以统一预览 HTML，也可逐页检查素材与结果。`
+        : `${state.status === "cancelled" ? "课程生成已取消" : task.mode === "resume" ? "断点恢复仍未完成" : "课程生成未完成"}：${state.errors.at(-1)?.message ?? "未知错误"} 已保留 ${completedPageCount} 个完成页面。`;
+
+    setConversations((current) =>
+      updateConversation(current, task.conversationId, (conversation) => ({
+        ...conversation,
+        messages: updateMessage(conversation.messages, task.assistantId, {
+          content: terminalMessage,
+          duration,
+        }),
+        courseRun: mappedRun,
+      })),
+    );
+    if (selectedIdRef.current === task.conversationId) {
+      setRightPanelOpen(true);
+    }
+    setBusyConversationId((current) =>
+      current === task.conversationId ? null : current,
+    );
+    setActiveCourseTask((current) =>
+      current?.taskId === task.taskId ? null : current,
+    );
+  };
+
+  const handleCourseTaskStreamError = (error: Error) => {
+    const task = activeCourseTask;
+    if (!task) return;
+
+    setConversations((current) =>
+      updateConversation(current, task.conversationId, (conversation) => ({
+        ...conversation,
+        messages: updateMessage(conversation.messages, task.assistantId, {
+          content: `实时进度连接已停止：${error.message} 服务端任务可能仍在运行，已保存的检查点不会丢失。`,
+        }),
+      })),
+    );
+    setBusyConversationId((current) =>
+      current === task.conversationId ? null : current,
+    );
+    setActiveCourseTask((current) =>
+      current?.taskId === task.taskId ? null : current,
+    );
+  };
+
+  const { latestState: streamedCourseState } = useSSETask({
+    taskId: activeCourseTask?.taskId ?? null,
+    enabled: activeCourseTask !== null,
+    onTerminal: ({ state }) => finishCourseTask(state),
+    onError: handleCourseTaskStreamError,
+  });
 
   const selectConversation = (conversationId: string | null) => {
     selectedIdRef.current = conversationId;
@@ -158,12 +263,36 @@ export function ChatApp({
     workspaceWasOpenRef.current = rightPanelOpen;
   }, [rightPanelOpen, workspaceIsModal]);
 
-  const selectedConversation = useMemo(
-    () =>
-      conversations.find((conversation) => conversation.id === selectedId) ??
-      null,
-    [conversations, selectedId],
-  );
+  const streamedCourseRun = useMemo(() => {
+    if (
+      !activeCourseTask ||
+      !streamedCourseState ||
+      streamedCourseState.traceId !== activeCourseTask.traceId
+    ) {
+      return undefined;
+    }
+
+    return mapStreamedCourseRun(streamedCourseState, activeCourseTask);
+  }, [activeCourseTask, streamedCourseState]);
+  const selectedConversation = useMemo(() => {
+    const conversation =
+      conversations.find(({ id }) => id === selectedId) ?? null;
+
+    if (
+      !conversation ||
+      !streamedCourseRun ||
+      conversation.id !== activeCourseTask?.conversationId
+    ) {
+      return conversation;
+    }
+
+    return { ...conversation, courseRun: streamedCourseRun };
+  }, [
+    activeCourseTask?.conversationId,
+    conversations,
+    selectedId,
+    streamedCourseRun,
+  ]);
   const selectedRun = selectedConversation?.courseRun;
   const busy = busyConversationId !== null;
 
@@ -179,6 +308,27 @@ export function ChatApp({
 
   const handleCancel = () => {
     requestControllers.current.forEach((controller) => controller.abort());
+
+    if (!activeCourseTask) return;
+
+    const task = activeCourseTask;
+    const controller = createController();
+    void cancelCourseTask(task.taskId, {
+      signal: controller.signal,
+      traceId: task.traceId,
+    })
+      .catch((error) => {
+        const message = getErrorMessage(error, "取消课程任务失败。");
+        setConversations((current) =>
+          updateConversation(current, task.conversationId, (conversation) => ({
+            ...conversation,
+            messages: updateMessage(conversation.messages, task.assistantId, {
+              content: `课程任务暂时无法取消：${message}`,
+            }),
+          })),
+        );
+      })
+      .finally(() => releaseController(controller));
   };
 
   const handleNewConversation = () => {
@@ -276,51 +426,34 @@ export function ChatApp({
     const controller = createController();
 
     try {
-      const result = await generateCourseMvp(
+      const task = await createCourseTask(
         { courseId, userPrompt: text },
         { signal: controller.signal, traceId },
       );
-      const mappedRun = courseGenerationToSeacaRun(result, {
-        id: courseRun.id,
-        prompt: text,
-        startedAt,
-      });
-      const outline = result.state.outline;
-      const completedPageCount = result.state.pages.filter(
-        ({ status }) => status === "completed",
-      ).length;
-      const completed = result.state.status === "completed" && outline;
-      const duration = `${Math.max(1, Math.round((Date.now() - startedAt) / 1_000))}s`;
-
-      if (!completed) {
-        const message =
-          result.state.errors.at(-1)?.message ?? "整课生成未能完成。";
-        setConversations((current) =>
-          updateConversation(current, conversationId, (conversation) => ({
-            ...conversation,
-            messages: updateMessage(conversation.messages, assistantId, {
-              content: `${result.state.status === "cancelled" ? "课程生成已取消" : "课程生成未完成"}：${message} 已保留 ${completedPageCount} 个完成页面，可从服务端断点继续。`,
-              duration,
-            }),
-            courseRun: mappedRun,
-          })),
-        );
-        if (selectedIdRef.current === conversationId) {
-          setRightPanelOpen(true);
-        }
-        return;
-      }
-
       setConversations((current) =>
         updateConversation(current, conversationId, (conversation) => ({
           ...conversation,
-          messages: updateMessage(conversation.messages, assistantId, {
-            content: `已完成「${result.state.intent?.topic ?? text}」的 ${outline.pages.length} 页课程。右侧学习空间可以统一预览 HTML，也可逐页检查素材与结果。`,
-            duration,
-          }),
-          courseRun: mappedRun,
+          courseRun: conversation.courseRun
+            ? {
+                ...conversation.courseRun,
+                taskId: task.taskId,
+                courseId: task.courseId,
+                traceId: task.traceId,
+              }
+            : conversation.courseRun,
         })),
       );
+      setActiveCourseTask({
+        taskId: task.taskId,
+        traceId: task.traceId,
+        conversationId,
+        assistantId,
+        runId: courseRun.id,
+        prompt: text,
+        runStartedAt: startedAt,
+        requestStartedAt: startedAt,
+        mode: "create",
+      });
       if (selectedIdRef.current === conversationId) {
         setRightPanelOpen(true);
       }
@@ -347,11 +480,11 @@ export function ChatApp({
       if (selectedIdRef.current === conversationId) {
         setRightPanelOpen(true);
       }
-    } finally {
-      releaseController(controller);
       setBusyConversationId((current) =>
         current === conversationId ? null : current,
       );
+    } finally {
+      releaseController(controller);
     }
   };
 
@@ -384,39 +517,41 @@ export function ChatApp({
       })),
     );
     const controller = createController();
+    const traceId = crypto.randomUUID();
 
     try {
-      const result = await generateCourseMvp(
+      const task = await createCourseTask(
         {
           courseId,
           userPrompt: run.prompt,
           ...(pageCount ? { pageCount } : {}),
         },
-        { signal: controller.signal, traceId: crypto.randomUUID() },
+        { signal: controller.signal, traceId },
       );
-      const mappedRun = courseGenerationToSeacaRun(result, {
-        id: run.id,
-        prompt: run.prompt,
-        startedAt: run.startedAt,
-      });
-      const completedPageCount = result.state.pages.filter(
-        ({ status }) => status === "completed",
-      ).length;
-      const message =
-        result.state.status === "completed"
-          ? `已从断点完成全部 ${completedPageCount} 页课程。`
-          : `断点恢复仍未完成：${result.state.errors.at(-1)?.message ?? "未知错误"} 已保留 ${completedPageCount} 个完成页面。`;
-
       setConversations((current) =>
         updateConversation(current, conversationId, (conversation) => ({
           ...conversation,
-          messages: updateMessage(conversation.messages, assistantId, {
-            content: message,
-            duration: `${Math.max(1, Math.round((Date.now() - startedAt) / 1_000))}s`,
-          }),
-          courseRun: mappedRun,
+          courseRun: conversation.courseRun
+            ? {
+                ...conversation.courseRun,
+                taskId: task.taskId,
+                courseId: task.courseId,
+                traceId: task.traceId,
+              }
+            : conversation.courseRun,
         })),
       );
+      setActiveCourseTask({
+        taskId: task.taskId,
+        traceId: task.traceId,
+        conversationId,
+        assistantId,
+        runId: run.id,
+        prompt: run.prompt,
+        runStartedAt: run.startedAt,
+        requestStartedAt: startedAt,
+        mode: "resume",
+      });
     } catch (error) {
       const message = getErrorMessage(error, "断点恢复请求失败。");
       setConversations((current) =>
@@ -427,11 +562,11 @@ export function ChatApp({
           }),
         })),
       );
-    } finally {
-      releaseController(controller);
       setBusyConversationId((current) =>
         current === conversationId ? null : current,
       );
+    } finally {
+      releaseController(controller);
     }
   };
 

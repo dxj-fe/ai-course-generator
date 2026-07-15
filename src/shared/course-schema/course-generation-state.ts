@@ -48,9 +48,12 @@ export const PageGenerationStatusSchema = z.enum([
 
 export const CourseGenerationEventTypeSchema = z.enum([
   "start",
+  "agent_start",
+  "agent_done",
   "model_call",
   "tool_call",
   "validation",
+  "page_done",
   "finish",
   "error",
 ]);

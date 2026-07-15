@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话生成一门由多页关联 HTML 组成的课程。当前 Day 18 版本由服务端串行编排 3–5 页规划、专业设计、PageContentDSL、图片素材与 HTML，并通过持久化检查点向 Seaca 学习工作区交付统一预览和失败恢复能力。
+一句话生成一门由多页关联 HTML 组成的课程。当前 Day 19 版本由服务端异步编排 3–5 页规划、专业设计、PageContentDSL、图片素材与 HTML，并通过严格公开事件、SSE 和持久化检查点向 Seaca 学习工作区实时交付进度、统一预览与失败恢复能力。
 
 ## Day 01 交付
 
@@ -170,6 +170,16 @@
 - 现有逐阶段按钮继续承担单页检查和局部重试，Page QA 保持可选，不成为 Day 18 主链阻塞条件。
 - 状态边界、恢复语义、验证策略和面试复盘见 `notes/day-18.md`。
 
+## Day 19 交付
+
+- 新增严格的课程任务与 SSE Schema；流中只允许 `snapshot`、公开 `event` 和 `terminal`，不存在任意私有 `data` 或模型原始 chunk 通道。
+- 新增持久化 task store 与单进程 EventBus。课程 checkpoint 成功写入后才发布实时消息，任务记录负责映射 `taskId`、`courseId`、`traceId` 和运行状态。
+- 新增 `POST /api/courses/tasks`、`GET /api/courses/tasks/[taskId]/events` 与 `DELETE /api/courses/tasks/[taskId]`，分别负责创建、SSE 订阅和显式取消。
+- SSE 使用公开事件 sequence 作为 `id`，支持 `Last-Event-ID` 增量重放、初始快照、订阅竞态缓冲、心跳和终态关闭。
+- 新增 `useSSETask`，在 Controller 数据层完成 EventSource 生命周期、Schema 校验、顺序检查、重连去重和终态归并。
+- Seaca `/chat` 继续使用现有 Composer、Agent Timeline 和 learning workspace；整课生成从批量 JSON 切换为实时任务流，没有重做 UI 或增加平行控制台。
+- 协议、取消语义、单进程限制、验证策略和八道详细面试题见 `notes/day-19.md`。
+
 ## 启动
 
 ```bash
@@ -286,6 +296,29 @@ curl -X POST http://localhost:3000/api/courses/generate \
 curl -X POST http://localhost:3000/api/courses/generate \
   -H "Content-Type: application/json" \
   -d '{"courseId":"course-..."}'
+```
+
+Day 19 创建异步整课任务（响应为 HTTP 202，并返回 `taskId`、`courseId` 与 `traceId`）：
+
+```bash
+curl -i -X POST http://localhost:3000/api/courses/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"userPrompt":"为 8 岁儿童生成一门三页太阳系互动课程","pageCount":3}'
+```
+
+使用返回的 `taskId` 订阅实时进度；浏览器会自动维护 Last-Event-ID，curl 可手动验证从指定 sequence 重放：
+
+```bash
+curl -N http://localhost:3000/api/courses/tasks/task-.../events
+
+curl -N http://localhost:3000/api/courses/tasks/task-.../events \
+  -H "Last-Event-ID: 12"
+```
+
+只有显式 DELETE 才取消后台生成，关闭上面的 SSE 连接不会取消任务：
+
+```bash
+curl -X DELETE http://localhost:3000/api/courses/tasks/task-...
 ```
 
 Day 12 单页 Page Writer（使用 Planner 和 Day 11 的真实返回值）：

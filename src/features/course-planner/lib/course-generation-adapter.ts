@@ -21,6 +21,7 @@ import type {
 
 type RunSeed = {
   id: string;
+  taskId?: string;
   prompt: string;
   startedAt: number;
 };
@@ -37,7 +38,8 @@ export function courseGenerationToSeacaRun(
   const plannerError = findStageError(state, ["intent", "planner"]);
   const designError = findStageError(state, ["design"]);
   const plannerEvents = eventsFor(state, ["intent", "planner"]);
-  const designEvents = state.events
+  const designPublicEvents = eventsFor(state, ["design"]);
+  const designAgentEvents = state.events
     .filter(
       (
         event,
@@ -49,12 +51,24 @@ export function courseGenerationToSeacaRun(
         isDesignAgent(event.agent),
     )
     .map((event) => ({ ...event, agent: event.agent }));
+  const plannerStatus = stageStatus(
+    Boolean(state.outline),
+    plannerError,
+    eventStatusForCurrentStage(state, ["intent", "planner"]),
+    isStageRunning(state, ["intent", "planner"]),
+  );
+  const designStatus = stageStatus(
+    Boolean(state.briefs),
+    designError,
+    eventStatusForCurrentStage(state, ["design"]),
+    isStageRunning(state, ["design"]),
+  );
   const plannerData = state.intent
     ? ({
         traceId: state.traceId,
         intent: state.intent,
         state: {
-          status: state.outline ? "completed" : "failed",
+          status: plannerStatus,
           events: plannerEvents,
           outline: state.outline,
           error: plannerError
@@ -63,12 +77,12 @@ export function courseGenerationToSeacaRun(
         },
       } satisfies CoursePlannerResponse)
     : undefined;
-  const designData = state.outline
+  const designData = state.outline && (state.briefs || designError)
     ? ({
         traceId: state.traceId,
         state: {
           status: state.briefs ? "completed" : "failed",
-          events: designEvents,
+          events: designAgentEvents,
           briefs: state.briefs,
           pageWorkerBriefs: state.pageWorkerBriefs,
           error: designError
@@ -94,20 +108,21 @@ export function courseGenerationToSeacaRun(
 
   return {
     id: seed.id,
+    taskId: seed.taskId,
     courseId: state.courseId,
     prompt: seed.prompt,
     traceId: state.traceId,
     startedAt: seed.startedAt,
     generation: state,
     planner: {
-      status: stageStatus(Boolean(state.outline), plannerError),
+      status: plannerStatus,
       events: plannerEvents,
       data: plannerData,
       error: plannerError?.message,
     },
     design: {
-      status: stageStatus(Boolean(state.briefs), designError),
-      events: designEvents,
+      status: designStatus,
+      events: designPublicEvents,
       data: designData,
       error: designError?.message,
     },
@@ -124,7 +139,12 @@ function buildPageWriterStage(
 ): CourseRunStage<PageWriterResponse> {
   const error = findStageError(state, ["page_writer"], page.pageId);
   const events = eventsFor(state, ["page_writer"], page.pageId);
-  const status = stageStatus(Boolean(page.content), error);
+  const status = stageStatus(
+    Boolean(page.content),
+    error,
+    eventStatus(events),
+    isPageStageRunning(state, page, "page_writer"),
+  );
 
   return {
     status,
@@ -157,7 +177,12 @@ function buildAssetStage(
     page.currentStage === "html" ||
     page.currentStage === "complete" ||
     Boolean(page.htmlOutput);
-  const status = stageStatus(completed, error);
+  const status = stageStatus(
+    completed,
+    error,
+    eventStatus(events),
+    isPageStageRunning(state, page, "assets"),
+  );
 
   return {
     status,
@@ -186,7 +211,12 @@ function buildHtmlStage(
 ): CourseRunStage<HtmlEngineerResponse> {
   const error = findStageError(state, ["html"], page.pageId);
   const events = eventsFor(state, ["html"], page.pageId);
-  const status = stageStatus(Boolean(page.htmlOutput), error);
+  const status = stageStatus(
+    Boolean(page.htmlOutput),
+    error,
+    eventStatus(events),
+    isPageStageRunning(state, page, "html"),
+  );
 
   return {
     status,
@@ -212,10 +242,67 @@ function buildHtmlStage(
 function stageStatus(
   completed: boolean,
   error?: CourseGenerationError,
+  statusFromEvents?: CourseRunStageStatus,
+  running = false,
 ): CourseRunStageStatus {
   if (completed) return "completed";
   if (error) return "failed";
+  if (statusFromEvents) return statusFromEvents;
+  if (running) return "running";
   return "idle";
+}
+
+function eventStatusForCurrentStage(
+  state: CourseGenerationState,
+  stages: CourseGenerationStage[],
+) {
+  if (!stages.includes(state.currentStage)) {
+    return eventStatus(eventsFor(state, stages));
+  }
+
+  return eventStatus(eventsFor(state, [state.currentStage]));
+}
+
+function eventStatus(
+  events: PublicAgentEvent[],
+): CourseRunStageStatus | undefined {
+  const type: string | undefined = events.at(-1)?.type;
+
+  if (type === "error") return "failed";
+  if (type === "agent_done" || type === "page_done" || type === "finish") {
+    return "completed";
+  }
+  if (
+    type === "agent_start" ||
+    type === "start" ||
+    type === "model_call" ||
+    type === "tool_call" ||
+    type === "validation"
+  ) {
+    return "running";
+  }
+
+  return undefined;
+}
+
+function isStageRunning(
+  state: CourseGenerationState,
+  stages: CourseGenerationStage[],
+) {
+  return state.status === "running" && stages.includes(state.currentStage);
+}
+
+function isPageStageRunning(
+  state: CourseGenerationState,
+  page: PageGenerationState,
+  stage: "page_writer" | "assets" | "html",
+) {
+  return (
+    state.status === "running" &&
+    state.currentStage === stage &&
+    state.currentPageId === page.pageId &&
+    page.status === "running"
+  );
 }
 
 function eventsFor(

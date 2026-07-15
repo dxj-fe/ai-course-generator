@@ -20,9 +20,12 @@ import {
 type AgentStatus = "idle" | "running" | "completed" | "failed";
 type AgentEventType =
   | "start"
+  | "agent_start"
+  | "agent_done"
   | "model_call"
   | "tool_call"
   | "validation"
+  | "page_done"
   | "finish"
   | "error";
 type CourseDesignAgent = "pedagogy" | "story" | "visual";

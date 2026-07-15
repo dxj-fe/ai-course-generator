@@ -63,6 +63,7 @@ export interface CourseRunStage<Result> {
 
 export interface SeacaCourseRun {
   id: string;
+  taskId?: string;
   courseId?: string;
   prompt: string;
   traceId: string;

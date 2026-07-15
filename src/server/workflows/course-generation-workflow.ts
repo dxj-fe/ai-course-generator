@@ -79,6 +79,11 @@ export async function runCourseGenerationWorkflow(
 
   if (!state.intent) {
     try {
+      state = await beginAgent(state, dependencies, {
+        stage: "intent",
+        agent: "intent",
+        summary: "Intent Agent 已开始理解课程需求。",
+      });
       assertNotAborted(context.abortSignal);
       const generatedIntent = await dependencies.generateIntent({
         abortSignal: context.abortSignal,
@@ -106,6 +111,11 @@ export async function runCourseGenerationWorkflow(
           summary: `课程意图已校验，MVP 固定生成 ${intent.courseLength} 页。`,
         },
       );
+      state = appendAgentDone(state, dependencies.now, {
+        stage: "intent",
+        agent: "intent",
+        summary: "Intent Agent 已完成课程需求解析。",
+      });
       state = await checkpoint(state, dependencies);
     } catch (error) {
       return failWorkflow(
@@ -118,6 +128,11 @@ export async function runCourseGenerationWorkflow(
   }
 
   if (!state.outline) {
+    state = await beginAgent(state, dependencies, {
+      stage: "planner",
+      agent: "planner",
+      summary: "Course Planner 已开始规划课程页面。",
+    });
     const plannerState = await dependencies.runPlanner(state.intent!, context);
     state = appendAgentEvents(state, dependencies.now, "planner", plannerState.events, {
       agent: "planner",
@@ -142,10 +157,20 @@ export async function runCourseGenerationWorkflow(
       outline: plannerState.outline,
       currentStage: "design",
     };
+    state = appendAgentDone(state, dependencies.now, {
+      stage: "planner",
+      agent: "planner",
+      summary: `Course Planner 已完成 ${plannerState.outline.pages.length} 页课程规划。`,
+    });
     state = await checkpoint(state, dependencies);
   }
 
   if (!state.briefs || !state.pageWorkerBriefs) {
+    state = await beginAgent(state, dependencies, {
+      stage: "design",
+      agent: "course-design",
+      summary: "课程专业设计工作流已开始。",
+    });
     const designState = await dependencies.runDesign(
       { intent: state.intent!, outline: state.outline! },
       context,
@@ -183,6 +208,11 @@ export async function runCourseGenerationWorkflow(
       })),
       currentStage: "page_writer",
     };
+    state = appendAgentDone(state, dependencies.now, {
+      stage: "design",
+      agent: "course-design",
+      summary: "教学、故事与视觉设计已完成。",
+    });
     state = await checkpoint(state, dependencies);
   }
 
@@ -232,7 +262,12 @@ export async function runCourseGenerationWorkflow(
 
     if (!getPage(state, pagePlan.id).content) {
       state = setCurrentStage(state, "page_writer", pagePlan.id);
-      state = await checkpoint(state, dependencies);
+      state = await beginAgent(state, dependencies, {
+        stage: "page_writer",
+        pageId: pagePlan.id,
+        agent: "page-writer",
+        summary: `Page Writer 已开始生成第 ${pagePlan.order} 页内容。`,
+      });
       const writerState = await dependencies.runPageWriter(
         { intent: state.intent!, page: pagePlan, brief },
         context,
@@ -266,6 +301,12 @@ export async function runCourseGenerationWorkflow(
         content: writerState.content,
         currentStage: "assets",
       }));
+      state = appendAgentDone(state, dependencies.now, {
+        stage: "page_writer",
+        pageId: pagePlan.id,
+        agent: "page-writer",
+        summary: `第 ${pagePlan.order} 页 PageContentDSL 已生成。`,
+      });
       state = await checkpoint(state, dependencies);
     }
 
@@ -281,7 +322,12 @@ export async function runCourseGenerationWorkflow(
         ...page,
         currentStage: "assets",
       }));
-      state = await checkpoint(state, dependencies);
+      state = await beginAgent(state, dependencies, {
+        stage: "assets",
+        pageId: pagePlan.id,
+        agent: "image-assets",
+        summary: `第 ${pagePlan.order} 页素材解析已开始。`,
+      });
       currentPage = getPage(state, pagePlan.id);
 
       if (currentPage.content!.assetSlots.length === 0) {
@@ -334,13 +380,24 @@ export async function runCourseGenerationWorkflow(
         ...page,
         currentStage: "html",
       }));
+      state = appendAgentDone(state, dependencies.now, {
+        stage: "assets",
+        pageId: pagePlan.id,
+        agent: "image-assets",
+        summary: `第 ${pagePlan.order} 页素材解析已完成。`,
+      });
       state = await checkpoint(state, dependencies);
     }
 
     currentPage = getPage(state, pagePlan.id);
     if (!currentPage.htmlOutput) {
       state = setCurrentStage(state, "html", pagePlan.id);
-      state = await checkpoint(state, dependencies);
+      state = await beginAgent(state, dependencies, {
+        stage: "html",
+        pageId: pagePlan.id,
+        agent: "html-engineer",
+        summary: `HTML Engineer 已开始生成第 ${pagePlan.order} 页。`,
+      });
       const htmlState = await dependencies.runHtml(
         {
           content: currentPage.content!,
@@ -380,6 +437,18 @@ export async function runCourseGenerationWorkflow(
         htmlOutput: htmlState.htmlOutput,
         error: undefined,
       }));
+      state = appendAgentDone(state, dependencies.now, {
+        stage: "html",
+        pageId: pagePlan.id,
+        agent: "html-engineer",
+        summary: `第 ${pagePlan.order} 页 HTML 已完成校验。`,
+      });
+      state = appendEvent(state, dependencies.now, {
+        type: "page_done",
+        stage: "html",
+        pageId: pagePlan.id,
+        summary: `第 ${pagePlan.order} 页已完成，可在学习空间预览。`,
+      });
       state = await checkpoint(state, dependencies);
     }
   }
@@ -528,6 +597,39 @@ function appendAgentEvent(
     step: event.step,
     summary: event.summary,
     timestamp: event.timestamp,
+  });
+}
+
+type AgentBoundaryMetadata = {
+  stage: CourseGenerationStage;
+  agent: string;
+  pageId?: string;
+  summary: string;
+};
+
+/** 在调用长耗时 Agent 前先落盘，SSE 才能即时展示真实的运行阶段。 */
+function beginAgent(
+  state: CourseGenerationState,
+  dependencies: CourseGenerationWorkflowDependencies,
+  metadata: AgentBoundaryMetadata,
+) {
+  return checkpoint(
+    appendEvent(state, dependencies.now, {
+      type: "agent_start",
+      ...metadata,
+    }),
+    dependencies,
+  );
+}
+
+function appendAgentDone(
+  state: CourseGenerationState,
+  now: () => string,
+  metadata: AgentBoundaryMetadata,
+) {
+  return appendEvent(state, now, {
+    type: "agent_done",
+    ...metadata,
   });
 }
 

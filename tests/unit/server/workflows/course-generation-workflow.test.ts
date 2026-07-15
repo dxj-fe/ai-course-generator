@@ -60,6 +60,18 @@ describe("course generation workflow", () => {
       state.events.map((_, index) => index + 1),
     );
     expect(state.events.every((event) => !("data" in event))).toBe(true);
+    expect(
+      state.events.filter(({ type }) => type === "page_done").map(({ pageId }) => pageId),
+    ).toEqual(courseDesignOutline.pages.map(({ id }) => id));
+    expect(state.events.some(({ type }) => type === "agent_start")).toBe(true);
+    expect(state.events.some(({ type }) => type === "agent_done")).toBe(true);
+    expect(
+      checkpoints.some((saved) =>
+        saved.events.some(
+          ({ type, stage }) => type === "agent_start" && stage === "planner",
+        ),
+      ),
+    ).toBe(true);
   });
 
   it("stops on the failing page and preserves earlier completed HTML", async () => {
