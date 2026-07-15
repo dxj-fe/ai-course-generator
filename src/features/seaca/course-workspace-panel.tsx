@@ -425,7 +425,7 @@ function PageDslResult({
                   <StatusBadge status={assetStatus} />
                 </div>
                 <p className="mt-1 text-xs leading-5 text-[#988e80]">
-                  每个槽位独立生图；失败会降级，不会阻塞 HTML。
+                  每个槽位独立解析；缓存未命中才生图，失败不会阻塞 HTML。
                 </p>
               </div>
               <ActionButton
@@ -433,9 +433,9 @@ function PageDslResult({
                 onClick={onGenerateAssets}
               >
                 {assetStatus === "running"
-                  ? "正在生成素材…"
+                  ? "正在解析素材…"
                   : assetResults
-                    ? "重新生成素材"
+                    ? "重新解析素材"
                     : "生成图片素材"}
               </ActionButton>
             </div>

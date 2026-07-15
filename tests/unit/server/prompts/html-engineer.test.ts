@@ -27,8 +27,15 @@ describe("HTML Engineer prompts", () => {
       pageGuidance,
     });
 
-    expect(prompts.version).toBe("1.0.0/1.0.0");
+    expect(prompts.version).toBe("1.1.2/1.0.0");
     expect(prompts.systemPrompt).toContain("禁止任何 `<script>`");
+    expect(prompts.systemPrompt).toContain("不得交换槽位");
+    expect(prompts.systemPrompt).toContain("精确 altText");
+    expect(prompts.systemPrompt).toContain("不使用其他命名实体");
+    expect(prompts.systemPrompt).toContain("`none` 页面不要为了标记");
+    expect(prompts.systemPrompt).toContain(
+      "`feedback.retry` 只属于答错后的条件状态",
+    );
     expect(prompts.userPrompt).toContain(pageContentDsl.pageId);
     expect(prompts.userPrompt).toContain("--course-color-background");
     expect(prompts.userPrompt).not.toContain("为 8 岁儿童设计一门");

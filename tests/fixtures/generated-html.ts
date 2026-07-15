@@ -31,10 +31,16 @@ export function buildValidGeneratedHtml(content: PageContentDSL) {
       ${content.narration.map((text) => `<p>${text}</p>`).join("")}
       ${blocks}
       ${assets}
-      <section data-interaction-type="${content.interaction.type}">${interactionText(content)}</section>
+      ${interactionHtml(content)}
     </main>
   </body>
 </html>`;
+}
+
+function interactionHtml(content: PageContentDSL) {
+  return content.interaction.type === "none"
+    ? ""
+    : `<section data-interaction-type="${content.interaction.type}">${interactionText(content)}</section>`;
 }
 
 function interactionText(content: PageContentDSL) {

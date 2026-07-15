@@ -101,6 +101,27 @@ export async function loadGeneratedAsset(
   return undefined;
 }
 
+/** 仅检查内部素材文件是否仍然存在且大小有效，不读取图片内容。 */
+export async function hasGeneratedAsset(id: string) {
+  if (!ASSET_ID_PATTERN.test(id)) return false;
+
+  for (const extension of Object.values(MEDIA_EXTENSIONS)) {
+    const filePath = path.join(ASSET_ROOT_DIRECTORY, `${id}.${extension}`);
+    try {
+      const fileStat = await stat(filePath);
+      return (
+        fileStat.isFile() &&
+        fileStat.size > 0 &&
+        fileStat.size <= MAX_IMAGE_BYTES
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+
+  return false;
+}
+
 function isPng(bytes: Uint8Array) {
   const signature = [137, 80, 78, 71, 13, 10, 26, 10];
   return signature.every((value, index) => bytes[index] === value);

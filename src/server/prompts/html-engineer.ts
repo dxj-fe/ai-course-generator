@@ -5,7 +5,7 @@ import type { PromptTemplateDefinition } from "./types";
 
 const systemDefinition: PromptTemplateDefinition = {
   name: "html-engineer-system",
-  version: "1.0.0",
+  version: "1.1.2",
   role: "system",
   inputContract: [
     "只接收 PageContentDSL、FunctionalTemplate、StyleTemplate、VisualBrief 页面指导和已校验素材结果。",

@@ -202,12 +202,21 @@ export function validateHtmlEngineerOutput(
     ...contract.issues.map(({ message }) => message),
     ...safety.issues.map(({ message }) => message),
   ];
-  const requiredMarkers = [
+  const requiredMarkers: Array<readonly [string, string]> = [
     ["data-page-id", input.content.pageId],
-    ["data-interaction-type", input.content.interaction.type],
-    ...input.content.blocks.map(({ id }) => ["data-block-id", id]),
-    ...input.content.assetSlots.map(({ id }) => ["data-asset-slot-id", id]),
-  ] as const;
+    ...input.content.blocks.map(
+      ({ id }) => ["data-block-id", id] as const,
+    ),
+    ...input.content.assetSlots.map(
+      ({ id }) => ["data-asset-slot-id", id] as const,
+    ),
+  ];
+  if (input.content.interaction.type !== "none") {
+    requiredMarkers.push([
+      "data-interaction-type",
+      input.content.interaction.type,
+    ]);
+  }
 
   for (const [attribute, value] of requiredMarkers) {
     if (!hasDataAttribute(html, attribute, value)) {
@@ -218,7 +227,7 @@ export function validateHtmlEngineerOutput(
   validateAssetReferences(html, input.content, input.assets ?? [], issues);
 
   const visibleText = normalizeVisibleText(html);
-  for (const text of collectRequiredContentText(input.content)) {
+  for (const text of collectRequiredStaticContentText(input.content)) {
     if (!visibleText.includes(normalizeText(text))) {
       issues.push(`页面正文缺少 DSL 文本：${text}`);
     }
@@ -288,9 +297,8 @@ function validateAssetReferences(
   }
 
   for (const result of assets) {
-    const uri = result.asset?.uri;
-    if (result.status === "ready" && (!uri || !html.includes(uri))) {
-      issues.push(`素材槽 ${result.request.assetSlotId} 没有引用已生成素材 URI。`);
+    if (result.status === "ready" && result.asset) {
+      validateReadyAssetNode(html, result, issues);
     }
     if (
       result.status === "fallback" &&
@@ -306,41 +314,181 @@ function validateAssetReferences(
     }
   }
 
-  const allowedUris = new Set(
-    assets.flatMap(({ asset }) => (asset?.uri ? [asset.uri] : [])),
-  );
-  const imageSources = [...html.matchAll(/<img\b[^>]*\bsrc\s*=\s*(["'])([^"']+)\1/gi)]
-    .map((match) => match[2])
-    .filter(Boolean);
-  for (const source of imageSources) {
-    if (!allowedUris.has(source)) {
-      issues.push(`图片 src 不在已批准素材清单中：${source}`);
+  const expectedUsageCounts = new Map<string, number>();
+  for (const { asset, status } of assets) {
+    if (status === "ready" && asset?.uri) {
+      expectedUsageCounts.set(
+        asset.uri,
+        (expectedUsageCounts.get(asset.uri) ?? 0) + 1,
+      );
     }
   }
+  const allowedUris = new Set(expectedUsageCounts.keys());
+  const assetSources = collectAssetSources(html);
+  for (const source of new Set(assetSources)) {
+    if (!allowedUris.has(source)) {
+      issues.push(`素材 URI 不在已批准素材清单中：${source}`);
+    }
+  }
+
+  for (const [uri, expectedCount] of expectedUsageCounts) {
+    const usageCount = assetSources.filter((source) => source === uri).length;
+    if (usageCount !== expectedCount) {
+      issues.push(
+        `已批准素材 URI ${uri} 必须恰好被对应的 ${expectedCount} 个素材槽引用。`,
+      );
+    }
+  }
+}
+
+/** ready 素材的 URI 与替代文本必须绑定到自己的槽位节点，不能跨槽误用。 */
+function validateReadyAssetNode(
+  html: string,
+  result: AssetGenerationResult,
+  issues: string[],
+) {
+  const { assetSlotId } = result.request;
+  const asset = result.asset;
+  if (!asset?.uri) {
+    issues.push(`素材槽 ${assetSlotId} 缺少已生成素材 URI。`);
+    return;
+  }
+
+  const assetTags = findTagsWithAttributes(html, {
+    "data-asset-slot-id": assetSlotId,
+  });
+  if (assetTags.length !== 1) {
+    issues.push(`素材槽 ${assetSlotId} 必须且只能有一个直接消费素材的节点。`);
+    return;
+  }
+
+  const tag = assetTags[0];
+  const tagName = tag.match(/^<\s*([a-z][\w:-]*)/i)?.[1]?.toLowerCase();
+  const usesImageSource =
+    tagName === "img" && hasAttributeValue(tag, "src", asset.uri);
+  const usesCssBackground = hasCssUrl(tag, asset.uri);
+  if (!usesImageSource && !usesCssBackground) {
+    issues.push(`素材槽 ${assetSlotId} 没有在对应节点引用已生成素材 URI。`);
+    return;
+  }
+
+  const altText = asset.altText ?? "";
+  if (usesImageSource) {
+    if (!hasAttributeValue(tag, "alt", altText)) {
+      issues.push(`素材槽 ${assetSlotId} 的 alt 必须等于已批准的替代文本。`);
+    }
+    return;
+  }
+
+  const accessible = altText
+    ? hasAttributeValue(tag, "role", "img") &&
+      hasAttributeValue(tag, "aria-label", altText)
+    : hasAttributeValue(tag, "aria-hidden", "true");
+  if (!accessible) {
+    issues.push(
+      `素材槽 ${assetSlotId} 的 CSS 背景必须提供匹配的可访问说明或显式隐藏。`,
+    );
+  }
+}
+
+function collectAssetSources(html: string) {
+  const sources: string[] = [];
+  const tags = html.match(/<[a-z][^>]*>/gi) ?? [];
+
+  for (const tag of tags) {
+    const tagName = tag.match(/^<\s*([a-z][\w:-]*)/i)?.[1]?.toLowerCase();
+    sources.push(...getAttributeValues(tag, "src"));
+
+    if (tagName === "img" || tagName === "source") {
+      for (const srcset of getAttributeValues(tag, "srcset")) {
+        sources.push(...parseSrcset(srcset));
+      }
+    }
+    if (tagName === "video") {
+      sources.push(...getAttributeValues(tag, "poster"));
+    }
+    if (tagName === "image") {
+      sources.push(...getAttributeValues(tag, "href"));
+      sources.push(...getAttributeValues(tag, "xlink:href"));
+    }
+  }
+
+  for (const match of html.matchAll(
+    /url\s*\(\s*(?:"([^"]*)"|'([^']*)'|([^)'"\s][^)]*?))\s*\)/gi,
+  )) {
+    const source = match[1] ?? match[2] ?? match[3];
+    if (source) sources.push(decodeHtmlEntities(source.trim()));
+  }
+
+  return sources.filter((source) => source && !source.startsWith("#"));
+}
+
+function parseSrcset(value: string) {
+  return value
+    .split(",")
+    .map((candidate) => candidate.trim().split(/\s+/, 1)[0] ?? "")
+    .filter(Boolean);
 }
 
 function hasAttributesOnSameTag(
   html: string,
   attributes: Record<string, string>,
 ) {
-  return (html.match(/<[a-z][^>]*>/gi) ?? []).some((tag) =>
+  return findTagsWithAttributes(html, attributes).length > 0;
+}
+
+function findTagsWithAttributes(
+  html: string,
+  attributes: Record<string, string>,
+) {
+  return (html.match(/<[a-z][^>]*>/gi) ?? []).filter((tag) =>
     Object.entries(attributes).every(([attribute, value]) =>
-      hasDataAttribute(tag, attribute, value),
+      hasAttributeValue(tag, attribute, value),
     ),
   );
 }
 
 function hasDataAttribute(html: string, attribute: string, value: string) {
-  const escapedValue = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(
-    `\\b${attribute}\\s*=\\s*(["'])${escapedValue}\\1`,
-    "i",
-  );
-
-  return pattern.test(html);
+  return hasAttributeValue(html, attribute, value);
 }
 
-function collectRequiredContentText(content: PageContentDSL) {
+function hasAttributeValue(html: string, attribute: string, value: string) {
+  return getAttributeValues(html, attribute).some(
+    (attributeValue) => attributeValue === value,
+  );
+}
+
+function getAttributeValues(html: string, attribute: string) {
+  const escapedAttribute = attribute.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(
+    `(?:^|\\s)${escapedAttribute}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s'"=<>\u0060]+))`,
+    "gi",
+  );
+  const values: string[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(html))) {
+    values.push(decodeHtmlEntities(match[1] ?? match[2] ?? match[3] ?? ""));
+  }
+
+  return values;
+}
+
+function hasCssUrl(tag: string, uri: string) {
+  const style =
+    tag.match(/\bstyle\s*=\s*"([^"]*)"/i)?.[1] ??
+    tag.match(/\bstyle\s*=\s*'([^']*)'/i)?.[1];
+  if (!style) return false;
+
+  const escapedUri = uri.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(
+    `url\\(\\s*["']?${escapedUri}["']?\\s*\\)`,
+    "i",
+  ).test(style);
+}
+
+/** 静态预览必须常显的正文；答错后的 retry 反馈仍由 DSL 保存，不要求永久铺在页面上。 */
+function collectRequiredStaticContentText(content: PageContentDSL) {
   const blockText = content.blocks.flatMap((block) => [
     block.heading,
     block.body,
@@ -367,7 +515,6 @@ function collectRequiredContentText(content: PageContentDSL) {
         question.prompt,
         ...question.options.map(({ label }) => label),
         question.feedback.success,
-        question.feedback.retry,
       ]);
       break;
     case "sort":
@@ -375,7 +522,6 @@ function collectRequiredContentText(content: PageContentDSL) {
         interaction.prompt,
         ...interaction.items.flatMap((item) => [item.label, item.content]),
         interaction.feedback.success,
-        interaction.feedback.retry,
       ];
       break;
     case "input":
@@ -384,7 +530,6 @@ function collectRequiredContentText(content: PageContentDSL) {
         interaction.placeholder,
         ...interaction.evaluationCriteria,
         interaction.feedback.success,
-        interaction.feedback.retry,
       ];
       break;
   }
@@ -395,21 +540,39 @@ function collectRequiredContentText(content: PageContentDSL) {
 function normalizeVisibleText(html: string) {
   const body = html.match(/<body\b[^>]*>([\s\S]*?)<\/body\s*>/i)?.[1] ?? html;
   return normalizeText(
-    body
-      .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, " ")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/&nbsp;/gi, " ")
-      .replace(/&amp;/gi, "&")
-      .replace(/&lt;/gi, "<")
-      .replace(/&gt;/gi, ">")
-      .replace(/&quot;/gi, '"')
-      .replace(/&#(?:39|x27);/gi, "'")
-      .replace(/&#(\d+);/g, (_, code: string) =>
-        String.fromCodePoint(Number(code)),
-      )
-      .replace(/&#x([0-9a-f]+);/gi, (_, code: string) =>
-        String.fromCodePoint(Number.parseInt(code, 16)),
-      ),
+    decodeHtmlEntities(
+      body
+        .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, " ")
+        .replace(/<[^>]+>/g, " "),
+    ),
+  );
+}
+
+/** Prompt 合同只允许这组基础命名实体；其他字符必须使用原字符或数字实体。 */
+function decodeHtmlEntities(value: string) {
+  const namedEntities: Record<string, string> = {
+    amp: "&",
+    apos: "'",
+    gt: ">",
+    lt: "<",
+    nbsp: " ",
+    quot: '"',
+  };
+
+  return value.replace(
+    /&(?:#(\d+)|#x([0-9a-f]+)|([a-z]+));/gi,
+    (entity, decimal: string, hexadecimal: string, named: string) => {
+      if (decimal || hexadecimal) {
+        const codePoint = decimal
+          ? Number(decimal)
+          : Number.parseInt(hexadecimal, 16);
+        return Number.isInteger(codePoint) && codePoint <= 0x10ffff
+          ? String.fromCodePoint(codePoint)
+          : entity;
+      }
+
+      return namedEntities[named.toLowerCase()] ?? entity;
+    },
   );
 }
 

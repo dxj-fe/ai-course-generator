@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话生成一门由多页关联 HTML 组成的课程。当前 Day 14 版本由 HTML Engineer 把 PageContentDSL 实现为自包含单页 HTML，通过服务端合同与安全校验后，在 Seaca 学习工作区和独立预览路由中隔离展示。
+一句话生成一门由多页关联 HTML 组成的课程。当前 Day 17 版本串联 PageContentDSL、可缓存图片素材与 HTML Engineer，通过服务端合同与安全校验后，在 Seaca 学习工作区和独立预览路由中隔离展示。
 
 ## Day 01 交付
 
@@ -147,6 +147,17 @@
 - HTML Engineer 只能消费当前页面批准的内部素材 URI；Page QA 会报告素材缺失、未引用和 fallback。
 - Seaca `/chat` 学习工作区增加逐页图片素材状态、公开事件与 AssetGallery，重新生图会失效旧 HTML 与 QA。
 - 素材边界、四类用例和详细面试复盘见 `notes/day-16.md`。
+
+## Day 17 交付
+
+- 页面素材解析先按 Page DSL、VisualBrief 与 Image Prompt 版本复用结构化请求集，再按 prompt、style、aspectRatio 和图片模型查询 ready 素材；同一页复跑不会因模型措辞漂移重复生图。
+- 缓存只保存通过 Schema 校验的 ready 结果；fallback 不做长期负缓存，下一次解析仍可重试真实图片供应商。
+- 命中缓存时会检查内部 URI 的图片文件仍然存在；索引存在但文件缺失会作为 stale miss 重新生成。
+- 缓存读写是 best-effort 辅助能力，损坏索引或写入失败只产生公开警告，不会让已生成素材或 HTML 流程失败。
+- Image Assets Timeline 使用现有公开事件展示请求集、图片 hit/miss、stale 和 fallback 汇总，不把生产 Prompt、缓存键或服务端路径写入公开事件和界面。
+- HTML Engineer 继续把背景、角色贴纸与课程任务卡合成为语义 HTML；URI 和精确 altText 必须绑定到对应素材槽节点，文字和互动不会被烘焙进图片。
+- Seaca 学习工作区保持原有 AssetGallery 和两阶段生成流程，仅把重复操作表述为“重新解析素材”，不增加平行缓存控制台。
+- 缓存失效、素材合成边界和详细面试复盘见 `notes/day-17.md`。
 
 ## 启动
 

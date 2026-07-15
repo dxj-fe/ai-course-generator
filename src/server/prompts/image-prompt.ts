@@ -23,6 +23,9 @@ const userDefinition: PromptTemplateDefinition = {
   fileName: "image-prompt.user.v1.md",
 };
 
+/** 缓存 ImagePromptAgent 编译结果时使用，Prompt 合同变更会自然失效。 */
+export const IMAGE_PROMPT_VERSION = `${systemDefinition.version}/${userDefinition.version}`;
+
 export async function buildImagePromptPrompts(input: unknown) {
   const [systemTemplate, userTemplate] = await Promise.all([
     loadPromptTemplate(systemDefinition),
@@ -30,7 +33,7 @@ export async function buildImagePromptPrompts(input: unknown) {
   ]);
 
   return {
-    version: `${systemTemplate.version}/${userTemplate.version}`,
+    version: IMAGE_PROMPT_VERSION,
     systemPrompt: renderPromptTemplate(systemTemplate, {}),
     userPrompt: renderPromptTemplate(userTemplate, {
       imagePromptInputJson: JSON.stringify(input),

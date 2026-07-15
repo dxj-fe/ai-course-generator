@@ -4,9 +4,9 @@ source_doc: `.agentdocs/prd/AI_Agent_Frontend_Training_Handbook_V5.docx`
 timezone: `Asia/Shanghai`
 daily_run_time: `09:30`
 start_date: `2026-07-09`
-last_delivered_day: `16`
-last_delivered_date: `2026-07-14`
-next_training_day: `17`
+last_delivered_day: `17`
+last_delivered_date: `2026-07-15`
+next_training_day: `18`
 
 ## Notes
 
@@ -36,3 +36,5 @@ next_training_day: `17`
 - 2026-07-14: Implemented Day 15 with an evolved six-dimension QualityReport, deterministic HTML/layout heuristics, a report-only PageQAAgent and API, Seaca QA state and public events, validated preview scores, ten failure categories, detailed interview answers, and 133 passing tests.
 - 2026-07-14: Delivered Day 16 plan for an ImagePromptAgent, real image generation Skill, four HTML-asset categories, internal asset storage and delivery, CSS fallbacks, Seaca AssetGallery integration, and detailed interview answers.
 - 2026-07-14: Implemented Day 16 with structured asset requests/results, four constrained image categories, a configurable real image Skill, validated internal raster storage, non-blocking fallbacks, HTML/QA asset contracts, Seaca AssetGallery and public events, documentation, and automated tests.
+- 2026-07-15: Delivered Day 17 plan for cache-aware page asset resolution, DSL-asset-HTML composition, fallback reuse boundaries, Seaca workflow integration, and a two-asset single-page acceptance demo.
+- 2026-07-15: Implemented Day 17 with versioned same-page request-set reuse, ready-only generated-asset caching, stale-file regeneration, non-blocking cache failures, public resolution summaries, strict per-slot URI/alt accessible HTML binding, a two-asset task-card acceptance case, documentation, and automated verification.
