@@ -437,6 +437,76 @@ describe("HtmlEngineerAgent", () => {
     ).toThrow("素材 URI 不在已批准素材清单中：/api/assets/unapproved");
   });
 
+  it("accepts a ready asset bound through one marked wrapper or one unique CSS class", () => {
+    const directBackground =
+      '<figure><img data-asset-slot-id="asset-slot-01" src="/api/assets/asset-background" alt="保留左侧文字安全区的太空观察背景。">';
+    const wrappedBackground =
+      '<figure data-asset-slot-id="asset-slot-01"><img src="/api/assets/asset-background" alt="保留左侧文字安全区的太空观察背景。">';
+    const classBackground =
+      '<figure class="course-hero-asset" data-asset-slot-id="asset-slot-01" role="img" aria-label="保留左侧文字安全区的太空观察背景。">';
+    const wrappedClassBackground =
+      '<figure data-asset-slot-id="asset-slot-01"><div class="course-hero-asset" role="img" aria-label="保留左侧文字安全区的太空观察背景。"></div>';
+    const wrappedHtml = buildAssetRichHtml().replace(
+      directBackground,
+      wrappedBackground,
+    );
+    const classBoundHtml = buildAssetRichHtml()
+      .replace(directBackground, classBackground)
+      .replace(
+        "</style>",
+        ".course-hero-asset { background-image: url('/api/assets/asset-background'); }</style>",
+      );
+    const wrappedClassBoundHtml = buildAssetRichHtml()
+      .replace(directBackground, wrappedClassBackground)
+      .replace(
+        "</style>",
+        ".course-hero-asset { background-image: url('/api/assets/asset-background'); }</style>",
+      );
+
+    expect(() =>
+      validateHtmlEngineerOutput(wrappedHtml, {
+        content: assetRichContent,
+        visualBrief,
+        assets: readyAssetResults,
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validateHtmlEngineerOutput(classBoundHtml, {
+        content: assetRichContent,
+        visualBrief,
+        assets: readyAssetResults,
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validateHtmlEngineerOutput(wrappedClassBoundHtml, {
+        content: assetRichContent,
+        visualBrief,
+        assets: readyAssetResults,
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects a stylesheet asset binding when its class is shared by another node", () => {
+    const html = buildAssetRichHtml()
+      .replace(
+        '<figure><img data-asset-slot-id="asset-slot-01" src="/api/assets/asset-background" alt="保留左侧文字安全区的太空观察背景。">',
+        '<figure class="course-hero-asset" data-asset-slot-id="asset-slot-01" role="img" aria-label="保留左侧文字安全区的太空观察背景。">',
+      )
+      .replace(
+        "</style>",
+        ".course-hero-asset { background-image: url('/api/assets/asset-background'); }</style>",
+      )
+      .replace("</body>", '<div class="course-hero-asset"></div></body>');
+
+    expect(() =>
+      validateHtmlEngineerOutput(html, {
+        content: assetRichContent,
+        visualBrief,
+        assets: readyAssetResults,
+      }),
+    ).toThrow("没有在对应节点引用已生成素材 URI");
+  });
+
   it("requires every approved URI once and on its correctly marked direct node", () => {
     const html = buildAssetRichHtml();
     const duplicate = html.replace(

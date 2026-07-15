@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { HtmlPreviewFrame } from "@/features/seaca/html-preview-frame";
 import { AssetGallery } from "@/features/seaca/asset-gallery";
+import { CoursePreviewGrid } from "@/features/seaca/course-preview-grid";
 import { PageQualityPanel } from "@/features/seaca/page-quality-panel";
 import type { PageContentDSL, PagePlan } from "@/shared/course-schema";
 import type {
@@ -23,6 +24,7 @@ type CourseWorkspacePanelProps = {
   onEvaluatePage(pageId: string): void;
   onGeneratePage(pageId: string): void;
   onOpenHtmlPreview(pageId: string): void;
+  onResumeCourse(): void;
 };
 
 const statusCopy: Record<CourseRunStageStatus, string> = {
@@ -42,6 +44,7 @@ export function CourseWorkspacePanel({
   onEvaluatePage,
   onGeneratePage,
   onOpenHtmlPreview,
+  onResumeCourse,
 }: CourseWorkspacePanelProps) {
   const plannerResult = run?.planner.data;
   const outline = plannerResult?.state.outline;
@@ -50,6 +53,24 @@ export function CourseWorkspacePanel({
   const briefs = designResult?.state.briefs;
   const designError = run?.design.error ?? designResult?.state.error?.message;
   const canGenerateDesign = Boolean(outline && intent);
+  const generationError =
+    run?.generation?.errors.at(-1)?.message ?? run?.planner.error;
+  const canResumeCourse =
+    run?.generation?.status === "failed" ||
+    run?.generation?.status === "cancelled" ||
+    Boolean(!run?.generation && run?.courseId && run?.planner.status === "failed");
+  const previewPages =
+    outline?.pages.map((page) => {
+      const htmlStage = run?.pageHtml[page.id];
+      return {
+        id: page.id,
+        order: page.order,
+        title: page.title,
+        status: htmlStage?.status ?? ("idle" as const),
+        htmlOutput: htmlStage?.data?.state.htmlOutput?.html,
+        error: htmlStage?.error ?? htmlStage?.data?.state.error?.message,
+      };
+    }) ?? [];
 
   return (
     <section
@@ -78,6 +99,26 @@ export function CourseWorkspacePanel({
             <WarmTag>{intent.language}</WarmTag>
           </div>
         ) : null}
+        {canResumeCourse ? (
+          <Alert
+            className="mt-4 flex items-center justify-between gap-3 rounded-2xl border-0 bg-[#fff0eb] px-3 py-3 text-sm text-[#984735]"
+            variant="destructive"
+          >
+            <span className="min-w-0 leading-5">
+              {generationError ?? "整课生成已停止，已完成页面仍然保留。"}
+            </span>
+            <Button
+              className="h-8 shrink-0 rounded-full border border-[#dcaa9e] bg-[#fff8f5] px-3 text-xs font-semibold text-[#984735] hover:bg-white"
+              disabled={busy}
+              onClick={onResumeCourse}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {busy ? "正在恢复…" : "从断点继续"}
+            </Button>
+          </Alert>
+        ) : null}
       </header>
 
       <div className="grid gap-7 px-4 py-5 sm:px-6 sm:py-6">
@@ -93,7 +134,7 @@ export function CourseWorkspacePanel({
                 专业设计
               </h3>
               <p className="mt-1 text-xs leading-5 text-[#988e80]">
-                规划确认后，手动生成教学、故事与视觉方案。
+                整课任务会自动生成教学、故事与视觉方案，也可在此单独重试。
               </p>
             </div>
             <ActionButton
@@ -145,6 +186,8 @@ export function CourseWorkspacePanel({
           )}
         </section>
 
+        {outline ? <CoursePreviewGrid pages={previewPages} /> : null}
+
         <section aria-labelledby="page-content-title">
           <div>
             <h3
@@ -154,7 +197,7 @@ export function CourseWorkspacePanel({
               课程页面
             </h3>
             <p className="mt-1 text-xs leading-5 text-[#988e80]">
-              每页独立生成 Page DSL，失败时只需重试当前页。
+              整课按顺序生成；单页失败时可从断点继续，也可只重试当前阶段。
             </p>
           </div>
 

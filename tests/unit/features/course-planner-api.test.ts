@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   evaluateCoursePage,
+  generateCourseMvp,
   generateCoursePageAssets,
   generateCoursePageHtml,
   planCourse,
@@ -51,6 +52,81 @@ describe("course planner API client", () => {
       userPrompt: "为小学生生成一门太阳系课程",
       traceId: "trace-planner",
     });
+  });
+
+  it("posts one Day 18 course task and validates the shared workflow state", async () => {
+    const payload = {
+      courseId: "course-123e4567-e89b-42d3-a456-426614174000",
+      traceId: "trace-course-mvp",
+      state: {
+        version: 1,
+        courseId: "course-123e4567-e89b-42d3-a456-426614174000",
+        traceId: "trace-course-mvp",
+        userPrompt: "生成五页太阳系课程",
+        status: "running",
+        currentStage: "intent",
+        pages: [],
+        events: [],
+        errors: [],
+        startedAt: "2026-07-15T02:00:00.000Z",
+        updatedAt: "2026-07-15T02:00:00.000Z",
+      },
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const controller = new AbortController();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      generateCourseMvp(
+        {
+          courseId: payload.courseId,
+          userPrompt: "生成五页太阳系课程",
+          pageCount: 5,
+        },
+        { signal: controller.signal, traceId: payload.traceId },
+      ),
+    ).resolves.toEqual(payload);
+
+    const [endpoint, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(endpoint).toBe("/api/courses/generate");
+    expect(init.signal).toBe(controller.signal);
+    expect(JSON.parse(String(init.body))).toEqual({
+      courseId: payload.courseId,
+      userPrompt: "生成五页太阳系课程",
+      pageCount: 5,
+      traceId: payload.traceId,
+    });
+  });
+
+  it("rejects an invalid course workflow response before it reaches the UI", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            courseId: "course-invalid",
+            traceId: "trace-invalid",
+            state: { status: "completed", events: [] },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      ),
+    );
+
+    await expect(
+      generateCourseMvp(
+        { userPrompt: "生成课程" },
+        { traceId: "trace-invalid" },
+      ),
+    ).rejects.toThrow("整课生成接口返回了无效状态");
   });
 
   it("returns an HTTP 200 Agent failure for the controller to handle", async () => {

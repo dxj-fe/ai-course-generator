@@ -7,6 +7,7 @@ import type {
   PageWriterResponse,
   PublicAgentEvent,
 } from "@/features/course-planner/lib/course-planner-api";
+import type { CourseGenerationState } from "@/shared/course-schema";
 
 export type CourseLibraryTab = "learning" | "works" | "likes" | "saved";
 
@@ -62,9 +63,11 @@ export interface CourseRunStage<Result> {
 
 export interface SeacaCourseRun {
   id: string;
+  courseId?: string;
   prompt: string;
   traceId: string;
   startedAt: number;
+  generation?: CourseGenerationState;
   planner: CourseRunStage<CoursePlannerResponse>;
   design: CourseRunStage<CourseDesignResponse>;
   pageWrites: Record<string, CourseRunStage<PageWriterResponse>>;

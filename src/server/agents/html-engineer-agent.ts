@@ -341,7 +341,7 @@ function validateAssetReferences(
   }
 }
 
-/** ready 素材的 URI 与替代文本必须绑定到自己的槽位节点，不能跨槽误用。 */
+/** ready 素材必须能唯一关联到自己的槽位根节点，不能跨槽误用。 */
 function validateReadyAssetNode(
   html: string,
   result: AssetGenerationResult,
@@ -354,36 +354,48 @@ function validateReadyAssetNode(
     return;
   }
 
-  const assetTags = findTagsWithAttributes(html, {
+  const assetTags = findTagMatchesWithAttributes(html, {
     "data-asset-slot-id": assetSlotId,
   });
   if (assetTags.length !== 1) {
-    issues.push(`素材槽 ${assetSlotId} 必须且只能有一个直接消费素材的节点。`);
+    issues.push(`素材槽 ${assetSlotId} 必须且只能有一个槽位根节点。`);
     return;
   }
 
-  const tag = assetTags[0];
+  const marker = assetTags[0];
+  const tag = marker.tag;
   const tagName = tag.match(/^<\s*([a-z][\w:-]*)/i)?.[1]?.toLowerCase();
-  const usesImageSource =
+  const directImageTag =
     tagName === "img" && hasAttributeValue(tag, "src", asset.uri);
-  const usesCssBackground = hasCssUrl(tag, asset.uri);
-  if (!usesImageSource && !usesCssBackground) {
+  const descendantImageTag = directImageTag
+    ? undefined
+    : findUniqueDescendantImage(html, marker, assetSlotId, asset.uri);
+  const imageTag = directImageTag ? tag : descendantImageTag;
+  const cssTag =
+    hasCssUrl(tag, asset.uri) ||
+    hasUniqueStylesheetBackground(html, tag, asset.uri)
+      ? tag
+      : findUniqueDescendantCssConsumer(html, marker, asset.uri);
+  if (!imageTag && !cssTag) {
     issues.push(`素材槽 ${assetSlotId} 没有在对应节点引用已生成素材 URI。`);
     return;
   }
 
   const altText = asset.altText ?? "";
-  if (usesImageSource) {
-    if (!hasAttributeValue(tag, "alt", altText)) {
+  if (imageTag) {
+    if (!hasAttributeValue(imageTag, "alt", altText)) {
       issues.push(`素材槽 ${assetSlotId} 的 alt 必须等于已批准的替代文本。`);
     }
     return;
   }
+  if (!cssTag) {
+    issues.push(`素材槽 ${assetSlotId} 没有在对应节点引用已生成素材 URI。`);
+    return;
+  }
 
-  const accessible = altText
-    ? hasAttributeValue(tag, "role", "img") &&
-      hasAttributeValue(tag, "aria-label", altText)
-    : hasAttributeValue(tag, "aria-hidden", "true");
+  const accessible =
+    hasAccessibleBackgroundContract(cssTag, altText) ||
+    (cssTag !== tag && hasAccessibleBackgroundContract(tag, altText));
   if (!accessible) {
     issues.push(
       `素材槽 ${assetSlotId} 的 CSS 背景必须提供匹配的可访问说明或显式隐藏。`,
@@ -441,11 +453,22 @@ function findTagsWithAttributes(
   html: string,
   attributes: Record<string, string>,
 ) {
-  return (html.match(/<[a-z][^>]*>/gi) ?? []).filter((tag) =>
-    Object.entries(attributes).every(([attribute, value]) =>
-      hasAttributeValue(tag, attribute, value),
-    ),
-  );
+  return findTagMatchesWithAttributes(html, attributes).map(({ tag }) => tag);
+}
+
+type OpeningTagMatch = { index: number; tag: string };
+
+function findTagMatchesWithAttributes(
+  html: string,
+  attributes: Record<string, string>,
+): OpeningTagMatch[] {
+  return Array.from(html.matchAll(/<[a-z][^>]*>/gi))
+    .map((match) => ({ index: match.index, tag: match[0] }))
+    .filter(({ tag }) =>
+      Object.entries(attributes).every(([attribute, value]) =>
+        hasAttributeValue(tag, attribute, value),
+      ),
+    );
 }
 
 function hasDataAttribute(html: string, attribute: string, value: string) {
@@ -480,11 +503,151 @@ function hasCssUrl(tag: string, uri: string) {
     tag.match(/\bstyle\s*=\s*'([^']*)'/i)?.[1];
   if (!style) return false;
 
+  return containsCssUrl(style, uri);
+}
+
+function containsCssUrl(css: string, uri: string) {
   const escapedUri = uri.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(
     `url\\(\\s*["']?${escapedUri}["']?\\s*\\)`,
     "i",
-  ).test(style);
+  ).test(css);
+}
+
+/** 接受语义化 wrapper 包裹唯一 img，但拒绝 marker 与图片互为兄弟节点。 */
+function findUniqueDescendantImage(
+  html: string,
+  marker: OpeningTagMatch,
+  assetSlotId: string,
+  uri: string,
+) {
+  const elementHtml = getElementHtml(html, marker);
+  if (!elementHtml) return undefined;
+
+  const candidates = (elementHtml.match(/<img\b[^>]*>/gi) ?? []).filter(
+    (tag) => {
+      const nestedSlotIds = getAttributeValues(tag, "data-asset-slot-id");
+      return (
+        hasAttributeValue(tag, "src", uri) &&
+        (nestedSlotIds.length === 0 || nestedSlotIds.includes(assetSlotId))
+      );
+    },
+  );
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
+function findUniqueDescendantCssConsumer(
+  html: string,
+  marker: OpeningTagMatch,
+  uri: string,
+) {
+  const elementHtml = getElementHtml(html, marker);
+  if (!elementHtml) return undefined;
+
+  const candidates = findTagMatchesWithAttributes(elementHtml, {})
+    .filter(({ index }) => index > 0)
+    .map(({ tag }) => tag)
+    .filter((tag) => {
+      const nestedSlotIds = getAttributeValues(tag, "data-asset-slot-id");
+      return (
+        nestedSlotIds.length === 0 &&
+        (hasCssUrl(tag, uri) ||
+          hasUniqueStylesheetBackground(html, tag, uri))
+      );
+    });
+  return candidates.length === 1 ? candidates[0] : undefined;
+}
+
+function hasAccessibleBackgroundContract(tag: string, altText: string) {
+  return altText
+    ? hasAttributeValue(tag, "role", "img") &&
+        hasAttributeValue(tag, "aria-label", altText)
+    : hasAttributeValue(tag, "aria-hidden", "true");
+}
+
+function getElementHtml(html: string, marker: OpeningTagMatch) {
+  const tagName = marker.tag.match(/^<\s*([a-z][\w:-]*)/i)?.[1];
+  if (!tagName || /\/\s*>$/.test(marker.tag)) return marker.tag;
+
+  const escapedTagName = tagName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`<\\/?\\s*${escapedTagName}\\b[^>]*>`, "gi");
+  pattern.lastIndex = marker.index + marker.tag.length;
+  let depth = 1;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(html))) {
+    const isClosingTag = /^<\s*\//.test(match[0]);
+    if (isClosingTag) {
+      depth -= 1;
+    } else if (!/\/\s*>$/.test(match[0])) {
+      depth += 1;
+    }
+
+    if (depth === 0) {
+      return html.slice(marker.index, match.index + match[0].length);
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * class 背景只有在 class 仅属于槽位根节点、且单一 CSS 规则直接引用 URI 时才成立。
+ * 这允许模型使用常规样式表，同时不退回到不区分槽位的全局 URI 包含判断。
+ */
+function hasUniqueStylesheetBackground(html: string, tag: string, uri: string) {
+  const classNames = getAttributeValues(tag, "class").flatMap((value) =>
+    value.split(/\s+/).filter(Boolean),
+  );
+
+  return classNames.some((className) => {
+    const classOwners = findTagMatchesWithAttributes(html, {}).filter(
+      ({ tag: candidate }) => hasClassName(candidate, className),
+    );
+    return (
+      classOwners.length === 1 &&
+      stylesheetBindsClassToUri(html, className, uri)
+    );
+  });
+}
+
+function hasClassName(tag: string, className: string) {
+  return getAttributeValues(tag, "class").some((value) =>
+    value.split(/\s+/).includes(className),
+  );
+}
+
+function stylesheetBindsClassToUri(
+  html: string,
+  className: string,
+  uri: string,
+) {
+  const escapedClassName = className.replace(
+    /[.*+?^${}()|[\]\\]/g,
+    "\\$&",
+  );
+  const classSelector = new RegExp(`\\.${escapedClassName}(?![\\w-])`);
+
+  for (const styleMatch of html.matchAll(
+    /<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi,
+  )) {
+    const css = styleMatch[1];
+    for (const rule of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const selectors = rule[1]
+        .split(",")
+        .map((selector) => selector.trim())
+        .filter(Boolean);
+      if (
+        selectors.length === 1 &&
+        classSelector.test(selectors[0]) &&
+        containsCssUrl(rule[2], uri)
+      ) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 /** 静态预览必须常显的正文；答错后的 retry 反馈仍由 DSL 保存，不要求永久铺在页面上。 */

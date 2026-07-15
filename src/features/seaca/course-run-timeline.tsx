@@ -188,7 +188,7 @@ function buildTimelineSteps(run: SeacaCourseRun): TimelineStep[] {
         ? `第 ${page.order} 页 · ${page.title}`
         : `页面 ${pageId}`;
 
-      return [
+      const requiredSteps = [
         {
           id: `page-writer-${pageId}`,
           label: `Page Writer · ${pageLabel}`,
@@ -210,14 +210,20 @@ function buildTimelineSteps(run: SeacaCourseRun): TimelineStep[] {
           summaries: html?.events.map(({ summary }) => summary) ?? [],
           error: html?.error ?? html?.data?.state.error?.message,
         },
-        {
-          id: `page-qa-${pageId}`,
-          label: `Page QA · ${pageLabel}`,
-          status: qa?.status ?? "idle",
-          summaries: qa?.events.map(({ summary }) => summary) ?? [],
-          error: qa?.error ?? qa?.data?.state.error?.message,
-        },
       ] satisfies TimelineStep[];
+
+      return qa
+        ? [
+            ...requiredSteps,
+            {
+              id: `page-qa-${pageId}`,
+              label: `Page QA · ${pageLabel}`,
+              status: qa.status,
+              summaries: qa.events.map(({ summary }) => summary),
+              error: qa.error ?? qa.data?.state.error?.message,
+            },
+          ]
+        : requiredSteps;
     }),
   ];
 }

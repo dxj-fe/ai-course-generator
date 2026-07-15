@@ -16,11 +16,12 @@ import { Button } from "@/components/ui/button";
 import {
   designCourse,
   evaluateCoursePage,
+  generateCourseMvp,
   generateCoursePageAssets,
   generateCoursePageHtml,
-  planCourse,
   writeCoursePage,
 } from "@/features/course-planner/lib/course-planner-api";
+import { courseGenerationToSeacaRun } from "@/features/course-planner/lib/course-generation-adapter";
 import { ChatComposer } from "@/features/seaca/chat-composer";
 import { ChatSidebar } from "@/features/seaca/chat-sidebar";
 import { ChatThread } from "@/features/seaca/chat-thread";
@@ -176,6 +177,10 @@ export function ChatApp({
     requestControllers.current.delete(controller);
   };
 
+  const handleCancel = () => {
+    requestControllers.current.forEach((controller) => controller.abort());
+  };
+
   const handleNewConversation = () => {
     selectConversation(null);
     setDraft("");
@@ -209,6 +214,7 @@ export function ChatApp({
     const conversationId = selectedId ?? `local-${startedAt}`;
     const assistantId = messageId("assistant");
     const traceId = crypto.randomUUID();
+    const courseId = `course-${crypto.randomUUID()}`;
     const time = currentTime();
     const userMessage: SeacaChatMessage = {
       id: messageId("user"),
@@ -219,11 +225,12 @@ export function ChatApp({
     const assistantMessage: SeacaChatMessage = {
       id: assistantId,
       role: "assistant",
-      content: "正在理解你的课程需求并规划学习路径…",
+      content: "正在串行生成课程规划、专业设计与多页 HTML…",
       time,
     };
     const courseRun: SeacaCourseRun = {
       id: `run-${startedAt}`,
+      courseId,
       prompt: text,
       traceId,
       startedAt,
@@ -269,36 +276,38 @@ export function ChatApp({
     const controller = createController();
 
     try {
-      const result = await planCourse(
-        { userPrompt: text },
+      const result = await generateCourseMvp(
+        { courseId, userPrompt: text },
         { signal: controller.signal, traceId },
       );
+      const mappedRun = courseGenerationToSeacaRun(result, {
+        id: courseRun.id,
+        prompt: text,
+        startedAt,
+      });
       const outline = result.state.outline;
+      const completedPageCount = result.state.pages.filter(
+        ({ status }) => status === "completed",
+      ).length;
       const completed = result.state.status === "completed" && outline;
       const duration = `${Math.max(1, Math.round((Date.now() - startedAt) / 1_000))}s`;
 
       if (!completed) {
         const message =
-          result.state.error?.message ?? "Course Planner 未生成有效课程大纲。";
+          result.state.errors.at(-1)?.message ?? "整课生成未能完成。";
         setConversations((current) =>
           updateConversation(current, conversationId, (conversation) => ({
             ...conversation,
             messages: updateMessage(conversation.messages, assistantId, {
-              content: `课程规划没有完成：${message}`,
+              content: `${result.state.status === "cancelled" ? "课程生成已取消" : "课程生成未完成"}：${message} 已保留 ${completedPageCount} 个完成页面，可从服务端断点继续。`,
+              duration,
             }),
-            courseRun: conversation.courseRun
-              ? {
-                  ...conversation.courseRun,
-                  planner: {
-                    status: "failed",
-                    events: result.state.events,
-                    data: result,
-                    error: message,
-                  },
-                }
-              : conversation.courseRun,
+            courseRun: mappedRun,
           })),
         );
+        if (selectedIdRef.current === conversationId) {
+          setRightPanelOpen(true);
+        }
         return;
       }
 
@@ -306,31 +315,22 @@ export function ChatApp({
         updateConversation(current, conversationId, (conversation) => ({
           ...conversation,
           messages: updateMessage(conversation.messages, assistantId, {
-            content: `已完成「${result.intent.topic}」的 ${outline.pages.length} 页课程规划。右侧学习空间中可以查看大纲，并继续生成教学、故事与视觉方案。`,
+            content: `已完成「${result.state.intent?.topic ?? text}」的 ${outline.pages.length} 页课程。右侧学习空间可以统一预览 HTML，也可逐页检查素材与结果。`,
             duration,
           }),
-          courseRun: conversation.courseRun
-            ? {
-                ...conversation.courseRun,
-                planner: {
-                  status: "completed",
-                  events: result.state.events,
-                  data: result,
-                },
-              }
-            : conversation.courseRun,
+          courseRun: mappedRun,
         })),
       );
       if (selectedIdRef.current === conversationId) {
         setRightPanelOpen(true);
       }
     } catch (error) {
-      const message = getErrorMessage(error, "Course Planner 请求失败。");
+      const message = getErrorMessage(error, "整课生成请求失败。");
       setConversations((current) =>
         updateConversation(current, conversationId, (conversation) => ({
           ...conversation,
           messages: updateMessage(conversation.messages, assistantId, {
-            content: `课程规划没有完成：${message}`,
+            content: `课程生成没有完成：${message}`,
           }),
           courseRun: conversation.courseRun
             ? {
@@ -342,6 +342,89 @@ export function ChatApp({
                 },
               }
             : conversation.courseRun,
+        })),
+      );
+      if (selectedIdRef.current === conversationId) {
+        setRightPanelOpen(true);
+      }
+    } finally {
+      releaseController(controller);
+      setBusyConversationId((current) =>
+        current === conversationId ? null : current,
+      );
+    }
+  };
+
+  const handleResumeCourse = async () => {
+    const conversationId = selectedConversation?.id;
+    const run = selectedConversation?.courseRun;
+    const courseId = run?.courseId;
+    if (!conversationId || !run || !courseId || busy) return;
+
+    const assistantId = messageId("assistant");
+    const startedAt = Date.now();
+    const knownPageCount = run.planner.data?.intent.courseLength;
+    const pageCount =
+      knownPageCount === 3 || knownPageCount === 4 || knownPageCount === 5
+        ? knownPageCount
+        : undefined;
+    setBusyConversationId(conversationId);
+    setConversations((current) =>
+      updateConversation(current, conversationId, (conversation) => ({
+        ...conversation,
+        messages: [
+          ...conversation.messages,
+          {
+            id: assistantId,
+            role: "assistant",
+            content: "正在从服务端检查点继续生成未完成页面…",
+            time: currentTime(),
+          },
+        ],
+      })),
+    );
+    const controller = createController();
+
+    try {
+      const result = await generateCourseMvp(
+        {
+          courseId,
+          userPrompt: run.prompt,
+          ...(pageCount ? { pageCount } : {}),
+        },
+        { signal: controller.signal, traceId: crypto.randomUUID() },
+      );
+      const mappedRun = courseGenerationToSeacaRun(result, {
+        id: run.id,
+        prompt: run.prompt,
+        startedAt: run.startedAt,
+      });
+      const completedPageCount = result.state.pages.filter(
+        ({ status }) => status === "completed",
+      ).length;
+      const message =
+        result.state.status === "completed"
+          ? `已从断点完成全部 ${completedPageCount} 页课程。`
+          : `断点恢复仍未完成：${result.state.errors.at(-1)?.message ?? "未知错误"} 已保留 ${completedPageCount} 个完成页面。`;
+
+      setConversations((current) =>
+        updateConversation(current, conversationId, (conversation) => ({
+          ...conversation,
+          messages: updateMessage(conversation.messages, assistantId, {
+            content: message,
+            duration: `${Math.max(1, Math.round((Date.now() - startedAt) / 1_000))}s`,
+          }),
+          courseRun: mappedRun,
+        })),
+      );
+    } catch (error) {
+      const message = getErrorMessage(error, "断点恢复请求失败。");
+      setConversations((current) =>
+        updateConversation(current, conversationId, (conversation) => ({
+          ...conversation,
+          messages: updateMessage(conversation.messages, assistantId, {
+            content: `断点恢复没有完成：${message}`,
+          }),
         })),
       );
     } finally {
@@ -999,6 +1082,7 @@ export function ChatApp({
               selectedRun ? "课程" : selectedConversation ? "演示" : undefined
             }
             draft={draft}
+            onCancel={handleCancel}
             onDraftChange={setDraft}
             onSelectSuggestion={handleSuggestion}
             onSubmit={handleSubmit}
@@ -1040,6 +1124,7 @@ export function ChatApp({
               onEvaluatePage={handleEvaluatePage}
               onGeneratePage={handleGeneratePage}
               onOpenHtmlPreview={handleOpenHtmlPreview}
+              onResumeCourse={handleResumeCourse}
               run={selectedRun}
             />
           </div>

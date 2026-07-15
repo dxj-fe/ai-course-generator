@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话生成一门由多页关联 HTML 组成的课程。当前 Day 17 版本串联 PageContentDSL、可缓存图片素材与 HTML Engineer，通过服务端合同与安全校验后，在 Seaca 学习工作区和独立预览路由中隔离展示。
+一句话生成一门由多页关联 HTML 组成的课程。当前 Day 18 版本由服务端串行编排 3–5 页规划、专业设计、PageContentDSL、图片素材与 HTML，并通过持久化检查点向 Seaca 学习工作区交付统一预览和失败恢复能力。
 
 ## Day 01 交付
 
@@ -159,6 +159,17 @@
 - Seaca 学习工作区保持原有 AssetGallery 和两阶段生成流程，仅把重复操作表述为“重新解析素材”，不增加平行缓存控制台。
 - 缓存失效、素材合成边界和详细面试复盘见 `notes/day-17.md`。
 
+## Day 18 交付
+
+- 新增共享 `CourseGenerationStateSchema`，统一保存整课阶段、逐页产物、公开事件、结构化错误和运行时间，持久化前后都执行 Zod 校验。
+- 新增服务端串行 Course Generation Workflow：Intent → Planner → 专业设计 → 每页 Page Writer → Assets → HTML；页面严格按依赖顺序执行，不在浏览器复制编排规则。
+- 新增 `.data/courses/{courseId}/course.json` 原子检查点；每个阶段和页面完成后保存，失败保留此前 HTML，恢复时跳过已完成页面并从失败阶段继续。
+- 新增 `POST /api/courses/generate` 批量入口。默认尊重 Intent 并收敛到 3–5 页，也可显式指定页数；传已有 `courseId` 可恢复运行。
+- `/chat` composer 现在用一个提示启动整课任务并提供取消按钮；Timeline 只消费结构化公开摘要，不保存 Agent event data。
+- 右侧 learning workspace 增加统一多页预览与断点恢复入口；页面选择使用可访问 Tab 语义，并且始终只挂载当前页面的沙箱 iframe。
+- 现有逐阶段按钮继续承担单页检查和局部重试，Page QA 保持可选，不成为 Day 18 主链阻塞条件。
+- 状态边界、恢复语义、验证策略和面试复盘见 `notes/day-18.md`。
+
 ## 启动
 
 ```bash
@@ -259,6 +270,22 @@ Day 11 专业设计工作流（`intent` 与 `outline` 使用 Planner 的真实�
 curl -X POST http://localhost:3000/api/courses/design \
   -H "Content-Type: application/json" \
   -d '{"intent": {"...": "CourseIntent"}, "outline": {"...": "CoursePlan"}}'
+```
+
+Day 18 串行整课生成（自动收敛到 3–5 页，也可显式传 `pageCount`）：
+
+```bash
+curl -X POST http://localhost:3000/api/courses/generate \
+  -H "Content-Type: application/json" \
+  -d '{"userPrompt":"为 8 岁儿童生成一门太阳系互动课程","pageCount":3}'
+```
+
+失败或取消后使用响应里的 `courseId` 从服务端检查点继续：
+
+```bash
+curl -X POST http://localhost:3000/api/courses/generate \
+  -H "Content-Type: application/json" \
+  -d '{"courseId":"course-..."}'
 ```
 
 Day 12 单页 Page Writer（使用 Planner 和 Day 11 的真实返回值）：

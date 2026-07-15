@@ -27,10 +27,12 @@ describe("HTML Engineer prompts", () => {
       pageGuidance,
     });
 
-    expect(prompts.version).toBe("1.1.2/1.0.0");
+    expect(prompts.version).toBe("1.1.3/1.0.0");
     expect(prompts.systemPrompt).toContain("禁止任何 `<script>`");
     expect(prompts.systemPrompt).toContain("不得交换槽位");
     expect(prompts.systemPrompt).toContain("精确 altText");
+    expect(prompts.systemPrompt).toContain("只包裹一个此类直接消费节点");
+    expect(prompts.systemPrompt).toContain("只属于消费节点的唯一 class 规则");
     expect(prompts.systemPrompt).toContain("不使用其他命名实体");
     expect(prompts.systemPrompt).toContain("`none` 页面不要为了标记");
     expect(prompts.systemPrompt).toContain(

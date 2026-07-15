@@ -11,11 +11,11 @@ import {
   BookOpen,
   Languages,
   Lightbulb,
-  LoaderCircle,
   Mic as MicIcon,
   Plus as PlusIcon,
   Presentation,
   Sparkles,
+  Square,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +28,7 @@ interface ChatComposerProps {
   compact?: boolean;
   contextLabel?: string;
   onDraftChange(value: string): void;
+  onCancel?(): void;
   onSubmit(value: string): void;
   onSelectSuggestion?(value: string): void;
   showSuggestions: boolean;
@@ -63,6 +64,7 @@ export function ChatComposer({
   compact = false,
   contextLabel,
   onDraftChange,
+  onCancel,
   onSelectSuggestion,
   onSubmit,
   showSuggestions,
@@ -206,18 +208,20 @@ export function ChatComposer({
           </Button>
 
           <Button
-            aria-label={busy ? "正在生成" : "发送"}
+            aria-label={busy ? "取消生成" : "发送"}
             className="flex size-8 shrink-0 items-center justify-center rounded-full border-0 p-0 text-white transition enabled:bg-[#77cc57] enabled:hover:scale-[1.04] enabled:hover:bg-[#5ba83e] enabled:focus-visible:outline-2 enabled:focus-visible:outline-offset-2 enabled:focus-visible:outline-[#77cc57] disabled:pointer-events-auto disabled:cursor-not-allowed disabled:bg-[rgba(91,76,59,0.18)] disabled:opacity-100 disabled:hover:bg-[rgba(91,76,59,0.18)]"
-            disabled={!canSubmit}
+            disabled={busy ? !onCancel : !canSubmit}
+            onClick={busy ? onCancel : undefined}
             size="icon"
-            type="submit"
+            type={busy ? "button" : "submit"}
             variant="ghost"
           >
             {busy ? (
-              <LoaderCircle
+              <Square
                 aria-hidden="true"
-                className="size-3.5 animate-spin"
-                size={14}
+                className="size-3"
+                fill="currentColor"
+                size={12}
                 strokeWidth={1.7}
               />
             ) : (

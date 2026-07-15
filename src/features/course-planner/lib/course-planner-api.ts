@@ -1,4 +1,5 @@
 import { getErrorText } from "@/features/ai-playground/lib/messages";
+import { z } from "zod";
 import type {
   CourseDesignBriefs,
   AssetGenerationResult,
@@ -10,6 +11,10 @@ import type {
   PagePlan,
   PageWorkerBrief,
   QualityReport,
+} from "@/shared/course-schema";
+import {
+  CourseGenerationStateSchema,
+  type CourseGenerationState,
 } from "@/shared/course-schema";
 
 type AgentStatus = "idle" | "running" | "completed" | "failed";
@@ -100,6 +105,47 @@ export type PageQAResponse = {
     error?: { code: string; message: string };
   };
 };
+
+export type CourseMvpPageCount = 3 | 4 | 5;
+
+export type CourseGenerationResponse = {
+  courseId: string;
+  traceId: string;
+  state: CourseGenerationState;
+};
+
+const CourseGenerationResponseSchema = z
+  .object({
+    courseId: z.string().min(1),
+    traceId: z.string().min(1),
+    state: CourseGenerationStateSchema,
+  })
+  .strict();
+
+/** 一次请求串行生成 3–5 页课程；传 courseId 时从服务端 checkpoint 恢复。 */
+export async function generateCourseMvp(
+  input:
+    | { userPrompt: string; courseId?: string; pageCount?: CourseMvpPageCount }
+    | { courseId: string; userPrompt?: string; pageCount?: CourseMvpPageCount },
+  options?: RequestOptions,
+): Promise<CourseGenerationResponse> {
+  const payload = await postPlannerRequest<unknown>(
+    "/api/courses/generate",
+    input,
+    options,
+  );
+  const parsed = CourseGenerationResponseSchema.safeParse(payload);
+
+  if (!parsed.success) {
+    throw new Error(
+      `整课生成接口返回了无效状态：${parsed.error.issues
+        .map((issue) => `${issue.path.join(".") || "root"}: ${issue.message}`)
+        .join("; ")}`,
+    );
+  }
+
+  return parsed.data;
+}
 
 /** 调用现有课程规划接口；响应仍在请求完成后一次性返回。 */
 export function planCourse(
