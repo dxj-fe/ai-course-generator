@@ -233,7 +233,11 @@ export function ChatApp({
     );
   };
 
-  const { latestState: streamedCourseState } = useSSETask({
+  const {
+    connectionStatus: courseTaskConnectionStatus,
+    latestState: streamedCourseState,
+    taskStatus: courseTaskStatus,
+  } = useSSETask({
     taskId: activeCourseTask?.taskId ?? null,
     enabled: activeCourseTask !== null,
     onTerminal: ({ state }) => finishCourseTask(state),
@@ -254,13 +258,19 @@ export function ChatApp({
   );
 
   useEffect(() => {
-    if (workspaceIsModal) {
-      workspaceRef.current?.focus();
-    } else if (workspaceWasOpenRef.current && !rightPanelOpen) {
-      workspaceToggleRef.current?.focus();
-    }
-
+    const shouldRestoreToggleFocus =
+      workspaceWasOpenRef.current && !rightPanelOpen;
     workspaceWasOpenRef.current = rightPanelOpen;
+
+    const timer = window.setTimeout(() => {
+      if (workspaceIsModal) {
+        workspaceRef.current?.focus();
+      } else if (shouldRestoreToggleFocus) {
+        workspaceToggleRef.current?.focus();
+      }
+    }, workspaceIsModal ? 320 : 0);
+
+    return () => window.clearTimeout(timer);
   }, [rightPanelOpen, workspaceIsModal]);
 
   const streamedCourseRun = useMemo(() => {
@@ -294,6 +304,14 @@ export function ChatApp({
     streamedCourseRun,
   ]);
   const selectedRun = selectedConversation?.courseRun;
+  const selectedTaskTelemetry =
+    selectedConversation &&
+    activeCourseTask?.conversationId === selectedConversation.id
+      ? {
+          connectionStatus: courseTaskConnectionStatus,
+          taskStatus: courseTaskStatus,
+        }
+      : undefined;
   const busy = busyConversationId !== null;
 
   const createController = () => {
@@ -1209,7 +1227,13 @@ export function ChatApp({
           className="flex min-w-0 flex-1 flex-col overflow-hidden"
           inert={workspaceIsModal ? true : undefined}
         >
-          <ChatThread conversation={selectedConversation} />
+          <ChatThread
+            busy={busy}
+            connectionStatus={selectedTaskTelemetry?.connectionStatus}
+            conversation={selectedConversation}
+            onResumeCourse={handleResumeCourse}
+            taskStatus={selectedTaskTelemetry?.taskStatus}
+          />
           <ChatComposer
             busy={busy}
             compact={rightPanelOpen}

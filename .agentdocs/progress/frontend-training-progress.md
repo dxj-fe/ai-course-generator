@@ -4,9 +4,9 @@ source_doc: `.agentdocs/prd/AI_Agent_Frontend_Training_Handbook_V5.docx`
 timezone: `Asia/Shanghai`
 daily_run_time: `09:30`
 start_date: `2026-07-09`
-last_delivered_day: `19`
+last_delivered_day: `20`
 last_delivered_date: `2026-07-15`
-next_training_day: `20`
+next_training_day: `21`
 
 ## Notes
 
@@ -42,3 +42,5 @@ next_training_day: `20`
 - 2026-07-15: Implemented Day 18 with validated serial 3–5 page orchestration, atomic course checkpoints, page-level resume and cancellation, typed batch-state mapping, a single-iframe Seaca course preview, optional QA timeline integration, documentation, and automated/browser verification.
 - 2026-07-15: Delivered Day 19 plan for a strict public SSE event protocol, checkpoint-backed task streaming, EventBus subscriptions, typed client updates, reconnect/replay, and real-time Seaca Timeline integration.
 - 2026-07-15: Implemented Day 19 with a strict public SSE task protocol, checkpoint-backed EventBus streaming, task lifecycle persistence, reconnect/replay/cancellation, typed client state, real-time Seaca Timeline integration, route coverage, and responsive browser verification.
+- 2026-07-15: Delivered Day 20 plan for a task/Agent/page Timeline read model, duration and retry semantics, per-page DSL/assets/HTML/QA progress, safe structured event logs, precise failure location, and Seaca responsive demo evidence.
+- 2026-07-15: Implemented Day 20 with a task/Agent/page Timeline projection, separate SSE/task status, derived stage durations and cross-trace recovery, precise Agent/page/error failure cards, per-page DSL/assets/HTML/optional-QA progress, safe structured public-event logs, and automated/browser verification.

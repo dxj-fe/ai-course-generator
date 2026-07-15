@@ -36,6 +36,52 @@ function createRun(): SeacaCourseRun {
 }
 
 describe("CourseRunTimeline", () => {
+  it("separates task, connection, global Agent and page progress", () => {
+    const markup = renderToStaticMarkup(
+      <CourseRunTimeline
+        connectionStatus="reconnecting"
+        nowMs={5_000}
+        run={createRun()}
+        taskStatus="running"
+      />,
+    );
+
+    expect(markup).toContain("生成中");
+    expect(markup).toContain("正在重连");
+    expect(markup).toContain("0 / 3");
+    expect(markup).toContain("5 秒");
+    expect(markup).toContain("全局 Agent");
+    expect(markup).toContain("页面执行");
+    expect(markup).toContain('role="progressbar"');
+    expect(markup).toContain('aria-live="polite"');
+  });
+
+  it("locates a page failure and exposes the checkpoint recovery action", () => {
+    const run = createRun();
+    const pageId = courseDesignOutline.pages[0]!.id;
+    run.pageWrites[pageId] = { status: "completed", events: [] };
+    run.pageAssets[pageId] = { status: "completed", events: [] };
+    run.pageHtml[pageId] = {
+      status: "failed",
+      events: [],
+      error: "HTML 合同校验失败",
+    };
+
+    const markup = renderToStaticMarkup(
+      <CourseRunTimeline
+        nowMs={5_000}
+        onResumeCourse={() => undefined}
+        run={run}
+        taskStatus="failed"
+      />,
+    );
+
+    expect(markup).toContain(`Workflow · ${pageId} · STAGE_FAILED`);
+    expect(markup).toContain("HTML 合同校验失败");
+    expect(markup).toContain("从断点继续");
+    expect(markup).toContain('role="alert"');
+  });
+
   it("does not present optional Page QA as a required Day 18 stage", () => {
     const markup = renderToStaticMarkup(<CourseRunTimeline run={createRun()} />);
 

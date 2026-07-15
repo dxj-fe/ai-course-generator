@@ -228,7 +228,9 @@ export function validateHtmlEngineerOutput(
 
   const visibleText = normalizeVisibleText(html);
   for (const text of collectRequiredStaticContentText(input.content)) {
-    if (!visibleText.includes(normalizeText(text))) {
+    if (
+      !hasRequiredStaticContentText(html, visibleText, input.content, text)
+    ) {
       issues.push(`页面正文缺少 DSL 文本：${text}`);
     }
   }
@@ -377,7 +379,9 @@ function validateReadyAssetNode(
       ? tag
       : findUniqueDescendantCssConsumer(html, marker, asset.uri);
   if (!imageTag && !cssTag) {
-    issues.push(`素材槽 ${assetSlotId} 没有在对应节点引用已生成素材 URI。`);
+    issues.push(
+      `素材槽 ${assetSlotId} 没有在对应节点引用已生成素材 URI（${describeUnboundAssetReference(html, asset.uri)}）。`,
+    );
     return;
   }
 
@@ -401,6 +405,37 @@ function validateReadyAssetNode(
       `素材槽 ${assetSlotId} 的 CSS 背景必须提供匹配的可访问说明或显式隐藏。`,
     );
   }
+}
+
+/** 只公开资源消费类别，不回显模型 HTML、选择器或正文。 */
+function describeUnboundAssetReference(html: string, uri: string) {
+  if (containsCssUrl(html, uri)) return "URI 位于未绑定的 CSS url()";
+
+  for (const tag of html.match(/<[a-z][^>]*>/gi) ?? []) {
+    const tagName =
+      tag.match(/^<\s*([a-z][\w:-]*)/i)?.[1]?.toLowerCase() ?? "元素";
+    if (getAttributeValues(tag, "src").includes(uri)) {
+      return `URI 位于未绑定的 <${tagName}> src`;
+    }
+    if (
+      getAttributeValues(tag, "srcset").some((value) =>
+        parseSrcset(value).includes(uri),
+      )
+    ) {
+      return `URI 位于未绑定的 <${tagName}> srcset`;
+    }
+    if (getAttributeValues(tag, "poster").includes(uri)) {
+      return `URI 位于未绑定的 <${tagName}> poster`;
+    }
+    if (
+      getAttributeValues(tag, "href").includes(uri) ||
+      getAttributeValues(tag, "xlink:href").includes(uri)
+    ) {
+      return `URI 位于未绑定的 <${tagName}> href`;
+    }
+  }
+
+  return "URI 位于未绑定的资源节点";
 }
 
 function collectAssetSources(html: string) {
@@ -503,7 +538,7 @@ function hasCssUrl(tag: string, uri: string) {
     tag.match(/\bstyle\s*=\s*'([^']*)'/i)?.[1];
   if (!style) return false;
 
-  return containsCssUrl(style, uri);
+  return backgroundDeclarationUsesUri(style, uri);
 }
 
 function containsCssUrl(css: string, uri: string) {
@@ -592,21 +627,39 @@ function getElementHtml(html: string, marker: OpeningTagMatch) {
 }
 
 /**
- * class 背景只有在 class 仅属于槽位根节点、且单一 CSS 规则直接引用 URI 时才成立。
- * 这允许模型使用常规样式表，同时不退回到不区分槽位的全局 URI 包含判断。
+ * 样式表背景只有在唯一 class/id 或精确槽位属性的单一简单选择器直接引用 URI
+ * 时才成立，避免退回到不区分槽位的全局 URI 包含判断。
  */
 function hasUniqueStylesheetBackground(html: string, tag: string, uri: string) {
   const classNames = getAttributeValues(tag, "class").flatMap((value) =>
     value.split(/\s+/).filter(Boolean),
   );
-
-  return classNames.some((className) => {
+  const classBinding = classNames.some((className) => {
     const classOwners = findTagMatchesWithAttributes(html, {}).filter(
       ({ tag: candidate }) => hasClassName(candidate, className),
     );
     return (
       classOwners.length === 1 &&
       stylesheetBindsClassToUri(html, className, uri)
+    );
+  });
+  if (classBinding) return true;
+
+  const idBinding = getAttributeValues(tag, "id").some((id) => {
+    const idOwners = findTagMatchesWithAttributes(html, { id });
+    return (
+      idOwners.length === 1 && stylesheetBindsIdToUri(html, id, uri)
+    );
+  });
+  if (idBinding) return true;
+
+  return getAttributeValues(tag, "data-asset-slot-id").some((slotId) => {
+    const slotOwners = findTagMatchesWithAttributes(html, {
+      "data-asset-slot-id": slotId,
+    });
+    return (
+      slotOwners.length === 1 &&
+      stylesheetBindsAssetSlotToUri(html, slotId, uri)
     );
   });
 }
@@ -626,8 +679,40 @@ function stylesheetBindsClassToUri(
     /[.*+?^${}()|[\]\\]/g,
     "\\$&",
   );
-  const classSelector = new RegExp(`\\.${escapedClassName}(?![\\w-])`);
+  const classSelector = new RegExp(
+    `^\\.${escapedClassName}(?::(?:before|after)|::(?:before|after))?$`,
+  );
 
+  return stylesheetBindsSelectorToUri(html, classSelector, uri);
+}
+
+function stylesheetBindsIdToUri(html: string, id: string, uri: string) {
+  const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return stylesheetBindsSelectorToUri(
+    html,
+    new RegExp(`^#${escapedId}(?::(?:before|after)|::(?:before|after))?$`),
+    uri,
+  );
+}
+
+function stylesheetBindsAssetSlotToUri(
+  html: string,
+  slotId: string,
+  uri: string,
+) {
+  const escapedSlotId = slotId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const slotSelector = new RegExp(
+    `^\\[\\s*data-asset-slot-id\\s*=\\s*(?:"${escapedSlotId}"|'${escapedSlotId}'|${escapedSlotId})\\s*\\](?::(?:before|after)|::(?:before|after))?$`,
+  );
+
+  return stylesheetBindsSelectorToUri(html, slotSelector, uri);
+}
+
+function stylesheetBindsSelectorToUri(
+  html: string,
+  selectorPattern: RegExp,
+  uri: string,
+) {
   for (const styleMatch of html.matchAll(
     /<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi,
   )) {
@@ -639,12 +724,27 @@ function stylesheetBindsClassToUri(
         .filter(Boolean);
       if (
         selectors.length === 1 &&
-        classSelector.test(selectors[0]) &&
-        containsCssUrl(rule[2], uri)
+        selectorPattern.test(selectors[0]) &&
+        backgroundDeclarationUsesUri(rule[2], uri)
       ) {
         return true;
       }
     }
+  }
+
+  return false;
+}
+
+function backgroundDeclarationUsesUri(declarations: string, uri: string) {
+  const uncommentedDeclarations = declarations.replace(
+    /\/\*[\s\S]*?\*\//g,
+    " ",
+  );
+
+  for (const declaration of uncommentedDeclarations.matchAll(
+    /(?:^|;)\s*(?:background|background-image)\s*:\s*([^;]+)/gi,
+  )) {
+    if (containsCssUrl(declaration[1] ?? "", uri)) return true;
   }
 
   return false;
@@ -698,6 +798,61 @@ function collectRequiredStaticContentText(content: PageContentDSL) {
   }
 
   return [content.title, ...content.narration, ...blockText, ...interactionText];
+}
+
+/**
+ * choice prompt 可以把纯展示题号与题干拆开，但不能丢失或改写题干。
+ * 仅当第 N 个 prompt 的序号前缀正好对应第 N 个 question block，且去掉
+ * 序号后的文本等于该 block.body 并真实出现在对应稳定节点中时才接受。
+ */
+function hasRequiredStaticContentText(
+  html: string,
+  visibleText: string,
+  content: PageContentDSL,
+  requiredText: string,
+) {
+  const normalizedRequiredText = normalizeText(requiredText);
+  if (visibleText.includes(normalizedRequiredText)) return true;
+
+  if (content.interaction.type !== "choice") return false;
+  const questionIndex = content.interaction.questions.findIndex(
+    ({ prompt }) => prompt === requiredText,
+  );
+  if (questionIndex < 0) return false;
+
+  const promptBody = stripChoiceQuestionNumber(
+    normalizedRequiredText,
+    questionIndex + 1,
+  );
+  const questionBlocks = content.blocks.filter(
+    ({ kind }) => kind === "question",
+  );
+  const block = questionBlocks[questionIndex];
+  if (!promptBody || !block || normalizeText(block.body) !== promptBody) {
+    return false;
+  }
+
+  const blockMarkers = findTagMatchesWithAttributes(html, {
+    "data-block-id": block.id,
+  });
+  if (blockMarkers.length !== 1) return false;
+  const blockHtml = getElementHtml(html, blockMarkers[0]!);
+
+  return Boolean(
+    blockHtml && normalizeVisibleText(blockHtml).includes(promptBody),
+  );
+}
+
+function stripChoiceQuestionNumber(value: string, questionNumber: number) {
+  const numericPrefix = new RegExp(
+    `^${questionNumber}\\s*[.、:)]\\s*(.+)$`,
+  );
+  const chinesePrefix = new RegExp(
+    `^第\\s*${questionNumber}\\s*题\\s*[.、:：]?\\s*(.+)$`,
+  );
+
+  return value.match(numericPrefix)?.[1]?.trim() ??
+    value.match(chinesePrefix)?.[1]?.trim();
 }
 
 function normalizeVisibleText(html: string) {

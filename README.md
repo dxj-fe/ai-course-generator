@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话生成一门由多页关联 HTML 组成的课程。当前 Day 19 版本由服务端异步编排 3–5 页规划、专业设计、PageContentDSL、图片素材与 HTML，并通过严格公开事件、SSE 和持久化检查点向 Seaca 学习工作区实时交付进度、统一预览与失败恢复能力。
+一句话生成一门由多页关联 HTML 组成的课程。当前 Day 20 版本由服务端异步编排 3–5 页规划、专业设计、PageContentDSL、图片素材与 HTML，并通过严格公开事件、SSE 和持久化检查点向 Seaca 学习工作区实时交付任务、Agent、页面三层进度、统一预览与可定位的失败恢复能力。
 
 ## Day 01 交付
 
@@ -179,6 +179,16 @@
 - 新增 `useSSETask`，在 Controller 数据层完成 EventSource 生命周期、Schema 校验、顺序检查、重连去重和终态归并。
 - Seaca `/chat` 继续使用现有 Composer、Agent Timeline 和 learning workspace；整课生成从批量 JSON 切换为实时任务流，没有重做 UI 或增加平行控制台。
 - 协议、取消语义、单进程限制、验证策略和八道详细面试题见 `notes/day-19.md`。
+
+## Day 20 交付
+
+- 新增纯 `CourseRunTimeline` 投影模型，将已持久化任务状态投影为任务摘要、全局 Agent 和逐页 Writer/Assets/HTML/可选 QA 三层视图，不在组件中复制工作流规则。
+- Timeline 展示任务与 SSE 连接的独立状态、完成页数、当前 Agent/页面、总耗时、阶段耗时、断点恢复和尝试次数。
+- 阶段耗时仅由结构化 `agent_start` 与 `agent_done/error` 边界推导；恢复尝试仅由不同 `traceId` 证明，不解析面向用户的 summary 字符串。
+- 失败卡同时显示 Agent/Workflow、`pageId`、错误码和公开错误信息；失败或取消的整课任务可在 Timeline 中直接从检查点继续。
+- 右侧 learning workspace 新增逐页 Page DSL、图片素材、HTML 与 QA 状态面板；未运行 QA 明确标记为可选，不阻断页面交付。
+- 新增原生可折叠结构化日志抽屉，只读取严格公开事件白名单，不序列化 Prompt、DSL/HTML 正文、snapshot、私有 event data 或 chain-of-thought。
+- 实现边界、时间/恢复语义、验证策略与面试复盘见 `notes/day-20.md`。
 
 ## 启动
 

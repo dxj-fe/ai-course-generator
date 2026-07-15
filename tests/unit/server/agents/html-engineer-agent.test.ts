@@ -289,6 +289,127 @@ describe("HtmlEngineerAgent", () => {
     ).toThrow(`页面正文缺少 DSL 文本：${question.feedback.success}`);
   });
 
+  it("accepts a numbered choice prompt rendered as its trusted question block body", () => {
+    const baseContent = getChoiceContent();
+    const baseQuestions = baseContent.interaction.questions.slice(0, 2);
+    const promptBodies = [
+      "《论语》的体裁和定位是？",
+      "《论语》的核心思想是？",
+    ];
+    const content = {
+      ...baseContent,
+      blocks: baseQuestions.map((question, index) => ({
+        id: `block-question-${index + 1}`,
+        kind: "question" as const,
+        label: `第${index + 1}题`,
+        heading: "理解检查",
+        body: promptBodies[index]!,
+        supportingPoints: [],
+      })),
+      interaction: {
+        type: "choice" as const,
+        questions: baseQuestions.map((question, index) => ({
+          ...question,
+          prompt: `${index + 1}. ${promptBodies[index]!}`,
+        })),
+      },
+    };
+    const html = content.blocks.reduce((document, _block, index) => {
+      return document.replace(
+        content.interaction.questions[index].prompt,
+        "",
+      );
+    }, buildValidGeneratedHtml(content));
+
+    expect(() =>
+      validateHtmlEngineerOutput(html, {
+        content,
+        visualBrief,
+      }),
+    ).not.toThrow();
+
+    const firstBlock = content.blocks[0];
+    expect(() =>
+      validateHtmlEngineerOutput(html.replace(firstBlock.body, ""), {
+        content,
+        visualBrief,
+      }),
+    ).toThrow(
+      `页面正文缺少 DSL 文本：${content.interaction.questions[0].prompt}`,
+    );
+  });
+
+  it("rejects numbered choice prompts with a mismatched block or question number", () => {
+    const baseContent = getChoiceContent();
+    const baseQuestion = baseContent.interaction.questions[0];
+    const mismatchedBlockContent = {
+      ...baseContent,
+      blocks: [
+        {
+          ...baseContent.blocks[0],
+          body: "对应稳定区块中的另一道题干。",
+        },
+      ],
+      interaction: {
+        type: "choice" as const,
+        questions: [
+          {
+            ...baseQuestion,
+            prompt: `1. ${baseQuestion.prompt}`,
+          },
+        ],
+      },
+    };
+    const mismatchedBlockHtml = buildValidGeneratedHtml(
+      mismatchedBlockContent,
+    )
+      .replace(mismatchedBlockContent.interaction.questions[0].prompt, "")
+      .replace(
+        "</main>",
+        `<p>${baseQuestion.prompt}</p></main>`,
+      );
+
+    expect(() =>
+      validateHtmlEngineerOutput(mismatchedBlockHtml, {
+        content: mismatchedBlockContent,
+        visualBrief,
+      }),
+    ).toThrow(
+      `页面正文缺少 DSL 文本：${mismatchedBlockContent.interaction.questions[0].prompt}`,
+    );
+
+    const mismatchedNumberContent = {
+      ...mismatchedBlockContent,
+      blocks: [
+        {
+          ...mismatchedBlockContent.blocks[0],
+          body: baseQuestion.prompt,
+        },
+      ],
+      interaction: {
+        type: "choice" as const,
+        questions: [
+          {
+            ...baseQuestion,
+            prompt: `2. ${baseQuestion.prompt}`,
+          },
+        ],
+      },
+    };
+    const mismatchedNumberHtml = buildValidGeneratedHtml(
+      mismatchedNumberContent,
+    ).replace(mismatchedNumberContent.interaction.questions[0].prompt, "");
+
+    expect(() =>
+      validateHtmlEngineerOutput(mismatchedNumberHtml, {
+        content: mismatchedNumberContent,
+        visualBrief,
+      }),
+    ).toThrow(
+      `页面正文缺少 DSL 文本：${mismatchedNumberContent.interaction.questions[0].prompt}`,
+    );
+  });
+
   it("requires VisualBrief guidance for the current DSL page", () => {
     expect(() =>
       resolveHtmlEngineerInput({
@@ -437,7 +558,7 @@ describe("HtmlEngineerAgent", () => {
     ).toThrow("素材 URI 不在已批准素材清单中：/api/assets/unapproved");
   });
 
-  it("accepts a ready asset bound through one marked wrapper or one unique CSS class", () => {
+  it("accepts a ready asset bound through a wrapper or a unique CSS selector", () => {
     const directBackground =
       '<figure><img data-asset-slot-id="asset-slot-01" src="/api/assets/asset-background" alt="保留左侧文字安全区的太空观察背景。">';
     const wrappedBackground =
@@ -446,6 +567,10 @@ describe("HtmlEngineerAgent", () => {
       '<figure class="course-hero-asset" data-asset-slot-id="asset-slot-01" role="img" aria-label="保留左侧文字安全区的太空观察背景。">';
     const wrappedClassBackground =
       '<figure data-asset-slot-id="asset-slot-01"><div class="course-hero-asset" role="img" aria-label="保留左侧文字安全区的太空观察背景。"></div>';
+    const attributeBackground =
+      '<figure data-asset-slot-id="asset-slot-01" role="img" aria-label="保留左侧文字安全区的太空观察背景。">';
+    const idBackground =
+      '<figure id="course-hero-asset" data-asset-slot-id="asset-slot-01" role="img" aria-label="保留左侧文字安全区的太空观察背景。">';
     const wrappedHtml = buildAssetRichHtml().replace(
       directBackground,
       wrappedBackground,
@@ -461,6 +586,18 @@ describe("HtmlEngineerAgent", () => {
       .replace(
         "</style>",
         ".course-hero-asset { background-image: url('/api/assets/asset-background'); }</style>",
+      );
+    const attributeBoundHtml = buildAssetRichHtml()
+      .replace(directBackground, attributeBackground)
+      .replace(
+        "</style>",
+        '[data-asset-slot-id="asset-slot-01"]::before { background-image: url(\'/api/assets/asset-background\'); }</style>',
+      );
+    const idBoundHtml = buildAssetRichHtml()
+      .replace(directBackground, idBackground)
+      .replace(
+        "</style>",
+        "#course-hero-asset { background-image: url('/api/assets/asset-background'); }</style>",
       );
 
     expect(() =>
@@ -484,6 +621,20 @@ describe("HtmlEngineerAgent", () => {
         assets: readyAssetResults,
       }),
     ).not.toThrow();
+    expect(() =>
+      validateHtmlEngineerOutput(attributeBoundHtml, {
+        content: assetRichContent,
+        visualBrief,
+        assets: readyAssetResults,
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validateHtmlEngineerOutput(idBoundHtml, {
+        content: assetRichContent,
+        visualBrief,
+        assets: readyAssetResults,
+      }),
+    ).not.toThrow();
   });
 
   it("rejects a stylesheet asset binding when its class is shared by another node", () => {
@@ -497,6 +648,110 @@ describe("HtmlEngineerAgent", () => {
         ".course-hero-asset { background-image: url('/api/assets/asset-background'); }</style>",
       )
       .replace("</body>", '<div class="course-hero-asset"></div></body>');
+
+    expect(() =>
+      validateHtmlEngineerOutput(html, {
+        content: assetRichContent,
+        visualBrief,
+        assets: readyAssetResults,
+      }),
+    ).toThrow("URI 位于未绑定的 CSS url()");
+  });
+
+  it("rejects broad, cross-slot or duplicated stylesheet bindings", () => {
+    const directBackground =
+      '<figure><img data-asset-slot-id="asset-slot-01" src="/api/assets/asset-background" alt="保留左侧文字安全区的太空观察背景。">';
+    const markedBackground =
+      '<figure data-asset-slot-id="asset-slot-01" role="img" aria-label="保留左侧文字安全区的太空观察背景。">';
+    const broadSelectorHtml = buildAssetRichHtml()
+      .replace(directBackground, markedBackground)
+      .replace(
+        "</style>",
+        "[data-asset-slot-id] { background-image: url('/api/assets/asset-background'); }</style>",
+      );
+    const crossSlotHtml = buildAssetRichHtml()
+      .replace(directBackground, markedBackground)
+      .replace(
+        "</style>",
+        '[data-asset-slot-id="asset-slot-02"] { background-image: url(\'/api/assets/asset-background\'); }</style>',
+      );
+    const duplicatedIdHtml = buildAssetRichHtml()
+      .replace(
+        directBackground,
+        '<figure id="course-hero-asset" data-asset-slot-id="asset-slot-01" role="img" aria-label="保留左侧文字安全区的太空观察背景。">',
+      )
+      .replace(
+        "</style>",
+        "#course-hero-asset { background-image: url('/api/assets/asset-background'); }</style>",
+      )
+      .replace("</body>", '<div id="course-hero-asset"></div></body>');
+
+    for (const html of [
+      broadSelectorHtml,
+      crossSlotHtml,
+      duplicatedIdHtml,
+    ]) {
+      expect(() =>
+        validateHtmlEngineerOutput(html, {
+          content: assetRichContent,
+          visualBrief,
+          assets: readyAssetResults,
+        }),
+      ).toThrow("没有在对应节点引用已生成素材 URI");
+    }
+  });
+
+  it.each([
+    [
+      "an absent ancestor",
+      ".absent .course-hero-asset { background-image: url('/api/assets/asset-background'); }",
+    ],
+    [
+      "an absent compound class",
+      ".course-hero-asset.missing { background-image: url('/api/assets/asset-background'); }",
+    ],
+    [
+      "a negated selector",
+      ":not(.course-hero-asset) { background-image: url('/api/assets/asset-background'); }",
+    ],
+    [
+      "an unused custom property",
+      ".course-hero-asset { --unused-image: url('/api/assets/asset-background'); }",
+    ],
+    [
+      "a non-background property",
+      ".course-hero-asset { cursor: url('/api/assets/asset-background'), auto; }",
+    ],
+    [
+      "a case-mismatched slot value",
+      '[data-asset-slot-id="ASSET-SLOT-01"] { background-image: url(\'/api/assets/asset-background\'); }',
+    ],
+    [
+      "a commented background declaration",
+      ".course-hero-asset { /*; background-image: url('/api/assets/asset-background'); */ }",
+    ],
+  ])("rejects a stylesheet URI bound through %s", (_case, cssRule) => {
+    const html = buildAssetRichHtml()
+      .replace(
+        '<figure><img data-asset-slot-id="asset-slot-01" src="/api/assets/asset-background" alt="保留左侧文字安全区的太空观察背景。">',
+        '<figure class="course-hero-asset" data-asset-slot-id="asset-slot-01" role="img" aria-label="保留左侧文字安全区的太空观察背景。">',
+      )
+      .replace("</style>", `${cssRule}</style>`);
+
+    expect(() =>
+      validateHtmlEngineerOutput(html, {
+        content: assetRichContent,
+        visualBrief,
+        assets: readyAssetResults,
+      }),
+    ).toThrow("没有在对应节点引用已生成素材 URI");
+  });
+
+  it("rejects an inline URI that is not used as a background", () => {
+    const html = buildAssetRichHtml().replace(
+      '<figure><img data-asset-slot-id="asset-slot-01" src="/api/assets/asset-background" alt="保留左侧文字安全区的太空观察背景。">',
+      '<figure data-asset-slot-id="asset-slot-01" role="img" aria-label="保留左侧文字安全区的太空观察背景。" style="--unused-image: url(\'/api/assets/asset-background\');">',
+    );
 
     expect(() =>
       validateHtmlEngineerOutput(html, {

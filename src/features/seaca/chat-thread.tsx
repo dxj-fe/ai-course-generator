@@ -8,14 +8,26 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import type { CourseTaskConnectionStatus } from "@/features/course-planner/hooks/use-sse-task";
 import { CourseRunTimeline } from "@/features/seaca/course-run-timeline";
+import type { CourseTaskStatus } from "@/shared/course-schema";
 import type { SeacaConversation } from "@/types/seaca";
 
 interface ChatThreadProps {
+  busy?: boolean;
+  connectionStatus?: CourseTaskConnectionStatus;
   conversation: SeacaConversation | null;
+  onResumeCourse?(): void;
+  taskStatus?: CourseTaskStatus;
 }
 
-export function ChatThread({ conversation }: ChatThreadProps) {
+export function ChatThread({
+  busy = false,
+  connectionStatus,
+  conversation,
+  onResumeCourse,
+  taskStatus,
+}: ChatThreadProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const nearBottomRef = useRef(true);
   const previousConversationIdRef = useRef<string | undefined>(undefined);
@@ -78,7 +90,13 @@ export function ChatThread({ conversation }: ChatThreadProps) {
     });
 
     return () => cancelAnimationFrame(frame);
-  }, [conversation?.id, courseRunRevision, messageCount]);
+  }, [
+    connectionStatus,
+    conversation?.id,
+    courseRunRevision,
+    messageCount,
+    taskStatus,
+  ]);
 
   const scrollToLatest = () => {
     const container = scrollRef.current;
@@ -166,7 +184,13 @@ export function ChatThread({ conversation }: ChatThreadProps) {
               ),
             )}
             {conversation.courseRun ? (
-              <CourseRunTimeline run={conversation.courseRun} />
+              <CourseRunTimeline
+                busy={busy}
+                connectionStatus={connectionStatus}
+                onResumeCourse={onResumeCourse}
+                run={conversation.courseRun}
+                taskStatus={taskStatus}
+              />
             ) : null}
           </div>
         )}

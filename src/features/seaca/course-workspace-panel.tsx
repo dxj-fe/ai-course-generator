@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { HtmlPreviewFrame } from "@/features/seaca/html-preview-frame";
 import { AssetGallery } from "@/features/seaca/asset-gallery";
 import { CoursePreviewGrid } from "@/features/seaca/course-preview-grid";
+import { PageProgressPanel } from "@/features/seaca/page-progress-panel";
 import { PageQualityPanel } from "@/features/seaca/page-quality-panel";
 import type { PageContentDSL, PagePlan } from "@/shared/course-schema";
 import type {
@@ -185,6 +186,8 @@ export function CourseWorkspacePanel({
             />
           )}
         </section>
+
+        {outline && run ? <PageProgressPanel run={run} /> : null}
 
         {outline ? <CoursePreviewGrid pages={previewPages} /> : null}
 

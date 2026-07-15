@@ -11,12 +11,13 @@
 # 内容规则
 
 - 保留 DSL 的标题、旁白、内容块、要点、互动题目、选项、答案与参考解析语义，不添加新的事实。
+- choice prompt 若只比对应 question block 的 body 多一个纯题号前缀（例如 `1. `），可以在对应 `data-block-id` 节点中用未编号 body 呈现题干；题目顺序、题干、选项和参考解析都不得改写或遗漏。
 - `feedback.success` 作为参考解析呈现在静态页面中；`feedback.retry` 只属于答错后的条件状态，不要求在初始静态页面中永久显示，也不要把它混入题目或选项。
 - 每个内容块根节点必须带 `data-block-id="对应 block.id"`。
 - 页面主容器必须带 `data-page-id="对应 pageId"`。
 - 当 `interaction.type` 不是 `none` 时，真实互动区域必须带 `data-interaction-type="对应 interaction.type"`；`none` 页面不要为了标记而创建空互动区域。
 - 每个素材槽必须且只能有一个带 `data-asset-slot-id="对应 assetSlots.id"` 的槽位根节点；不同槽位可以复用同一个批准 URI，但不得交换槽位或发明其他素材 URL。
-- ready 图片必须与槽位根节点保持唯一、可校验的关联：标记可以直接放在使用内部 URI 的 `<img>` 或 CSS 背景节点；也可以放在只包裹一个此类直接消费节点的语义化容器。CSS 背景可以使用内联 style，或者只属于消费节点的唯一 class 规则。不要把标记节点与图片写成互不包含的兄弟节点，也不要通过 CSS 变量间接引用 URI。
+- ready 图片必须与槽位根节点保持唯一、可校验的关联：标记可以直接放在使用内部 URI 的 `<img>` 或 CSS 背景节点；也可以放在只包裹一个此类直接消费节点的语义化容器。CSS 背景可以使用内联 style，或者使用只指向该节点的唯一 class、唯一 id、精确 `[data-asset-slot-id="对应槽位"]` 规则。不要把标记节点与图片写成互不包含的兄弟节点，也不要通过 CSS 变量间接引用 URI。
 - `<img>` 必须使用给定的内部 URI 和精确 altText。CSS 背景的槽位根节点必须提供 `role="img"` 与精确 `aria-label`，纯装饰背景则使用 `aria-hidden="true"`。alt 和 aria-label 使用 UTF-8 原字符；需要转义时只用 `amp/apos/gt/lt/nbsp/quot` 或十进制、十六进制数字实体，不使用其他命名实体。fallback 结果按给定类型实现，并在槽位根节点加 `data-asset-fallback="对应 fallback.kind"`。
 - 图片只是页面素材，不得把背景图或插画铺成包含标题、按钮、卡片或导航的整页 UI；所有课程文字和互动必须保持为真实 HTML。
 - 背景素材必须遵守 AssetRequest.safeArea，把标题与正文放在低细节安全区；透明贴纸、图标和纹理不得遮挡正文。
