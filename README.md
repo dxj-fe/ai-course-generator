@@ -190,6 +190,15 @@
 - 新增原生可折叠结构化日志抽屉，只读取严格公开事件白名单，不序列化 Prompt、DSL/HTML 正文、snapshot、私有 event data 或 chain-of-thought。
 - 实现边界、时间/恢复语义、验证策略与面试复盘见 `notes/day-20.md`。
 
+## Day 21 交付
+
+- 完成当前固定多 Specialist 工作流的架构评审，明确它由 TypeScript 决定执行顺序，并不是已经实现的 Supervisor Agent。
+- 新增当前 MVP 与目标 Supervisor + Specialist 两张架构图，区分已实现能力、目标角色、Page Worker 执行范围、Generate Image Skill 和确定性基础设施。
+- 为 Planner、Pedagogy、Story、Visual、Page Writer、Image Prompt、HTML Engineer、QA 与未来 Repair 建立输入、输出、校验和禁止职责契约。
+- 记录单一超级 Agent 的具体失败模式、当前固定工作流的局限、Supervisor 与 LangGraph 的关系，以及什么时候不应该使用多 Agent。
+- Day 21 只交付架构文档和面试讲解，不修改现有业务工作流、共享 Schema、SSE 协议或 Seaca 产品 UI。
+- 总设计见 `docs/multi-agent-design.md`，当前/目标流程见 `docs/architecture/mvp-flow.md` 与 `docs/architecture/multi-agent-flow.md`，角色索引见 `src/server/agents/README.md`，复盘见 `notes/day-21.md`。
+
 ## 启动
 
 ```bash
