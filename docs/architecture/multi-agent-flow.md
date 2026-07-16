@@ -2,7 +2,7 @@
 
 > **TARGET / 未实现**
 >
-> 本文是 Day 21 的目标架构，不描述当前运行代码。当前系统仍执行 [`mvp-flow.md`](./mvp-flow.md) 中的固定串行 workflow；Supervisor、Repair、Page Worker 隔离、自动 QA 循环和 LangGraph 均未实现。
+> 本文是 Day 21 的目标架构，并用 Day 22 当前实现校准迁移起点，不把目标图描述成运行代码。当前系统执行 [`mvp-flow.md`](./mvp-flow.md) 中显式 `WorkflowNode[]` 驱动的固定串行 workflow；Supervisor、Repair、Page Worker 隔离、自动 QA 循环、并发和 LangGraph 均未实现。
 
 ## 设计目标
 
@@ -88,7 +88,7 @@ Supervisor **不负责**：
 - 自行修改 checkpoint；
 - 绕过 validator、提升自己的 retry budget，或根据私有推理向 UI 解释决策。
 
-当前 [`course-generation-workflow.ts`](../../src/server/workflows/course-generation-workflow.ts) 中的固定 `if / for / return failWorkflow` 是未来 Supervisor 调度需要逐步替代的职责，但 Day 21 不修改该实现。
+Day 22 已把原先集中在 [`course-generation-workflow.ts`](../../src/server/workflows/course-generation-workflow.ts) 的固定调度拆成兼容 facade、[`course-generation-nodes.ts`](../../src/server/workflows/course-generation-nodes.ts) 的节点列表和 [`runSequentialWorkflow`](../../src/server/workflows/sequential-workflow.ts) 的通用串行运行层。未来 Supervisor 可以选择、重试或循环这些受限节点，但不应替代 `requiredInputs / produces` 合同、集中状态合并、validator 或公开事件安全边界。
 
 ## 九名 Specialist
 
@@ -131,7 +131,7 @@ Page Worker 应遵守以下边界：
 - 未来可由 promise pool 控制并发，但并发度和依赖就绪由 Supervisor/运行层决定。
 - 某一页失败不会删除其他页面已完成产物。
 
-当前项目只有 [`PageWorkerBrief`](../../src/shared/course-schema/course-design.ts) 和顶层 workflow 中的逐页循环，还没有独立 Page Worker 函数或并发池。
+当前项目已有按页装配的 Writer/Assets/HTML `WorkflowNode` 和 [`PageWorkerBrief`](../../src/shared/course-schema/course-design.ts)，但这些节点仍共享整课状态并由同一运行器串行执行；它们不是独立 Page Worker，也没有页面级隔离上下文或并发池。
 
 ## GenerateImage Skill 不是 Agent
 
@@ -146,7 +146,7 @@ Page Worker 应遵守以下边界：
 
 ## Validators、状态合并与 checkpoint
 
-每个 Specialist 的输出必须先经过确定性 validator，再由运行层合并到共享状态：
+每个 Specialist 的输出必须先经过确定性 validator，再由运行层合并到共享状态。Day 22 的固定串行运行层已经实现其中的 `requiredInputs` 前置检查、`produces` patch 白名单、合并后完整状态复验和 `WorkflowNodeError.nodeName` 定位；目标运行时继续复用这些边界：
 
 ```text
 specialist candidate
@@ -166,7 +166,7 @@ specialist candidate
 - [`quality`](../../src/server/quality)：确定性页面质量检查；
 - [`CourseStore`](../../src/server/storage/course-store.ts)：可校验的原子 checkpoint。
 
-Specialist 不获得 `courseStore.save`，也不能直接发布 SSE。这样重试、并行和迁移运行框架时，状态合并仍只有一个所有者。
+Specialist 不获得 `courseStore.save`，也不能直接发布 SSE。当前 `runSequentialWorkflow` 已让 Specialist 节点 patch 的合并只有一个所有者；facade 只处理课程生命周期迁移。未来加入重试、并行或迁移运行框架时仍必须保留这一属性。
 
 ## 公开事件边界
 
@@ -177,7 +177,7 @@ Specialist 不获得 `courseStore.save`，也不能直接发布 SSE。这样重�
 - checkpoint、QA、Repair 与人工升级的结构化摘要；
 - trace、sequence 和时间信息。
 
-不得包含 System Prompt、原始模型消息、任意 tool payload、私有 event data 或 chain-of-thought。当前顶层 workflow 已经在 [`appendAgentEvent`](../../src/server/workflows/course-generation-workflow.ts) 中丢弃 Agent 原生 `data`；目标运行层必须保留这一安全属性。
+不得包含 System Prompt、原始模型消息、任意 tool payload、私有 event data 或 chain-of-thought。当前 facade、节点适配与运行层仍会在进入 checkpoint 前把 Agent 事件投影为共享公开协议并丢弃原生 `data`；目标运行层必须保留这一安全属性。
 
 ## 有界 QA、Repair 与 re-QA
 
@@ -236,11 +236,9 @@ flowchart LR
 
 ## Day 21 之后的实施顺序
 
-以下均为后续目标，不属于本文档交付：
-
-1. 先把现有固定流程包装为声明式、可测试的节点接口。
-2. 再加入只负责结构化调度的 Supervisor 和规则兜底。
-3. 统一九名 Specialist 的 Prompt、输入输出和禁止项。
-4. 把逐页循环提取为 Page Worker，再引入受控并发。
-5. 将现有 report-only QA 接入质量门槛，并实现 Repair 候选与 re-QA。
-6. 最后评估是否用 LangGraph 替换手写运行层，同时保持 SSE 和前端数据合同不变。
+1. **Day 22 已完成：** 把现有固定流程包装为声明式、可测试的 `WorkflowNode` 接口和集中串行运行层；兼容 facade、API、SSE、Schema、checkpoint、恢复和 UI 语义保持不变。
+2. **后续目标：** 加入只负责结构化调度的 Supervisor 和规则兜底。
+3. **后续目标：** 继续收紧九名 Specialist 的 Prompt、输入输出和禁止项。
+4. **后续目标：** 把逐页节点提取为真正隔离的 Page Worker，再评估受控并发。
+5. **后续目标：** 将现有 report-only QA 接入质量门槛，并实现 Repair 候选与 re-QA。
+6. **后续目标：** 最后评估是否用 LangGraph 替换手写运行层，同时保持 SSE 和前端数据合同不变。

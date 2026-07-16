@@ -1,6 +1,6 @@
 # 多 Agent 架构设计
 
-> Day 21 架构评审文档。本文同时描述已经实现的固定工作流与未来的 Supervisor + Specialist 目标架构，不代表 Supervisor、Repair 或 LangGraph 已经进入当前运行时。
+> Day 21 架构评审文档，已补充 Day 22 手写节点重构后的当前事实。本文同时描述已经实现的固定 `WorkflowNode` 串行工作流与未来的 Supervisor + Specialist 目标架构，不代表 Supervisor、Repair、自动 QA、页面并发或 LangGraph 已经进入当前运行时。
 
 ## 1. 结论
 
@@ -13,7 +13,7 @@
 - 服务端负责执行顺序、checkpoint、取消和公开事件；
 - 浏览器只消费类型化任务状态，不消费模型框架原生 chunk。
 
-当前尚未具备的是“根据验证后的状态选择下一个 Specialist”的 Supervisor。[课程生成工作流](../src/server/workflows/course-generation-workflow.ts)仍然是固定顺序的 TypeScript 编排，这是当前 MVP 的正确基线，不能被描述成动态多 Agent 调度。
+当前尚未具备的是“根据验证后的状态选择下一个 Specialist”的 Supervisor。[课程生成工作流](../src/server/workflows/course-generation-workflow.ts)现为兼容 facade：它根据 checkpoint 按固定阶段顺序选择 [`course-generation-nodes.ts`](../src/server/workflows/course-generation-nodes.ts) 的节点工厂，再交给 [`runSequentialWorkflow`](../src/server/workflows/sequential-workflow.ts) 执行。这仍是 TypeScript 确定性编排，不能被描述成动态多 Agent 调度。
 
 因此，目标不是“增加更多 Agent”，而是：
 
@@ -28,7 +28,7 @@
 | 架构 | 谁生成业务产物 | 谁决定下一步 | 当前状态 | 主要权衡 |
 | --- | --- | --- | --- | --- |
 | 单一超级 Agent | 一个模型上下文同时生成规划、内容、视觉、HTML 与评估 | 同一个模型隐式决定 | 不采用 | 入口简单，但上下文过载、失败粒度粗 |
-| 固定多 Specialist 工作流 | 聚焦 Agent 与确定性 Skill | TypeScript 按固定顺序调度 | **已实现** | 可预测、可测试，但控制逻辑集中且以串行为主 |
+| 固定多 Specialist 工作流 | 聚焦 Agent 与确定性 Skill | TypeScript `WorkflowNode[]` 按固定顺序调度 | **已实现** | handoff 与错误边界显式、可测试，但仍是静态串行图 |
 | Supervisor + Specialist | 聚焦 Agent 与确定性 Skill | Supervisor 根据类型化状态选择有限动作 | **目标，未实现** | 可按状态路由，但编排、成本与可观测性更复杂 |
 
 把大函数拆成多个带 Agent 名字的函数，不会自动得到 Supervisor 架构；同样，一个有明确 Specialist 的确定性工作流，在没有动态路由之前也已经具有工程价值。
@@ -39,12 +39,12 @@
 
 1. `/chat` 创建类型化课程任务；
 2. [CourseGenerationTaskService](../src/server/tasks/course-generation-task-service.ts)负责任务生命周期和取消；
-3. [runCourseGenerationWorkflow](../src/server/workflows/course-generation-workflow.ts)按顺序执行 Intent、Planner、Design 和每个页面；
-4. [runCourseDesignWorkflow](../src/server/workflows/course-design-workflow.ts)串行执行 Pedagogy、Story、Visual；
-5. [runImageAssetWorkflow](../src/server/workflows/image-asset-workflow.ts)负责 Image Prompt、缓存、生图 Skill 与 fallback；
-6. 每个被接受的边界都合并为经过校验的 [CourseGenerationState](../src/shared/course-schema/course-generation-state.ts) checkpoint；
-7. Task Service 只在持久化成功后发布 strict snapshot、event 或 terminal；
-8. 前端 Adapter 与 Controller 把状态投影到现有 `/chat` Timeline 和 learning workspace。
+3. [runCourseGenerationWorkflow](../src/server/workflows/course-generation-workflow.ts)保留为兼容 facade，负责状态初始化/恢复、上下文装配和原有结果映射；
+4. [course-generation-nodes.ts](../src/server/workflows/course-generation-nodes.ts)定义 Intent、Planner、Course Design 和逐页 Writer/Assets/HTML 的节点工厂，facade 根据 checkpoint 按固定阶段顺序装配待执行节点；
+5. [runSequentialWorkflow](../src/server/workflows/sequential-workflow.ts)校验 `requiredInputs`、执行节点、限制 `produces`、集中合并状态，并用 `WorkflowNodeError.nodeName` 定位失败；
+6. [runCourseDesignWorkflow](../src/server/workflows/course-design-workflow.ts)仍串行执行 Pedagogy、Story、Visual；[runImageAssetWorkflow](../src/server/workflows/image-asset-workflow.ts)仍负责 Image Prompt、缓存、生图 Skill 与 fallback；
+7. 每个被接受的边界都合并为经过校验的 [CourseGenerationState](../src/shared/course-schema/course-generation-state.ts) checkpoint；
+8. Task Service 只在持久化成功后发布 strict snapshot、event 或 terminal；前端 Adapter 与 Controller 把状态投影到现有 `/chat` Timeline 和 learning workspace。
 
 Page QA 当前是只读、可选的页面操作，不阻塞课程交付；Repair 当前不存在。这两个事实必须在图和项目讲解中明确说明。
 
@@ -96,11 +96,11 @@ Planner 关注课程节奏、依赖和跨页连贯；HTML Engineer 关注单页 
 
 ## 5. 当前固定工作流的局限
 
-固定工作流比单一超级 Agent 更安全，但顶层编排仍集中承担很多职责。
+固定工作流比单一超级 Agent 更安全。Day 22 已把节点合同、固定顺序、输入前置条件、输出白名单、集中 merge 与节点级错误定位从顶层大函数中显式提取，但以下运行能力仍未出现。
 
-### 5.1 控制逻辑集中
+### 5.1 显式但静态的节点列表
 
-`runCourseGenerationWorkflow` 同时负责执行图、输入装配、页面依赖、状态迁移、恢复跳过、checkpoint 时机、事件投影、错误与取消映射，以及完成条件。新增状态驱动分支时，需要集中修改该函数及其测试。
+`runCourseGenerationWorkflow` 不再直接内嵌每个 Agent 的执行细节，新增或修改 Specialist 的 handoff 主要落在 `course-generation-nodes.ts`。不过，facade 仍只根据“产物是否已存在”和固定页面依赖装配节点；它不会根据语义状态动态选择分支、在预算内重试或形成循环。引入这些能力时仍需新的路由策略和独立测试，不能把节点数组误称为 Supervisor。
 
 ### 5.2 队头阻塞
 
@@ -253,7 +253,7 @@ Route / Agent / Workflow
 
 ## 12. Supervisor 与 LangGraph 的关系
 
-Supervisor 是架构角色；LangGraph 是实现 State、Node、Edge、Reducer、Streaming 与持久化的一种运行工具。当前流程应先被整理为显式的手写节点与状态迁移，等这些契约稳定后再评估映射到图运行时。
+Supervisor 是架构角色；LangGraph 是实现 State、Node、Edge、Reducer、Streaming 与持久化的一种运行工具。Day 22 已先把当前固定流程整理为显式手写节点、前置输入、声明产物和集中状态迁移。只有等这些合同在真实恢复和失败场景中稳定后，才应评估 Supervisor 或映射到图运行时。
 
 迁移必须保留：
 
@@ -268,8 +268,8 @@ Supervisor 是架构角色；LangGraph 是实现 State、Node、Edge、Reducer�
 
 ## 13. 演进顺序
 
-1. **Day 21：** 文档化当前和目标边界，不改运行时；
-2. **Day 22：** 把固定顺序表达为显式手写 Specialist Workflow；
+1. **Day 21（已完成）：** 文档化当前和目标边界，不改运行时；
+2. **Day 22（已完成）：** 把固定顺序表达为显式手写 Specialist Workflow，同时保持 API、SSE、Schema、checkpoint、恢复和 UI 合同；
 3. **Day 23：** 引入有限 Supervisor 路由、重试、停止和可解释决策；
 4. **Day 24–27：** 强化 Specialist Prompt、Page Worker、QA 和 Repair；
 5. **Day 28–31：** 在不重做前端的前提下评估并迁移稳定状态到 LangGraph。
@@ -288,3 +288,12 @@ Supervisor 是架构角色；LangGraph 是实现 State、Node、Edge、Reducer�
 - [x] 能解释 Supervisor 是架构角色、LangGraph 是可选运行工具；
 - [x] 公开事件不包含 Prompt、私有 event data 或 chain-of-thought；
 - [x] 文档没有声称 Day 21 修改了业务源码、UI、Schema 或增加了运行时能力。
+
+## 15. Day 22 当前实现说明
+
+- [x] `runCourseGenerationWorkflow` 仍是任务服务调用的兼容 facade；没有新增平行 Route Handler。
+- [x] `WorkflowNode` 以 `name / requiredInputs / produces / run` 描述协调合同，节点只返回 partial state 与事件。
+- [x] `runSequentialWorkflow` 统一检查输入与声明输出，并通过集中 merge 校验完整状态；节点失败携带稳定 `nodeName`。
+- [x] Intent、Planner、Course Design 和逐页 Writer/Assets/HTML 已包装为节点工厂，facade 按固定阶段顺序装配，既有领域 Agent 与子流程继续负责业务规则。
+- [x] 共享 Schema、checkpoint 时机、恢复跳过、取消、公开事件、任务 API、SSE 与 Seaca 产品表面保持原语义。
+- [x] Supervisor、Repair、自动 QA、独立 Page Worker、并发和 LangGraph 仍明确标记为未实现。

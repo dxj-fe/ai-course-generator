@@ -8,10 +8,12 @@ import type {
   AgentEvent,
   AgentRuntimeContext,
 } from "../../../../src/server/agents/core/types";
-import type {
-  CourseGenerationState,
-  PageContentDSL,
-  PagePlan,
+import {
+  AssetGenerationResultSchema,
+  type AssetGenerationResult,
+  type CourseGenerationState,
+  type PageContentDSL,
+  type PagePlan,
 } from "../../../../src/shared/course-schema";
 import {
   courseDesignIntent,
@@ -102,7 +104,60 @@ describe("course generation workflow", () => {
     expect(state.pages[0]?.htmlOutput?.html).toContain("page-01-cover");
     expect(state.pages[1]?.content?.pageId).toBe("page-02-knowledge");
     expect(order).not.toContain("writer:page-03-summary");
+    expect(state.events.find(({ type }) => type === "error")).toMatchObject({
+      type: "error",
+      stage: "html",
+      pageId: "page-02-knowledge",
+      agent: "html-engineer",
+    });
     expect(checkpoints.at(-1)?.status).toBe("failed");
+  });
+
+  it("runs the Assets node for a real slot and passes its result to HTML", async () => {
+    const order: string[] = [];
+    const checkpoints: CourseGenerationState[] = [];
+    const assetPageId = "page-01-cover";
+    const assetResult = assetResultForPage(assetPageId);
+    const dependencies = createDependencies(order, checkpoints, {
+      assetPageId,
+    });
+
+    const state = await runCourseGenerationWorkflow(
+      {
+        courseId: "course-523e4567-e89b-42d3-a456-426614174000",
+        userPrompt: "生成一门包含真实图片素材的三页太阳系课程",
+        pageCount: 3,
+      },
+      context,
+      dependencies,
+    );
+
+    expect(dependencies.runAssets).toHaveBeenCalledOnce();
+    expect(dependencies.runAssets).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.objectContaining({
+          pageId: assetPageId,
+          assetSlots: [expect.objectContaining({ id: "asset-slot-01" })],
+        }),
+      }),
+      context,
+    );
+    expect(dependencies.runHtml).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.objectContaining({ pageId: assetPageId }),
+        assets: [assetResult],
+      }),
+      context,
+    );
+    expect(order).toContain(`assets:${assetPageId}`);
+    expect(state.pages[0]).toMatchObject({
+      pageId: assetPageId,
+      status: "completed",
+      currentStage: "complete",
+      assets: [assetResult],
+    });
+    expect(state.pages[0]?.htmlOutput?.html).toContain(assetResult.asset!.uri);
+    expect(state.status).toBe("completed");
   });
 
   it("resumes from the failed stage without rerunning completed pages", async () => {
@@ -183,6 +238,7 @@ function createDependencies(
   options: {
     failHtmlPageId?: string;
     abortWriterPageId?: string;
+    assetPageId?: string;
   } = {},
 ): Partial<CourseGenerationWorkflowDependencies> {
   let eventSequence = 0;
@@ -196,6 +252,53 @@ function createDependencies(
     summary,
     data: { private: "must-not-be-persisted" },
   });
+
+  const runAssets = vi.fn(
+    async (
+      input: Parameters<CourseGenerationWorkflowDependencies["runAssets"]>[0],
+    ): Promise<
+      Awaited<ReturnType<CourseGenerationWorkflowDependencies["runAssets"]>>
+    > => {
+      order.push(`assets:${input.content.pageId}`);
+      return {
+        status: "completed",
+        events: [nextEvent("assets completed")],
+        results: [assetResultForPage(input.content.pageId)],
+      };
+    },
+  );
+  const runHtml = vi.fn(
+    async (
+      input: Parameters<CourseGenerationWorkflowDependencies["runHtml"]>[0],
+    ): Promise<
+      Awaited<ReturnType<CourseGenerationWorkflowDependencies["runHtml"]>>
+    > => {
+      order.push(`html:${input.content.pageId}`);
+      const failed = options.failHtmlPageId === input.content.pageId;
+      const assetMarkup = (input.assets ?? [])
+        .flatMap(({ asset }) =>
+          asset?.uri ? [`<img src="${asset.uri}">`] : [],
+        )
+        .join("");
+      return {
+        status: failed ? "failed" : "completed",
+        step: 1,
+        maxSteps: 1,
+        events: [nextEvent(failed ? "html failed" : "html completed")],
+        task: input,
+        htmlOutput: failed
+          ? undefined
+          : {
+              html: `<!doctype html><html data-page-id="${input.content.pageId}"><body>${assetMarkup}</body></html>`,
+              generatedAt: timestamp,
+              version: 1,
+            },
+        error: failed
+          ? { code: "AGENT_EXECUTION_ERROR", message: "HTML failed" }
+          : undefined,
+      };
+    },
+  );
 
   return {
     now: () => timestamp,
@@ -243,38 +346,23 @@ function createDependencies(
         maxSteps: 1,
         events: [nextEvent(aborted ? "writer aborted" : "writer completed")],
         task: input,
-        content: aborted ? undefined : contentForPage(input.page),
+        content: aborted
+          ? undefined
+          : contentForPage(input.page, options.assetPageId === input.page.id),
         error: aborted
           ? { code: "AGENT_ABORTED", message: "Agent 执行已取消。" }
           : undefined,
       };
     },
-    runAssets: vi.fn(),
-    runHtml: async (input) => {
-      order.push(`html:${input.content.pageId}`);
-      const failed = options.failHtmlPageId === input.content.pageId;
-      return {
-        status: failed ? "failed" : "completed",
-        step: 1,
-        maxSteps: 1,
-        events: [nextEvent(failed ? "html failed" : "html completed")],
-        task: input,
-        htmlOutput: failed
-          ? undefined
-          : {
-              html: `<!doctype html><html data-page-id="${input.content.pageId}"></html>`,
-              generatedAt: timestamp,
-              version: 1,
-            },
-        error: failed
-          ? { code: "AGENT_EXECUTION_ERROR", message: "HTML failed" }
-          : undefined,
-      };
-    },
+    runAssets,
+    runHtml,
   };
 }
 
-function contentForPage(page: PagePlan): PageContentDSL {
+function contentForPage(
+  page: PagePlan,
+  includeAssetSlot = false,
+): PageContentDSL {
   const interaction: PageContentDSL["interaction"] =
     page.interactionType === "reveal"
       ? {
@@ -310,7 +398,18 @@ function contentForPage(page: PagePlan): PageContentDSL {
       },
     ],
     interaction,
-    assetSlots: [],
+    assetSlots: includeAssetSlot
+      ? [
+          {
+            id: "asset-slot-01",
+            type: "image",
+            role: "hero",
+            purpose: "展示太阳系主要天体的关系",
+            required: true,
+            altTextGuidance: "太阳与八大行星的太阳系示意图",
+          },
+        ]
+      : [],
     layoutHints: {
       contentDensity: "balanced",
       visualPriority: "课程正文优先",
@@ -318,4 +417,39 @@ function contentForPage(page: PagePlan): PageContentDSL {
       readingOrder: [`block-${page.order}`],
     },
   };
+}
+
+function assetResultForPage(pageId: string): AssetGenerationResult {
+  return AssetGenerationResultSchema.parse({
+    request: {
+      assetSlotId: "asset-slot-01",
+      assetType: "background",
+      usage: "作为太阳系课程封面的主视觉素材",
+      prompt: "绘制一幅适合儿童课程的太阳系科普插画，清楚展示太阳和八大行星",
+      transparentBackground: false,
+      safeArea: {
+        position: "right",
+        coveragePercent: 35,
+        description: "右侧保留课程标题和导航按钮的文字安全区",
+      },
+      aspectRatio: "16:9",
+    },
+    status: "ready",
+    asset: {
+      id: `asset-${pageId}-01`,
+      type: "image",
+      role: "hero",
+      source: "generated",
+      status: "ready",
+      uri: `https://assets.example.com/${pageId}/solar-system.webp`,
+      altText: "太阳与八大行星的太阳系示意图",
+      generationPrompt: "适合儿童课程的太阳系科普插画",
+      mimeType: "image/webp",
+      dimensions: { width: 1280, height: 720 },
+      usedByPageIds: [pageId],
+    },
+    provider: "test-provider",
+    model: "test-image-model",
+    durationMs: 120,
+  });
 }

@@ -2,11 +2,11 @@
 
 > **IMPLEMENTED / 当前事实**
 >
-> 本文只描述当前产品真实运行的课程生成链路。它是由 TypeScript 明确编排的可恢复串行 workflow，不是 Supervisor 调度，也没有使用 LangGraph。
+> 本文只描述当前产品真实运行的课程生成链路。它由 TypeScript `WorkflowNode[]` 明确编排，是可恢复的固定串行 workflow；它不是 Supervisor 调度，也没有使用 LangGraph。
 
 ## 产品入口与完整调用链
 
-`/chat` 通过类型化任务客户端创建后台任务；Route Handler 返回 `202` 后，任务服务在服务端持有任务生命周期和取消信号。课程 workflow 依次完成全局规划、专业设计和逐页生成，并在稳定边界保存 checkpoint。SSE 只传输共享协议中的快照、公开事件和终态，前端 controller 再把它们投影到对话 Timeline 与右侧 learning workspace。
+`/chat` 通过类型化任务客户端创建后台任务；Route Handler 返回 `202` 后，任务服务在服务端持有任务生命周期和取消信号。兼容 facade 装配固定节点列表，串行运行器依次完成全局规划、专业设计和逐页生成，并在稳定边界保存 checkpoint。SSE 只传输共享协议中的快照、公开事件和终态，前端 controller 再把它们投影到对话 Timeline 与右侧 learning workspace。
 
 ```mermaid
 flowchart TD
@@ -14,12 +14,15 @@ flowchart TD
   Client --> TaskRoute["POST /api/courses/tasks<br/>202 queued"]
   TaskRoute --> After["Next.js after()"]
   After --> TaskService["CourseGenerationTaskService<br/>queued -> running -> terminal"]
-  TaskService --> Workflow["runCourseGenerationWorkflow"]
+  TaskService --> Facade["runCourseGenerationWorkflow<br/>compatibility facade"]
+  Facade --> NodeList["course-generation-nodes.ts factories<br/>fixed-order WorkflowNode[]"]
+  Facade --> Runner["runSequentialWorkflow<br/>requiredInputs + produces"]
+  NodeList --> Runner
 
-  Workflow --> Intent["Intent"]
+  Runner --> Intent["Intent node"]
   Intent --> Planner["Course Planner"]
 
-  subgraph DesignWorkflow ["Course Design Workflow"]
+  subgraph DesignNode ["Course Design node（复用既有子流程）"]
     Pedagogy["Pedagogy Agent"] --> Story["Story Agent"]
     Story --> Visual["Visual Director"]
   end
@@ -47,7 +50,13 @@ flowchart TD
   MorePages -->|"是"| PageLoop
   MorePages -->|"否"| Complete["CourseGenerationState completed"]
 
-  Workflow -. "每个稳定边界" .-> Checkpoint["typed checkpoint"]
+  Intent -. "partial state + events" .-> Merge["produces 白名单<br/>central merge + state schema"]
+  Planner -. "partial state + events" .-> Merge
+  Visual -. "partial state + events" .-> Merge
+  PageWriter -. "partial state + events" .-> Merge
+  AssetResult -. "partial state + events" .-> Merge
+  Html -. "partial state + events" .-> Merge
+  Merge -. "每个已接受边界" .-> Checkpoint["typed checkpoint"]
   Checkpoint --> CourseStore["CourseStore"]
   Checkpoint --> EventBus["single-process EventBus"]
   TaskService --> TaskStore["CourseTaskStore"]
@@ -63,16 +72,31 @@ flowchart TD
 
 ## 当前串行顺序
 
-顶层事实来源是 [`runCourseGenerationWorkflow`](../../src/server/workflows/course-generation-workflow.ts)：
+顶层兼容入口仍是 [`runCourseGenerationWorkflow`](../../src/server/workflows/course-generation-workflow.ts)，已有任务服务与测试不需要迁移到新调用方式。它负责创建新状态或校验恢复状态，装配运行上下文与节点列表，再把结果映射回原有成功/失败合同。
 
-1. 创建新状态，或校验并加载已有 [`CourseGenerationState`](../../src/shared/course-schema/course-generation-state.ts)。
-2. 缺少 `intent` 时运行 Intent；成功后保存 checkpoint。
-3. 缺少 `outline` 时运行 [`Course Planner`](../../src/server/agents/course-planner-agent.ts)；Planner 由确定性代码补齐 ID、模板和依赖。当前每一页都依赖它的前一页，因此页面天然串行。
-4. 缺少专业 briefs 时进入 [`Course Design Workflow`](../../src/server/workflows/course-design-workflow.ts)，严格按 `Pedagogy -> Story -> Visual` 执行，再投影出逐页 `PageWorkerBrief`。
-5. 按 `CoursePlan.pages` 顺序遍历页面。每页依次执行 `Page Writer -> Assets -> HTML Engineer`；当前页失败会停止当前页及所有后继页，但保留此前已完成的 HTML。
-6. 所有页面完成后，课程进入 `completed` 并保存最终 checkpoint。
+[`course-generation-nodes.ts`](../../src/server/workflows/course-generation-nodes.ts) 定义节点工厂，兼容 facade 根据已校验 checkpoint 跳过已有产物，并按以下确定顺序装配当前仍需执行的节点：
 
-每个 Agent 自己仍使用统一的最小状态、步骤上限和结构化事件合同，见 [`minimal-agent.ts`](../../src/server/agents/core/minimal-agent.ts)。不过，哪个 Agent 何时执行不是模型决定的，而是顶层 workflow 中的固定分支决定的。
+1. `Intent` 节点只在状态缺少 `intent` 时运行入口解析；恢复时保留已有产物。
+2. `Planner` 节点消费已校验 `intent` 并生成 `CoursePlan`；确定性适配仍补齐 ID、模板和页面依赖。
+3. `Course Design` 节点复用 [`runCourseDesignWorkflow`](../../src/server/workflows/course-design-workflow.ts)，内部仍严格执行 `Pedagogy -> Story -> Visual`，再投影逐页 `PageWorkerBrief`。
+4. 依据 `CoursePlan.pages` 为每页依次装配 `Page Writer -> Assets -> HTML Engineer` 节点。现有页面依赖和 fail-fast 规则保持不变：当前页失败会停止当前页及所有后继页，但保留此前已完成的 HTML。
+5. 所有页面完成后，兼容 facade 把课程置为 `completed` 并保存最终 checkpoint。
+
+[`runSequentialWorkflow`](../../src/server/workflows/sequential-workflow.ts) 是固定节点列表的唯一通用执行器：运行前检查 `requiredInputs`，执行节点，拒绝 `produces` 之外的 patch，通过集中 merge 复验 `CourseGenerationStateSchema`，然后才在既有稳定边界 checkpoint。节点抛错、缺少输入、缺少声明产物或越权写字段都会转换成带 `nodeName` 的 `WorkflowNodeError`，facade 再映射为原有公开阶段、页面、Agent、错误码和消息。
+
+每个 Agent 自己仍使用统一的最小状态、步骤上限和结构化事件合同，见 [`minimal-agent.ts`](../../src/server/agents/core/minimal-agent.ts)。不过，哪个 Agent 何时执行不是模型决定的，而是 facade 根据 checkpoint 按固定 TypeScript 阶段顺序选择 `course-generation-nodes.ts` 的节点工厂决定的。
+
+## WorkflowNode 合同与边界
+
+`WorkflowNode<State, Context, Event>` 只描述协调信息，不是新的模型 Agent：
+
+- `name` 是稳定的运行与错误定位名称；
+- `requiredInputs` 声明节点执行前必须可读取的状态值；
+- `produces` 同时声明执行后必须存在的产物，并作为 patch 顶层字段白名单；
+- `run(state, context)` 只返回 `partial state + events`，不能直接持久化整课状态或向 SSE 推送；
+- `runSequentialWorkflow` 是节点 patch 合并的唯一所有者，合并后的完整状态必须再次通过共享 Schema；facade 仍负责开始、失败、完成等课程生命周期迁移。
+
+这个合同减少了顶层大函数的隐式 handoff，但没有增加条件边、重试循环、动态节点选择或并发调度。
 
 ## 素材子流程
 
@@ -126,7 +150,7 @@ SSE 合同由 [`course-task-event.ts`](../../src/shared/course-schema/course-tas
 
 - 没有 Supervisor Agent，也没有基于状态的动态节点选择。
 - 没有 Repair Agent 或自动修复循环。
-- 没有 Page Worker 隔离执行单元或受控页面并发；“Page Worker brief”只是逐页输入合同。
+- 没有 Page Worker 隔离执行单元或受控页面并发；逐页 `WorkflowNode` 仍共享课程状态并串行运行，“Page Worker brief”只是逐页输入合同。
 - 没有 LangGraph StateGraph、条件边、Reducer 或框架原生 streaming。
 - 没有自动 Page QA 质量门槛。
 - EventBus 与活动任务去重都是单进程实现，不是分布式任务队列或 lease。

@@ -1,6 +1,6 @@
 # Agent 契约索引
 
-本目录保存课程生成中的模型 Agent。当前系统已经把不同专业职责拆成多个 Agent，但调度仍由固定、可恢复的串行 Workflow 负责；Supervisor、Repair 和 LangGraph 尚未实现。本文只记录当前真实契约与后续角色边界，不把目标架构描述成已交付能力。
+本目录保存课程生成中的模型 Agent。当前系统已经把不同专业职责拆成多个 Agent，并由显式 `WorkflowNode[]` 驱动的固定、可恢复串行 Workflow 调度；Supervisor、Repair、自动 QA、页面并发和 LangGraph 尚未实现。本文只记录当前真实契约与后续角色边界，不把目标架构描述成已交付能力。
 
 ## 状态说明
 
@@ -13,7 +13,7 @@
 
 1. Agent 只接收完成自己职责所需的最小、类型化输入；后续 Agent 消费前序已经通过 Schema 和业务规则校验的产物。
 2. 模型不负责生成稳定技术 ID、选择任意服务端模板或决定 Workflow 分支。适配层补齐技术字段，Registry、Schema 和业务校验器提供确定性边界。
-3. Agent 返回自己的状态和产物，Workflow 集中合并课程状态、处理失败短路并保存 checkpoint。展示组件不能复制这些调度规则。
+3. Agent 返回自己的状态和产物；节点适配器只返回声明的 partial state 与事件，`runSequentialWorkflow` 按 `produces` 白名单集中合并课程状态、处理失败短路并触发既有 checkpoint 钩子。展示组件不能复制这些调度规则。
 4. `AgentRuntimeContext` 只携带 `traceId` 与可选 `AbortSignal`；一步 Agent 仍受统一步骤预算和结构化错误约束。参见 [core/types.ts](./core/types.ts) 与 [core/minimal-agent.ts](./core/minimal-agent.ts)。
 5. Agent 内部事件可以临时携带调试 `data`，但进入课程 checkpoint 前必须投影为严格的公开事件。公开事件只保留 `id`、`sequence`、`type`、`traceId`、`timestamp`、`step`、`summary`、`stage`、可选 `pageId` 和可选 `agent`，不得包含系统 Prompt、原始模型输出、HTML/DSL 正文、API Key、私有上下文或 chain-of-thought。参见 [course-generation-state.ts](../../shared/course-schema/course-generation-state.ts) 与 [course-task-event.ts](../../shared/course-schema/course-task-event.ts)。
 6. Handoff 失败必须保留所属阶段、可选 `pageId`、稳定错误码和公开错误摘要；恢复由服务端 checkpoint 决定，不由 Agent 或 Timeline 从自然语言日志猜测。
@@ -27,7 +27,7 @@
 - **输出**：经过 `CourseIntentSchema` 校验的 `CourseIntent`。
 - **校验边界**：Intent 模块校验结构；课程 Workflow 再把 MVP 页数收敛到 3–5 页并复验。
 - **禁止职责**：不规划具体页面，不写页面内容，不选择 HTML 实现，不调度后续 Agent。
-- **源码**：[intent-agent.ts](./intent-agent.ts)、[course-generation-workflow.ts](../workflows/course-generation-workflow.ts)。
+- **源码**：[intent-agent.ts](./intent-agent.ts)、[course-generation-nodes.ts](../workflows/course-generation-nodes.ts)、[course-generation-workflow.ts](../workflows/course-generation-workflow.ts)。
 
 ## 九名 Specialist
 
@@ -113,6 +113,15 @@
 
 ## 协调角色与确定性能力
 
+### WorkflowNode 与串行运行器
+
+- **状态**：已实现的**协调原语**，不是模型 Agent，也不是 Supervisor。
+- [`WorkflowNode`](../workflows/sequential-workflow.ts) 通过 `name`、`requiredInputs`、`produces` 和 `run` 声明一个固定 handoff；`run` 只返回 partial state 与结构化事件。
+- `runSequentialWorkflow` 按给定数组顺序执行节点，统一检查前置输入、拒绝未声明 patch、验证声明产物，并把失败包装为带 `nodeName` 的 `WorkflowNodeError`。
+- [`course-generation-nodes.ts`](../workflows/course-generation-nodes.ts) 包装 Intent、Planner、Course Design 和逐页 Writer/Assets/HTML；它复用已有 Agent 与子流程，不把业务规则复制进通用运行器。
+- `runCourseGenerationWorkflow` 保留为任务服务的兼容 facade，负责初始化/恢复、上下文装配、集中 merge、checkpoint 和原有结果映射。
+- **边界**：节点列表是固定 TypeScript 顺序，没有动态选择、条件边、自动重试、循环或并发。
+
 ### Supervisor
 
 - **状态**：**目标角色，尚未实现**；当前没有 Supervisor 模块、决策 Schema 或 Timeline 事件。
@@ -122,9 +131,10 @@
 ### Page Worker
 
 - **状态**：已存在的**逐页执行范围**，不是独立模型 Agent。
-- `CourseDesignWorkflow` 把全局 briefs 投影为每页 `PageWorkerBrief`；`CourseGenerationWorkflow` 再按依赖顺序执行 PageWriter → Assets → HtmlEngineer，并在阶段边界 checkpoint。
+- `CourseDesignWorkflow` 把全局 briefs 投影为每页 `PageWorkerBrief`；课程节点装配再为每页按依赖顺序创建 PageWriter → Assets → HtmlEngineer 节点，并在既有阶段边界 checkpoint。
 - Page Worker 不拥有另一份课程状态，不绕过全局 Workflow，不把一个页面的私有中间产物传给无关页面。
-- **源码**：[course-design-workflow.ts](../workflows/course-design-workflow.ts)、[course-generation-workflow.ts](../workflows/course-generation-workflow.ts)。
+- 当前逐页节点共享整课状态并串行执行，因此还不是隔离的 Page Worker，也不支持页面并发。
+- **源码**：[course-design-workflow.ts](../workflows/course-design-workflow.ts)、[course-generation-nodes.ts](../workflows/course-generation-nodes.ts)、[course-generation-workflow.ts](../workflows/course-generation-workflow.ts)。
 
 ### GenerateImage Skill
 
@@ -136,12 +146,12 @@
 ### Validator、checkpoint 与 SSE
 
 - **Validator**：Agent Schema、业务一致性校验、HTML 合同和质量规则负责确定性接受/拒绝；模型不能绕过这些边界。
-- **Checkpoint**：`CourseGenerationWorkflow` 是课程编排事实来源，`CourseStore` 在阶段边界保存完整可校验状态；失败保留已完成页面，恢复跳过已完成产物。
+- **Merge / Checkpoint**：`runSequentialWorkflow` 只接受节点 `produces` 声明内的 patch，兼容 facade 的集中 merge 以 `CourseGenerationStateSchema` 复验完整状态；`CourseStore` 仍在原阶段边界保存 checkpoint，失败保留已完成页面，恢复跳过已完成产物。
 - **SSE**：Task Service 管理任务生命周期，课程 checkpoint 成功后才发布严格公开消息；EventBus 只负责进程内实时通知，不成为持久化事实来源。
-- **源码**：[course-generation-workflow.ts](../workflows/course-generation-workflow.ts)、[course-store.ts](../storage/course-store.ts)、[course-generation-task-service.ts](../tasks/course-generation-task-service.ts)、[course-task-sse.ts](../tasks/course-task-sse.ts)。
+- **源码**：[sequential-workflow.ts](../workflows/sequential-workflow.ts)、[course-generation-workflow.ts](../workflows/course-generation-workflow.ts)、[course-store.ts](../storage/course-store.ts)、[course-generation-task-service.ts](../tasks/course-generation-task-service.ts)、[course-task-sse.ts](../tasks/course-task-sse.ts)。
 
 ## 当前与目标边界
 
-当前运行链路是：Intent → Planner → Pedagogy → Story → Visual → 按页 PageWriter → ImagePrompt/GenerateImage Skill → HtmlEngineer；QA 为单页显式操作。调度、错误短路、checkpoint 和恢复均由手写 Workflow 决定。
+当前运行链路是：Intent → Planner → Pedagogy → Story → Visual → 按页 PageWriter → ImagePrompt/GenerateImage Skill → HtmlEngineer；QA 为单页显式操作。固定顺序由 `course-generation-nodes.ts` 声明，输入/输出检查和失败定位由通用串行运行器负责，checkpoint 与恢复继续由兼容 facade 和任务基础设施保持。
 
-目标链路会在后续训练日引入 Supervisor、标准 Workflow Node、有限重试、QA/Repair 闭环和可选 LangGraph 执行层。在这些共享契约和运行语义真正实现前，公开事件、Timeline 与本文都不得把目标角色标记为已运行。
+目标链路会在后续训练日引入 Supervisor、有限重试、真正隔离的 Page Worker、QA/Repair 闭环和可选 LangGraph 执行层。标准 `WorkflowNode` 已于 Day 22 实现，但它本身不提供这些目标能力；在对应共享契约和运行语义真正实现前，公开事件、Timeline 与本文都不得把目标角色标记为已运行。

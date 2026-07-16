@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话生成一门由多页关联 HTML 组成的课程。当前 Day 20 版本由服务端异步编排 3–5 页规划、专业设计、PageContentDSL、图片素材与 HTML，并通过严格公开事件、SSE 和持久化检查点向 Seaca 学习工作区实时交付任务、Agent、页面三层进度、统一预览与可定位的失败恢复能力。
+一句话生成一门由多页关联 HTML 组成的课程。当前 Day 22 版本由服务端显式手写 `WorkflowNode` 串行编排 3–5 页规划、专业设计、PageContentDSL、图片素材与 HTML，并通过严格公开事件、SSE 和持久化检查点向 Seaca 学习工作区实时交付任务、Agent、页面三层进度、统一预览与可定位的失败恢复能力。
 
 ## Day 01 交付
 
@@ -198,6 +198,15 @@
 - 记录单一超级 Agent 的具体失败模式、当前固定工作流的局限、Supervisor 与 LangGraph 的关系，以及什么时候不应该使用多 Agent。
 - Day 21 只交付架构文档和面试讲解，不修改现有业务工作流、共享 Schema、SSE 协议或 Seaca 产品 UI。
 - 总设计见 `docs/multi-agent-design.md`，当前/目标流程见 `docs/architecture/mvp-flow.md` 与 `docs/architecture/multi-agent-flow.md`，角色索引见 `src/server/agents/README.md`，复盘见 `notes/day-21.md`。
+
+## Day 22 交付
+
+- 保留 `runCourseGenerationWorkflow` 作为兼容 facade，任务服务、Route Handler 与既有调用方不需要改入口。
+- 新增声明式串行运行层：`WorkflowNode` 通过 `requiredInputs` 与 `produces` 描述 handoff，`runSequentialWorkflow` 按节点列表执行、集中合并并把失败定位为带 `nodeName` 的 `WorkflowNodeError`。
+- 新增课程节点装配：Intent、Planner、Course Design，以及每页 Writer、Assets、HTML 都被包装为聚焦节点；现有 Agent、素材子流程和专业设计子流程继续复用。
+- API、SSE、公开事件 Schema、`CourseGenerationState`、checkpoint 时机、取消与断点恢复语义、Seaca `/chat` Timeline 和 learning workspace 均保持不变。
+- 本日没有实现 Supervisor、Repair、自动 QA、独立 Page Worker、页面并发或 LangGraph；固定顺序仍由服务端 TypeScript 节点列表决定。
+- 重构前后对比、节点合同、失败语义和详细面试复盘见 `notes/day-22.md`；当前/目标图与角色边界见 `docs/architecture/mvp-flow.md`、`docs/architecture/multi-agent-flow.md`、`docs/multi-agent-design.md` 和 `src/server/agents/README.md`。
 
 ## 启动
 

@@ -2,19 +2,31 @@ import { generateCourseIntent } from "@/server/agents/intent-agent";
 import { runCoursePlannerAgent } from "@/server/agents/course-planner-agent";
 import { runHtmlEngineerAgent } from "@/server/agents/html-engineer-agent";
 import { runPageWriterAgent } from "@/server/agents/page-writer-agent";
-import type {
-  AgentEvent,
-  AgentRuntimeContext,
-} from "@/server/agents/core/types";
+import type { AgentRuntimeContext } from "@/server/agents/core/types";
 import { createCourseStore } from "@/server/storage/course-store";
+import { runCourseDesignWorkflow } from "@/server/workflows/course-design-workflow";
 import {
-  runCourseDesignWorkflow,
-  type CourseDesignEvent,
-} from "@/server/workflows/course-design-workflow";
+  CourseGenerationNodeError,
+  createAssetsNode,
+  createCourseDesignNode,
+  createHtmlEngineerNode,
+  createIntentNode,
+  createPageWriterNode,
+  createPlannerNode,
+  type CourseGenerationNode,
+  type CourseGenerationNodeContext,
+  type CourseGenerationNodeDependencies,
+  type CourseGenerationNodeEvent,
+  type CourseGenerationNodeName,
+  type CourseMvpPageCount,
+} from "@/server/workflows/course-generation-nodes";
 import { runImageAssetWorkflow } from "@/server/workflows/image-asset-workflow";
 import {
+  runSequentialWorkflow,
+  type SequentialWorkflowResult,
+} from "@/server/workflows/sequential-workflow";
+import {
   CourseGenerationStateSchema,
-  CourseIntentSchema,
   type CourseGenerationError,
   type CourseGenerationPublicEvent,
   type CourseGenerationStage,
@@ -22,7 +34,7 @@ import {
   type PageGenerationState,
 } from "@/shared/course-schema";
 
-export type CourseMvpPageCount = 3 | 4 | 5;
+export type { CourseMvpPageCount } from "@/server/workflows/course-generation-nodes";
 
 export type CourseGenerationWorkflowInput = {
   courseId: string;
@@ -31,16 +43,11 @@ export type CourseGenerationWorkflowInput = {
   existingState?: CourseGenerationState;
 };
 
-export type CourseGenerationWorkflowDependencies = {
-  generateIntent: typeof generateCourseIntent;
-  runPlanner: typeof runCoursePlannerAgent;
-  runDesign: typeof runCourseDesignWorkflow;
-  runPageWriter: typeof runPageWriterAgent;
-  runAssets: typeof runImageAssetWorkflow;
-  runHtml: typeof runHtmlEngineerAgent;
-  checkpoint(state: CourseGenerationState): Promise<void>;
-  now(): string;
-};
+export type CourseGenerationWorkflowDependencies =
+  CourseGenerationNodeDependencies & {
+    checkpoint(state: CourseGenerationState): Promise<void>;
+    now(): string;
+  };
 
 const courseStore = createCourseStore();
 const defaultDependencies: CourseGenerationWorkflowDependencies = {
@@ -55,8 +62,8 @@ const defaultDependencies: CourseGenerationWorkflowDependencies = {
 };
 
 /**
- * Day 18 的课程级事实来源：按页面顺序串行生成 DSL、素材和 HTML。
- * 每个边界都保存完整、可校验的 checkpoint；失败只停止当前页及其后继页。
+ * Day 22 的兼容入口：用显式节点列表执行既有固定串行流程。
+ * API、checkpoint、恢复和公开事件协议仍由这一课程级事实来源统一管理。
  */
 export async function runCourseGenerationWorkflow(
   input: CourseGenerationWorkflowInput,
@@ -77,146 +84,44 @@ export async function runCourseGenerationWorkflow(
   });
   state = await checkpoint(state, dependencies);
 
-  if (!state.intent) {
-    try {
-      state = await beginAgent(state, dependencies, {
-        stage: "intent",
-        agent: "intent",
-        summary: "Intent Agent 已开始理解课程需求。",
-      });
-      assertNotAborted(context.abortSignal);
-      const generatedIntent = await dependencies.generateIntent({
-        abortSignal: context.abortSignal,
-        traceId: context.traceId,
-        userPrompt: state.userPrompt,
-      });
-      const courseLength =
-        input.pageCount ??
-        (Math.min(5, Math.max(3, generatedIntent.courseLength)) as CourseMvpPageCount);
-      const intent = CourseIntentSchema.parse({
-        ...generatedIntent,
-        courseLength,
-      });
-      state = appendEvent(
-        {
-          ...state,
-          intent,
-          currentStage: "planner",
-        },
-        dependencies.now,
-        {
-          type: "validation",
-          stage: "intent",
-          agent: "intent",
-          summary: `课程意图已校验，MVP 固定生成 ${intent.courseLength} 页。`,
-        },
-      );
-      state = appendAgentDone(state, dependencies.now, {
-        stage: "intent",
-        agent: "intent",
-        summary: "Intent Agent 已完成课程需求解析。",
-      });
-      state = await checkpoint(state, dependencies);
-    } catch (error) {
-      return failWorkflow(
-        state,
-        toWorkflowError("intent", error),
-        context,
-        dependencies,
-      );
-    }
-  }
-
-  if (!state.outline) {
-    state = await beginAgent(state, dependencies, {
-      stage: "planner",
-      agent: "planner",
-      summary: "Course Planner 已开始规划课程页面。",
-    });
-    const plannerState = await dependencies.runPlanner(state.intent!, context);
-    state = appendAgentEvents(state, dependencies.now, "planner", plannerState.events, {
-      agent: "planner",
-    });
-
-    if (plannerState.status !== "completed" || !plannerState.outline) {
-      return failWorkflow(
-        state,
-        {
-          stage: "planner",
-          code: plannerState.error?.code ?? "PLANNER_FAILED",
-          message:
-            plannerState.error?.message ?? "Course Planner 未生成有效课程结构。",
-        },
-        context,
-        dependencies,
-      );
-    }
-
-    state = {
-      ...state,
-      outline: plannerState.outline,
-      currentStage: "design",
-    };
-    state = appendAgentDone(state, dependencies.now, {
-      stage: "planner",
-      agent: "planner",
-      summary: `Course Planner 已完成 ${plannerState.outline.pages.length} 页课程规划。`,
-    });
-    state = await checkpoint(state, dependencies);
-  }
-
+  const globalNodes: CourseGenerationNode[] = [];
+  if (!state.intent) globalNodes.push(createIntentNode());
+  if (!state.outline) globalNodes.push(createPlannerNode());
   if (!state.briefs || !state.pageWorkerBriefs) {
-    state = await beginAgent(state, dependencies, {
-      stage: "design",
-      agent: "course-design",
-      summary: "课程专业设计工作流已开始。",
-    });
-    const designState = await dependencies.runDesign(
-      { intent: state.intent!, outline: state.outline! },
-      context,
-    );
-    state = appendDesignEvents(state, dependencies.now, designState.events);
-
-    if (
-      designState.status !== "completed" ||
-      !designState.briefs ||
-      !designState.pageWorkerBriefs
-    ) {
-      return failWorkflow(
-        state,
-        {
-          stage: "design",
-          code: designState.error?.code ?? "COURSE_DESIGN_FAILED",
-          message:
-            designState.error?.message ?? "专业设计工作流未生成有效结果。",
-        },
-        context,
-        dependencies,
-      );
-    }
-
-    state = {
-      ...state,
-      briefs: designState.briefs,
-      pageWorkerBriefs: designState.pageWorkerBriefs,
-      pages: state.outline!.pages.map((page) => ({
-        pageId: page.id,
-        order: page.order,
-        status: "pending" as const,
-        currentStage: "page_writer" as const,
-        assets: [],
-      })),
-      currentStage: "page_writer",
-    };
-    state = appendAgentDone(state, dependencies.now, {
-      stage: "design",
-      agent: "course-design",
-      summary: "教学、故事与视觉设计已完成。",
-    });
-    state = await checkpoint(state, dependencies);
+    globalNodes.push(createCourseDesignNode());
   }
 
-  for (const pagePlan of state.outline!.pages) {
+  const globalResult = await runCourseNodes(
+    state,
+    globalNodes,
+    input,
+    context,
+    dependencies,
+  );
+  if (globalResult.status === "failed") {
+    return failNodeWorkflow(
+      globalResult,
+      globalNodes,
+      context,
+      dependencies,
+    );
+  }
+  state = globalResult.state;
+
+  if (!state.outline || !state.pageWorkerBriefs) {
+    return failWorkflow(
+      state,
+      {
+        stage: state.currentStage,
+        code: "WORKFLOW_STATE_INCOMPLETE",
+        message: "课程工作流缺少规划或页面 brief。",
+      },
+      context,
+      dependencies,
+    );
+  }
+
+  for (const pagePlan of state.outline.pages) {
     const pageState = getPage(state, pagePlan.id);
     if (pageState.status === "completed") continue;
 
@@ -237,7 +142,7 @@ export async function runCourseGenerationWorkflow(
       );
     }
 
-    const brief = state.pageWorkerBriefs!.find(
+    const brief = state.pageWorkerBriefs?.find(
       ({ pageId }) => pageId === pagePlan.id,
     );
     if (!brief) {
@@ -260,197 +165,41 @@ export async function runCourseGenerationWorkflow(
       error: undefined,
     }));
 
-    if (!getPage(state, pagePlan.id).content) {
-      state = setCurrentStage(state, "page_writer", pagePlan.id);
-      state = await beginAgent(state, dependencies, {
-        stage: "page_writer",
-        pageId: pagePlan.id,
-        agent: "page-writer",
-        summary: `Page Writer 已开始生成第 ${pagePlan.order} 页内容。`,
-      });
-      const writerState = await dependencies.runPageWriter(
-        { intent: state.intent!, page: pagePlan, brief },
-        context,
-      );
-      state = appendAgentEvents(
-        state,
-        dependencies.now,
-        "page_writer",
-        writerState.events,
-        { agent: "page-writer", pageId: pagePlan.id },
-      );
-
-      if (writerState.status !== "completed" || !writerState.content) {
-        return failWorkflow(
-          state,
-          {
-            stage: "page_writer",
-            pageId: pagePlan.id,
-            code: writerState.error?.code ?? "PAGE_WRITER_FAILED",
-            message:
-              writerState.error?.message ??
-              `页面 ${pagePlan.id} 未生成有效 PageContentDSL。`,
-          },
-          context,
-          dependencies,
-        );
-      }
-
-      state = updatePage(state, pagePlan.id, (page) => ({
-        ...page,
-        content: writerState.content,
-        currentStage: "assets",
-      }));
-      state = appendAgentDone(state, dependencies.now, {
-        stage: "page_writer",
-        pageId: pagePlan.id,
-        agent: "page-writer",
-        summary: `第 ${pagePlan.order} 页 PageContentDSL 已生成。`,
-      });
-      state = await checkpoint(state, dependencies);
+    const pageNodes: CourseGenerationNode[] = [];
+    const currentPage = getPage(state, pagePlan.id);
+    if (!currentPage.content) {
+      pageNodes.push(createPageWriterNode(pagePlan.id));
     }
 
-    let currentPage = getPage(state, pagePlan.id);
     const assetsAlreadyResolved =
       currentPage.currentStage === "html" ||
       currentPage.currentStage === "complete" ||
       Boolean(currentPage.htmlOutput);
 
     if (!assetsAlreadyResolved) {
-      state = setCurrentStage(state, "assets", pagePlan.id);
-      state = updatePage(state, pagePlan.id, (page) => ({
-        ...page,
-        currentStage: "assets",
-      }));
-      state = await beginAgent(state, dependencies, {
-        stage: "assets",
-        pageId: pagePlan.id,
-        agent: "image-assets",
-        summary: `第 ${pagePlan.order} 页素材解析已开始。`,
-      });
-      currentPage = getPage(state, pagePlan.id);
-
-      if (currentPage.content!.assetSlots.length === 0) {
-        state = appendEvent(state, dependencies.now, {
-          type: "validation",
-          stage: "assets",
-          pageId: pagePlan.id,
-          agent: "image-assets",
-          summary: "当前页面没有素材槽，素材阶段已确定性跳过。",
-        });
-      } else {
-        const assetState = await dependencies.runAssets(
-          {
-            content: currentPage.content!,
-            visualBrief: state.briefs!.visual,
-          },
-          context,
-        );
-        state = appendAgentEvents(
-          state,
-          dependencies.now,
-          "assets",
-          assetState.events,
-          { agent: "image-assets", pageId: pagePlan.id },
-        );
-
-        if (assetState.status !== "completed" || !assetState.results) {
-          return failWorkflow(
-            state,
-            {
-              stage: "assets",
-              pageId: pagePlan.id,
-              code: assetState.error?.code ?? "IMAGE_ASSETS_FAILED",
-              message:
-                assetState.error?.message ??
-                `页面 ${pagePlan.id} 的素材阶段未生成有效结果。`,
-            },
-            context,
-            dependencies,
-          );
-        }
-
-        state = updatePage(state, pagePlan.id, (page) => ({
-          ...page,
-          assets: assetState.results!,
-        }));
-      }
-
-      state = updatePage(state, pagePlan.id, (page) => ({
-        ...page,
-        currentStage: "html",
-      }));
-      state = appendAgentDone(state, dependencies.now, {
-        stage: "assets",
-        pageId: pagePlan.id,
-        agent: "image-assets",
-        summary: `第 ${pagePlan.order} 页素材解析已完成。`,
-      });
-      state = await checkpoint(state, dependencies);
+      pageNodes.push(createAssetsNode(pagePlan.id));
     }
 
-    currentPage = getPage(state, pagePlan.id);
     if (!currentPage.htmlOutput) {
-      state = setCurrentStage(state, "html", pagePlan.id);
-      state = await beginAgent(state, dependencies, {
-        stage: "html",
-        pageId: pagePlan.id,
-        agent: "html-engineer",
-        summary: `HTML Engineer 已开始生成第 ${pagePlan.order} 页。`,
-      });
-      const htmlState = await dependencies.runHtml(
-        {
-          content: currentPage.content!,
-          visualBrief: state.briefs!.visual,
-          assets: currentPage.assets,
-        },
-        context,
-      );
-      state = appendAgentEvents(
-        state,
-        dependencies.now,
-        "html",
-        htmlState.events,
-        { agent: "html-engineer", pageId: pagePlan.id },
-      );
-
-      if (htmlState.status !== "completed" || !htmlState.htmlOutput) {
-        return failWorkflow(
-          state,
-          {
-            stage: "html",
-            pageId: pagePlan.id,
-            code: htmlState.error?.code ?? "HTML_ENGINEER_FAILED",
-            message:
-              htmlState.error?.message ??
-              `页面 ${pagePlan.id} 未生成有效 HTML。`,
-          },
-          context,
-          dependencies,
-        );
-      }
-
-      state = updatePage(state, pagePlan.id, (page) => ({
-        ...page,
-        status: "completed",
-        currentStage: "complete",
-        htmlOutput: htmlState.htmlOutput,
-        error: undefined,
-      }));
-      state = appendAgentDone(state, dependencies.now, {
-        stage: "html",
-        pageId: pagePlan.id,
-        agent: "html-engineer",
-        summary: `第 ${pagePlan.order} 页 HTML 已完成校验。`,
-      });
-      state = appendEvent(state, dependencies.now, {
-        type: "page_done",
-        stage: "html",
-        pageId: pagePlan.id,
-        summary: `第 ${pagePlan.order} 页已完成，可在学习空间预览。`,
-      });
-      state = await checkpoint(state, dependencies);
+      pageNodes.push(createHtmlEngineerNode(pagePlan.id));
     }
+
+    const pageResult = await runCourseNodes(
+      state,
+      pageNodes,
+      input,
+      context,
+      dependencies,
+    );
+    if (pageResult.status === "failed") {
+      return failNodeWorkflow(
+        pageResult,
+        pageNodes,
+        context,
+        dependencies,
+      );
+    }
+    state = pageResult.state;
   }
 
   const completedAt = dependencies.now();
@@ -471,6 +220,155 @@ export async function runCourseGenerationWorkflow(
     },
   );
   return checkpoint(state, dependencies);
+}
+
+type CourseNodeRunResult = SequentialWorkflowResult<
+  CourseGenerationState,
+  CourseGenerationNode["name"]
+>;
+
+/** 统一执行节点生命周期，节点本身不能写 checkpoint 或发布 SSE。 */
+async function runCourseNodes(
+  state: CourseGenerationState,
+  nodes: CourseGenerationNode[],
+  input: CourseGenerationWorkflowInput,
+  context: AgentRuntimeContext,
+  dependencies: CourseGenerationWorkflowDependencies,
+): Promise<CourseNodeRunResult> {
+  const result = await runSequentialWorkflow<
+    CourseGenerationState,
+    CourseGenerationNodeContext,
+    CourseGenerationNodeEvent,
+    CourseGenerationNodeName,
+    CourseGenerationNode
+  >({
+    state,
+    nodes,
+    context: {
+      runtime: context,
+      pageCount: input.pageCount,
+      dependencies,
+    },
+    merge: (current, patch) =>
+      CourseGenerationStateSchema.parse({ ...current, ...patch }),
+    beforeNode: (current, node) => {
+      let next: CourseGenerationState = {
+        ...current,
+        currentStage: node.stage,
+        currentPageId: node.pageId,
+      };
+
+      if (node.pageId && isPageStage(node.stage)) {
+        const pageStage = node.stage;
+        next = updatePage(next, node.pageId, (page) => ({
+          ...page,
+          status: "running",
+          currentStage: pageStage,
+          error: undefined,
+        }));
+      }
+
+      return beginAgent(next, dependencies, {
+        stage: node.stage,
+        pageId: node.pageId,
+        agent: node.agent,
+        summary: node.startSummary(next),
+      });
+    },
+    afterNode: async (current, node, nodeResult) => {
+      let next = appendNodeEvents(
+        current,
+        dependencies.now,
+        node,
+        nodeResult.events,
+      );
+      next = appendAgentDone(next, dependencies.now, {
+        stage: node.stage,
+        pageId: node.pageId,
+        agent: node.agent,
+        summary: node.doneSummary(next),
+      });
+
+      for (const event of node.afterDoneEvents?.(next) ?? []) {
+        next = appendNodeEvent(next, dependencies.now, node, event, false);
+      }
+
+      return checkpoint(next, dependencies);
+    },
+  });
+
+  if (
+    result.status === "failed" &&
+    result.error instanceof CourseGenerationNodeError
+  ) {
+    const failedNode = nodes.find(
+      ({ name }) => name === result.error.nodeName,
+    );
+    if (failedNode) {
+      return {
+        ...result,
+        state: appendNodeEvents(
+          result.state,
+          dependencies.now,
+          failedNode,
+          result.error.events,
+        ),
+      };
+    }
+  }
+
+  return result;
+}
+
+function failNodeWorkflow(
+  result: Extract<CourseNodeRunResult, { status: "failed" }>,
+  nodes: CourseGenerationNode[],
+  context: AgentRuntimeContext,
+  dependencies: CourseGenerationWorkflowDependencies,
+) {
+  const node = nodes.find(({ name }) => name === result.error.nodeName);
+  return failWorkflow(
+    result.state,
+    {
+      stage: node?.stage ?? result.state.currentStage,
+      pageId: node?.pageId,
+      code: result.error.code,
+      message: result.error.message,
+    },
+    context,
+    dependencies,
+    { agent: node?.agent ?? result.error.nodeName },
+  );
+}
+
+function appendNodeEvents(
+  state: CourseGenerationState,
+  now: () => string,
+  node: CourseGenerationNode,
+  events: readonly CourseGenerationNodeEvent[],
+) {
+  return events.reduce(
+    (next, event) => appendNodeEvent(next, now, node, event),
+    state,
+  );
+}
+
+function appendNodeEvent(
+  state: CourseGenerationState,
+  now: () => string,
+  node: CourseGenerationNode,
+  event: CourseGenerationNodeEvent,
+  inheritNodeAgent = true,
+) {
+  return appendEvent(state, now, {
+    type: event.type,
+    stage: node.stage,
+    pageId: node.pageId,
+    agent: event.agent ?? (inheritNodeAgent ? node.agent : undefined),
+    step: event.step,
+    summary: event.summary,
+    timestamp: event.timestamp,
+  });
 }
 
 function initializeState(
@@ -520,6 +418,7 @@ async function failWorkflow(
   error: CourseGenerationError,
   context: AgentRuntimeContext,
   dependencies: CourseGenerationWorkflowDependencies,
+  metadata: { agent?: string } = {},
 ) {
   const cancelled =
     context.abortSignal?.aborted ||
@@ -550,54 +449,10 @@ async function failWorkflow(
     type: "error",
     stage: error.stage,
     pageId: error.pageId,
+    agent: metadata.agent,
     summary: error.message,
   });
   return checkpoint(failed, dependencies);
-}
-
-function appendDesignEvents(
-  state: CourseGenerationState,
-  now: () => string,
-  events: CourseDesignEvent[],
-) {
-  let next = state;
-  for (const event of events) {
-    next = appendAgentEvent(next, now, "design", event, {
-      agent: event.agent,
-    });
-  }
-  return next;
-}
-
-function appendAgentEvents(
-  state: CourseGenerationState,
-  now: () => string,
-  stage: CourseGenerationStage,
-  events: AgentEvent[],
-  metadata: { agent: string; pageId?: string },
-) {
-  return events.reduce(
-    (next, event) => appendAgentEvent(next, now, stage, event, metadata),
-    state,
-  );
-}
-
-function appendAgentEvent(
-  state: CourseGenerationState,
-  now: () => string,
-  stage: CourseGenerationStage,
-  event: AgentEvent,
-  metadata: { agent: string; pageId?: string },
-) {
-  return appendEvent(state, now, {
-    type: event.type,
-    stage,
-    pageId: metadata.pageId,
-    agent: metadata.agent,
-    step: event.step,
-    summary: event.summary,
-    timestamp: event.timestamp,
-  });
 }
 
 type AgentBoundaryMetadata = {
@@ -694,41 +549,6 @@ function updatePage(
   };
 }
 
-function setCurrentStage(
-  state: CourseGenerationState,
-  stage: "page_writer" | "assets" | "html",
-  pageId: string,
-): CourseGenerationState {
-  return { ...state, currentStage: stage, currentPageId: pageId };
-}
-
-function toWorkflowError(
-  stage: CourseGenerationStage,
-  error: unknown,
-): CourseGenerationError {
-  if (error instanceof WorkflowAbortedError) {
-    return { stage, code: "WORKFLOW_ABORTED", message: error.message };
-  }
-  if (error instanceof DOMException && error.name === "AbortError") {
-    return { stage, code: "WORKFLOW_ABORTED", message: "课程生成已取消。" };
-  }
-  return {
-    stage,
-    code: "WORKFLOW_EXECUTION_ERROR",
-    message: error instanceof Error ? error.message : "课程生成出现未知错误。",
-  };
-}
-
-function assertNotAborted(signal?: AbortSignal) {
-  if (signal?.aborted) throw new WorkflowAbortedError();
-}
-
-class WorkflowAbortedError extends Error {
-  constructor() {
-    super("课程生成已取消。");
-    this.name = "WorkflowAbortedError";
-  }
-}
 
 function isPageStage(
   stage: CourseGenerationStage,

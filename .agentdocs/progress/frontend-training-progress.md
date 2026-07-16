@@ -4,9 +4,9 @@ source_doc: `.agentdocs/prd/AI_Agent_Frontend_Training_Handbook_V5.docx`
 timezone: `Asia/Shanghai`
 daily_run_time: `09:30`
 start_date: `2026-07-09`
-last_delivered_day: `21`
+last_delivered_day: `22`
 last_delivered_date: `2026-07-15`
-next_training_day: `22`
+next_training_day: `23`
 
 ## Notes
 
@@ -46,3 +46,5 @@ next_training_day: `22`
 - 2026-07-15: Implemented Day 20 with a task/Agent/page Timeline projection, separate SSE/task status, derived stage durations and cross-trace recovery, precise Agent/page/error failure cards, per-page DSL/assets/HTML/optional-QA progress, safe structured public-event logs, and automated/browser verification.
 - 2026-07-15: Delivered Day 21 plan for multi-Agent architecture theory, current fixed-workflow review, Supervisor + Specialist boundaries, typed role contracts, and a three-minute project explanation.
 - 2026-07-15: Implemented Day 21 with evidence-based current and target architecture diagrams, a multi-Agent design review, explicit Specialist contracts, and a three-minute project narrative; runtime workflow, shared schemas, SSE, and Seaca UI remain unchanged.
+- 2026-07-15: Delivered Day 22 plan for an explicit handwritten serial Specialist workflow, typed node contracts, centralized state merging, node-scoped errors, compatibility-preserving migration, and focused workflow tests.
+- 2026-07-16: Implemented Day 22 with typed WorkflowNode contracts, a centralized serial runner, explicit global/page Specialist nodes, node-scoped failures, compatibility-preserving checkpoints/SSE/resume behavior, documentation, and automated verification.
