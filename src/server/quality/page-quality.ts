@@ -4,6 +4,7 @@ import {
   type QualityDimensionName,
   type QualityIssue,
   type QualityReport,
+  type QualityScreenshotEvidence,
 } from "@/shared/course-schema";
 
 export const PAGE_QUALITY_WEIGHTS = {
@@ -15,7 +16,21 @@ export const PAGE_QUALITY_WEIGHTS = {
   assetUsability: 0.08,
 } as const satisfies Record<QualityDimensionName, number>;
 
-type QualityDimensions = Record<QualityDimensionName, QualityDimension>;
+type QualityDimensions = Record<
+  QualityDimensionName,
+  Pick<QualityDimension, "score" | "summary">
+>;
+
+const DIMENSION_PRIORITY: Record<QualityDimensionName, number> = {
+  contentAccuracy: 0,
+  courseCoherence: 1,
+  htmlRuntime: 2,
+  layoutQuality: 3,
+  styleConsistency: 4,
+  assetUsability: 5,
+};
+
+const SEVERITY_PRIORITY = { error: 0, warning: 1, info: 2 } as const;
 
 /** 合并确定性与模型证据，并由代码统一计算分数、门槛和工作流决策。 */
 export function buildPageQualityReport(input: {
@@ -23,14 +38,22 @@ export function buildPageQualityReport(input: {
   modelDimensions: QualityDimensions;
   heuristicIssues: QualityIssue[];
   modelIssues: QualityIssue[];
+  browserIssues?: QualityIssue[];
+  screenshotEvidence?: QualityScreenshotEvidence;
   id?: string;
   createdAt?: string;
 }): QualityReport {
   const issues = dedupeIssues([
     ...input.heuristicIssues,
+    ...(input.browserIssues ?? []),
     ...input.modelIssues,
-  ]).slice(0, 50);
-  const dimensions = applyIssueCaps(input.modelDimensions, issues);
+  ])
+    .sort(compareQualityIssues)
+    .slice(0, 50);
+  const dimensions = attachDimensionEvidence(
+    applyIssueCaps(input.modelDimensions, issues),
+    issues,
+  );
   const overallScore = Math.round(
     (Object.keys(PAGE_QUALITY_WEIGHTS) as QualityDimensionName[]).reduce(
       (score, dimension) =>
@@ -57,6 +80,7 @@ export function buildPageQualityReport(input: {
     overallScore,
     dimensions,
     issues,
+    screenshotEvidence: input.screenshotEvidence,
     shouldRepair,
     decision: hardFailure ? "fail" : shouldRepair ? "revise" : "pass",
     createdAt: input.createdAt ?? new Date().toISOString(),
@@ -93,6 +117,48 @@ function applyIssueCaps(
   ) as QualityDimensions;
 }
 
+function attachDimensionEvidence(
+  dimensions: QualityDimensions,
+  issues: QualityIssue[],
+): Record<QualityDimensionName, QualityDimension> {
+  return Object.fromEntries(
+    (Object.keys(PAGE_QUALITY_WEIGHTS) as QualityDimensionName[]).map(
+      (dimension) => {
+        const dimensionIssues = issues.filter(
+          (issue) => issue.dimension === dimension,
+        );
+        return [
+          dimension,
+          {
+            ...dimensions[dimension],
+            issueCodes: dimensionIssues.map(({ code }) => code),
+            repairHints: [...new Set(dimensionIssues.map(({ repairHint }) => repairHint))],
+          },
+        ];
+      },
+    ),
+  ) as Record<QualityDimensionName, QualityDimension>;
+}
+
+/** 内容错误先于一切视觉问题，其余问题遵循严重度和稳定维度顺序。 */
+export function compareQualityIssues(left: QualityIssue, right: QualityIssue) {
+  const leftContentError =
+    left.dimension === "contentAccuracy" && left.severity === "error";
+  const rightContentError =
+    right.dimension === "contentAccuracy" && right.severity === "error";
+  if (leftContentError !== rightContentError) return leftContentError ? -1 : 1;
+
+  const severity =
+    SEVERITY_PRIORITY[left.severity] - SEVERITY_PRIORITY[right.severity];
+  if (severity !== 0) return severity;
+
+  const dimension =
+    DIMENSION_PRIORITY[left.dimension] - DIMENSION_PRIORITY[right.dimension];
+  if (dimension !== 0) return dimension;
+
+  return issueStableKey(left).localeCompare(issueStableKey(right));
+}
+
 function dedupeIssues(issues: QualityIssue[]) {
   const seen = new Set<string>();
   return issues.filter((issue) => {
@@ -107,4 +173,15 @@ function dedupeIssues(issues: QualityIssue[]) {
     seen.add(key);
     return true;
   });
+}
+
+function issueStableKey(issue: QualityIssue) {
+  return [
+    issue.code,
+    issue.location.pageId,
+    issue.location.blockId,
+    issue.location.selector,
+    issue.location.viewport,
+    issue.location.description,
+  ].join(":");
 }

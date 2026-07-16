@@ -227,10 +227,10 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     templateVariables: ["pageQaInputJson"],
     system: {
       name: "page-qa-system",
-      version: "2.0.0",
+      version: "2.1.0",
       role: "system",
       inputContract: [
-        "已校验的页面计划、DSL、HTML、brief、素材和确定性启发式结果。",
+        "已校验的页面计划、DSL、HTML、课程上下文、brief、素材及静态/浏览器证据。",
       ],
       outputContract: [
         "只返回六维语义评分和可定位问题；最终分数和决策由代码计算。",
@@ -239,7 +239,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     },
     user: {
       name: "page-qa-user",
-      version: "2.0.0",
+      version: "2.1.0",
       role: "user",
       inputContract: ["完整的 Page QA 输入 JSON。"],
       outputContract: ["返回 Page QA 语义评估 JSON object 本身。"],

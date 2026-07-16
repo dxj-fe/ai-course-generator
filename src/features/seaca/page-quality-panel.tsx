@@ -1,20 +1,28 @@
-import { AlertTriangle, CheckCircle2, Wrench } from "lucide-react";
+import {
+  AlertTriangle,
+  Camera,
+  CheckCircle2,
+  CircleDashed,
+  Wrench,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import type {
-  QualityDimensionName,
-  QualityReport,
-  QualitySeverity,
+import {
+  QUALITY_DIMENSION_LABELS,
+  type QualityDimensionName,
+  type QualityIssue,
+  type QualityReport,
+  type QualitySeverity,
 } from "@/shared/course-schema";
 
-const dimensionLabels: Record<QualityDimensionName, string> = {
-  contentAccuracy: "内容正确",
-  layoutQuality: "排版协调",
-  courseCoherence: "课程连贯",
-  styleConsistency: "风格一致",
-  htmlRuntime: "HTML 运行",
-  assetUsability: "素材可用",
-};
+const dimensionOrder: QualityDimensionName[] = [
+  "contentAccuracy",
+  "courseCoherence",
+  "layoutQuality",
+  "styleConsistency",
+  "htmlRuntime",
+  "assetUsability",
+];
 
 const severityLabels: Record<QualitySeverity, string> = {
   error: "严重",
@@ -22,15 +30,8 @@ const severityLabels: Record<QualitySeverity, string> = {
   info: "提示",
 };
 
-/** 在 Seaca 学习工作区展示可执行的 Page QA 报告，不暴露模型推理。 */
+/** 在 Seaca 学习工作区展示服务端已排序的六维 Page QA 报告。 */
 export function PageQualityPanel({ report }: { report: QualityReport }) {
-  const dimensions = Object.entries(report.dimensions) as Array<
-    [QualityDimensionName, QualityReport["dimensions"][QualityDimensionName]]
-  >;
-  const issues = [...report.issues].sort(
-    (left, right) => severityRank(right.severity) - severityRank(left.severity),
-  );
-
   return (
     <section
       aria-label="页面质量报告"
@@ -39,6 +40,7 @@ export function PageQualityPanel({ report }: { report: QualityReport }) {
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <span
+            aria-label={`页面质量总分 ${report.overallScore}`}
             className={`flex size-12 items-center justify-center rounded-full text-lg font-bold ${
               report.shouldRepair
                 ? "bg-[#fff0eb] text-[#a44f3d]"
@@ -50,7 +52,7 @@ export function PageQualityPanel({ report }: { report: QualityReport }) {
           <div>
             <p className="text-sm font-semibold text-[#4c3e2b]">页面质量评分</p>
             <p className="mt-0.5 text-xs text-[#988e80]">
-              {report.issues.length} 个问题 · {report.decision}
+              六维检查 · {report.issues.length} 个问题 · {report.decision}
             </p>
           </div>
         </div>
@@ -66,64 +68,131 @@ export function PageQualityPanel({ report }: { report: QualityReport }) {
           ) : (
             <CheckCircle2 aria-hidden="true" className="mr-1 size-3" />
           )}
-          {report.shouldRepair ? "需要修复" : "质量通过"}
+          {report.shouldRepair ? "建议修订" : "质量通过"}
         </Badge>
       </div>
 
-      <dl className="grid grid-cols-2 gap-2 text-xs">
-        {dimensions.map(([name, result]) => (
-          <div className="rounded-xl bg-[#f8f3ec] p-3" key={name}>
-            <dt className="text-[#918678]">{dimensionLabels[name]}</dt>
-            <dd className="mt-1 font-semibold text-[#594a37]">
-              {result.score} 分
-            </dd>
-          </div>
-        ))}
-      </dl>
+      <ScreenshotEvidence report={report} />
 
-      {issues.length > 0 ? (
-        <ol className="grid gap-2">
-          {issues.map((issue, index) => (
-            <li
+      <div className="grid gap-3" role="list" aria-label="六维质量检查结果">
+        {dimensionOrder.map((name) => {
+          const dimension = report.dimensions[name];
+          const issues = report.issues.filter(
+            (issue) => issue.dimension === name,
+          );
+          return (
+            <section
+              aria-labelledby={`quality-dimension-${name}`}
               className="rounded-xl border border-[#eadfd3] bg-[#fffefa] p-3"
-              key={`${issue.code}-${index}`}
+              key={name}
+              role="listitem"
             >
-              <div className="flex flex-wrap items-center gap-2">
-                <AlertTriangle
-                  aria-hidden="true"
-                  className={
-                    issue.severity === "error"
-                      ? "size-3.5 text-[#b15743]"
-                      : "size-3.5 text-[#a27b2d]"
-                  }
-                />
-                <span className="text-[10px] font-semibold tracking-wide text-[#8b7f70]">
-                  {severityLabels[issue.severity]} · {dimensionLabels[issue.dimension]}
+              <div className="flex items-center justify-between gap-3">
+                <h3
+                  className="text-xs font-semibold text-[#594a37]"
+                  id={`quality-dimension-${name}`}
+                >
+                  {QUALITY_DIMENSION_LABELS[name]}
+                </h3>
+                <span className="rounded-full bg-[#f8f3ec] px-2.5 py-1 text-xs font-semibold text-[#594a37]">
+                  {dimension.score} 分
                 </span>
-                <code className="text-[10px] text-[#a09689]">{issue.code}</code>
               </div>
-              <p className="mt-2 text-xs leading-5 text-[#625544]">
-                {issue.message}
+              <p className="mt-2 text-xs leading-5 text-[#756a5b]">
+                {dimension.summary}
               </p>
-              <p className="mt-1 text-[11px] leading-5 text-[#988e80]">
-                位置：{issue.location.description}
-                {issue.location.viewport ? ` · ${issue.location.viewport}` : ""}
-              </p>
-              <p className="mt-2 rounded-lg bg-[#f8f3ec] px-3 py-2 text-xs leading-5 text-[#746858]">
-                建议：{issue.repairHint}
-              </p>
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <p className="rounded-xl bg-[#eff7e9] px-3 py-2 text-xs text-[#4f8938]">
-          没有发现需要处理的具体问题。
-        </p>
-      )}
+              {issues.length > 0 ? (
+                <ol className="mt-3 grid gap-2">
+                  {issues.map((issue, index) => (
+                    <QualityIssueItem
+                      issue={issue}
+                      key={`${issue.code}-${issue.location.blockId ?? issue.location.selector ?? index}`}
+                    />
+                  ))}
+                </ol>
+              ) : (
+                <p className="mt-3 text-[11px] text-[#4f8938]">
+                  该维度没有发现具体问题。
+                </p>
+              )}
+              {dimension.repairHints.length > 0 ? (
+                <div className="mt-3 rounded-lg bg-[#f8f3ec] px-3 py-2">
+                  <p className="text-[11px] font-semibold text-[#746858]">
+                    修订建议
+                  </p>
+                  <ul className="mt-1 grid gap-1 text-[11px] leading-5 text-[#746858]">
+                    {dimension.repairHints.map((hint) => (
+                      <li key={hint}>· {hint}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </section>
+          );
+        })}
+      </div>
     </section>
   );
 }
 
-function severityRank(severity: QualitySeverity) {
-  return severity === "error" ? 3 : severity === "warning" ? 2 : 1;
+function QualityIssueItem({ issue }: { issue: QualityIssue }) {
+  return (
+    <li className="rounded-lg bg-[#f8f3ec] px-3 py-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <AlertTriangle
+          aria-hidden="true"
+          className={
+            issue.severity === "error"
+              ? "size-3.5 text-[#b15743]"
+              : "size-3.5 text-[#a27b2d]"
+          }
+        />
+        <span className="text-[10px] font-semibold tracking-wide text-[#8b7f70]">
+          {severityLabels[issue.severity]} · {issue.source}
+        </span>
+        <code className="text-[10px] text-[#a09689]">{issue.code}</code>
+      </div>
+      <p className="mt-1.5 text-xs leading-5 text-[#625544]">{issue.message}</p>
+      <p className="mt-1 text-[11px] leading-5 text-[#988e80]">
+        位置：{issue.location.description}
+        {issue.location.viewport ? ` · ${issue.location.viewport}` : ""}
+      </p>
+    </li>
+  );
+}
+
+function ScreenshotEvidence({ report }: { report: QualityReport }) {
+  const evidence = report.screenshotEvidence;
+  if (!evidence) return null;
+  const captured = evidence.status === "captured" && evidence.metrics;
+
+  return (
+    <div
+      aria-label="浏览器截图证据"
+      className="rounded-xl bg-[#f8f3ec] px-3 py-2.5 text-xs text-[#756a5b]"
+    >
+      <div className="flex items-center gap-2 font-semibold text-[#594a37]">
+        {captured ? (
+          <Camera aria-hidden="true" className="size-3.5 text-[#4f8938]" />
+        ) : (
+          <CircleDashed aria-hidden="true" className="size-3.5" />
+        )}
+        Playwright 截图：
+        {captured
+          ? `${evidence.viewport.width}×${evidence.viewport.height}`
+          : evidence.status === "skipped"
+            ? "已跳过"
+            : "采集失败"}
+      </div>
+      {captured ? (
+        <p className="mt-1 leading-5">
+          横向溢出 {evidence.metrics?.horizontalOverflowPx ?? 0}px · 裁切元素{" "}
+          {evidence.metrics?.clippedElementCount ?? 0} · 零尺寸交互{" "}
+          {evidence.metrics?.zeroSizeInteractiveCount ?? 0}
+        </p>
+      ) : (
+        <p className="mt-1 leading-5">{evidence.reason}</p>
+      )}
+    </div>
+  );
 }

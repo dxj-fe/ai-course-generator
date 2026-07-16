@@ -16,10 +16,15 @@ import {
   type PagePlan,
   type QualityIssue,
   type QualityReport,
+  type QualityScreenshotEvidence,
   type VisualBrief,
 } from "@/shared/course-schema";
 import { basicLayoutHeuristics } from "@/server/quality/basic-layout-heuristics";
 import { buildPageQualityReport } from "@/server/quality/page-quality";
+import {
+  capturePageScreenshot,
+  type PageScreenshotResult,
+} from "@/server/quality/playwright-screenshot";
 
 import { createMinimalAgent } from "./core/minimal-agent";
 import type {
@@ -27,6 +32,11 @@ import type {
   AgentRuntimeContext,
   AgentStateBase,
 } from "./core/types";
+
+const PageQAModelDimensionSchema = QualityDimensionSchema.pick({
+  score: true,
+  summary: true,
+});
 
 const PageQAModelIssueSchema = z
   .object({
@@ -51,12 +61,12 @@ export const PageQAModelOutputSchema = z
   .object({
     dimensions: z
       .object({
-        contentAccuracy: QualityDimensionSchema,
-        layoutQuality: QualityDimensionSchema,
-        courseCoherence: QualityDimensionSchema,
-        styleConsistency: QualityDimensionSchema,
-        htmlRuntime: QualityDimensionSchema,
-        assetUsability: QualityDimensionSchema,
+        contentAccuracy: PageQAModelDimensionSchema,
+        layoutQuality: PageQAModelDimensionSchema,
+        courseCoherence: PageQAModelDimensionSchema,
+        styleConsistency: PageQAModelDimensionSchema,
+        htmlRuntime: PageQAModelDimensionSchema,
+        assetUsability: PageQAModelDimensionSchema,
       })
       .strict(),
     issues: z.array(PageQAModelIssueSchema).max(40),
@@ -64,6 +74,7 @@ export const PageQAModelOutputSchema = z
   .strict();
 
 export type PageQACourseContext = {
+  courseOverview?: string;
   learningObjectives: string[];
   previousPage?: PagePlan;
   nextPage?: PagePlan;
@@ -86,17 +97,28 @@ export type PageQAAgentState = AgentStateBase & {
 export type PageQAAgentDependencies = {
   evaluate(input: PageQAInput & {
     heuristicIssues: QualityIssue[];
+    browserIssues: QualityIssue[];
+    screenshotEvidence: QualityScreenshotEvidence;
     abortSignal?: AbortSignal;
     traceId: string;
   }): Promise<unknown>;
+  captureScreenshot(input: {
+    pageId: string;
+    html: string;
+    abortSignal?: AbortSignal;
+  }): Promise<PageScreenshotResult>;
 };
 
-const defaultDependencies: PageQAAgentDependencies = { evaluate };
+const defaultDependencies: PageQAAgentDependencies = {
+  evaluate,
+  captureScreenshot: capturePageScreenshot,
+};
 
 /** 创建只读的一步页面 QA Agent；它只返回报告，不会修改 HTML。 */
 export function createPageQAAgent(
-  dependencies: PageQAAgentDependencies = defaultDependencies,
+  overrides: Partial<PageQAAgentDependencies> = {},
 ): Agent<PageQAAgentState> {
+  const dependencies = { ...defaultDependencies, ...overrides };
   return createMinimalAgent({
     isComplete: (state) => Boolean(state.report),
     step: async (state, context, emit) => {
@@ -116,9 +138,29 @@ export function createPageQAAgent(
         },
       });
 
+      const screenshot = await dependencies.captureScreenshot({
+        pageId: state.task.page.id,
+        html: state.task.html,
+        abortSignal: context.abortSignal,
+      });
+      emit({
+        type: "validation",
+        summary:
+          screenshot.evidence.status === "captured"
+            ? `Playwright 截图检查完成，发现 ${screenshot.issues.length} 个浏览器问题。`
+            : `Playwright 截图检查${screenshot.evidence.status === "skipped" ? "已跳过" : "失败"}，QA 主流程继续。`,
+        data: {
+          pageId: state.task.page.id,
+          screenshotStatus: screenshot.evidence.status,
+          browserIssueCount: screenshot.issues.length,
+        },
+      });
+
       const modelOutput = await dependencies.evaluate({
         ...state.task,
         heuristicIssues,
+        browserIssues: screenshot.issues,
+        screenshotEvidence: screenshot.evidence,
         abortSignal: context.abortSignal,
         traceId: context.traceId,
       });
@@ -133,6 +175,7 @@ export function createPageQAAgent(
         modelOutput,
         state.task,
         heuristicIssues,
+        screenshot,
       );
 
       emit({
@@ -214,6 +257,7 @@ export function validatePageQAOutput(
   output: unknown,
   input: PageQAInput,
   heuristicIssues: QualityIssue[],
+  screenshot?: PageScreenshotResult,
 ) {
   const parsed = PageQAModelOutputSchema.safeParse(output);
 
@@ -243,13 +287,17 @@ export function validatePageQAOutput(
     pageId: input.page.id,
     modelDimensions: parsed.data.dimensions,
     heuristicIssues,
+    browserIssues: screenshot?.issues,
     modelIssues,
+    screenshotEvidence: screenshot?.evidence,
   });
 }
 
 async function evaluate(
   input: PageQAInput & {
     heuristicIssues: QualityIssue[];
+    browserIssues: QualityIssue[];
+    screenshotEvidence: QualityScreenshotEvidence;
     abortSignal?: AbortSignal;
     traceId: string;
   },
@@ -261,6 +309,8 @@ async function evaluate(
     visualBrief: input.visualBrief,
     courseContext: input.courseContext,
     heuristicIssues: input.heuristicIssues,
+    browserIssues: input.browserIssues,
+    screenshotEvidence: input.screenshotEvidence,
     assets: input.assets ?? [],
   });
 

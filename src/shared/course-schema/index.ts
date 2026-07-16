@@ -71,13 +71,18 @@ export {
   QualityIssueSchema,
   QualityIssueLocationSchema,
   QualityReportSchema,
+  QualityScreenshotEvidenceSchema,
+  QualityScreenshotStatusSchema,
   QualitySeveritySchema,
+  QUALITY_DIMENSION_LABELS,
   type QualityDecision,
   type QualityDimension,
   type QualityDimensionName,
   type QualityIssue,
   type QualityIssueLocation,
   type QualityReport,
+  type QualityScreenshotEvidence,
+  type QualityScreenshotStatus,
   type QualitySeverity,
 } from "./quality";
 export {

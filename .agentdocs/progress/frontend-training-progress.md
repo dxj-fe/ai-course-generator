@@ -4,9 +4,9 @@ source_doc: `.agentdocs/prd/AI_Agent_Frontend_Training_Handbook_V5.docx`
 timezone: `Asia/Shanghai`
 daily_run_time: `09:30`
 start_date: `2026-07-09`
-last_delivered_day: `25`
+last_delivered_day: `26`
 last_delivered_date: `2026-07-16`
-next_training_day: `26`
+next_training_day: `27`
 
 ## Notes
 
@@ -54,3 +54,5 @@ next_training_day: `26`
 - 2026-07-16: Implemented Day 24 with a centralized nine-Specialist Prompt Library, uniform eight-section contracts, explicit untrusted-input and role boundaries, a report-only Prompt lint command, review and changelog documentation, a draft-only Repair contract, focused tests, and no runtime or UI expansion.
 - 2026-07-16: Delivered Day 25 plan for page-isolated worker state/results, Page Writer → Assets → HTML → QA execution, a configurable serial/parallel course runner, a concurrency-2 Promise Pool, page-scoped events and failures, Seaca Timeline projection, and focused isolation/concurrency tests.
 - 2026-07-16: Implemented Day 25 with isolated page-local Worker state/results, Writer → Assets → HTML → report-only QA execution, stage-local retry feedback and budgets, dependency-aware serial/parallel scheduling, a default concurrency-2 Promise Pool, serialized course checkpoint merges, concurrent Seaca Timeline/QA projection, detailed notes, and full automated verification.
+- 2026-07-16: Delivered Day 26 plan for compatibility-preserving six-dimension Page QA refinement, dimension-scoped issues and repair hints, content-first deterministic prioritization, optional non-blocking Playwright screenshot evidence, richer course-context consistency checks, Seaca quality-panel grouping, and focused QA/screenshot tests.
+- 2026-07-16: Implemented Day 26 with backward-compatible six-dimension evidence grouping, content-first deterministic issue ordering, course-context and VisualBrief-aware QA prompts, optional isolated Playwright screenshots and browser metrics, non-blocking screenshot failure semantics, a grouped Seaca quality panel, documentation, and full automated verification.

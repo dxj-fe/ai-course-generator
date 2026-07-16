@@ -46,6 +46,14 @@ describe("Day 07 course domain schemas", () => {
     ]);
   });
 
+  it("hydrates Day 26 dimension evidence without breaking legacy reports", () => {
+    const report = QualityReportSchema.parse(qualityReportExample);
+
+    expect(report.dimensions.contentAccuracy.issueCodes).toEqual([]);
+    expect(report.dimensions.styleConsistency.issueCodes).toEqual([]);
+    expect(report.screenshotEvidence).toBeUndefined();
+  });
+
   it("requires ready pages to contain HTML output", () => {
     const result = PagePlanSchema.safeParse({
       ...pagePlanExample,

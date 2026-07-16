@@ -260,6 +260,16 @@ IMAGE_MODEL_ID=your_image_model_id
 IMAGE_PROVIDER_NAME=your_provider_label
 ```
 
+Day 26 的 Playwright 截图证据默认关闭。需要启用时先安装本机 Chromium，再增加服务端环境变量；浏览器缺失或截图失败不会阻塞 Page QA：
+
+```bash
+pnpm exec playwright install chromium
+```
+
+```env
+PAGE_QA_SCREENSHOTS_ENABLED=true
+```
+
 ## API 验收
 
 普通文本接口：

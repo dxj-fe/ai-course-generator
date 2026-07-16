@@ -151,7 +151,10 @@ SSE 合同由 [`course-task-event.ts`](../../src/shared/course-schema/course-tas
 
 - QA 只返回 `QualityReport`；
 - QA 不修改 HTML；
-- QA 结果保存到页面局部 `qualityReport` 并投影到现有质量面板；
+- QA 按内容、教学、排版、风格、HTML、素材六个语义维度报告，旧字段名和 checkpoint 保持兼容；
+- 静态启发式、可选 Playwright 固定视口指标和模型评价合并后由服务端按内容错误优先稳定排序；
+- 截图文件只保存在 `.data/quality-screenshots`，共享报告不暴露服务器路径；截图失败不影响 QA 主流程；
+- QA 结果保存到页面局部 `qualityReport` 并投影到现有六维质量面板；
 - QA 执行失败只使当前 Worker 失败，不抹掉其他成功页面；
 - 当前没有自动 `QA -> Repair -> re-QA` 循环。
 

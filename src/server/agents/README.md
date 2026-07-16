@@ -98,10 +98,11 @@ Day 24 的九名 Specialist Prompt 版本、状态和模板文件由 [`specialis
 
 ### 8. QA
 
-- **状态**：已实现，对应 `PageQAAgent`；当前由用户对已生成页面显式触发，不是整课主链的必需阶段。
-- **输入**：`PagePlan`、`PageContentDSL`、HTML 字符串、`VisualBrief`、可选素材结果、可选前后页课程上下文与 `AgentRuntimeContext`。
-- **输出**：不可变的 `QualityReport`。
-- **校验边界**：先执行确定性 HTML/布局启发式，再校验模型的六维评价和 issue 位置；总分、限分、`shouldRepair` 与 `decision` 由代码规则计算，不采用模型自报结果。
+- **状态**：已实现，对应 `PageQAAgent`；新 Page Worker 自动执行，也可通过现有单页 API 显式重跑。
+- **输入**：`PagePlan`、`PageContentDSL`、HTML 字符串、`VisualBrief`、可选素材结果、课程概览/目标与可选前后页上下文，以及 `AgentRuntimeContext`。
+- **输出**：不可变的 `QualityReport`，包含六维摘要、维度内 issue 引用/修订建议，以及可选的非敏感截图指标。
+- **校验边界**：先执行确定性 HTML/布局启发式；启用时再在禁用脚本和外部网络的 Playwright 固定视口中采集几何指标；最后校验模型六维评价和 issue 位置。内容错误优先，总分、限分、排序、`shouldRepair` 与 `decision` 全由代码计算，不采用模型自报结果。
+- **截图边界**：PNG 只写入服务端 `.data/quality-screenshots`，共享报告不保存服务器路径；浏览器缺失、超时或写盘失败会变成 `skipped/failed` 证据，不会阻断 QA。
 - **禁止职责**：**report-only**；不修改 DSL 或 HTML，不调用 Repair，不自行把报告标成通过，不改变已交付页面状态。
 - **源码**：[page-qa-agent.ts](./page-qa-agent.ts)、[basic-layout-heuristics.ts](../quality/basic-layout-heuristics.ts)、[page-quality.ts](../quality/page-quality.ts)、[quality.ts](../../shared/course-schema/quality.ts)。
 
@@ -158,4 +159,4 @@ Day 24 的九名 Specialist Prompt 版本、状态和模板文件由 [`specialis
 
 当前运行链路是：Supervisor 在确定性候选集合中调度 Intent → Planner → Pedagogy → Story → Visual；全局设计完成后，依赖感知课程运行层调度隔离 Page Worker，每个 Worker 执行 PageWriter → ImagePrompt/GenerateImage Skill → HtmlEngineer → PageQA。全局节点继续由 `runSupervisedWorkflow` 持有限重试，页面阶段由 Worker 持有独立三次预算；checkpoint 与恢复继续由兼容 facade 和任务基础设施集中管理。
 
-后续训练日仍需深化 QA、实现受限 Repair/re-QA 和评估可选 LangGraph 执行层。当前没有 Repair Agent，QA 报告不会自动修改 HTML；Page Worker 并发也不会绕过页面依赖、Schema、checkpoint 或公开事件合同。
+后续训练日仍需实现受限 Repair/re-QA 和评估可选 LangGraph 执行层。当前没有 Repair Agent，QA 报告不会自动修改 HTML；Page Worker 并发也不会绕过页面依赖、Schema、checkpoint 或公开事件合同。

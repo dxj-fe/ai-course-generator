@@ -30,7 +30,7 @@ User Prompt 只负责把服务端数据装入模板。即使某个字段包含�
 | Page Writer | active | 2.0.0/2.0.0 | 单页 Plan、brief、模板 | PageContentDSLSchema | 不读取整课私有状态或输出 HTML |
 | Image Prompt | active | 2.0.0/2.0.0 | 素材槽、视觉指导、样式 | AssetRequestSchema[] | 不调用 Provider，不发明槽位 |
 | HTML Engineer | active | 2.1.0/2.1.0 | DSL、模板、brief、批准素材、同页校验反馈 | HtmlOutputSchema | 不改 DSL，不读取原始用户 Prompt |
-| QA | active | 2.0.0/2.0.0 | 页面产物、确定性证据 | QualityReportSchema | report-only，不修改页面或宣布通过 |
+| QA | active | 2.1.0/2.1.0 | 页面产物、课程上下文、静态与浏览器证据 | QualityReportSchema | 内容错误优先；report-only，不修改页面或宣布通过 |
 | Repair | draft | 0.1.0/0.1.0 | 未来的原始产物、QA、限定目标和预算 | RepairResult 合同草案 | 不扩大范围、不跳过 re-QA、不自判通过 |
 
 Repair 只有 Prompt 合同草案，没有 Agent 模块、共享运行时 Schema、Workflow 节点或公开事件。`draft` 状态防止文档把未来角色误报成现有能力。

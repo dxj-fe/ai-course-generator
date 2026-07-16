@@ -80,9 +80,11 @@ Day 16 在领域 `Asset` 之前增加两层执行协议。`AssetRequest` 由 Ima
 
 ## QualityReportSchema
 
-质量报告可以指向整门课程或单页。`dimensions` 固定覆盖内容准确性、排版质量、课程连贯性、风格一致性、HTML 可运行性和素材可用性；`issues` 保存维度、严重程度、证据来源、结构化位置和 `repairHint`；`shouldRepair` 与 `decision` 为后续工作流提供确定性分支。分数用于排序和趋势观察，严重错误不会被其他维度的高分抵消。
+质量报告可以指向整门课程或单页。`dimensions` 的持久化键保持内容准确性、排版质量、课程连贯性、风格一致性、HTML 可运行性和素材可用性，并分别映射到手册的内容、排版、教学、风格、HTML、素材六维；每个维度派生 `issueCodes` 和去重 `repairHints`。`issues` 是完整问题的唯一事实来源，保存维度、严重程度、静态/浏览器/模型证据来源、结构化位置和 `repairHint`；`shouldRepair` 与 `decision` 为后续工作流提供确定性分支。
 
 Day 15 的页面总分按内容 30%、排版 22%、连贯 17%、风格 13%、HTML 10%、素材 8% 加权。出现 error，或内容、排版、HTML 低于硬门槛时，程序必须设置 `shouldRepair: true`。模型只提供语义维度和候选问题，ID、时间、总分、限分和工作流决策都由代码补齐。
+
+Day 26 增加内容错误优先的服务端稳定排序，并允许报告携带可选 `screenshotEvidence`。共享证据只有状态、opaque artifact ID、固定 viewport 和几何指标；真实 PNG 路径保持在服务器内部。旧报告缺少维度问题索引或截图证据时仍能直接解析。
 
 ## 关键跨实体校验
 

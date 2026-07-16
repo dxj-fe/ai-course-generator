@@ -16,11 +16,72 @@ export const QualityDimensionNameSchema = z.enum([
   "assetUsability",
 ]);
 
+/** 手册中的六维名称与已持久化字段之间的稳定映射。 */
+export const QUALITY_DIMENSION_LABELS = {
+  contentAccuracy: "内容正确性",
+  courseCoherence: "教学有效性",
+  layoutQuality: "页面排版",
+  styleConsistency: "视觉风格",
+  htmlRuntime: "HTML 质量",
+  assetUsability: "素材可用性",
+} as const;
+
 /** 一个质量维度的量化得分和可读结论。 */
 export const QualityDimensionSchema = z.object({
   score: z.number().min(0).max(100),
   summary: z.string().min(2).max(300),
+  issueCodes: z.array(z.string().min(1).max(80)).max(50).default([]),
+  repairHints: z.array(z.string().min(2).max(500)).max(50).default([]),
 });
+
+export const QualityScreenshotStatusSchema = z.enum([
+  "captured",
+  "skipped",
+  "failed",
+]);
+
+export const QualityScreenshotEvidenceSchema = z
+  .object({
+    status: QualityScreenshotStatusSchema,
+    artifactId: z.string().min(1).max(120).optional(),
+    viewport: z
+      .object({
+        width: z.number().int().min(320).max(3840),
+        height: z.number().int().min(320).max(2160),
+      })
+      .strict(),
+    metrics: z
+      .object({
+        documentWidth: z.number().int().nonnegative(),
+        documentHeight: z.number().int().nonnegative(),
+        horizontalOverflowPx: z.number().int().nonnegative(),
+        clippedElementCount: z.number().int().nonnegative(),
+        zeroSizeInteractiveCount: z.number().int().nonnegative(),
+      })
+      .strict()
+      .optional(),
+    capturedAt: z.string().datetime({ offset: true }).optional(),
+    reason: z.string().min(2).max(300).optional(),
+  })
+  .strict()
+  .superRefine((evidence, context) => {
+    if (
+      evidence.status === "captured" &&
+      (!evidence.artifactId || !evidence.metrics || !evidence.capturedAt)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "captured 截图证据必须包含 artifactId、metrics 和 capturedAt",
+      });
+    }
+    if (evidence.status !== "captured" && !evidence.reason) {
+      context.addIssue({
+        code: "custom",
+        message: "未捕获截图时必须说明 reason",
+        path: ["reason"],
+      });
+    }
+  });
 
 /** Repair Agent 可直接消费的问题位置；description 为无法使用 selector 时的兜底。 */
 export const QualityIssueLocationSchema = z
@@ -39,7 +100,7 @@ export const QualityIssueSchema = z
     code: z.string().min(1).max(80),
     dimension: QualityDimensionNameSchema,
     severity: QualitySeveritySchema,
-    source: z.enum(["heuristic", "model"]),
+    source: z.enum(["heuristic", "browser", "model"]),
     message: z.string().min(2).max(500),
     location: QualityIssueLocationSchema,
     repairHint: z.string().min(2).max(500),
@@ -71,6 +132,7 @@ export const QualityReportSchema = z
     overallScore: z.number().min(0).max(100),
     dimensions: QualityDimensionsSchema,
     issues: z.array(QualityIssueSchema).max(50),
+    screenshotEvidence: QualityScreenshotEvidenceSchema.optional(),
     shouldRepair: z.boolean(),
     decision: QualityDecisionSchema,
     createdAt: z.string().datetime({ offset: true }),
@@ -109,6 +171,12 @@ export type QualityDecision = z.infer<typeof QualityDecisionSchema>;
 export type QualitySeverity = z.infer<typeof QualitySeveritySchema>;
 export type QualityDimensionName = z.infer<typeof QualityDimensionNameSchema>;
 export type QualityDimension = z.infer<typeof QualityDimensionSchema>;
+export type QualityScreenshotStatus = z.infer<
+  typeof QualityScreenshotStatusSchema
+>;
+export type QualityScreenshotEvidence = z.infer<
+  typeof QualityScreenshotEvidenceSchema
+>;
 export type QualityIssueLocation = z.infer<typeof QualityIssueLocationSchema>;
 export type QualityIssue = z.infer<typeof QualityIssueSchema>;
 export type QualityReport = z.infer<typeof QualityReportSchema>;

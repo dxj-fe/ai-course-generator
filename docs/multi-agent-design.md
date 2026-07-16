@@ -272,8 +272,8 @@ Supervisor 是架构角色；LangGraph 是实现 State、Node、Edge、Reducer�
 1. **Day 21（已完成）：** 文档化当前和目标边界，不改运行时；
 2. **Day 22（已完成）：** 把固定顺序表达为显式手写 Specialist Workflow，同时保持 API、SSE、Schema、checkpoint、恢复和 UI 合同；
 3. **Day 23 已完成：** 引入有限 Supervisor 路由、重试、停止和可解释决策；
-4. **Days 24–25（已完成）：** 强化 Specialist Prompt，并实现 Page Worker、自动 report-only QA 和受控并发；
-5. **Days 26–27：** 深化 QA，并实现受限 Repair/re-QA；
+4. **Days 24–26（已完成）：** 强化 Specialist Prompt，实现 Page Worker、自动 report-only QA、受控并发和多证据六维 QA；
+5. **Day 27：** 实现受限 Repair/re-QA；
 6. **Days 28–31：** 在不重做前端的前提下评估并迁移稳定状态到 LangGraph。
 
 每一步都应独立验收，不提前宣称后续能力已经完成。

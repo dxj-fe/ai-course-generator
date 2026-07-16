@@ -177,6 +177,7 @@ function workerBriefs(
     ),
     visualBrief: requireValue(state.briefs?.visual, "visual brief"),
     courseContext: {
+      courseOverview: outline.overview,
       learningObjectives: outline.learningObjectives,
       previousPage: outline.pages[pageIndex - 1],
       nextPage: outline.pages[pageIndex + 1],

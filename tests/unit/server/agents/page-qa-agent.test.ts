@@ -56,6 +56,7 @@ describe("PageQAAgent", () => {
     expect(state.events.map(({ type }) => type)).toEqual([
       "start",
       "validation",
+      "validation",
       "model_call",
       "validation",
       "finish",
@@ -105,6 +106,27 @@ describe("PageQAAgent", () => {
     expect(state.report?.issues[0]?.location.pageId).toBe(
       pageContentDsl.pageId,
     );
+  });
+
+  it("keeps browser evidence in the report and does not block on capture failure", async () => {
+    const failedEvidence = {
+      status: "failed" as const,
+      viewport: { width: 1440, height: 900 },
+      reason: "截图 QA 超时。",
+    };
+    const state = await createPageQAAgent({
+      evaluate: vi.fn().mockResolvedValue(modelOutput),
+      captureScreenshot: vi.fn().mockResolvedValue({
+        evidence: failedEvidence,
+        issues: [],
+      }),
+    }).run(createPageQAAgentState(createInput()), {
+      traceId: "trace-screenshot-failure",
+    });
+
+    expect(state.status).toBe("completed");
+    expect(state.report?.screenshotEvidence).toEqual(failedEvidence);
+    expect(state.report?.decision).toBe("pass");
   });
 
   it("rejects a page and DSL that do not describe the same artifact", () => {
