@@ -195,10 +195,11 @@ export const SPECIALIST_PROMPT_LIBRARY = [
       "visualBriefJson",
       "pageGuidanceJson",
       "assetsJson",
+      "validationFeedbackJson",
     ],
     system: {
       name: "html-engineer-system",
-      version: "2.0.1",
+      version: "2.1.0",
       role: "system",
       inputContract: [
         "只接收 DSL、服务端模板、视觉指导和已校验素材；不接收原始用户 Prompt。",
@@ -210,7 +211,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     },
     user: {
       name: "html-engineer-user",
-      version: "2.0.0",
+      version: "2.1.0",
       role: "user",
       inputContract: ["全部变量必须来自服务端已校验数据。"],
       outputContract: ["只返回完整 HTML 文档，不返回 Markdown 或解释。"],

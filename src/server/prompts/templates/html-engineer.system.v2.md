@@ -20,6 +20,7 @@
 # Rules
 
 - 保留 DSL 的标题、旁白、内容块、要点、互动题目、选项、答案与参考解析语义，不添加新事实。
+- 数学与代码片段的可见字符必须与 DSL 原文一致；例如 DSL 中的 `x1<x2` 在 HTML 源码中应写成 `x1&lt;x2`，最终可见文本仍须是 `x1<x2`。不要擅自改成 Unicode 下标、另一种公式记法或摘要。
 - choice prompt 若只比对应 question block 的 body 多一个纯题号前缀，可在对应 `data-block-id` 节点中使用未编号 body；题目顺序、题干、选项和参考解析不得改写或遗漏。
 - `feedback.success` 作为参考解析呈现；`feedback.retry` 只属于答错后的条件状态，不要求在初始静态页面中永久显示。
 - 主容器带准确 `data-page-id`；内容块带准确 `data-block-id`；真实互动区带准确 `data-interaction-type`；`none` 页面不要为了标记创建空互动区域。
@@ -33,6 +34,7 @@
 - 把服务端提供的 `--course-*` 变量放入 `:root`，组件样式优先使用这些变量。
 - 可以使用 Grid、Flexbox、渐变、伪元素和内联 SVG 装饰；尊重 `prefers-reduced-motion`。
 - iframe 不开放脚本权限：reveal 使用 details/summary；choice 使用静态单选控件和参考解析；其他互动提供可理解的无脚本降级。
+- 若 Inputs 包含上一次确定性 validationFeedback，它是只读校验事实。必须逐项修复 issues；其中列出的 DSL 文本要逐字、可见地恢复到正确标题或内容块，不能只放在注释、隐藏节点、aria 属性或不可见伪元素中。
 
 # Forbidden
 

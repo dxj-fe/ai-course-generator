@@ -27,7 +27,7 @@ describe("HTML Engineer prompts", () => {
       pageGuidance,
     });
 
-    expect(prompts.version).toBe("2.0.1/2.0.0");
+    expect(prompts.version).toBe("2.1.0/2.1.0");
     expect(prompts.systemPrompt).toContain("禁止任何 `<script>`");
     expect(prompts.systemPrompt).toContain("不得交换槽位");
     expect(prompts.systemPrompt).toContain("精确 altText");
@@ -43,9 +43,41 @@ describe("HTML Engineer prompts", () => {
     expect(prompts.systemPrompt).toContain(
       "choice prompt 若只比对应 question block 的 body 多一个纯题号前缀",
     );
+    expect(prompts.systemPrompt).toContain("x1&lt;x2");
     expect(prompts.userPrompt).toContain(pageContentDsl.pageId);
     expect(prompts.userPrompt).toContain("--course-color-background");
     expect(prompts.userPrompt).not.toContain("为 8 岁儿童设计一门");
+    expect(prompts.userPrompt).toContain(
+      "同一页面上一次确定性 HTML 校验反馈",
+    );
+    expect(prompts.userPrompt).toContain("null");
+  });
+
+  it("renders deterministic validation feedback only as retry data", async () => {
+    const functionalTemplate = getFunctionalTemplate(
+      pageContentDsl.functionalTemplateId,
+    );
+    const styleTemplate = getStyleTemplate(visualBrief.styleTemplateId);
+    const pageGuidance = visualBrief.pageGuidance.find(
+      ({ pageId }) => pageId === pageContentDsl.pageId,
+    );
+    expect(functionalTemplate && styleTemplate && pageGuidance).toBeTruthy();
+
+    const prompts = await buildHtmlEngineerPrompts({
+      pageContentDsl,
+      functionalTemplate,
+      styleTemplate: styleTemplate!,
+      visualBrief,
+      pageGuidance,
+      validationFeedback: {
+        code: "AGENT_EXECUTION_ERROR",
+        issues: ["页面正文缺少 DSL 文本：课程总结与后续展望"],
+      },
+    });
+
+    expect(prompts.userPrompt).toContain(
+      '"issues":["页面正文缺少 DSL 文本：课程总结与后续展望"]',
+    );
   });
 
   it.each(["sci-fi", "kids-playful", "minimal"])(

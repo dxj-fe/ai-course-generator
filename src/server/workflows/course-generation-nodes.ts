@@ -1,6 +1,7 @@
 import { generateCourseIntent } from "@/server/agents/intent-agent";
 import { runCoursePlannerAgent } from "@/server/agents/course-planner-agent";
 import { runHtmlEngineerAgent } from "@/server/agents/html-engineer-agent";
+import type { HtmlEngineerValidationFeedback } from "@/server/agents/html-engineer-agent";
 import { runPageWriterAgent } from "@/server/agents/page-writer-agent";
 import type {
   AgentEvent,
@@ -42,6 +43,11 @@ export type CourseGenerationNodeContext = {
   runtime: AgentRuntimeContext;
   pageCount?: CourseMvpPageCount;
   dependencies: CourseGenerationNodeDependencies;
+  retryFeedback?: {
+    nodeName: CourseGenerationNodeName;
+    code: string;
+    message: string;
+  };
 };
 
 export type CourseGenerationNodeEvent = Pick<
@@ -436,11 +442,15 @@ export function createHtmlEngineerNode(pageId: string): CourseGenerationNode {
     ],
     async run(state, context) {
       const page = requirePage(state, pageId);
+      const validationFeedback = toHtmlValidationFeedback(
+        context.retryFeedback,
+      );
       const htmlState = await context.dependencies.runHtml(
         {
           content: requireValue(page.content, "page content"),
           visualBrief: requireValue(state.briefs?.visual, "visual brief"),
           assets: page.assets,
+          validationFeedback,
         },
         context.runtime,
       );
@@ -469,6 +479,28 @@ export function createHtmlEngineerNode(pageId: string): CourseGenerationNode {
       };
     },
   };
+}
+
+const HTML_VALIDATION_PREFIX = "生成 HTML 校验失败：";
+
+function toHtmlValidationFeedback(
+  feedback: CourseGenerationNodeContext["retryFeedback"],
+): HtmlEngineerValidationFeedback | undefined {
+  if (
+    feedback?.nodeName !== "html-engineer" ||
+    !feedback.message.startsWith(HTML_VALIDATION_PREFIX)
+  ) {
+    return undefined;
+  }
+
+  const issues = feedback.message
+    .slice(HTML_VALIDATION_PREFIX.length)
+    .split("；")
+    .map((issue) => issue.trim())
+    .filter(Boolean)
+    .slice(0, 20);
+
+  return issues.length > 0 ? { code: feedback.code, issues } : undefined;
 }
 
 function value(

@@ -16,6 +16,7 @@ export async function buildHtmlEngineerPrompts(input: {
   visualBrief: unknown;
   pageGuidance: unknown;
   assets?: unknown;
+  validationFeedback?: unknown;
 }) {
   const [systemTemplate, userTemplate] = await Promise.all([
     loadPromptTemplate(systemDefinition),
@@ -33,6 +34,9 @@ export async function buildHtmlEngineerPrompts(input: {
       visualBriefJson: JSON.stringify(input.visualBrief),
       pageGuidanceJson: JSON.stringify(input.pageGuidance),
       assetsJson: JSON.stringify(input.assets ?? []),
+      validationFeedbackJson: JSON.stringify(
+        input.validationFeedback ?? null,
+      ),
     }),
   };
 }

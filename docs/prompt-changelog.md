@@ -4,6 +4,13 @@
 
 ## 2026-07-16 · Day 24
 
+### HTML Engineer · 2.1.0/2.1.0
+
+- 同页 Supervisor 重试会收到上一次确定性 HTML 校验 issues，不再重复使用完全相同的 Prompt。
+- 反馈只来自服务端安全错误摘要，不包含模型原始 HTML、系统 Prompt、私有上下文或 chain-of-thought；首次生成使用 null。
+- 缺失 DSL 正文必须逐字恢复为可见 HTML；数学文本中的 `<` 使用 `&lt;` 转义，但最终可见字符保持原文。
+- 恢复检查点时，如果该页仍有可用 attempt，持久化页面错误也会转换为同一反馈合同。
+
 ### Planner · 2.0.1/2.0.0
 
 - 明确列出每个 pageType 推荐的 canonical interactionType，禁止翻译或写成自定义值。

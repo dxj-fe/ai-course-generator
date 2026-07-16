@@ -97,7 +97,7 @@ Output Schema 说明模型应该服务哪个真实下游合同。它不能替代
 | Visual | VisualBriefSchema |
 | Page Writer | PageContentDSLSchema |
 | Image Prompt | 方向草稿 → AssetRequestSchema[] |
-| HTML Engineer | HtmlOutputSchema + HTML 合同；System Prompt 2.0.1 |
+| HTML Engineer | HtmlOutputSchema + HTML 合同；Prompt 2.1.0/2.1.0 |
 | QA | 语义草稿 → QualityReportSchema |
 | Repair | draft，暂无运行时 Schema |
 
@@ -154,6 +154,12 @@ HTML Engineer System Prompt 已提升到 `2.0.1`，明确要求逐字复制批�
 OpenAI-compatible Provider 默认可能只支持 JSON object mode，而不执行 JSON Schema 枚举约束。真实 Planner 输出因此可能把 interactionType 写成 `multiple-choice`、中文描述或页面类型，随后在 Zod 校验阶段连续失败。
 
 Planner System Prompt 已提升到 `2.0.1` 并列出 pageType 到 canonical interactionType 的映射。结构化客户端支持在严格 Zod 校验前运行节点专属 normalizer；Planner 只在 pageType 已通过枚举校验、interactionType 非法或缺失时使用确定性默认值。非法 pageType、页面数量、模板和其他字段不会被掩盖。
+
+### 本地验收补充：HTML 重试反馈
+
+真实五页课程在 summary 页连续缺少同一段 DSL 原文。此前 Supervisor 能看到失败并决定 retry，但 Specialist 调用仍收到完全相同的 DSL、模板和素材，没有上一次校验问题，因此模型容易重复同一省略。
+
+现在 `runSupervisedWorkflow` 只把同一 node/page 的最近安全错误传给执行边界；HTML 节点进一步筛选 `生成 HTML 校验失败`，拆成最多 20 条 issues，再通过 `validationFeedback` 注入 HTML Engineer User Prompt。反馈不包含原始 HTML 或私有推理。恢复 checkpoint 时，若 attempt 尚未耗尽，也会复用该页持久化错误。严格正文、标记、素材和安全校验保持不变。
 
 运行：
 

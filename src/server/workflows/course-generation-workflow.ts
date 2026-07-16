@@ -25,6 +25,7 @@ import { runImageAssetWorkflow } from "@/server/workflows/image-asset-workflow";
 import {
   runSequentialWorkflow,
   type SequentialWorkflowResult,
+  type WorkflowNodeError,
 } from "@/server/workflows/sequential-workflow";
 import { runSupervisedWorkflow } from "@/server/workflows/supervised-workflow";
 import {
@@ -98,8 +99,15 @@ export async function runCourseGenerationWorkflow(
     isReadyToComplete: isCourseReadyToComplete,
     decide: (supervisorInput) =>
       dependencies.runSupervisor(supervisorInput, context),
-    execute: (current, node) =>
-      runCourseNodes(current, [node], input, context, dependencies),
+    execute: (current, node, retryFailure) =>
+      runCourseNodes(
+        current,
+        [node],
+        input,
+        context,
+        dependencies,
+        getRetryFeedback(current, node, retryFailure),
+      ),
     recordDecision: (current, decision, node) =>
       recordSupervisorDecision(current, decision, node, dependencies),
     checkpoint: (current) => checkpoint(current, dependencies),
@@ -174,6 +182,7 @@ async function runCourseNodes(
   input: CourseGenerationWorkflowInput,
   context: AgentRuntimeContext,
   dependencies: CourseGenerationWorkflowDependencies,
+  retryFeedback?: CourseGenerationNodeContext["retryFeedback"],
 ): Promise<CourseNodeRunResult> {
   const result = await runSequentialWorkflow<
     CourseGenerationState,
@@ -188,6 +197,7 @@ async function runCourseNodes(
       runtime: context,
       pageCount: input.pageCount,
       dependencies,
+      retryFeedback,
     },
     merge: (current, patch) =>
       CourseGenerationStateSchema.parse({ ...current, ...patch }),
@@ -258,6 +268,31 @@ async function runCourseNodes(
   }
 
   return result;
+}
+
+function getRetryFeedback(
+  state: CourseGenerationState,
+  node: CourseGenerationNode,
+  retryFailure?: WorkflowNodeError<CourseGenerationNodeName>,
+): CourseGenerationNodeContext["retryFeedback"] {
+  if (retryFailure) {
+    return {
+      nodeName: retryFailure.nodeName,
+      code: retryFailure.code,
+      message: retryFailure.message,
+    };
+  }
+
+  const persistedError = node.pageId
+    ? state.pages.find(({ pageId }) => pageId === node.pageId)?.error
+    : undefined;
+  return persistedError
+    ? {
+        nodeName: node.name,
+        code: persistedError.code,
+        message: persistedError.message,
+      }
+    : undefined;
 }
 
 function failNodeWorkflow(

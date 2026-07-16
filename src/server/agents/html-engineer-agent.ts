@@ -37,6 +37,12 @@ export type HtmlEngineerInput = {
   content: PageContentDSL;
   visualBrief: VisualBrief;
   assets?: AssetGenerationResult[];
+  validationFeedback?: HtmlEngineerValidationFeedback;
+};
+
+export type HtmlEngineerValidationFeedback = {
+  code: string;
+  issues: string[];
 };
 
 export type HtmlEngineerResolvedInput = HtmlEngineerInput & {
@@ -178,6 +184,7 @@ export function resolveHtmlEngineerInput(
   return {
     ...input,
     assets: input.assets ?? [],
+    validationFeedback: input.validationFeedback,
     functionalTemplate,
     styleTemplate,
     pageGuidance,
@@ -320,6 +327,7 @@ async function generateHtml(
     visualBrief: input.visualBrief,
     pageGuidance: input.pageGuidance,
     assets: input.assets ?? [],
+    validationFeedback: input.validationFeedback,
   });
   const messages = [
     {

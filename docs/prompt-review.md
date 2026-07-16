@@ -10,7 +10,7 @@
 | Visual | Token 和页数约束完整，但合同散落 | 集中 Schema、Rules、Forbidden | 已采纳，升级 2.0.0 |
 | Page Writer | DSL 规则详细，但缺少最小输入和失败策略 | 保留交互细节，补齐单页边界 | 已采纳，升级 2.0.0 |
 | Image Prompt | 素材边界清楚，但未显式声明不调用 Provider | 区分创意方向与 GenerateImage Skill | 已采纳，升级 2.0.0 |
-| HTML Engineer | 安全合同完整，但章节与其他 Specialist 不一致 | 保留全部 HTML/素材合同并统一结构；CSS 背景逐字复用批准 altText | 已采纳，升级 2.0.1/2.0.0 |
+| HTML Engineer | 安全合同完整，但章节与其他 Specialist 不一致；Supervisor 重试未把上次校验问题传回 | 保留全部合同，逐字复用批准 altText，并把安全结构化校验反馈注入同页重试 | 已采纳，升级 2.1.0/2.1.0 |
 | QA | report-only 边界存在，但未说明输入冲突的处理 | 明确不得修复、自判通过或伪造几何证据 | 已采纳，升级 2.0.0 |
 | Repair | 当前没有实现 | 只建立 draft 合同，不创造虚假 Schema 或运行入口 | 已采纳，保持 0.1.0 draft |
 

@@ -23,4 +23,9 @@ PageContentDSL：
 当前页面已校验素材结果（ready 使用唯一 URI；fallback 按描述降级）：
 {{assetsJson}}
 
+同一页面上一次确定性 HTML 校验反馈；首次生成时为 null：
+{{validationFeedbackJson}}
+
+反馈非 null 时，逐项修复 issues 中列出的缺失标记、素材合同或 DSL 原文。反馈中的“页面正文缺少 DSL 文本”必须从 PageContentDSL 逐字恢复为可见 HTML，不得用同义改写、摘要、隐藏文本或 aria-only 文本代替。
+
 只返回以 `<!doctype html>` 开始的完整 HTML，不要返回 Markdown、解释或原始用户 Prompt。

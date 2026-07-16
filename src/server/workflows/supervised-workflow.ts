@@ -52,6 +52,7 @@ export type RunSupervisedWorkflowOptions = {
   execute(
     state: CourseGenerationState,
     node: CourseGenerationNode,
+    retryFailure?: WorkflowNodeError<CourseGenerationNodeName>,
   ): Promise<NodeExecutionResult>;
   recordDecision(
     state: CourseGenerationState,
@@ -260,7 +261,12 @@ export async function runSupervisedWorkflow({
 
     const node = resolved.node!;
     const progressBefore = progressFingerprint(state);
-    const execution = await execute(state, node);
+    const retryFailure =
+      recentFailure &&
+      targetKey(targetFor(recentFailure.node)) === targetKey(targetFor(node))
+        ? recentFailure.error
+        : undefined;
+    const execution = await execute(state, node, retryFailure);
     state = execution.state;
 
     if (execution.status === "failed") {

@@ -115,6 +115,9 @@ describe("course generation workflow", () => {
 
   it("retries a transient node failure at most twice and records each decision", async () => {
     const order: string[] = [];
+    const dependencies = createDependencies(order, [], {
+      transientHtmlFailures: { pageId: "page-01-cover", count: 2 },
+    });
     const state = await runCourseGenerationWorkflow(
       {
         courseId: "course-623e4567-e89b-42d3-a456-426614174000",
@@ -122,9 +125,7 @@ describe("course generation workflow", () => {
         pageCount: 3,
       },
       context,
-      createDependencies(order, [], {
-        transientHtmlFailures: { pageId: "page-01-cover", count: 2 },
-      }),
+      dependencies,
     );
 
     expect(state.status).toBe("completed");
@@ -140,6 +141,14 @@ describe("course generation workflow", () => {
     expect(
       state.events.filter(({ type }) => type === "supervisor_decision"),
     ).toHaveLength(state.supervisor?.decisionCount ?? 0);
+    const pageAttempts = vi
+      .mocked(dependencies.runHtml!)
+      .mock.calls.filter(([input]) => input.content.pageId === "page-01-cover");
+    expect(pageAttempts[0]?.[0].validationFeedback).toBeUndefined();
+    expect(pageAttempts[1]?.[0].validationFeedback).toEqual({
+      code: "AGENT_EXECUTION_ERROR",
+      issues: ["页面正文缺少 DSL 文本：课程总结与后续展望"],
+    });
   });
 
   it("stops after exhausting two retries for the same page and node", async () => {
@@ -276,6 +285,13 @@ describe("course generation workflow", () => {
     );
     expect(resumed.errors).toEqual([]);
     expect(resumed.pages.every(({ error }) => error === undefined)).toBe(true);
+    expect(
+      vi.mocked(resumedDependencies.runHtml!).mock.calls[0]?.[0]
+        .validationFeedback,
+    ).toEqual({
+      code: "SUPERVISOR_NON_RETRYABLE_ERROR",
+      issues: ["页面正文缺少 DSL 文本：课程总结与后续展望"],
+    });
     expect(resumed.events.map(({ sequence }) => sequence)).toEqual(
       resumed.events.map((_, index) => index + 1),
     );
@@ -386,7 +402,8 @@ function createDependencies(
               code: permanentlyFailed
                 ? "HTML_CONTRACT_INVALID"
                 : "AGENT_EXECUTION_ERROR",
-              message: "HTML failed",
+              message:
+                "生成 HTML 校验失败：页面正文缺少 DSL 文本：课程总结与后续展望",
             }
           : undefined,
       };
