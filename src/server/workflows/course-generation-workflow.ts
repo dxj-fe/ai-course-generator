@@ -2,17 +2,15 @@ import { generateCourseIntent } from "@/server/agents/intent-agent";
 import { runCoursePlannerAgent } from "@/server/agents/course-planner-agent";
 import { runHtmlEngineerAgent } from "@/server/agents/html-engineer-agent";
 import { runPageWriterAgent } from "@/server/agents/page-writer-agent";
+import { runPageQAAgent } from "@/server/agents/page-qa-agent";
 import { runSupervisorAgent } from "@/server/agents/supervisor-agent";
 import type { AgentRuntimeContext } from "@/server/agents/core/types";
 import { createCourseStore } from "@/server/storage/course-store";
 import { runCourseDesignWorkflow } from "@/server/workflows/course-design-workflow";
 import {
   CourseGenerationNodeError,
-  createAssetsNode,
   createCourseDesignNode,
-  createHtmlEngineerNode,
   createIntentNode,
-  createPageWriterNode,
   createPlannerNode,
   type CourseGenerationNode,
   type CourseGenerationNodeContext,
@@ -21,7 +19,9 @@ import {
   type CourseGenerationNodeName,
   type CourseMvpPageCount,
 } from "@/server/workflows/course-generation-nodes";
+import { runCourseWorkersWorkflow } from "@/server/workflows/course-workers-workflow";
 import { runImageAssetWorkflow } from "@/server/workflows/image-asset-workflow";
+import { generatePageWorker } from "@/server/workflows/page-worker";
 import {
   runSequentialWorkflow,
   type SequentialWorkflowResult,
@@ -30,12 +30,14 @@ import {
 import { runSupervisedWorkflow } from "@/server/workflows/supervised-workflow";
 import {
   CourseGenerationStateSchema,
+  PageWorkerConfigSchema,
   targetKey,
   type CourseGenerationError,
   type CourseGenerationPublicEvent,
   type CourseGenerationStage,
   type CourseGenerationState,
   type PageGenerationState,
+  type PageWorkerMode,
   type SupervisorDecision,
   type SupervisorNodeTarget,
 } from "@/shared/course-schema";
@@ -46,12 +48,16 @@ export type CourseGenerationWorkflowInput = {
   courseId: string;
   userPrompt: string;
   pageCount?: CourseMvpPageCount;
+  executionMode?: PageWorkerMode;
+  concurrency?: number;
   existingState?: CourseGenerationState;
 };
 
 export type CourseGenerationWorkflowDependencies =
   CourseGenerationNodeDependencies & {
     runSupervisor: typeof runSupervisorAgent;
+    runQA: typeof runPageQAAgent;
+    generatePage: typeof generatePageWorker;
     checkpoint(state: CourseGenerationState): Promise<void>;
     now(): string;
   };
@@ -64,14 +70,16 @@ const defaultDependencies: CourseGenerationWorkflowDependencies = {
   runPageWriter: runPageWriterAgent,
   runAssets: runImageAssetWorkflow,
   runHtml: runHtmlEngineerAgent,
+  runQA: runPageQAAgent,
+  generatePage: generatePageWorker,
   runSupervisor: runSupervisorAgent,
   checkpoint: courseStore.save,
   now: () => new Date().toISOString(),
 };
 
 /**
- * Day 22 的兼容入口：用显式节点列表执行既有固定串行流程。
- * API、checkpoint、恢复和公开事件协议仍由这一课程级事实来源统一管理。
+ * 课程级兼容入口：Supervisor 负责全局 Specialist，页面产物交给隔离的
+ * Page Worker 与受控 Promise Pool；checkpoint 和公开事件仍集中管理。
  */
 export async function runCourseGenerationWorkflow(
   input: CourseGenerationWorkflowInput,
@@ -88,15 +96,17 @@ export async function runCourseGenerationWorkflow(
     stage: state.currentStage,
     summary: input.existingState
       ? "整课生成已从服务端检查点恢复。"
-      : "整课串行生成已开始。",
+      : state.workerConfig?.mode === "parallel"
+        ? `整课生成已开始，Page Worker 最大并发度为 ${state.workerConfig.concurrency}。`
+        : "整课串行生成已开始。",
   });
   state = await checkpoint(state, dependencies);
 
   const supervisedResult = await runSupervisedWorkflow({
     state,
     context,
-    listAvailableNodes: listAvailableCourseNodes,
-    isReadyToComplete: isCourseReadyToComplete,
+    listAvailableNodes: listAvailableGlobalNodes,
+    isReadyToComplete: isGlobalWorkReady,
     decide: (supervisorInput) =>
       dependencies.runSupervisor(supervisorInput, context),
     execute: (current, node, retryFailure) =>
@@ -149,6 +159,23 @@ export async function runCourseGenerationWorkflow(
     );
   }
   state = supervisedResult.state;
+
+  const workersResult = await runCourseWorkersWorkflow(
+    state,
+    context,
+    requireValue(state.workerConfig, "page worker config"),
+    dependencies,
+  );
+  if (workersResult.status === "failed") {
+    return failWorkflow(
+      workersResult.state,
+      workersResult.error,
+      context,
+      dependencies,
+      { agent: "page-worker" },
+    );
+  }
+  state = workersResult.state;
 
   const completedAt = dependencies.now();
   state = appendEvent(
@@ -361,6 +388,7 @@ function initializeState(
     }
     if (existing.status === "completed") return existing;
 
+    const workerConfig = resolveWorkerConfig(input, existing.workerConfig);
     return CourseGenerationStateSchema.parse({
       ...existing,
       status: "running",
@@ -372,6 +400,17 @@ function initializeState(
         decisionCount: 0,
         attempts: [],
       },
+      workerConfig,
+      pages: existing.pages.map((page) =>
+        page.status === "failed"
+          ? {
+              ...page,
+              attempts: page.attempts?.filter(
+                ({ stage }) => stage !== page.currentStage,
+              ),
+            }
+          : page,
+      ),
       updatedAt: now(),
     });
   }
@@ -388,12 +427,13 @@ function initializeState(
     events: [],
     errors: [],
     supervisor: { decisionCount: 0, attempts: [] },
+    workerConfig: resolveWorkerConfig(input),
     startedAt: timestamp,
     updatedAt: timestamp,
   });
 }
 
-function listAvailableCourseNodes(
+function listAvailableGlobalNodes(
   state: CourseGenerationState,
 ): CourseGenerationNode[] {
   let nodes: CourseGenerationNode[];
@@ -404,41 +444,16 @@ function listAvailableCourseNodes(
     nodes = [createPlannerNode()];
   } else if (!state.briefs || !state.pageWorkerBriefs) {
     nodes = [createCourseDesignNode()];
-  } else {
-    nodes = state.outline.pages.flatMap((plan) => {
-      const page = state.pages.find(({ pageId }) => pageId === plan.id);
-      if (!page || page.status === "completed") return [];
-      if (
-        plan.dependsOnPageIds.some(
-          (dependencyId) =>
-            state.pages.find(({ pageId }) => pageId === dependencyId)
-              ?.status !== "completed",
-        )
-      ) {
-        return [];
-      }
-      if (!page.content) return [createPageWriterNode(plan.id)];
-      if (page.currentStage === "assets") return [createAssetsNode(plan.id)];
-      if (!page.htmlOutput && page.currentStage === "html") {
-        return [createHtmlEngineerNode(plan.id)];
-      }
-      return [];
-    });
-  }
+  } else nodes = [];
 
   return nodes.filter((node) =>
     node.requiredInputs.every(({ select }) => select(state) !== undefined),
   );
 }
 
-function isCourseReadyToComplete(state: CourseGenerationState) {
+function isGlobalWorkReady(state: CourseGenerationState) {
   return Boolean(
-    state.intent &&
-      state.outline &&
-      state.briefs &&
-      state.pageWorkerBriefs &&
-      state.pages.length === state.outline.pages.length &&
-      state.pages.every(({ status }) => status === "completed"),
+    state.intent && state.outline && state.briefs && state.pageWorkerBriefs,
   );
 }
 
@@ -526,7 +541,9 @@ async function failWorkflow(
     currentPageId: error.pageId,
     completedAt,
     durationMs: durationSince(state.startedAt, completedAt),
-    errors: [...state.errors, error],
+    errors: sameError(state.errors.at(-1), error)
+      ? state.errors
+      : [...state.errors, error],
   };
 
   if (error.pageId && isPageStage(error.stage)) {
@@ -640,8 +657,50 @@ function updatePage(
 
 function isPageStage(
   stage: CourseGenerationStage,
-): stage is "page_writer" | "assets" | "html" {
-  return stage === "page_writer" || stage === "assets" || stage === "html";
+): stage is "page_writer" | "assets" | "html" | "qa" {
+  return (
+    stage === "page_writer" ||
+    stage === "assets" ||
+    stage === "html" ||
+    stage === "qa"
+  );
+}
+
+function resolveWorkerConfig(
+  input: CourseGenerationWorkflowInput,
+  persisted?: CourseGenerationState["workerConfig"],
+) {
+  if (
+    persisted &&
+    ((input.executionMode && input.executionMode !== persisted.mode) ||
+      (input.concurrency && input.concurrency !== persisted.concurrency))
+  ) {
+    throw new Error("恢复课程时不能更改已持久化的 Page Worker 配置。");
+  }
+  return PageWorkerConfigSchema.parse(
+    persisted ?? {
+      mode: input.executionMode ?? "parallel",
+      concurrency: input.concurrency ?? 2,
+    },
+  );
+}
+
+function requireValue<Value>(value: Value | undefined, name: string): Value {
+  if (value === undefined) throw new Error(`课程工作流缺少 ${name}。`);
+  return value;
+}
+
+function sameError(
+  left: CourseGenerationError | undefined,
+  right: CourseGenerationError,
+) {
+  return Boolean(
+    left &&
+      left.stage === right.stage &&
+      left.pageId === right.pageId &&
+      left.code === right.code &&
+      left.message === right.message,
+  );
 }
 
 function durationSince(startedAt: string, completedAt: string) {

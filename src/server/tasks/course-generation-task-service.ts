@@ -33,6 +33,8 @@ const CourseTaskCreateInputSchema = z
     courseId: CourseIdSchema.optional(),
     userPrompt: z.string().trim().min(2).max(4_000).optional(),
     pageCount: z.union([z.literal(3), z.literal(4), z.literal(5)]).optional(),
+    executionMode: z.enum(["serial", "parallel"]).optional(),
+    concurrency: z.number().int().min(1).max(5).optional(),
     traceId: z.string().trim().min(1).max(120).optional(),
   })
   .strict()
@@ -129,6 +131,16 @@ export function createCourseGenerationTaskService(
       ) {
         throw new AiRequestError("恢复课程时不能更改已确定的页面数量。");
       }
+      if (
+        existingState?.workerConfig &&
+        ((parsed.data.executionMode &&
+          parsed.data.executionMode !== existingState.workerConfig.mode) ||
+          (parsed.data.concurrency &&
+            parsed.data.concurrency !==
+              existingState.workerConfig.concurrency))
+      ) {
+        throw new AiRequestError("恢复课程时不能更改 Page Worker 配置。");
+      }
 
       const timestamp = dependencies.now();
       const taskId = CourseTaskIdSchema.parse(dependencies.createTaskId());
@@ -143,6 +155,10 @@ export function createCourseGenerationTaskService(
         traceId,
         userPrompt,
         pageCount,
+        executionMode:
+          existingState?.workerConfig?.mode ?? parsed.data.executionMode,
+        concurrency:
+          existingState?.workerConfig?.concurrency ?? parsed.data.concurrency,
         status: "queued",
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -250,6 +266,8 @@ async function executeTask(
         courseId: running.courseId,
         userPrompt: running.userPrompt,
         pageCount: running.pageCount,
+        executionMode: running.executionMode,
+        concurrency: running.concurrency,
         existingState,
       },
       { abortSignal: controller.signal, traceId: running.traceId },

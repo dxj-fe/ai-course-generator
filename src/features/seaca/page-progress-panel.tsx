@@ -34,13 +34,14 @@ const pageStatusCopy: Record<CourseRunStageStatus, string> = {
 };
 
 /**
- * 在学习工作区集中展示逐页 DSL、素材、HTML 与可选 QA 进度。
+ * 在学习工作区集中展示逐页 DSL、素材、HTML 与 QA 进度。
  * 组件只消费 Controller 投影后的状态，不直接访问业务 API。
  */
 export function PageProgressPanel({ run }: PageProgressPanelProps) {
   const outline =
     run?.planner.data?.state.outline ?? run?.generation?.outline;
   const pages = outline?.pages ?? [];
+  const automaticQa = Boolean(run?.generation?.workerConfig);
 
   return (
     <section
@@ -58,7 +59,9 @@ export function PageProgressPanel({ run }: PageProgressPanelProps) {
           逐页生成状态
         </h3>
         <p className="mt-1 text-xs leading-5 text-[#988e80]">
-          DSL、素材与 HTML 是页面交付阶段；QA 为完成后可选检查。
+          {automaticQa
+            ? "DSL、素材、HTML 与 QA 均由 Page Worker 自动执行。"
+            : "DSL、素材与 HTML 是页面交付阶段；QA 为完成后可选检查。"}
         </p>
       </div>
 
@@ -68,11 +71,14 @@ export function PageProgressPanel({ run }: PageProgressPanelProps) {
             const writeStatus = run.pageWrites[page.id]?.status ?? "idle";
             const assetStatus = run.pageAssets[page.id]?.status ?? "idle";
             const htmlStatus = run.pageHtml[page.id]?.status ?? "idle";
-            const qaStatus = run.pageQa[page.id]?.status ?? "optional";
+            const qaStatus =
+              run.pageQa[page.id]?.status ??
+              (automaticQa ? "idle" : "optional");
             const pageStatus = getPageStatus([
               writeStatus,
               assetStatus,
               htmlStatus,
+              ...(automaticQa ? [qaStatus as CourseRunStageStatus] : []),
             ]);
 
             return (
@@ -158,7 +164,6 @@ function ProgressBadge({
   );
 }
 
-/** 可选 QA 不参与页面交付状态计算。 */
 function getPageStatus(
   requiredStatuses: CourseRunStageStatus[],
 ): CourseRunStageStatus {

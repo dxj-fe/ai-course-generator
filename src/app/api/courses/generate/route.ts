@@ -19,6 +19,8 @@ const CourseGenerationRequestSchema = z
     courseId: CourseIdSchema.optional(),
     userPrompt: z.string().trim().min(2).max(4_000).optional(),
     pageCount: z.union([z.literal(3), z.literal(4), z.literal(5)]).optional(),
+    executionMode: z.enum(["serial", "parallel"]).optional(),
+    concurrency: z.number().int().min(1).max(5).optional(),
     traceId: z.string().trim().min(1).max(120).optional(),
   })
   .strict()
@@ -76,7 +78,14 @@ export async function POST(req: Request) {
       ? (existingState.intent.courseLength as CourseMvpPageCount)
       : parsed.data.pageCount;
     const state = await runCourseGenerationWorkflow(
-      { courseId, userPrompt, pageCount, existingState },
+      {
+        courseId,
+        userPrompt,
+        pageCount,
+        executionMode: parsed.data.executionMode,
+        concurrency: parsed.data.concurrency,
+        existingState,
+      },
       { abortSignal: req.signal, traceId },
       { checkpoint: courseStore.save },
     );

@@ -1,8 +1,8 @@
-# 目标 Supervisor + Specialist 多 Agent 流程
+# Supervisor + Specialist 多 Agent 流程与后续目标
 
-> **TARGET / 未实现**
+> **PARTIALLY IMPLEMENTED / 按阶段校准**
 >
-> 本文最初是 Day 21 的目标架构，现已用 Day 23 实现校准迁移状态。当前系统执行 [`mvp-flow.md`](./mvp-flow.md) 中受限 Supervisor + 显式 `WorkflowNode` 驱动的串行 workflow；Repair、Page Worker 隔离、自动 QA 循环、并发和 LangGraph 仍未实现。
+> 本文最初是 Day 21 的目标架构，现已用 Days 23–25 校准：受限 Supervisor、显式全局 `WorkflowNode`、隔离 Page Worker、自动 report-only QA 与受控并发已经实现；Repair/re-QA 和 LangGraph 仍未实现。当前运行事实以 [`mvp-flow.md`](./mvp-flow.md) 为准。
 
 ## 设计目标
 
@@ -128,10 +128,10 @@ Page Worker 应遵守以下边界：
 - 不直接修改整课状态，只返回带 `pageId` 的局部结果与公开事件。
 - 不改变 CoursePlan 的页面顺序、全局目标或 StyleTemplate。
 - 每页拥有独立的 attempts、错误、事件和取消检查。
-- 未来可由 promise pool 控制并发，但并发度和依赖就绪由 Supervisor/运行层决定。
+- 由 Promise Pool 控制并发；默认并发度为 2，依赖就绪由课程运行层确定。
 - 某一页失败不会删除其他页面已完成产物。
 
-当前项目已有按页装配的 Writer/Assets/HTML `WorkflowNode` 和 [`PageWorkerBrief`](../../src/shared/course-schema/course-design.ts)，但这些节点仍共享整课状态并由同一运行器串行执行；它们不是独立 Page Worker，也没有页面级隔离上下文或并发池。
+当前 [`generatePageWorker`](../../src/server/workflows/page-worker.ts) 已实现这个隔离边界：它只接收单页计划、对应 brief、必要全局指导和页面 checkpoint，内部串行执行 Writer、Assets、HTML 与 QA，并返回 `PageWorkerResult`。[`course-workers-workflow.ts`](../../src/server/workflows/course-workers-workflow.ts) 负责依赖就绪、串行/并行模式和受控并发；只有外层串行 merge 队列可以把 Worker 更新写回整课 checkpoint。
 
 ## GenerateImage Skill 不是 Agent
 
@@ -238,7 +238,7 @@ flowchart LR
 
 1. **Day 22 已完成：** 把现有固定流程包装为声明式、可测试的 `WorkflowNode` 接口和集中串行运行层；兼容 facade、API、SSE、Schema、checkpoint、恢复和 UI 语义保持不变。
 2. **Day 23 已完成：** 加入只负责结构化调度的 Supervisor、持久化有限重试、确定性停止规则和公开决策摘要。
-3. **后续目标：** 继续收紧九名 Specialist 的 Prompt、输入输出和禁止项。
-4. **后续目标：** 把逐页节点提取为真正隔离的 Page Worker，再评估受控并发。
+3. **Day 24 已完成：** 收紧九名 Specialist 的 Prompt、输入输出和禁止项。
+4. **Day 25 已完成：** 实现隔离 Page Worker、页面局部重试、自动 QA、依赖感知调度和默认并发度 2 的 Promise Pool。
 5. **后续目标：** 将现有 report-only QA 接入质量门槛，并实现 Repair 候选与 re-QA。
 6. **后续目标：** 最后评估是否用 LangGraph 替换手写运行层，同时保持 SSE 和前端数据合同不变。

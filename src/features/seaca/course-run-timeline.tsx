@@ -302,7 +302,9 @@ export function CourseRunTimeline({
             页面执行
           </h4>
           <span className="text-[11px] text-[#a1978a]">
-            按页面定位 DSL、素材、HTML 与可选 QA
+            {run.generation?.workerConfig
+              ? "按页面定位 DSL、素材、HTML 与自动 QA"
+              : "按页面定位 DSL、素材、HTML 与可选 QA"}
           </span>
         </div>
         {model.pages.length > 0 ? (

@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { PageProgressPanel } from "../../../src/features/seaca/page-progress-panel";
+import { CourseGenerationStateSchema } from "../../../src/shared/course-schema";
 import type { SeacaCourseRun } from "../../../src/types/seaca";
 import {
   courseDesignIntent,
@@ -89,6 +90,34 @@ describe("PageProgressPanel", () => {
     expect(markup).toContain("页面已完成");
     expect(markup).toContain("可选·未运行");
     expect(markup).toContain('data-status="optional"');
+  });
+
+  it("shows automatic QA as waiting for Day 25 Page Workers", () => {
+    const run = createRun();
+    const pageId = courseDesignOutline.pages[0]!.id;
+    run.generation = CourseGenerationStateSchema.parse({
+      version: 1,
+      courseId: "course-page-worker-progress",
+      traceId: run.traceId,
+      userPrompt: run.prompt,
+      status: "running",
+      currentStage: "html",
+      workerConfig: { mode: "parallel", concurrency: 2 },
+      pages: [],
+      events: [],
+      errors: [],
+      startedAt: "2026-07-16T08:00:00.000Z",
+      updatedAt: "2026-07-16T08:00:01.000Z",
+    });
+    run.pageWrites[pageId] = { status: "completed", events: [] };
+    run.pageAssets[pageId] = { status: "completed", events: [] };
+    run.pageHtml[pageId] = { status: "completed", events: [] };
+
+    const markup = renderToStaticMarkup(<PageProgressPanel run={run} />);
+
+    expect(markup).toContain("HTML 与 QA 均由 Page Worker 自动执行");
+    expect(markup).toContain("页面生成中");
+    expect(markup).not.toContain("可选·未运行");
   });
 
   it("exposes failed stages with text instead of relying on color", () => {

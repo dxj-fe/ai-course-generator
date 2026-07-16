@@ -291,13 +291,18 @@ function buildPages(run: SeacaCourseRun, nowMs: number) {
             agent: "page-qa",
             stage: "qa",
             pageId,
-            optional: true,
+            optional: !Boolean(run.generation?.workerConfig),
           },
           qaStage,
           nowMs,
         )
       : undefined;
-    const requiredStages = [writer, assets, html];
+    const requiredStages = [
+      writer,
+      assets,
+      html,
+      ...(run.generation?.workerConfig && qa ? [qa] : []),
+    ];
     const completed = requiredStages.every(
       ({ status }) => status === "completed",
     );
@@ -384,7 +389,7 @@ function stageSummaries(
   definition: StageDefinition,
   fallbackSummaries: string[],
 ) {
-  if (definition.stage === "qa" || !run.generation) {
+  if (!run.generation) {
     return fallbackSummaries;
   }
 
@@ -430,7 +435,7 @@ function attemptMetadata(
   status: CourseRunStageStatus,
   nowMs: number,
 ): AttemptMetadata {
-  if (definition.stage === "qa" || !run.generation) {
+  if (!run.generation) {
     return { attemptCount: 0, resumed: false };
   }
 
@@ -486,8 +491,6 @@ function findGenerationError(
   run: SeacaCourseRun,
   definition: StageDefinition,
 ): CourseGenerationError | undefined {
-  if (definition.stage === "qa") return undefined;
-
   return run.generation?.errors
     .filter(
       (error) =>
@@ -497,7 +500,7 @@ function findGenerationError(
 }
 
 function findFailureAgent(run: SeacaCourseRun, definition: StageDefinition) {
-  if (definition.stage === "qa" || !run.generation) return "Workflow";
+  if (!run.generation) return "Workflow";
 
   const events = run.generation.events;
   const errorEvent = events

@@ -4,6 +4,7 @@ import type {
   CoursePlannerResponse,
   HtmlEngineerResponse,
   ImageAssetResponse,
+  PageQAResponse,
   PageWriterResponse,
   PublicAgentEvent,
 } from "@/features/course-planner/lib/course-planner-api";
@@ -105,11 +106,14 @@ export function courseGenerationToSeacaRun(
   const pageWrites: SeacaCourseRun["pageWrites"] = {};
   const pageAssets: SeacaCourseRun["pageAssets"] = {};
   const pageHtml: SeacaCourseRun["pageHtml"] = {};
+  const pageQa: SeacaCourseRun["pageQa"] = {};
 
   for (const page of state.pages) {
     pageWrites[page.pageId] = buildPageWriterStage(state, page);
     pageAssets[page.pageId] = buildAssetStage(state, page);
     pageHtml[page.pageId] = buildHtmlStage(state, page);
+    const qa = buildQaStage(state, page);
+    if (qa) pageQa[page.pageId] = qa;
   }
 
   return {
@@ -135,7 +139,7 @@ export function courseGenerationToSeacaRun(
     pageWrites,
     pageAssets,
     pageHtml,
-    pageQa: {},
+    pageQa,
   };
 }
 
@@ -245,6 +249,48 @@ function buildHtmlStage(
   };
 }
 
+function buildQaStage(
+  state: CourseGenerationState,
+  page: PageGenerationState,
+): CourseRunStage<PageQAResponse> | undefined {
+  const error = findStageError(state, ["qa"], page.pageId);
+  const events = eventsFor(state, ["qa"], page.pageId);
+  if (
+    !state.workerConfig &&
+    !page.qualityReport &&
+    !error &&
+    events.length === 0 &&
+    page.currentStage !== "qa"
+  ) {
+    return undefined;
+  }
+  const status = stageStatus(
+    Boolean(page.qualityReport),
+    error,
+    eventStatus(events),
+    isPageStageRunning(state, page, "qa"),
+  );
+  return {
+    status,
+    events,
+    error: error?.message,
+    data:
+      page.qualityReport || error
+        ? {
+            traceId: state.traceId,
+            state: {
+              status,
+              events,
+              report: page.qualityReport,
+              error: error
+                ? { code: error.code, message: error.message }
+                : undefined,
+            },
+          }
+        : undefined,
+  };
+}
+
 function stageStatus(
   completed: boolean,
   error?: CourseGenerationError,
@@ -301,13 +347,12 @@ function isStageRunning(
 function isPageStageRunning(
   state: CourseGenerationState,
   page: PageGenerationState,
-  stage: "page_writer" | "assets" | "html",
+  stage: "page_writer" | "assets" | "html" | "qa",
 ) {
   return (
     state.status === "running" &&
-    state.currentStage === stage &&
-    state.currentPageId === page.pageId &&
-    page.status === "running"
+    page.status === "running" &&
+    page.currentStage === stage
   );
 }
 

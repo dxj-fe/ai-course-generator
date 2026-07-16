@@ -1,6 +1,6 @@
 # 多 Agent 架构设计
 
-> Day 21 架构评审文档，已补充 Day 22 手写节点重构后的当前事实。本文同时描述已经实现的固定 `WorkflowNode` 串行工作流与未来的 Supervisor + Specialist 目标架构，不代表 Supervisor、Repair、自动 QA、页面并发或 LangGraph 已经进入当前运行时。
+> Day 21 架构评审文档，已补充 Days 22–25 的当前事实：全局 `WorkflowNode`、受限 Supervisor、隔离 Page Worker、自动 report-only QA 与受控页面并发已经实现；Repair 和 LangGraph 仍未进入运行时。
 
 ## 1. 结论
 
@@ -13,7 +13,7 @@
 - 服务端负责执行顺序、checkpoint、取消和公开事件；
 - 浏览器只消费类型化任务状态，不消费模型框架原生 chunk。
 
-当前尚未具备的是“根据验证后的状态选择下一个 Specialist”的 Supervisor。[课程生成工作流](../src/server/workflows/course-generation-workflow.ts)现为兼容 facade：它根据 checkpoint 按固定阶段顺序选择 [`course-generation-nodes.ts`](../src/server/workflows/course-generation-nodes.ts) 的节点工厂，再交给 [`runSequentialWorkflow`](../src/server/workflows/sequential-workflow.ts) 执行。这仍是 TypeScript 确定性编排，不能被描述成动态多 Agent 调度。
+当前 [课程生成工作流](../src/server/workflows/course-generation-workflow.ts)保留为兼容 facade：受限 Supervisor 只能在确定性全局节点候选中选择，完成 Course Design 后由依赖感知运行层调度隔离 Page Worker。页面模型调用可以受控并发，但跨页状态仍由单一 merge/checkpoint 队列写入。
 
 因此，目标不是“增加更多 Agent”，而是：
 
@@ -28,8 +28,8 @@
 | 架构 | 谁生成业务产物 | 谁决定下一步 | 当前状态 | 主要权衡 |
 | --- | --- | --- | --- | --- |
 | 单一超级 Agent | 一个模型上下文同时生成规划、内容、视觉、HTML 与评估 | 同一个模型隐式决定 | 不采用 | 入口简单，但上下文过载、失败粒度粗 |
-| 固定多 Specialist 工作流 | 聚焦 Agent 与确定性 Skill | TypeScript `WorkflowNode[]` 按固定顺序调度 | **已实现** | handoff 与错误边界显式、可测试，但仍是静态串行图 |
-| Supervisor + Specialist | 聚焦 Agent 与确定性 Skill | Supervisor 根据类型化状态选择有限动作 | **目标，未实现** | 可按状态路由，但编排、成本与可观测性更复杂 |
+| 固定多 Specialist 工作流 | 聚焦 Agent 与确定性 Skill | TypeScript `WorkflowNode[]` 按固定顺序调度 | **作为底层原语保留** | handoff 与错误边界显式、可测试 |
+| Supervisor + Specialist + Page Worker | 聚焦 Agent 与确定性 Skill | Supervisor 调度全局节点；运行层调度页面 Worker | **已实现** | 支持有限重试、页面隔离和受控并发，但成本与状态管理更复杂 |
 
 把大函数拆成多个带 Agent 名字的函数，不会自动得到 Supervisor 架构；同样，一个有明确 Specialist 的确定性工作流，在没有动态路由之前也已经具有工程价值。
 
@@ -40,13 +40,14 @@
 1. `/chat` 创建类型化课程任务；
 2. [CourseGenerationTaskService](../src/server/tasks/course-generation-task-service.ts)负责任务生命周期和取消；
 3. [runCourseGenerationWorkflow](../src/server/workflows/course-generation-workflow.ts)保留为兼容 facade，负责状态初始化/恢复、上下文装配和原有结果映射；
-4. [course-generation-nodes.ts](../src/server/workflows/course-generation-nodes.ts)定义 Intent、Planner、Course Design 和逐页 Writer/Assets/HTML 的节点工厂，facade 根据 checkpoint 按固定阶段顺序装配待执行节点；
-5. [runSequentialWorkflow](../src/server/workflows/sequential-workflow.ts)校验 `requiredInputs`、执行节点、限制 `produces`、集中合并状态，并用 `WorkflowNodeError.nodeName` 定位失败；
-6. [runCourseDesignWorkflow](../src/server/workflows/course-design-workflow.ts)仍串行执行 Pedagogy、Story、Visual；[runImageAssetWorkflow](../src/server/workflows/image-asset-workflow.ts)仍负责 Image Prompt、缓存、生图 Skill 与 fallback；
-7. 每个被接受的边界都合并为经过校验的 [CourseGenerationState](../src/shared/course-schema/course-generation-state.ts) checkpoint；
-8. Task Service 只在持久化成功后发布 strict snapshot、event 或 terminal；前端 Adapter 与 Controller 把状态投影到现有 `/chat` Timeline 和 learning workspace。
+4. [course-generation-nodes.ts](../src/server/workflows/course-generation-nodes.ts)提供 Intent、Planner、Course Design 全局节点候选，[runSupervisedWorkflow](../src/server/workflows/supervised-workflow.ts)负责白名单、预算和停止规则；
+5. [runSequentialWorkflow](../src/server/workflows/sequential-workflow.ts)校验全局节点的 `requiredInputs`、`produces` 和集中状态合并；
+6. [runCourseDesignWorkflow](../src/server/workflows/course-design-workflow.ts)串行执行 Pedagogy、Story、Visual，再投影每页 `PageWorkerBrief`；
+7. [runCourseWorkersWorkflow](../src/server/workflows/course-workers-workflow.ts)按页面依赖和 serial/parallel 配置调度 [generatePageWorker](../src/server/workflows/page-worker.ts)，Promise Pool 默认并发度为 2；
+8. 每个 Worker 执行 Writer、Assets、HTML、QA，局部 update 经单一队列合并为经过校验的 [CourseGenerationState](../src/shared/course-schema/course-generation-state.ts) checkpoint；
+9. Task Service 只在持久化成功后发布 strict snapshot、event 或 terminal；前端 Adapter 与 Controller 把并发页面状态投影到现有 `/chat` Timeline 和 learning workspace。
 
-Page QA 当前是只读、可选的页面操作，不阻塞课程交付；Repair 当前不存在。这两个事实必须在图和项目讲解中明确说明。
+Page QA 当前是每个新 Worker 的只读末段；报告不会修改 HTML，也不会触发 Repair。旧 checkpoint 可没有报告，Repair 当前不存在。
 
 ## 4. 单一超级 Agent 的上限
 
@@ -94,21 +95,21 @@ Planner 关注课程节奏、依赖和跨页连贯；HTML Engineer 关注单页 
 
 当前 Workflow 只发布带 `stage`、可选 `pageId`、可选 `agent` 和安全摘要的结构化公开事件，模型私有上下文留在服务端。
 
-## 5. 当前固定工作流的局限
+## 5. 当前受监督 Worker 工作流的局限
 
-固定工作流比单一超级 Agent 更安全。Day 22 已把节点合同、固定顺序、输入前置条件、输出白名单、集中 merge 与节点级错误定位从顶层大函数中显式提取，但以下运行能力仍未出现。
+当前架构比单一超级 Agent 更安全，并已经具备有限 Supervisor 和页面隔离，但仍保留以下边界。
 
-### 5.1 显式但静态的节点列表
+### 5.1 Supervisor 仍受确定性候选限制
 
-`runCourseGenerationWorkflow` 不再直接内嵌每个 Agent 的执行细节，新增或修改 Specialist 的 handoff 主要落在 `course-generation-nodes.ts`。不过，facade 仍只根据“产物是否已存在”和固定页面依赖装配节点；它不会根据语义状态动态选择分支、在预算内重试或形成循环。引入这些能力时仍需新的路由策略和独立测试，不能把节点数组误称为 Supervisor。
+Supervisor 可以在类型化候选中提出 run/retry/complete/stop，但不能改变页面依赖、扩大预算或调度任意工具。页面并发和依赖就绪由确定性课程运行层决定，不由模型自由规划。
 
 ### 5.2 队头阻塞
 
-Design 内三个 Agent 串行，课程页面串行，每页 Writer → Assets → HTML 串行，素材槽也串行。任何慢调用都会阻塞后继步骤。这是明确的 MVP 取舍，不意味着所有阶段都应该立即并行。
+Design 内三个 Agent 串行，每个 Page Worker 内 Writer → Assets → HTML → QA 串行，素材槽也串行。只有彼此依赖已满足的页面可以并发；这避免为了速度破坏页面 handoff。
 
-### 5.3 当前页 fail-fast
+### 5.3 页面失败隔离仍受依赖图约束
 
-Writer、Assets 或 HTML 任一失败都会停止整课，后续页面保持 pending。这样可以保护页面依赖，但独立的后继工作无法继续。现有[工作流测试](../tests/unit/server/workflows/course-generation-workflow.test.ts)明确保护该行为。
+一个 Worker 失败不会取消同批独立 Worker，也不会删除成功页面；但依赖失败页面的后继页保持 pending。课程在所有仍可运行的独立页面结束后进入失败终态。
 
 ### 5.4 子工作流 checkpoint 粒度较粗
 
@@ -172,7 +173,7 @@ Supervisor 不得：
 - required stage 失败时按显式预算重试或停止；
 - 页面依赖完成后才解锁后继页面；
 - cancellation 必须停止继续调度；
-- 当前产品没有 QA report 时，QA 仍然是可选状态。
+- 旧 checkpoint 没有 QA report 时保持兼容；Day 25 新建 Page Worker 会自动执行 report-only QA。
 
 只有“下一步取决于无法被可靠规则表达的语义分类”时，才值得引入模型判断。简单分支保持确定性，成本更低，也更容易测试。
 
@@ -182,7 +183,7 @@ Supervisor 不得：
 
 1. **入口解析：** Intent 把不可信用户输入转换为验证后的 `CourseIntent`；
 2. **业务产物 Specialist：** Planner、Pedagogy、Story、Visual、Page Writer、Image Prompt、HTML Engineer、QA 与未来 Repair；
-3. **协调范围：** 未来 Supervisor 与 Page Worker 页面执行范围；
+3. **协调范围：** 已实现的 Supervisor 与 Page Worker 页面执行范围；
 4. **确定性能力：** Generate Image Skill、Registry、Validator、Storage、checkpoint 和 SSE。
 
 不能把每个函数都称为 Agent。Skill 执行有限能力；Validator 判断契约是否成立；Workflow 协调已知步骤；Agent 在模型契约下生成专业产物。
@@ -237,7 +238,7 @@ Route / Agent / Workflow
   -> 现有 Timeline 与 learning workspace
 ```
 
-未来 Supervisor 与 Repair 事件必须在服务端映射成共享公开协议。UI 不直接消费 LangGraph 原生 chunk，也不从面向用户的 summary 推断调度规则。
+Supervisor 事件已经在服务端映射成共享公开协议；未来 Repair 与 LangGraph 事件仍必须遵守同一边界。UI 不直接消费框架原生 chunk，也不从面向用户的 summary 推断调度规则。
 
 ## 11. 不该使用多 Agent 的场景
 
@@ -271,8 +272,9 @@ Supervisor 是架构角色；LangGraph 是实现 State、Node、Edge、Reducer�
 1. **Day 21（已完成）：** 文档化当前和目标边界，不改运行时；
 2. **Day 22（已完成）：** 把固定顺序表达为显式手写 Specialist Workflow，同时保持 API、SSE、Schema、checkpoint、恢复和 UI 合同；
 3. **Day 23 已完成：** 引入有限 Supervisor 路由、重试、停止和可解释决策；
-4. **Day 24–27：** 强化 Specialist Prompt、Page Worker、QA 和 Repair；
-5. **Day 28–31：** 在不重做前端的前提下评估并迁移稳定状态到 LangGraph。
+4. **Days 24–25（已完成）：** 强化 Specialist Prompt，并实现 Page Worker、自动 report-only QA 和受控并发；
+5. **Days 26–27：** 深化 QA，并实现受限 Repair/re-QA；
+6. **Days 28–31：** 在不重做前端的前提下评估并迁移稳定状态到 LangGraph。
 
 每一步都应独立验收，不提前宣称后续能力已经完成。
 
@@ -294,9 +296,9 @@ Supervisor 是架构角色；LangGraph 是实现 State、Node、Edge、Reducer�
 - [x] `runCourseGenerationWorkflow` 仍是任务服务调用的兼容 facade；没有新增平行 Route Handler。
 - [x] `WorkflowNode` 以 `name / requiredInputs / produces / run` 描述协调合同，节点只返回 partial state 与事件。
 - [x] `runSequentialWorkflow` 统一检查输入与声明输出，并通过集中 merge 校验完整状态；节点失败携带稳定 `nodeName`。
-- [x] Intent、Planner、Course Design 和逐页 Writer/Assets/HTML 已包装为节点工厂，facade 按固定阶段顺序装配，既有领域 Agent 与子流程继续负责业务规则。
+- [x] Day 22 当日把 Intent、Planner、Course Design 和逐页 Writer/Assets/HTML 包装为节点工厂；Day 25 已用隔离 Worker 取代页面主链，旧逐页工厂仅保留为兼容参考。
 - [x] 共享 Schema、checkpoint 时机、恢复跳过、取消、公开事件、任务 API、SSE 与 Seaca 产品表面保持原语义。
-- [x] Repair、自动 QA、独立 Page Worker、并发和 LangGraph 仍明确标记为未实现。
+- [x] Day 22 当日 Repair、自动 QA、独立 Page Worker、并发和 LangGraph 均未实现；后续能力按各训练日独立交付。
 
 ## 16. Day 23 当前实现说明
 
@@ -305,3 +307,12 @@ Supervisor 是架构角色；LangGraph 是实现 State、Node、Edge、Reducer�
 - [x] `runSupervisedWorkflow` 校验候选节点、同 node/page 最多 3 次执行、取消、无进展和全局决策上限。
 - [x] accepted decision 与确定性 stop 都先 checkpoint，再通过既有 SSE 公开 `supervisor_decision` 摘要。
 - [x] Seaca `/chat` Timeline 在原产品表面展示最近调度摘要，没有新增路由或平行控制台。
+
+## 17. Day 25 当前实现说明
+
+- [x] `generatePageWorker` 只消费单页合同和局部 checkpoint，不接收或修改整课状态。
+- [x] Worker 内固定执行 Writer → Assets → HTML → report-only QA，并保存页面局部 attempts、错误和事件。
+- [x] `runPromisePool` 默认并发度为 2，结果保持输入顺序，单项失败隔离，取消后不启动新任务。
+- [x] 课程运行层根据页面依赖和 serial/parallel 配置调度，并通过单一 merge/checkpoint 队列写入整课状态。
+- [x] Seaca Timeline 和质量面板复用现有产品表面展示并发页面状态与 QA 报告。
+- [x] Repair/re-QA 和 LangGraph 仍未实现。

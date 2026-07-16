@@ -2,11 +2,11 @@
 
 > **IMPLEMENTED / 当前事实**
 >
-> 本文只描述当前产品真实运行的课程生成链路。它由受限 Supervisor 在 TypeScript `WorkflowNode` 候选中串行调度，支持可恢复 checkpoint 和有限重试；它没有使用 LangGraph。
+> 本文只描述当前产品真实运行的课程生成链路。全局 Specialist 由受限 Supervisor 串行调度，页面生成由隔离 Page Worker 和受控 Promise Pool 执行；全链路支持可恢复 checkpoint 和有限重试，没有使用 LangGraph。
 
 ## 产品入口与完整调用链
 
-`/chat` 通过类型化任务客户端创建后台任务；Route Handler 返回 `202` 后，任务服务在服务端持有任务生命周期和取消信号。兼容 facade 根据 checkpoint 计算可用节点，Supervisor 提出结构化决策，运行层校验后串行执行一个节点并保存 checkpoint。SSE 只传输共享协议中的快照、公开事件和终态，前端 controller 再把它们投影到对话 Timeline 与右侧 learning workspace。
+`/chat` 通过类型化任务客户端创建后台任务；Route Handler 返回 `202` 后，任务服务在服务端持有任务生命周期和取消信号。兼容 facade 先让 Supervisor 调度 Intent、Planner 和 Course Design，再让页面运行层按依赖调度隔离 Worker。Worker 局部更新只有通过串行 merge/checkpoint 队列才能进入课程事实来源。SSE 继续只传输共享协议中的快照、公开事件和终态。
 
 ```mermaid
 flowchart TD
@@ -16,7 +16,7 @@ flowchart TD
   After --> TaskService["CourseGenerationTaskService<br/>queued -> running -> terminal"]
   TaskService --> Facade["runCourseGenerationWorkflow<br/>compatibility facade"]
   Facade --> Supervisor["SupervisorAgent<br/>structured routing proposal"]
-  Facade --> NodeList["course-generation-nodes.ts factories<br/>available WorkflowNodes"]
+  Facade --> NodeList["global WorkflowNodes<br/>Intent / Planner / Course Design"]
   Supervisor --> Guard["runSupervisedWorkflow<br/>allowlist + retry/stop budgets"]
   NodeList --> Guard
   Guard --> Runner["runSequentialWorkflow<br/>requiredInputs + produces"]
@@ -31,8 +31,12 @@ flowchart TD
 
   Planner --> Pedagogy
 
-  Visual --> PageLoop{"下一规划页面"}
-  PageLoop --> PageWriter["Page Writer<br/>PageContentDSL"]
+  Visual --> WorkerScheduler["course-workers-workflow<br/>dependency-ready pages"]
+  WorkerScheduler --> Mode{"serial / parallel"}
+  Mode --> Pool["Promise Pool<br/>default concurrency = 2"]
+
+  subgraph PageWorker ["isolated generatePageWorker(page)"]
+  Pool --> PageWriter["Page Writer<br/>PageContentDSL"]
   PageWriter --> AssetSlots{"是否有 asset slots"}
   AssetSlots -->|"否"| SkipAssets["确定性跳过素材"]
   AssetSlots -->|"是"| ImagePrompt["Image Prompt Agent<br/>或 request-set cache"]
@@ -47,17 +51,18 @@ flowchart TD
   MoreSlots -->|"是"| AssetLoop
   SkipAssets --> Html["HTML Engineer"]
   MoreSlots -->|"否"| Html
-  Html --> PageDone["validated HtmlOutput<br/>page_done"]
-  PageDone --> MorePages{"仍有页面?"}
-  MorePages -->|"是"| PageLoop
-  MorePages -->|"否"| Complete["CourseGenerationState completed"]
+  Html --> QA["Page QA<br/>report only"]
+  QA --> PageDone["PageWorkerResult<br/>page_done"]
+  end
+  PageDone --> WorkerMerge["serialized worker merge<br/>state schema + event resequence"]
+  WorkerMerge --> Complete{"全部依赖页面完成?"}
+  Complete -->|"否"| WorkerScheduler
+  Complete -->|"是"| CourseDone["CourseGenerationState completed"]
 
   Intent -. "partial state + events" .-> Merge["produces 白名单<br/>central merge + state schema"]
   Planner -. "partial state + events" .-> Merge
   Visual -. "partial state + events" .-> Merge
-  PageWriter -. "partial state + events" .-> Merge
-  AssetResult -. "partial state + events" .-> Merge
-  Html -. "partial state + events" .-> Merge
+  WorkerMerge -. "page-local state + events" .-> Merge
   Merge -. "每个已接受边界" .-> Checkpoint["typed checkpoint"]
   Checkpoint --> CourseStore["CourseStore"]
   Checkpoint --> EventBus["single-process EventBus"]
@@ -68,25 +73,26 @@ flowchart TD
   Controller --> Timeline["chat thread / Agent Timeline"]
   Controller --> Workspace["learning workspace / preview"]
 
-  PageDone -. "用户显式触发，可选旁路" .-> QA["Page QA<br/>report only"]
   QA -. "QualityReport，不修改 HTML" .-> Workspace
 ```
 
-## 当前受监督串行顺序
+## 当前全局调度与页面 Worker 顺序
 
 顶层兼容入口仍是 [`runCourseGenerationWorkflow`](../../src/server/workflows/course-generation-workflow.ts)，已有任务服务与测试不需要迁移到新调用方式。它负责创建新状态或校验恢复状态，装配运行上下文与节点列表，再把结果映射回原有成功/失败合同。
 
-[`course-generation-nodes.ts`](../../src/server/workflows/course-generation-nodes.ts) 定义节点工厂，兼容 facade 根据已校验 checkpoint 跳过已有产物并计算当前可执行候选。Supervisor 只能选择候选节点，正常路径仍保持以下依赖顺序：
+[`course-generation-nodes.ts`](../../src/server/workflows/course-generation-nodes.ts) 继续定义全局节点工厂，Supervisor 只能选择运行层给出的候选。全局设计完成后不再把整课状态交给逐页 Specialist 节点，而是切换到页面 Worker 运行层：
 
 1. `Intent` 节点只在状态缺少 `intent` 时运行入口解析；恢复时保留已有产物。
 2. `Planner` 节点消费已校验 `intent` 并生成 `CoursePlan`；确定性适配仍补齐 ID、模板和页面依赖。
 3. `Course Design` 节点复用 [`runCourseDesignWorkflow`](../../src/server/workflows/course-design-workflow.ts)，内部仍严格执行 `Pedagogy -> Story -> Visual`，再投影逐页 `PageWorkerBrief`。
-4. 依据 `CoursePlan.pages` 为每页依次装配 `Page Writer -> Assets -> HTML Engineer` 节点。现有页面依赖和 fail-fast 规则保持不变：当前页失败会停止当前页及所有后继页，但保留此前已完成的 HTML。
-5. 所有页面完成后，兼容 facade 把课程置为 `completed` 并保存最终 checkpoint。
+4. [`runCourseWorkersWorkflow`](../../src/server/workflows/course-workers-workflow.ts) 根据 `dependsOnPageIds` 计算就绪页面；serial 模式一次运行一页，parallel 模式通过默认并发度 2 的 [`runPromisePool`](../../src/server/workflows/promise-pool.ts) 执行。
+5. 每个 [`generatePageWorker`](../../src/server/workflows/page-worker.ts) 只管理当前页，依次执行 `Page Writer -> Assets -> HTML Engineer -> Page QA`，每阶段最多执行 3 次；HTML 重试继续接收上一次安全校验反馈。
+6. 单页失败不会取消同批其他 Worker，也不会删除已完成页面；依赖失败页面的后继页保持未执行，互不依赖的页面仍可完成。
+7. 所有规划页面完成后，兼容 facade 把课程置为 `completed` 并保存最终 checkpoint。
 
 [`runSequentialWorkflow`](../../src/server/workflows/sequential-workflow.ts) 是固定节点列表的唯一通用执行器：运行前检查 `requiredInputs`，执行节点，拒绝 `produces` 之外的 patch，通过集中 merge 复验 `CourseGenerationStateSchema`，然后才在既有稳定边界 checkpoint。节点抛错、缺少输入、缺少声明产物或越权写字段都会转换成带 `nodeName` 的 `WorkflowNodeError`，facade 再映射为原有公开阶段、页面、Agent、错误码和消息。
 
-每个 Agent 自己仍使用统一的最小状态、步骤上限和结构化事件合同，见 [`minimal-agent.ts`](../../src/server/agents/core/minimal-agent.ts)。Supervisor 可以在确定性候选中提出 `run / retry / complete / stop`，但不能编造节点、提高预算或绕过输入检查。
+每个 Agent 自己仍使用统一的最小状态、步骤上限和结构化事件合同，见 [`minimal-agent.ts`](../../src/server/agents/core/minimal-agent.ts)。Supervisor 可以在确定性候选中提出 `run / retry / complete / stop`，但不能编造节点、提高预算或绕过输入检查。兼容 Provider 的 union JSON 校验失败时，只在运行层已经证明动作唯一的情况下确定性降级；多个候选仍然失败，白名单边界不放宽。
 
 ## WorkflowNode 合同与边界
 
@@ -98,7 +104,7 @@ flowchart TD
 - `run(state, context)` 只返回 `partial state + events`，不能直接持久化整课状态或向 SSE 推送；
 - `runSequentialWorkflow` 是节点 patch 合并的唯一所有者，合并后的完整状态必须再次通过共享 Schema；facade 仍负责开始、失败、完成等课程生命周期迁移。
 
-这个合同减少了顶层大函数的隐式 handoff；Day 23 的受监督运行层在合同之外增加了有限动态选择和重试，但仍没有并发调度。
+这个合同仍负责全局节点 handoff；Day 25 的页面并发不让多个 Worker 直接合并课程 patch，而是让课程运行层串行接受每个 `PageWorkerUpdate`，因此并发不会破坏课程事件顺序和 checkpoint 所有权。
 
 ## 素材子流程
 
@@ -120,7 +126,7 @@ flowchart TD
 - [`CourseTaskEventBus`](../../src/server/tasks/course-task-event-bus.ts)：向当前进程的订阅者发布新事件；
 - [`SSE Route`](../../src/app/api/courses/tasks/[taskId]/events/route.ts)：先从 checkpoint 快照或 `Last-Event-ID` 重放，再切到实时订阅。
 
-workflow 会在长耗时 Agent 运行前保存 `agent_start`，并在校验后的阶段结果、页面完成、失败和整课完成处再次 checkpoint。恢复时依据已保存的 `intent`、`outline`、brief、DSL、素材阶段和 `htmlOutput` 跳过已完成工作，而不是从 UI 状态推测进度。
+workflow 会在长耗时 Agent 运行前保存 `agent_start`，并在校验后的阶段结果、页面完成、失败和整课完成处再次 checkpoint。并行 Worker 的 update 先经过单一 Promise 链串行合并，避免两个 checkpoint 覆盖页面结果或重复事件序号。恢复时依据已保存的 DSL、素材、HTML、QA 和页面阶段跳过已完成工作；新的手动恢复会为失败阶段开启一轮新的三次页面预算。
 
 SSE 合同由 [`course-task-event.ts`](../../src/shared/course-schema/course-task-event.ts) 定义，只允许：
 
@@ -139,22 +145,22 @@ SSE 合同由 [`course-task-event.ts`](../../src/shared/course-schema/course-tas
 
 展示组件不直接调用生成业务 API，也不消费框架原生流事件。
 
-## QA 是可选旁路
+## QA 是 Worker 的只读末段
 
-[`Page QA Agent`](../../src/server/agents/page-qa-agent.ts) 与 [`/api/pages/qa`](../../src/app/api/pages/qa/route.ts) 已经存在，但它们没有接入 `runCourseGenerationWorkflow` 的必需成功路径。当前用户在 HTML 已生成后显式运行 QA：
+[`Page QA Agent`](../../src/server/agents/page-qa-agent.ts) 已接入每个新 Page Worker 的末段；已有 [`/api/pages/qa`](../../src/app/api/pages/qa/route.ts) 仍支持显式重跑：
 
 - QA 只返回 `QualityReport`；
 - QA 不修改 HTML；
-- QA 失败不抹掉已经交付的页面；
+- QA 结果保存到页面局部 `qualityReport` 并投影到现有质量面板；
+- QA 执行失败只使当前 Worker 失败，不抹掉其他成功页面；
 - 当前没有自动 `QA -> Repair -> re-QA` 循环。
 
 ## 当前明确不存在的能力
 
-- Supervisor 只调度现有六类课程节点，不拥有课程正文能力，也没有成本/token 计费器或人工审批队列。
+- Supervisor 当前只调度全局课程节点，不拥有课程正文能力，也没有成本/token 计费器或人工审批队列。
 - 没有 Repair Agent 或自动修复循环。
-- 没有 Page Worker 隔离执行单元或受控页面并发；逐页 `WorkflowNode` 仍共享课程状态并串行运行，“Page Worker brief”只是逐页输入合同。
 - 没有 LangGraph StateGraph、条件边、Reducer 或框架原生 streaming。
-- 没有自动 Page QA 质量门槛。
+- 自动 QA 只报告，不会把分数升级为自动 Repair 或发布门槛。
 - EventBus 与活动任务去重都是单进程实现，不是分布式任务队列或 lease。
 
 目标架构及其停止条件见 [`multi-agent-flow.md`](./multi-agent-flow.md)。

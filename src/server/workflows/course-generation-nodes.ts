@@ -260,6 +260,7 @@ export function createCourseDesignNode(): CourseGenerationNode {
             status: "pending" as const,
             currentStage: "page_writer" as const,
             assets: [],
+            attempts: [],
           })),
           currentStage: "page_writer",
         },

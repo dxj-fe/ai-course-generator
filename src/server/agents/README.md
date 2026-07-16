@@ -1,6 +1,6 @@
 # Agent 契约索引
 
-本目录保存课程生成中的模型 Agent。当前系统已经把不同专业职责拆成多个 Agent，并由受限 Supervisor 在显式 `WorkflowNode` 候选中进行可恢复串行调度；Repair、自动 QA、页面并发和 LangGraph 尚未实现。本文只记录当前真实契约与后续角色边界，不把目标架构描述成已交付能力。
+本目录保存课程生成中的模型 Agent。当前系统已经把不同专业职责拆成多个 Agent：受限 Supervisor 调度全局 `WorkflowNode`，依赖感知运行层以隔离 Page Worker 和默认并发度 2 的 Promise Pool 生成页面，并自动执行 report-only QA。Repair 和 LangGraph 尚未实现。本文只记录当前真实契约与后续角色边界。
 
 Day 24 的九名 Specialist Prompt 版本、状态和模板文件由 [`specialist-library.ts`](../prompts/specialist-library.ts) 集中登记；统一合同、Lint 与版本规则见 [`docs/prompt-library.md`](../../../docs/prompt-library.md)。Repair 在该 Library 中仍为 `draft`，不因此获得运行能力。
 
@@ -120,7 +120,7 @@ Day 24 的九名 Specialist Prompt 版本、状态和模板文件由 [`specialis
 - **状态**：已实现的**协调原语**，不是模型 Agent，也不是 Supervisor。
 - [`WorkflowNode`](../workflows/sequential-workflow.ts) 通过 `name`、`requiredInputs`、`produces` 和 `run` 声明一个固定 handoff；`run` 只返回 partial state 与结构化事件。
 - `runSequentialWorkflow` 按给定数组顺序执行节点，统一检查前置输入、拒绝未声明 patch、验证声明产物，并把失败包装为带 `nodeName` 的 `WorkflowNodeError`。
-- [`course-generation-nodes.ts`](../workflows/course-generation-nodes.ts) 包装 Intent、Planner、Course Design 和逐页 Writer/Assets/HTML；它复用已有 Agent 与子流程，不把业务规则复制进通用运行器。
+- [`course-generation-nodes.ts`](../workflows/course-generation-nodes.ts) 包装 Intent、Planner、Course Design 全局节点，并保留旧逐页节点工厂作为兼容参考；当前页面主链使用隔离 `generatePageWorker`，不再让逐页节点修改整课状态。
 - `runCourseGenerationWorkflow` 保留为任务服务的兼容 facade，负责初始化/恢复、上下文装配、集中 merge、checkpoint 和原有结果映射。
 - **边界**：节点合同仍不负责动态选择、重试、循环或并发；这些协调策略由受限 Supervisor 运行层持有。
 
@@ -128,16 +128,17 @@ Day 24 的九名 Specialist Prompt 版本、状态和模板文件由 [`specialis
 
 - **状态**：**已实现**。`SupervisorDecisionSchema` 约束 `run / retry / complete / stop`，`SupervisorAgent` 只消费压缩状态、确定性可用节点、最近失败和持久化 attempts。
 - **职责**：基于已校验课程状态、可用节点、失败位置和有限预算提出下一节点、重试或停止，并只发布可解释的公开决策摘要；运行层再次校验节点白名单、输入合同、每目标最多 3 次执行、无进展、取消和全局决策上限。
+- **兼容降级**：OpenAI-compatible Provider 只返回 JSON object、但 union 结构校验失败时，只有在运行层已把合法动作压缩为唯一节点或唯一 complete 时才使用确定性决策；存在多个候选时仍抛出 Schema 错误，不猜测路由。
 - **禁止职责**：不写课程正文，不生成 HTML 或图片，不替 Specialist 修补输出，不泄露内部推理。LangGraph 将来可以承载调度图，但不是 Supervisor 思想本身。
 - **源码**：[supervisor-agent.ts](./supervisor-agent.ts)、[supervisor.ts](../../shared/course-schema/supervisor.ts)、[supervised-workflow.ts](../workflows/supervised-workflow.ts)。
 
 ### Page Worker
 
-- **状态**：已存在的**逐页执行范围**，不是独立模型 Agent。
-- `CourseDesignWorkflow` 把全局 briefs 投影为每页 `PageWorkerBrief`；课程节点装配再为每页按依赖顺序创建 PageWriter → Assets → HtmlEngineer 节点，并在既有阶段边界 checkpoint。
-- Page Worker 不拥有另一份课程状态，不绕过全局 Workflow，不把一个页面的私有中间产物传给无关页面。
-- 当前逐页节点共享整课状态并串行执行，因此还不是隔离的 Page Worker，也不支持页面并发。
-- **源码**：[course-design-workflow.ts](../workflows/course-design-workflow.ts)、[course-generation-nodes.ts](../workflows/course-generation-nodes.ts)、[course-generation-workflow.ts](../workflows/course-generation-workflow.ts)。
+- **状态**：已实现的**逐页隔离执行范围**，不是独立模型 Agent。
+- `CourseDesignWorkflow` 把全局 briefs 投影为每页 `PageWorkerBrief`；`generatePageWorker` 只消费当前页计划、对应 brief、必要全局指导和局部 checkpoint，内部依次执行 PageWriter → Assets → HtmlEngineer → PageQA。
+- Worker 只返回 `PageWorkerResult` 和页面局部公开事件，不能读取、修改或持久化完整 `CourseGenerationState`。每页拥有独立阶段、attempts、错误和取消检查。
+- `runCourseWorkersWorkflow` 根据 `dependsOnPageIds` 解锁页面，并用可配置 serial/parallel 模式与默认并发度 2 的 Promise Pool 调度；所有局部更新经单一 merge/checkpoint 队列写回整课状态。
+- **源码**：[page-worker.ts](../workflows/page-worker.ts)、[promise-pool.ts](../workflows/promise-pool.ts)、[course-workers-workflow.ts](../workflows/course-workers-workflow.ts)、[course-generation-workflow.ts](../workflows/course-generation-workflow.ts)。
 
 ### GenerateImage Skill
 
@@ -155,6 +156,6 @@ Day 24 的九名 Specialist Prompt 版本、状态和模板文件由 [`specialis
 
 ## 当前与目标边界
 
-当前运行链路是：Supervisor 在确定性候选集合中调度 Intent → Planner → Pedagogy → Story → Visual → 按页 PageWriter → ImagePrompt/GenerateImage Skill → HtmlEngineer；QA 仍为单页显式操作。节点工厂由 `course-generation-nodes.ts` 声明，输入/输出检查和失败定位由通用串行运行器负责，有限循环、重试和停止由 `runSupervisedWorkflow` 负责，checkpoint 与恢复继续由兼容 facade 和任务基础设施保持。
+当前运行链路是：Supervisor 在确定性候选集合中调度 Intent → Planner → Pedagogy → Story → Visual；全局设计完成后，依赖感知课程运行层调度隔离 Page Worker，每个 Worker 执行 PageWriter → ImagePrompt/GenerateImage Skill → HtmlEngineer → PageQA。全局节点继续由 `runSupervisedWorkflow` 持有限重试，页面阶段由 Worker 持有独立三次预算；checkpoint 与恢复继续由兼容 facade 和任务基础设施集中管理。
 
-后续训练日仍需实现真正隔离的 Page Worker、QA/Repair 闭环和可选 LangGraph 执行层。当前 Supervisor 不提供页面并发、自动 QA 或修复能力，也不会绕过标准 `WorkflowNode` 合同。
+后续训练日仍需深化 QA、实现受限 Repair/re-QA 和评估可选 LangGraph 执行层。当前没有 Repair Agent，QA 报告不会自动修改 HTML；Page Worker 并发也不会绕过页面依赖、Schema、checkpoint 或公开事件合同。

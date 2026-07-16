@@ -6,6 +6,7 @@ import { CoursePlanSchema } from "./course-plan";
 import { CourseIntentSchema } from "./intent";
 import { HtmlOutputSchema } from "./page";
 import { PageContentDSLSchema } from "./page-content-dsl";
+import { QualityReportSchema } from "./quality";
 import { SupervisorRuntimeStateSchema } from "./supervisor";
 
 /** 可安全用作课程存储目录名的稳定 ID。 */
@@ -23,6 +24,7 @@ export const CourseGenerationStageSchema = z.enum([
   "page_writer",
   "assets",
   "html",
+  "qa",
   "complete",
 ]);
 
@@ -37,8 +39,18 @@ export const PageGenerationStageSchema = z.enum([
   "page_writer",
   "assets",
   "html",
+  "qa",
   "complete",
 ]);
+
+export const PageWorkerModeSchema = z.enum(["serial", "parallel"]);
+
+export const PageWorkerConfigSchema = z
+  .object({
+    mode: PageWorkerModeSchema,
+    concurrency: z.number().int().min(1).max(5),
+  })
+  .strict();
 
 export const PageGenerationStatusSchema = z.enum([
   "pending",
@@ -95,6 +107,26 @@ export const PageGenerationErrorSchema = CourseGenerationErrorSchema.omit({
   pageId: true,
 });
 
+export const PageGenerationAttemptSchema = z
+  .object({
+    stage: PageGenerationStageSchema.exclude(["complete"]),
+    attempts: z.number().int().min(1).max(3),
+  })
+  .strict();
+
+/** Worker 先产生页面局部事件，课程运行层再为其分配全局 id 与 sequence。 */
+export const PageWorkerEventSchema = z
+  .object({
+    type: CourseGenerationEventTypeSchema.exclude(["supervisor_decision"]),
+    stage: PageGenerationStageSchema.exclude(["complete"]),
+    pageId: z.string().min(1).max(80),
+    agent: z.string().min(1).max(80).optional(),
+    step: z.number().int().nonnegative().optional(),
+    timestamp: z.string().datetime({ offset: true }),
+    summary: z.string().min(1).max(500),
+  })
+  .strict();
+
 /** 单页在 Page Writer → Assets → HTML 串行链路中的可恢复状态。 */
 export const PageGenerationStateSchema = z
   .object({
@@ -105,6 +137,8 @@ export const PageGenerationStateSchema = z
     content: PageContentDSLSchema.optional(),
     assets: z.array(AssetGenerationResultSchema).max(12),
     htmlOutput: HtmlOutputSchema.optional(),
+    qualityReport: QualityReportSchema.optional(),
+    attempts: z.array(PageGenerationAttemptSchema).max(4).optional(),
     error: PageGenerationErrorSchema.optional(),
   })
   .strict()
@@ -114,6 +148,17 @@ export const PageGenerationStateSchema = z
         code: "custom",
         message: "PageContentDSL.pageId 必须与页面状态一致",
         path: ["content", "pageId"],
+      });
+    }
+
+    if (
+      page.qualityReport?.target.type === "page" &&
+      page.qualityReport.target.pageId !== page.pageId
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "QualityReport.pageId 必须与页面状态一致",
+        path: ["qualityReport", "target", "pageId"],
       });
     }
 
@@ -171,6 +216,33 @@ export const PageGenerationStateSchema = z
     }
   });
 
+/** Page Worker 的完整局部输出；不包含或引用整课状态。 */
+export const PageWorkerResultSchema = z
+  .object({
+    pageId: z.string().min(1).max(80),
+    state: PageGenerationStateSchema,
+    events: z.array(PageWorkerEventSchema).max(300),
+  })
+  .strict()
+  .superRefine((result, context) => {
+    if (result.pageId !== result.state.pageId) {
+      context.addIssue({
+        code: "custom",
+        message: "PageWorkerResult.pageId 必须与局部状态一致",
+        path: ["state", "pageId"],
+      });
+    }
+    result.events.forEach((event, index) => {
+      if (event.pageId !== result.pageId) {
+        context.addIssue({
+          code: "custom",
+          message: "Page Worker 事件只能引用当前页面",
+          path: ["events", index, "pageId"],
+        });
+      }
+    });
+  });
+
 /**
  * 单提示生成 3–5 页课程的持久化 checkpoint。
  * 允许保存运行中的部分结果；completed 状态则必须具备完整可预览产物。
@@ -188,6 +260,7 @@ export const CourseGenerationStateSchema = z
     outline: CoursePlanSchema.optional(),
     briefs: CourseDesignBriefsSchema.optional(),
     pageWorkerBriefs: z.array(PageWorkerBriefSchema).max(5).optional(),
+    workerConfig: PageWorkerConfigSchema.optional(),
     pages: z.array(PageGenerationStateSchema).max(5),
     events: z.array(CourseGenerationPublicEventSchema).max(1_000),
     errors: z.array(CourseGenerationErrorSchema).max(30),
@@ -386,7 +459,14 @@ export type CourseGenerationError = z.infer<
   typeof CourseGenerationErrorSchema
 >;
 export type PageGenerationError = z.infer<typeof PageGenerationErrorSchema>;
+export type PageGenerationAttempt = z.infer<
+  typeof PageGenerationAttemptSchema
+>;
 export type PageGenerationState = z.infer<typeof PageGenerationStateSchema>;
+export type PageWorkerMode = z.infer<typeof PageWorkerModeSchema>;
+export type PageWorkerConfig = z.infer<typeof PageWorkerConfigSchema>;
+export type PageWorkerEvent = z.infer<typeof PageWorkerEventSchema>;
+export type PageWorkerResult = z.infer<typeof PageWorkerResultSchema>;
 export type CourseGenerationState = z.infer<
   typeof CourseGenerationStateSchema
 >;

@@ -17,6 +17,22 @@ const courseId = "course-day-19-service";
 const traceId = "trace-day-19-service";
 
 describe("course generation task service", () => {
+  it("persists the Page Worker execution mode and concurrency", async () => {
+    const fixture = createFixture();
+
+    await fixture.service.create({
+      userPrompt: "并行生成三页太阳系互动课程",
+      pageCount: 3,
+      executionMode: "parallel",
+      concurrency: 2,
+    });
+
+    expect(fixture.tasks.get(taskId)).toMatchObject({
+      executionMode: "parallel",
+      concurrency: 2,
+    });
+  });
+
   it("persists and publishes a queued cancellation before the runner starts", async () => {
     const fixture = createFixture();
     const messages: CourseTaskStreamMessage[] = [];

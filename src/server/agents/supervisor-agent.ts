@@ -5,6 +5,7 @@ import { buildSupervisorPrompts } from "@/server/prompts/supervisor";
 import {
   SupervisorDecisionSchema,
   formatZodIssues,
+  targetKey,
   type CourseGenerationStage,
   type SupervisorAttempt,
   type SupervisorDecision,
@@ -40,7 +41,7 @@ export type SupervisorStateSummary = {
     pageId: string;
     order: number;
     status: "pending" | "running" | "completed" | "failed";
-    currentStage: "page_writer" | "assets" | "html" | "complete";
+    currentStage: "page_writer" | "assets" | "html" | "qa" | "complete";
     hasContent: boolean;
     hasHtml: boolean;
   }>;
@@ -73,11 +74,21 @@ export async function runSupervisorAgent(
   context: AgentRuntimeContext,
   dependencies: SupervisorAgentDependencies = defaultDependencies,
 ): Promise<SupervisorDecision> {
-  const output = await dependencies.generateDecision({
-    abortSignal: context.abortSignal,
-    input,
-    traceId: context.traceId,
-  });
+  let output: unknown;
+  try {
+    output = await dependencies.generateDecision({
+      abortSignal: context.abortSignal,
+      input,
+      traceId: context.traceId,
+    });
+  } catch (error) {
+    const fallback =
+      error instanceof AiSchemaValidationError
+        ? deterministicSchemaFallback(input)
+        : undefined;
+    if (fallback) return SupervisorDecisionSchema.parse(fallback);
+    throw error;
+  }
   const parsed = SupervisorDecisionSchema.safeParse(output);
 
   if (!parsed.success) {
@@ -87,6 +98,53 @@ export async function runSupervisorAgent(
   }
 
   return parsed.data;
+}
+
+/**
+ * OpenAI-compatible Provider 可能只保证 JSON object，而不执行 union schema。
+ * 仅当运行层已经把合法动作压缩为唯一选择时，才允许确定性降级；存在多个
+ * 候选时仍保留 Schema 错误，不能替模型猜测路由。
+ */
+function deterministicSchemaFallback(
+  input: SupervisorInput,
+): SupervisorDecision | undefined {
+  if (
+    input.stateSummary.readyToComplete &&
+    input.availableNodes.length === 0
+  ) {
+    return {
+      action: "complete",
+      reasonSummary:
+        "Supervisor 结构化输出无效；运行层确认全部必需产物已经完成。",
+    };
+  }
+
+  if (input.availableNodes.length !== 1) return undefined;
+  const available = input.availableNodes[0]!;
+  const recentFailure = input.recentFailure;
+
+  if (!recentFailure) {
+    return {
+      action: "run",
+      nextNode: available.target,
+      reasonSummary: `Supervisor 结构化输出无效；运行层确定当前仅有 ${available.target.nodeName} 节点可执行。`,
+    };
+  }
+
+  if (
+    recentFailure.retryable &&
+    recentFailure.attempts < recentFailure.maxAttempts &&
+    targetKey(recentFailure.target) === targetKey(available.target)
+  ) {
+    return {
+      action: "retry",
+      nextNode: available.target,
+      retryTarget: available.target,
+      reasonSummary: `Supervisor 结构化输出无效；${available.target.nodeName} 仍在页面级重试预算内。`,
+    };
+  }
+
+  return undefined;
 }
 
 async function generateDecision(input: {

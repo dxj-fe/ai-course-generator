@@ -4,6 +4,7 @@ import {
   CourseGenerationPublicEventSchema,
   CourseGenerationStateSchema,
   CourseIdSchema,
+  PageWorkerModeSchema,
 } from "./course-generation-state";
 
 /** 可安全用作任务存储目录名及 SSE 订阅键的稳定 ID。 */
@@ -43,6 +44,8 @@ export const CourseTaskRecordSchema = z
     traceId: z.string().min(1).max(120),
     userPrompt: z.string().min(2).max(4_000),
     pageCount: CourseTaskPageCountSchema.optional(),
+    executionMode: PageWorkerModeSchema.optional(),
+    concurrency: z.number().int().min(1).max(5).optional(),
     status: CourseTaskStatusSchema,
     createdAt: z.string().datetime({ offset: true }),
     updatedAt: z.string().datetime({ offset: true }),

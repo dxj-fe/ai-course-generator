@@ -231,4 +231,82 @@ describe("course generation adapter", () => {
       "failed",
     );
   });
+
+  it("derives concurrent page stages from each worker-local state", () => {
+    const firstPageId = courseDesignOutline.pages[0].id;
+    const secondPageId = courseDesignOutline.pages[1].id;
+    const state = CourseGenerationStateSchema.parse({
+      version: 1,
+      courseId: "course-123e4567-e89b-42d3-a456-426614174002",
+      traceId: "trace-workers",
+      userPrompt: "并行生成太阳系课程",
+      status: "running",
+      currentStage: "qa",
+      currentPageId: secondPageId,
+      workerConfig: { mode: "parallel", concurrency: 2 },
+      intent: courseDesignIntent,
+      outline: courseDesignOutline,
+      briefs: {
+        pedagogy: pedagogyPlan,
+        story: storyArc,
+        visual: visualBrief,
+      },
+      pageWorkerBriefs: courseDesignOutline.pages.map((page, index) => ({
+        pageId: page.id,
+        styleTemplateId: page.styleTemplateId,
+        pedagogy: pedagogyPlan.pageGuidance[index]!,
+        story: storyArc.pageBeats[index]!,
+        visual: visualBrief.pageGuidance[index]!,
+      })),
+      pages: courseDesignOutline.pages.map((page, index) => ({
+        pageId: page.id,
+        order: page.order,
+        status: index < 2 ? "running" : "pending",
+        currentStage:
+          index === 0 ? "page_writer" : index === 1 ? "qa" : "page_writer",
+        assets: [],
+      })),
+      events: [
+        {
+          id: "event-writer-active",
+          sequence: 1,
+          type: "agent_start",
+          traceId: "trace-workers",
+          timestamp: "2026-07-16T08:00:00.000Z",
+          step: 0,
+          summary: "第一页 Writer 运行中。",
+          stage: "page_writer",
+          pageId: firstPageId,
+          agent: "page-writer",
+        },
+        {
+          id: "event-qa-active",
+          sequence: 2,
+          type: "agent_start",
+          traceId: "trace-workers",
+          timestamp: "2026-07-16T08:00:01.000Z",
+          step: 0,
+          summary: "第二页 QA 运行中。",
+          stage: "qa",
+          pageId: secondPageId,
+          agent: "page-qa",
+        },
+      ],
+      errors: [],
+      startedAt: "2026-07-16T08:00:00.000Z",
+      updatedAt: "2026-07-16T08:00:01.000Z",
+    });
+
+    const run = courseGenerationToSeacaRun(
+      { courseId: state.courseId, traceId: state.traceId, state },
+      {
+        id: "run-workers",
+        prompt: state.userPrompt,
+        startedAt: Date.parse(state.startedAt),
+      },
+    );
+
+    expect(run.pageWrites[firstPageId]?.status).toBe("running");
+    expect(run.pageQa[secondPageId]?.status).toBe("running");
+  });
 });

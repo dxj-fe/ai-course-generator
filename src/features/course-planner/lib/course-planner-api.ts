@@ -30,6 +30,10 @@ type AgentEventType =
   | "error";
 type CourseDesignAgent = "pedagogy" | "story" | "visual";
 type RequestOptions = { traceId?: string; signal?: AbortSignal };
+type CourseWorkerOptions = {
+  executionMode?: "serial" | "parallel";
+  concurrency?: number;
+};
 
 export type PublicAgentEvent = {
   id: string;
@@ -125,11 +129,19 @@ const CourseGenerationResponseSchema = z
   })
   .strict();
 
-/** 一次请求串行生成 3–5 页课程；传 courseId 时从服务端 checkpoint 恢复。 */
+/** 一次请求以可配置 Page Worker 生成 3–5 页课程；传 courseId 时恢复。 */
 export async function generateCourseMvp(
   input:
-    | { userPrompt: string; courseId?: string; pageCount?: CourseMvpPageCount }
-    | { courseId: string; userPrompt?: string; pageCount?: CourseMvpPageCount },
+    | (CourseWorkerOptions & {
+        userPrompt: string;
+        courseId?: string;
+        pageCount?: CourseMvpPageCount;
+      })
+    | (CourseWorkerOptions & {
+        courseId: string;
+        userPrompt?: string;
+        pageCount?: CourseMvpPageCount;
+      }),
   options?: RequestOptions,
 ): Promise<CourseGenerationResponse> {
   const payload = await postPlannerRequest<unknown>(

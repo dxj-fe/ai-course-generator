@@ -70,4 +70,70 @@ describe("runSupervisorAgent", () => {
       ),
     ).rejects.toBeInstanceOf(AiSchemaValidationError);
   });
+
+  it("falls back to the sole allowlisted node when provider JSON is invalid", async () => {
+    const decision = await runSupervisorAgent(
+      {
+        ...input,
+        stateSummary: {
+          ...input.stateSummary,
+          currentStage: "design",
+          hasIntent: true,
+          hasOutline: true,
+        },
+        availableNodes: [
+          {
+            target: { nodeName: "course-design" },
+            stage: "design",
+            agent: "course-design",
+            requiredInputs: ["intent", "outline"],
+            produces: ["briefs", "page worker briefs"],
+          },
+        ],
+      },
+      { traceId: "trace-provider-json-fallback" },
+      {
+        generateDecision: async () => {
+          throw new AiSchemaValidationError(
+            "结构化输出校验失败：root: Invalid input",
+          );
+        },
+      },
+    );
+
+    expect(decision).toEqual({
+      action: "run",
+      nextNode: { nodeName: "course-design" },
+      reasonSummary:
+        "Supervisor 结构化输出无效；运行层确定当前仅有 course-design 节点可执行。",
+    });
+  });
+
+  it("does not hide invalid provider JSON when more than one node is available", async () => {
+    await expect(
+      runSupervisorAgent(
+        {
+          ...input,
+          availableNodes: [
+            input.availableNodes[0]!,
+            {
+              target: { nodeName: "planner" },
+              stage: "planner",
+              agent: "planner",
+              requiredInputs: ["intent"],
+              produces: ["outline"],
+            },
+          ],
+        },
+        { traceId: "trace-ambiguous-provider-json" },
+        {
+          generateDecision: async () => {
+            throw new AiSchemaValidationError(
+              "结构化输出校验失败：root: Invalid input",
+            );
+          },
+        },
+      ),
+    ).rejects.toBeInstanceOf(AiSchemaValidationError);
+  });
 });

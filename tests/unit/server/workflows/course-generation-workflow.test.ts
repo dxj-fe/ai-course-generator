@@ -10,6 +10,7 @@ import type {
 } from "../../../../src/server/agents/core/types";
 import {
   AssetGenerationResultSchema,
+  QualityReportSchema,
   type AssetGenerationResult,
   type CourseGenerationState,
   type PageContentDSL,
@@ -51,10 +52,13 @@ describe("course generation workflow", () => {
       "design",
       "writer:page-01-cover",
       "html:page-01-cover",
+      "qa:page-01-cover",
       "writer:page-02-knowledge",
       "html:page-02-knowledge",
+      "qa:page-02-knowledge",
       "writer:page-03-summary",
       "html:page-03-summary",
+      "qa:page-03-summary",
     ]);
     expect(checkpoints.some((saved) => saved.pages[0]?.status === "completed"))
       .toBe(true);
@@ -113,6 +117,58 @@ describe("course generation workflow", () => {
     expect(checkpoints.at(-1)?.status).toBe("failed");
   });
 
+  it("runs independent page workers with a configurable concurrency of two", async () => {
+    let maxActiveWriters = 0;
+    const state = await runCourseGenerationWorkflow(
+      {
+        courseId: "course-923e4567-e89b-42d3-a456-426614174000",
+        userPrompt: "并行生成三页互不依赖的太阳系课程",
+        pageCount: 3,
+        executionMode: "parallel",
+        concurrency: 2,
+      },
+      context,
+      createDependencies([], [], {
+        independentPages: true,
+        onWriterConcurrency: (active) => {
+          maxActiveWriters = Math.max(maxActiveWriters, active);
+        },
+      }),
+    );
+
+    expect(state.status).toBe("completed");
+    expect(state.workerConfig).toEqual({ mode: "parallel", concurrency: 2 });
+    expect(maxActiveWriters).toBe(2);
+    expect(state.pages.every(({ qualityReport }) => Boolean(qualityReport))).toBe(
+      true,
+    );
+  });
+
+  it("keeps other independent page results when one worker fails", async () => {
+    const state = await runCourseGenerationWorkflow(
+      {
+        courseId: "course-a23e4567-e89b-42d3-a456-426614174000",
+        userPrompt: "并行生成并保留成功页面",
+        pageCount: 3,
+        executionMode: "parallel",
+        concurrency: 2,
+      },
+      context,
+      createDependencies([], [], {
+        independentPages: true,
+        failHtmlPageId: "page-02-knowledge",
+      }),
+    );
+
+    expect(state.status).toBe("failed");
+    expect(state.pages.map(({ status }) => status)).toEqual([
+      "completed",
+      "failed",
+      "completed",
+    ]);
+    expect(state.pages[2]?.htmlOutput?.html).toContain("page-03-summary");
+  });
+
   it("retries a transient node failure at most twice and records each decision", async () => {
     const order: string[] = [];
     const dependencies = createDependencies(order, [], {
@@ -132,12 +188,10 @@ describe("course generation workflow", () => {
     expect(
       order.filter((entry) => entry === "html:page-01-cover"),
     ).toHaveLength(3);
-    expect(
-      state.supervisor?.attempts.find(
-        ({ nodeName, pageId }) =>
-          nodeName === "html-engineer" && pageId === "page-01-cover",
-      ),
-    ).toMatchObject({ attempts: 3 });
+    expect(state.pages[0]?.attempts).toContainEqual({
+      stage: "html",
+      attempts: 3,
+    });
     expect(
       state.events.filter(({ type }) => type === "supervisor_decision"),
     ).toHaveLength(state.supervisor?.decisionCount ?? 0);
@@ -167,16 +221,13 @@ describe("course generation workflow", () => {
 
     expect(state.status).toBe("failed");
     expect(state.errors.at(-1)).toMatchObject({
-      code: "SUPERVISOR_RETRY_EXHAUSTED",
+      code: "PAGE_WORKER_RETRY_EXHAUSTED",
       pageId: "page-01-cover",
     });
     expect(
       order.filter((entry) => entry === "html:page-01-cover"),
     ).toHaveLength(3);
-    expect(state.supervisor?.lastDecision).toMatchObject({
-      action: "stop",
-      stopReason: { code: "retry_exhausted" },
-    });
+    expect(state.pages[0]?.error?.message).toContain("页面正文缺少 DSL 文本");
   });
 
   it("rejects a Supervisor target outside the available node allowlist", async () => {
@@ -277,8 +328,10 @@ describe("course generation workflow", () => {
     expect(resumed.status).toBe("completed");
     expect(resumedOrder).toEqual([
       "html:page-02-knowledge",
+      "qa:page-02-knowledge",
       "writer:page-03-summary",
       "html:page-03-summary",
+      "qa:page-03-summary",
     ]);
     expect(resumed.pages.every(({ status }) => status === "completed")).toBe(
       true,
@@ -289,7 +342,7 @@ describe("course generation workflow", () => {
       vi.mocked(resumedDependencies.runHtml!).mock.calls[0]?.[0]
         .validationFeedback,
     ).toEqual({
-      code: "SUPERVISOR_NON_RETRYABLE_ERROR",
+      code: "PAGE_WORKER_RETRY_EXHAUSTED",
       issues: ["页面正文缺少 DSL 文本：课程总结与后续展望"],
     });
     expect(resumed.events.map(({ sequence }) => sequence)).toEqual(
@@ -335,10 +388,13 @@ function createDependencies(
     invalidSupervisorTarget?: boolean;
     abortWriterPageId?: string;
     assetPageId?: string;
+    independentPages?: boolean;
+    onWriterConcurrency?(active: number): void;
   } = {},
 ): Partial<CourseGenerationWorkflowDependencies> {
   let eventSequence = 0;
   const htmlAttempts = new Map<string, number>();
+  let activeWriters = 0;
   const nextEvent = (summary: string): AgentEvent => ({
     id: `event-${++eventSequence}`,
     sequence: eventSequence,
@@ -399,9 +455,7 @@ function createDependencies(
             },
         error: failed
           ? {
-              code: permanentlyFailed
-                ? "HTML_CONTRACT_INVALID"
-                : "AGENT_EXECUTION_ERROR",
+              code: "AGENT_EXECUTION_ERROR" as const,
               message:
                 "生成 HTML 校验失败：页面正文缺少 DSL 文本：课程总结与后续展望",
             }
@@ -471,7 +525,15 @@ function createDependencies(
         maxSteps: 1,
         events: [nextEvent("planner completed")],
         task: { intent },
-        outline: courseDesignOutline,
+        outline: options.independentPages
+          ? {
+              ...courseDesignOutline,
+              pages: courseDesignOutline.pages.map((page) => ({
+                ...page,
+                dependsOnPageIds: [],
+              })),
+            }
+          : courseDesignOutline,
       };
     },
     runDesign: async () => {
@@ -493,6 +555,12 @@ function createDependencies(
     },
     runPageWriter: async (input) => {
       order.push(`writer:${input.page.id}`);
+      activeWriters += 1;
+      options.onWriterConcurrency?.(activeWriters);
+      if (options.onWriterConcurrency) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      activeWriters -= 1;
       const aborted = options.abortWriterPageId === input.page.id;
       return {
         status: aborted ? "failed" : "completed",
@@ -510,7 +578,38 @@ function createDependencies(
     },
     runAssets,
     runHtml,
+    runQA: async (input) => {
+      order.push(`qa:${input.page.id}`);
+      return {
+        status: "completed",
+        step: 1,
+        maxSteps: 1,
+        events: [nextEvent("qa completed")],
+        task: input,
+        report: qualityReportForPage(input.page.id),
+      };
+    },
   };
+}
+
+function qualityReportForPage(pageId: string) {
+  return QualityReportSchema.parse({
+    id: `quality-${pageId}`,
+    target: { type: "page", pageId },
+    overallScore: 95,
+    dimensions: {
+      contentAccuracy: { score: 95, summary: "内容准确。" },
+      layoutQuality: { score: 95, summary: "布局清楚。" },
+      courseCoherence: { score: 95, summary: "课程连贯。" },
+      styleConsistency: { score: 95, summary: "风格一致。" },
+      htmlRuntime: { score: 95, summary: "运行正常。" },
+      assetUsability: { score: 95, summary: "素材可用。" },
+    },
+    issues: [],
+    shouldRepair: false,
+    decision: "pass",
+    createdAt: timestamp,
+  });
 }
 
 function contentForPage(
