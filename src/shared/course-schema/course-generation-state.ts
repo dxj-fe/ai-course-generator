@@ -6,6 +6,7 @@ import { CoursePlanSchema } from "./course-plan";
 import { CourseIntentSchema } from "./intent";
 import { HtmlOutputSchema } from "./page";
 import { PageContentDSLSchema } from "./page-content-dsl";
+import { SupervisorRuntimeStateSchema } from "./supervisor";
 
 /** 可安全用作课程存储目录名的稳定 ID。 */
 export const CourseIdSchema = z
@@ -53,6 +54,7 @@ export const CourseGenerationEventTypeSchema = z.enum([
   "model_call",
   "tool_call",
   "validation",
+  "supervisor_decision",
   "page_done",
   "finish",
   "error",
@@ -189,6 +191,7 @@ export const CourseGenerationStateSchema = z
     pages: z.array(PageGenerationStateSchema).max(5),
     events: z.array(CourseGenerationPublicEventSchema).max(1_000),
     errors: z.array(CourseGenerationErrorSchema).max(30),
+    supervisor: SupervisorRuntimeStateSchema.optional(),
     startedAt: z.string().datetime({ offset: true }),
     updatedAt: z.string().datetime({ offset: true }),
     completedAt: z.string().datetime({ offset: true }).optional(),

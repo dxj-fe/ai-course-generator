@@ -2,11 +2,11 @@
 
 > **IMPLEMENTED / 当前事实**
 >
-> 本文只描述当前产品真实运行的课程生成链路。它由 TypeScript `WorkflowNode[]` 明确编排，是可恢复的固定串行 workflow；它不是 Supervisor 调度，也没有使用 LangGraph。
+> 本文只描述当前产品真实运行的课程生成链路。它由受限 Supervisor 在 TypeScript `WorkflowNode` 候选中串行调度，支持可恢复 checkpoint 和有限重试；它没有使用 LangGraph。
 
 ## 产品入口与完整调用链
 
-`/chat` 通过类型化任务客户端创建后台任务；Route Handler 返回 `202` 后，任务服务在服务端持有任务生命周期和取消信号。兼容 facade 装配固定节点列表，串行运行器依次完成全局规划、专业设计和逐页生成，并在稳定边界保存 checkpoint。SSE 只传输共享协议中的快照、公开事件和终态，前端 controller 再把它们投影到对话 Timeline 与右侧 learning workspace。
+`/chat` 通过类型化任务客户端创建后台任务；Route Handler 返回 `202` 后，任务服务在服务端持有任务生命周期和取消信号。兼容 facade 根据 checkpoint 计算可用节点，Supervisor 提出结构化决策，运行层校验后串行执行一个节点并保存 checkpoint。SSE 只传输共享协议中的快照、公开事件和终态，前端 controller 再把它们投影到对话 Timeline 与右侧 learning workspace。
 
 ```mermaid
 flowchart TD
@@ -15,9 +15,11 @@ flowchart TD
   TaskRoute --> After["Next.js after()"]
   After --> TaskService["CourseGenerationTaskService<br/>queued -> running -> terminal"]
   TaskService --> Facade["runCourseGenerationWorkflow<br/>compatibility facade"]
-  Facade --> NodeList["course-generation-nodes.ts factories<br/>fixed-order WorkflowNode[]"]
-  Facade --> Runner["runSequentialWorkflow<br/>requiredInputs + produces"]
-  NodeList --> Runner
+  Facade --> Supervisor["SupervisorAgent<br/>structured routing proposal"]
+  Facade --> NodeList["course-generation-nodes.ts factories<br/>available WorkflowNodes"]
+  Supervisor --> Guard["runSupervisedWorkflow<br/>allowlist + retry/stop budgets"]
+  NodeList --> Guard
+  Guard --> Runner["runSequentialWorkflow<br/>requiredInputs + produces"]
 
   Runner --> Intent["Intent node"]
   Intent --> Planner["Course Planner"]
@@ -70,11 +72,11 @@ flowchart TD
   QA -. "QualityReport，不修改 HTML" .-> Workspace
 ```
 
-## 当前串行顺序
+## 当前受监督串行顺序
 
 顶层兼容入口仍是 [`runCourseGenerationWorkflow`](../../src/server/workflows/course-generation-workflow.ts)，已有任务服务与测试不需要迁移到新调用方式。它负责创建新状态或校验恢复状态，装配运行上下文与节点列表，再把结果映射回原有成功/失败合同。
 
-[`course-generation-nodes.ts`](../../src/server/workflows/course-generation-nodes.ts) 定义节点工厂，兼容 facade 根据已校验 checkpoint 跳过已有产物，并按以下确定顺序装配当前仍需执行的节点：
+[`course-generation-nodes.ts`](../../src/server/workflows/course-generation-nodes.ts) 定义节点工厂，兼容 facade 根据已校验 checkpoint 跳过已有产物并计算当前可执行候选。Supervisor 只能选择候选节点，正常路径仍保持以下依赖顺序：
 
 1. `Intent` 节点只在状态缺少 `intent` 时运行入口解析；恢复时保留已有产物。
 2. `Planner` 节点消费已校验 `intent` 并生成 `CoursePlan`；确定性适配仍补齐 ID、模板和页面依赖。
@@ -84,7 +86,7 @@ flowchart TD
 
 [`runSequentialWorkflow`](../../src/server/workflows/sequential-workflow.ts) 是固定节点列表的唯一通用执行器：运行前检查 `requiredInputs`，执行节点，拒绝 `produces` 之外的 patch，通过集中 merge 复验 `CourseGenerationStateSchema`，然后才在既有稳定边界 checkpoint。节点抛错、缺少输入、缺少声明产物或越权写字段都会转换成带 `nodeName` 的 `WorkflowNodeError`，facade 再映射为原有公开阶段、页面、Agent、错误码和消息。
 
-每个 Agent 自己仍使用统一的最小状态、步骤上限和结构化事件合同，见 [`minimal-agent.ts`](../../src/server/agents/core/minimal-agent.ts)。不过，哪个 Agent 何时执行不是模型决定的，而是 facade 根据 checkpoint 按固定 TypeScript 阶段顺序选择 `course-generation-nodes.ts` 的节点工厂决定的。
+每个 Agent 自己仍使用统一的最小状态、步骤上限和结构化事件合同，见 [`minimal-agent.ts`](../../src/server/agents/core/minimal-agent.ts)。Supervisor 可以在确定性候选中提出 `run / retry / complete / stop`，但不能编造节点、提高预算或绕过输入检查。
 
 ## WorkflowNode 合同与边界
 
@@ -96,7 +98,7 @@ flowchart TD
 - `run(state, context)` 只返回 `partial state + events`，不能直接持久化整课状态或向 SSE 推送；
 - `runSequentialWorkflow` 是节点 patch 合并的唯一所有者，合并后的完整状态必须再次通过共享 Schema；facade 仍负责开始、失败、完成等课程生命周期迁移。
 
-这个合同减少了顶层大函数的隐式 handoff，但没有增加条件边、重试循环、动态节点选择或并发调度。
+这个合同减少了顶层大函数的隐式 handoff；Day 23 的受监督运行层在合同之外增加了有限动态选择和重试，但仍没有并发调度。
 
 ## 素材子流程
 
@@ -148,7 +150,7 @@ SSE 合同由 [`course-task-event.ts`](../../src/shared/course-schema/course-tas
 
 ## 当前明确不存在的能力
 
-- 没有 Supervisor Agent，也没有基于状态的动态节点选择。
+- Supervisor 只调度现有六类课程节点，不拥有课程正文能力，也没有成本/token 计费器或人工审批队列。
 - 没有 Repair Agent 或自动修复循环。
 - 没有 Page Worker 隔离执行单元或受控页面并发；逐页 `WorkflowNode` 仍共享课程状态并串行运行，“Page Worker brief”只是逐页输入合同。
 - 没有 LangGraph StateGraph、条件边、Reducer 或框架原生 streaming。

@@ -2,7 +2,7 @@
 
 > **TARGET / 未实现**
 >
-> 本文是 Day 21 的目标架构，并用 Day 22 当前实现校准迁移起点，不把目标图描述成运行代码。当前系统执行 [`mvp-flow.md`](./mvp-flow.md) 中显式 `WorkflowNode[]` 驱动的固定串行 workflow；Supervisor、Repair、Page Worker 隔离、自动 QA 循环、并发和 LangGraph 均未实现。
+> 本文最初是 Day 21 的目标架构，现已用 Day 23 实现校准迁移状态。当前系统执行 [`mvp-flow.md`](./mvp-flow.md) 中受限 Supervisor + 显式 `WorkflowNode` 驱动的串行 workflow；Repair、Page Worker 隔离、自动 QA 循环、并发和 LangGraph 仍未实现。
 
 ## 设计目标
 
@@ -88,7 +88,7 @@ Supervisor **不负责**：
 - 自行修改 checkpoint；
 - 绕过 validator、提升自己的 retry budget，或根据私有推理向 UI 解释决策。
 
-Day 22 已把原先集中在 [`course-generation-workflow.ts`](../../src/server/workflows/course-generation-workflow.ts) 的固定调度拆成兼容 facade、[`course-generation-nodes.ts`](../../src/server/workflows/course-generation-nodes.ts) 的节点列表和 [`runSequentialWorkflow`](../../src/server/workflows/sequential-workflow.ts) 的通用串行运行层。未来 Supervisor 可以选择、重试或循环这些受限节点，但不应替代 `requiredInputs / produces` 合同、集中状态合并、validator 或公开事件安全边界。
+Day 23 已在 Day 22 节点合同之上加入 [`SupervisorAgent`](../../src/server/agents/supervisor-agent.ts) 和 [`runSupervisedWorkflow`](../../src/server/workflows/supervised-workflow.ts)。模型只在运行层提供的候选集合中提出决策；确定性代码继续校验 `requiredInputs / produces`、node/page attempts、取消、无进展和停止条件，集中状态合并、validator 与公开事件安全边界保持不变。
 
 ## 九名 Specialist
 
@@ -237,7 +237,7 @@ flowchart LR
 ## Day 21 之后的实施顺序
 
 1. **Day 22 已完成：** 把现有固定流程包装为声明式、可测试的 `WorkflowNode` 接口和集中串行运行层；兼容 facade、API、SSE、Schema、checkpoint、恢复和 UI 语义保持不变。
-2. **后续目标：** 加入只负责结构化调度的 Supervisor 和规则兜底。
+2. **Day 23 已完成：** 加入只负责结构化调度的 Supervisor、持久化有限重试、确定性停止规则和公开决策摘要。
 3. **后续目标：** 继续收紧九名 Specialist 的 Prompt、输入输出和禁止项。
 4. **后续目标：** 把逐页节点提取为真正隔离的 Page Worker，再评估受控并发。
 5. **后续目标：** 将现有 report-only QA 接入质量门槛，并实现 Repair 候选与 re-QA。

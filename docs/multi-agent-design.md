@@ -270,7 +270,7 @@ Supervisor 是架构角色；LangGraph 是实现 State、Node、Edge、Reducer�
 
 1. **Day 21（已完成）：** 文档化当前和目标边界，不改运行时；
 2. **Day 22（已完成）：** 把固定顺序表达为显式手写 Specialist Workflow，同时保持 API、SSE、Schema、checkpoint、恢复和 UI 合同；
-3. **Day 23：** 引入有限 Supervisor 路由、重试、停止和可解释决策；
+3. **Day 23 已完成：** 引入有限 Supervisor 路由、重试、停止和可解释决策；
 4. **Day 24–27：** 强化 Specialist Prompt、Page Worker、QA 和 Repair；
 5. **Day 28–31：** 在不重做前端的前提下评估并迁移稳定状态到 LangGraph。
 
@@ -296,4 +296,12 @@ Supervisor 是架构角色；LangGraph 是实现 State、Node、Edge、Reducer�
 - [x] `runSequentialWorkflow` 统一检查输入与声明输出，并通过集中 merge 校验完整状态；节点失败携带稳定 `nodeName`。
 - [x] Intent、Planner、Course Design 和逐页 Writer/Assets/HTML 已包装为节点工厂，facade 按固定阶段顺序装配，既有领域 Agent 与子流程继续负责业务规则。
 - [x] 共享 Schema、checkpoint 时机、恢复跳过、取消、公开事件、任务 API、SSE 与 Seaca 产品表面保持原语义。
-- [x] Supervisor、Repair、自动 QA、独立 Page Worker、并发和 LangGraph 仍明确标记为未实现。
+- [x] Repair、自动 QA、独立 Page Worker、并发和 LangGraph 仍明确标记为未实现。
+
+## 16. Day 23 当前实现说明
+
+- [x] `SupervisorDecisionSchema` 用互斥的 `run / retry / complete / stop` 合同限制结构化输出。
+- [x] Supervisor 只接收压缩状态、确定性候选节点、最近失败和持久化 attempts，不接收 HTML、完整 DSL 或私有推理。
+- [x] `runSupervisedWorkflow` 校验候选节点、同 node/page 最多 3 次执行、取消、无进展和全局决策上限。
+- [x] accepted decision 与确定性 stop 都先 checkpoint，再通过既有 SSE 公开 `supervisor_decision` 摘要。
+- [x] Seaca `/chat` Timeline 在原产品表面展示最近调度摘要，没有新增路由或平行控制台。

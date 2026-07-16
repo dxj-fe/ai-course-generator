@@ -29,7 +29,13 @@ function runningState(
   };
 }
 
-function publicEvent(type: "agent_start" | "agent_done" | "page_done") {
+function publicEvent(
+  type:
+    | "agent_start"
+    | "agent_done"
+    | "supervisor_decision"
+    | "page_done",
+) {
   return {
     id: `event-${type}`,
     sequence: 1,
@@ -44,7 +50,12 @@ function publicEvent(type: "agent_start" | "agent_done" | "page_done") {
 }
 
 describe("Day 19 course task protocol", () => {
-  it.each(["agent_start", "agent_done", "page_done"] as const)(
+  it.each([
+    "agent_start",
+    "agent_done",
+    "supervisor_decision",
+    "page_done",
+  ] as const)(
     "accepts the public %s event type",
     (type) => {
       expect(CourseGenerationPublicEventSchema.parse(publicEvent(type)).type).toBe(

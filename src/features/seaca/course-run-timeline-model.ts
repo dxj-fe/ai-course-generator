@@ -71,8 +71,18 @@ export type CourseRunTimelineTaskSummary = {
   resumed: boolean;
 };
 
+export type CourseRunTimelineSupervisorDecision = {
+  id: string;
+  sequence: number;
+  summary: string;
+  stage: CourseGenerationStage;
+  pageId?: string;
+  timestamp: string;
+};
+
 export type CourseRunTimelineModel = {
   task: CourseRunTimelineTaskSummary;
+  supervisorDecisions: CourseRunTimelineSupervisorDecision[];
   globalStages: CourseRunTimelineStage[];
   pages: CourseRunTimelinePage[];
 };
@@ -144,6 +154,17 @@ export function buildCourseRunTimelineModel(
       durationMs: taskDuration(run, nowMs),
       resumed: taskWasResumed(run),
     },
+    supervisorDecisions:
+      run.generation?.events
+        .filter(({ type }) => type === "supervisor_decision")
+        .map(({ id, sequence, summary, stage, pageId, timestamp }) => ({
+          id,
+          sequence,
+          summary,
+          stage,
+          pageId,
+          timestamp,
+        })) ?? [],
     globalStages,
     pages,
   };

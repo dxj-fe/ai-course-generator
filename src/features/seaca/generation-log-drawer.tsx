@@ -15,6 +15,7 @@ const eventTypeCopy: Record<CourseGenerationPublicEvent["type"], string> = {
   model_call: "模型调用",
   tool_call: "工具调用",
   validation: "校验",
+  supervisor_decision: "Supervisor 决策",
   page_done: "页面完成",
   finish: "任务完成",
   error: "错误",

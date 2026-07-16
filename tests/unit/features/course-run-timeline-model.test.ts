@@ -172,6 +172,32 @@ describe("buildCourseRunTimelineModel", () => {
     });
   });
 
+  it("projects only public Supervisor decision events", () => {
+    const generation = createGeneration({
+      events: [
+        createEvent(1, {
+          type: "supervisor_decision",
+          stage: "page_writer",
+          pageId,
+          traceId: "trace-current",
+          agent: "supervisor",
+          summary: "页面输入已就绪，运行 Page Writer。（第 1 次执行）",
+        }),
+      ],
+    });
+
+    expect(
+      buildCourseRunTimelineModel(createRun(generation)).supervisorDecisions,
+    ).toEqual([
+      expect.objectContaining({
+        sequence: 1,
+        stage: "page_writer",
+        pageId,
+        summary: "页面输入已就绪，运行 Page Writer。（第 1 次执行）",
+      }),
+    ]);
+  });
+
   it("counts attempts by trace and times the latest attempt from its earliest duplicate start", () => {
     const events = [
       createEvent(1, {

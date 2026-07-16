@@ -102,4 +102,48 @@ describe("CourseRunTimeline", () => {
     expect(markup).toContain("Page QA");
     expect(markup).toContain("进行中");
   });
+
+  it("shows the latest public Supervisor decision in the existing Timeline", () => {
+    const run = createRun();
+    run.generation = {
+      version: 1,
+      courseId: "course-day-23",
+      traceId: run.traceId,
+      userPrompt: run.prompt,
+      status: "running",
+      currentStage: "intent",
+      pages: [],
+      events: [
+        {
+          id: "event-supervisor-1",
+          sequence: 1,
+          type: "supervisor_decision",
+          traceId: run.traceId,
+          timestamp: "2026-07-16T04:00:00.000Z",
+          step: 0,
+          summary: "课程意图尚未生成，运行 Intent Agent。（第 1 次执行）",
+          stage: "intent",
+          agent: "supervisor",
+        },
+      ],
+      errors: [],
+      supervisor: {
+        decisionCount: 1,
+        attempts: [{ nodeName: "intent", attempts: 1 }],
+        lastDecision: {
+          action: "run",
+          nextNode: { nodeName: "intent" },
+          reasonSummary: "课程意图尚未生成，运行 Intent Agent。",
+        },
+      },
+      startedAt: "2026-07-16T04:00:00.000Z",
+      updatedAt: "2026-07-16T04:00:00.000Z",
+    };
+
+    const markup = renderToStaticMarkup(<CourseRunTimeline run={run} />);
+
+    expect(markup).toContain("Supervisor 调度");
+    expect(markup).toContain("仅展示公开决策摘要");
+    expect(markup).toContain("课程意图尚未生成，运行 Intent Agent。");
+  });
 });

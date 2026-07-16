@@ -113,6 +113,84 @@ describe("course generation workflow", () => {
     expect(checkpoints.at(-1)?.status).toBe("failed");
   });
 
+  it("retries a transient node failure at most twice and records each decision", async () => {
+    const order: string[] = [];
+    const state = await runCourseGenerationWorkflow(
+      {
+        courseId: "course-623e4567-e89b-42d3-a456-426614174000",
+        userPrompt: "生成一门允许有限重试的三页太阳系课程",
+        pageCount: 3,
+      },
+      context,
+      createDependencies(order, [], {
+        transientHtmlFailures: { pageId: "page-01-cover", count: 2 },
+      }),
+    );
+
+    expect(state.status).toBe("completed");
+    expect(
+      order.filter((entry) => entry === "html:page-01-cover"),
+    ).toHaveLength(3);
+    expect(
+      state.supervisor?.attempts.find(
+        ({ nodeName, pageId }) =>
+          nodeName === "html-engineer" && pageId === "page-01-cover",
+      ),
+    ).toMatchObject({ attempts: 3 });
+    expect(
+      state.events.filter(({ type }) => type === "supervisor_decision"),
+    ).toHaveLength(state.supervisor?.decisionCount ?? 0);
+  });
+
+  it("stops after exhausting two retries for the same page and node", async () => {
+    const order: string[] = [];
+    const state = await runCourseGenerationWorkflow(
+      {
+        courseId: "course-723e4567-e89b-42d3-a456-426614174000",
+        userPrompt: "生成一门重试预算受控的三页太阳系课程",
+        pageCount: 3,
+      },
+      context,
+      createDependencies(order, [], {
+        transientHtmlFailures: { pageId: "page-01-cover", count: 3 },
+      }),
+    );
+
+    expect(state.status).toBe("failed");
+    expect(state.errors.at(-1)).toMatchObject({
+      code: "SUPERVISOR_RETRY_EXHAUSTED",
+      pageId: "page-01-cover",
+    });
+    expect(
+      order.filter((entry) => entry === "html:page-01-cover"),
+    ).toHaveLength(3);
+    expect(state.supervisor?.lastDecision).toMatchObject({
+      action: "stop",
+      stopReason: { code: "retry_exhausted" },
+    });
+  });
+
+  it("rejects a Supervisor target outside the available node allowlist", async () => {
+    const order: string[] = [];
+    const state = await runCourseGenerationWorkflow(
+      {
+        courseId: "course-823e4567-e89b-42d3-a456-426614174000",
+        userPrompt: "验证 Supervisor 不能编造下一节点",
+        pageCount: 3,
+      },
+      context,
+      createDependencies(order, [], { invalidSupervisorTarget: true }),
+    );
+
+    expect(state.status).toBe("failed");
+    expect(state.errors.at(-1)?.code).toBe("SUPERVISOR_INVALID_DECISION");
+    expect(state.supervisor?.lastDecision).toMatchObject({
+      action: "stop",
+      stopReason: { code: "invalid_decision" },
+    });
+    expect(order).toEqual([]);
+  });
+
   it("runs the Assets node for a real slot and passes its result to HTML", async () => {
     const order: string[] = [];
     const checkpoints: CourseGenerationState[] = [];
@@ -237,11 +315,14 @@ function createDependencies(
   checkpoints: CourseGenerationState[],
   options: {
     failHtmlPageId?: string;
+    transientHtmlFailures?: { pageId: string; count: number };
+    invalidSupervisorTarget?: boolean;
     abortWriterPageId?: string;
     assetPageId?: string;
   } = {},
 ): Partial<CourseGenerationWorkflowDependencies> {
   let eventSequence = 0;
+  const htmlAttempts = new Map<string, number>();
   const nextEvent = (summary: string): AgentEvent => ({
     id: `event-${++eventSequence}`,
     sequence: eventSequence,
@@ -274,7 +355,14 @@ function createDependencies(
       Awaited<ReturnType<CourseGenerationWorkflowDependencies["runHtml"]>>
     > => {
       order.push(`html:${input.content.pageId}`);
-      const failed = options.failHtmlPageId === input.content.pageId;
+      const attempt = (htmlAttempts.get(input.content.pageId) ?? 0) + 1;
+      htmlAttempts.set(input.content.pageId, attempt);
+      const permanentlyFailed =
+        options.failHtmlPageId === input.content.pageId;
+      const transientlyFailed =
+        options.transientHtmlFailures?.pageId === input.content.pageId &&
+        attempt <= options.transientHtmlFailures.count;
+      const failed = permanentlyFailed || transientlyFailed;
       const assetMarkup = (input.assets ?? [])
         .flatMap(({ asset }) =>
           asset?.uri ? [`<img src="${asset.uri}">`] : [],
@@ -294,7 +382,12 @@ function createDependencies(
               version: 1,
             },
         error: failed
-          ? { code: "AGENT_EXECUTION_ERROR", message: "HTML failed" }
+          ? {
+              code: permanentlyFailed
+                ? "HTML_CONTRACT_INVALID"
+                : "AGENT_EXECUTION_ERROR",
+              message: "HTML failed",
+            }
           : undefined,
       };
     },
@@ -304,6 +397,50 @@ function createDependencies(
     now: () => timestamp,
     checkpoint: async (state) => {
       checkpoints.push(structuredClone(state));
+    },
+    runSupervisor: async (supervisorInput) => {
+      if (supervisorInput.stateSummary.readyToComplete) {
+        return {
+          action: "complete" as const,
+          reasonSummary: "全部课程页面已经完成，可以结束生成。",
+        };
+      }
+
+      const available = supervisorInput.availableNodes[0];
+      if (!available) {
+        return {
+          action: "stop" as const,
+          reasonSummary: "没有可用节点，停止自动执行。",
+          stopReason: {
+            code: "no_available_node" as const,
+            message: "没有可用节点。",
+            recoverable: true,
+          },
+        };
+      }
+
+      if (supervisorInput.recentFailure) {
+        return {
+          action: "retry" as const,
+          nextNode: available.target,
+          retryTarget: available.target,
+          reasonSummary: "最近节点执行失败且仍有预算，进行有限重试。",
+        };
+      }
+
+      if (options.invalidSupervisorTarget) {
+        return {
+          action: "run" as const,
+          nextNode: { nodeName: "planner" as const },
+          reasonSummary: "尝试运行不在可用清单中的节点。",
+        };
+      }
+
+      return {
+        action: "run" as const,
+        nextNode: available.target,
+        reasonSummary: "当前节点输入已就绪，继续执行课程生成。",
+      };
     },
     generateIntent: async () => {
       order.push("intent");

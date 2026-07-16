@@ -64,6 +64,7 @@ const agentCopy: Record<string, string> = {
   "image-assets": "Image Assets",
   "html-engineer": "HTML Engineer",
   "page-qa": "Page QA",
+  supervisor: "Supervisor",
   Workflow: "Workflow",
 };
 
@@ -236,6 +237,42 @@ export function CourseRunTimeline({
           ) : null}
         </div>
       </div>
+
+      {model.supervisorDecisions.length > 0 ? (
+        <section
+          aria-labelledby="supervisor-decisions-title"
+          className="mt-5 rounded-2xl border border-[#dfead9] bg-[#f5fbf1] p-3.5"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4
+              className="text-sm font-semibold text-[#4c3e2b]"
+              id="supervisor-decisions-title"
+            >
+              Supervisor 调度
+            </h4>
+            <span className="text-[11px] text-[#7d9273]">
+              仅展示公开决策摘要
+            </span>
+          </div>
+          <ol className="mt-3 grid gap-2">
+            {model.supervisorDecisions.slice(-3).map((decision) => (
+              <li
+                className="rounded-xl bg-white px-3 py-2.5"
+                key={decision.id}
+              >
+                <p className="text-xs leading-5 font-medium text-[#55634f]">
+                  {decision.summary}
+                </p>
+                <p className="mt-1 text-[11px] text-[#8a9784]">
+                  {decision.pageId
+                    ? `${decision.stage} · ${decision.pageId}`
+                    : `${decision.stage} · 整课阶段`}
+                </p>
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
 
       <section aria-labelledby="global-agent-progress-title" className="mt-5">
         <div className="flex flex-wrap items-center justify-between gap-2">

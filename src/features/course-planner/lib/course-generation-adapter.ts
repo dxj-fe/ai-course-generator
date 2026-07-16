@@ -9,6 +9,7 @@ import type {
 } from "@/features/course-planner/lib/course-planner-api";
 import type {
   CourseGenerationError,
+  CourseGenerationPublicEvent,
   CourseGenerationStage,
   CourseGenerationState,
   PageGenerationState,
@@ -26,6 +27,10 @@ type RunSeed = {
   startedAt: number;
 };
 
+type AgentCompatibleGenerationEvent = CourseGenerationPublicEvent & {
+  type: PublicAgentEvent["type"];
+};
+
 /**
  * 把服务端持久化工作流状态投影到现有 Seaca Controller 结构。
  * 这里只做协议映射，不在浏览器复制课程编排规则。
@@ -40,10 +45,11 @@ export function courseGenerationToSeacaRun(
   const plannerEvents = eventsFor(state, ["intent", "planner"]);
   const designPublicEvents = eventsFor(state, ["design"]);
   const designAgentEvents = state.events
+    .filter(isAgentCompatibleEvent)
     .filter(
       (
         event,
-      ): event is typeof event & {
+      ): event is AgentCompatibleGenerationEvent & {
         agent: "pedagogy" | "story" | "visual";
       } =>
         event.traceId === state.traceId &&
@@ -310,12 +316,18 @@ function eventsFor(
   stages: CourseGenerationStage[],
   pageId?: string,
 ): PublicAgentEvent[] {
-  return state.events.filter(
+  return state.events.filter(isAgentCompatibleEvent).filter(
     (event) =>
       event.traceId === state.traceId &&
       stages.includes(event.stage) &&
       (pageId === undefined || event.pageId === pageId),
   );
+}
+
+function isAgentCompatibleEvent(
+  event: CourseGenerationPublicEvent,
+): event is AgentCompatibleGenerationEvent {
+  return event.type !== "supervisor_decision";
 }
 
 function findStageError(

@@ -18,6 +18,7 @@ import {
 } from "@/server/workflows/sequential-workflow";
 import {
   CourseIntentSchema,
+  type CourseGenerationNodeName,
   type CourseGenerationPublicEvent,
   type CourseGenerationStage,
   type CourseGenerationState,
@@ -26,13 +27,7 @@ import {
 
 export type CourseMvpPageCount = 3 | 4 | 5;
 
-export type CourseGenerationNodeName =
-  | "intent"
-  | "planner"
-  | "course-design"
-  | "page-writer"
-  | "assets"
-  | "html-engineer";
+export type { CourseGenerationNodeName } from "@/shared/course-schema";
 
 export type CourseGenerationNodeDependencies = {
   generateIntent: typeof generateCourseIntent;

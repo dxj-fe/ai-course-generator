@@ -156,6 +156,23 @@ export {
   type PageLayoutHints,
 } from "./page-content-dsl";
 export {
+  CourseGenerationNodeNameSchema,
+  SupervisorAttemptSchema,
+  SupervisorDecisionSchema,
+  SupervisorNodeTargetSchema,
+  SupervisorRuntimeStateSchema,
+  SupervisorStopReasonCodeSchema,
+  SupervisorStopReasonSchema,
+  targetKey,
+  type CourseGenerationNodeName,
+  type SupervisorAttempt,
+  type SupervisorDecision,
+  type SupervisorNodeTarget,
+  type SupervisorRuntimeState,
+  type SupervisorStopReason,
+  type SupervisorStopReasonCode,
+} from "./supervisor";
+export {
   CourseGenerationErrorSchema,
   CourseGenerationEventTypeSchema,
   CourseGenerationPublicEventSchema,

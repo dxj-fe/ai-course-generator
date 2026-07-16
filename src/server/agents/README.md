@@ -1,6 +1,6 @@
 # Agent 契约索引
 
-本目录保存课程生成中的模型 Agent。当前系统已经把不同专业职责拆成多个 Agent，并由显式 `WorkflowNode[]` 驱动的固定、可恢复串行 Workflow 调度；Supervisor、Repair、自动 QA、页面并发和 LangGraph 尚未实现。本文只记录当前真实契约与后续角色边界，不把目标架构描述成已交付能力。
+本目录保存课程生成中的模型 Agent。当前系统已经把不同专业职责拆成多个 Agent，并由受限 Supervisor 在显式 `WorkflowNode` 候选中进行可恢复串行调度；Repair、自动 QA、页面并发和 LangGraph 尚未实现。本文只记录当前真实契约与后续角色边界，不把目标架构描述成已交付能力。
 
 ## 状态说明
 
@@ -120,13 +120,14 @@
 - `runSequentialWorkflow` 按给定数组顺序执行节点，统一检查前置输入、拒绝未声明 patch、验证声明产物，并把失败包装为带 `nodeName` 的 `WorkflowNodeError`。
 - [`course-generation-nodes.ts`](../workflows/course-generation-nodes.ts) 包装 Intent、Planner、Course Design 和逐页 Writer/Assets/HTML；它复用已有 Agent 与子流程，不把业务规则复制进通用运行器。
 - `runCourseGenerationWorkflow` 保留为任务服务的兼容 facade，负责初始化/恢复、上下文装配、集中 merge、checkpoint 和原有结果映射。
-- **边界**：节点列表是固定 TypeScript 顺序，没有动态选择、条件边、自动重试、循环或并发。
+- **边界**：节点合同仍不负责动态选择、重试、循环或并发；这些协调策略由受限 Supervisor 运行层持有。
 
 ### Supervisor
 
-- **状态**：**目标角色，尚未实现**；当前没有 Supervisor 模块、决策 Schema 或 Timeline 事件。
-- **目标职责**：基于已校验课程状态、可用节点、失败位置和有限预算决定下一节点、重试或停止，并只发布可解释的公开决策摘要。
+- **状态**：**已实现**。`SupervisorDecisionSchema` 约束 `run / retry / complete / stop`，`SupervisorAgent` 只消费压缩状态、确定性可用节点、最近失败和持久化 attempts。
+- **职责**：基于已校验课程状态、可用节点、失败位置和有限预算提出下一节点、重试或停止，并只发布可解释的公开决策摘要；运行层再次校验节点白名单、输入合同、每目标最多 3 次执行、无进展、取消和全局决策上限。
 - **禁止职责**：不写课程正文，不生成 HTML 或图片，不替 Specialist 修补输出，不泄露内部推理。LangGraph 将来可以承载调度图，但不是 Supervisor 思想本身。
+- **源码**：[supervisor-agent.ts](./supervisor-agent.ts)、[supervisor.ts](../../shared/course-schema/supervisor.ts)、[supervised-workflow.ts](../workflows/supervised-workflow.ts)。
 
 ### Page Worker
 
@@ -152,6 +153,6 @@
 
 ## 当前与目标边界
 
-当前运行链路是：Intent → Planner → Pedagogy → Story → Visual → 按页 PageWriter → ImagePrompt/GenerateImage Skill → HtmlEngineer；QA 为单页显式操作。固定顺序由 `course-generation-nodes.ts` 声明，输入/输出检查和失败定位由通用串行运行器负责，checkpoint 与恢复继续由兼容 facade 和任务基础设施保持。
+当前运行链路是：Supervisor 在确定性候选集合中调度 Intent → Planner → Pedagogy → Story → Visual → 按页 PageWriter → ImagePrompt/GenerateImage Skill → HtmlEngineer；QA 仍为单页显式操作。节点工厂由 `course-generation-nodes.ts` 声明，输入/输出检查和失败定位由通用串行运行器负责，有限循环、重试和停止由 `runSupervisedWorkflow` 负责，checkpoint 与恢复继续由兼容 facade 和任务基础设施保持。
 
-目标链路会在后续训练日引入 Supervisor、有限重试、真正隔离的 Page Worker、QA/Repair 闭环和可选 LangGraph 执行层。标准 `WorkflowNode` 已于 Day 22 实现，但它本身不提供这些目标能力；在对应共享契约和运行语义真正实现前，公开事件、Timeline 与本文都不得把目标角色标记为已运行。
+后续训练日仍需实现真正隔离的 Page Worker、QA/Repair 闭环和可选 LangGraph 执行层。当前 Supervisor 不提供页面并发、自动 QA 或修复能力，也不会绕过标准 `WorkflowNode` 合同。
