@@ -62,6 +62,20 @@ const CoursePlannerModelOutputSchema = z.object({
   pages: z.array(CoursePlannerModelPageSchema).min(3).max(12),
 });
 
+const DEFAULT_INTERACTION_BY_PAGE_TYPE: Record<
+  z.infer<typeof PageTypeSchema>,
+  z.infer<typeof PageInteractionTypeSchema>
+> = {
+  cover: "navigate",
+  story_intro: "choice",
+  knowledge_card: "reveal",
+  quiz: "choice",
+  comparison: "explore",
+  timeline: "explore",
+  summary: "navigate",
+  achievement: "input",
+};
+
 /** 创建只负责全局结构规划的一步 CoursePlannerAgent。 */
 export function createCoursePlannerAgent(
   dependencies: CoursePlannerAgentDependencies = defaultDependencies,
@@ -216,6 +230,7 @@ async function generateOutline(input: {
   const draft = await generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
     maxTokens: 6_000,
+    normalizeOutput: normalizeCoursePlannerModelOutput,
     prompt: prompts.userPrompt,
     promptVersion: prompts.version,
     schema: CoursePlannerModelOutputSchema,
@@ -228,6 +243,38 @@ async function generateOutline(input: {
   });
 
   return materializeCoursePlan(draft, input.intent, styleTemplate.id);
+}
+
+/**
+ * 部分 OpenAI-compatible Provider 只支持 JSON object mode，不执行 JSON Schema
+ * 枚举约束。Planner 的 pageType 已经是受限枚举，因此可以只对缺失或非法的
+ * interactionType 使用该页面类型的 Registry 默认值；其他非法字段仍严格失败。
+ */
+export function normalizeCoursePlannerModelOutput(output: unknown): unknown {
+  if (!isRecord(output) || !Array.isArray(output.pages)) return output;
+
+  let changed = false;
+  const pages = output.pages.map((page) => {
+    if (!isRecord(page)) return page;
+
+    const pageType = PageTypeSchema.safeParse(page.pageType);
+    const interactionType = PageInteractionTypeSchema.safeParse(
+      page.interactionType,
+    );
+    if (!pageType.success || interactionType.success) return page;
+
+    changed = true;
+    return {
+      ...page,
+      interactionType: DEFAULT_INTERACTION_BY_PAGE_TYPE[pageType.data],
+    };
+  });
+
+  return changed ? { ...output, pages } : output;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 /**

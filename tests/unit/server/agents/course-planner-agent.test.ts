@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createCoursePlannerAgent,
   createCoursePlannerAgentState,
+  normalizeCoursePlannerModelOutput,
   validateCoursePlannerOutput,
 } from "../../../../src/server/agents/course-planner-agent";
 import {
@@ -139,6 +140,31 @@ describe("CoursePlannerAgent", () => {
     outline.pages[3].interactionType = "explore";
 
     expect(CoursePlanSchema.safeParse(outline).success).toBe(false);
+  });
+
+  it("normalizes only invalid interaction values from a valid page type", () => {
+    const output = {
+      overview: "高一数学课程规划。",
+      learningObjectives: ["理解集合基础。"],
+      pages: [
+        { pageType: "cover", interactionType: "start-button" },
+        { pageType: "knowledge_card", interactionType: "点击翻转" },
+        { pageType: "quiz", interactionType: "multiple-choice" },
+        { pageType: "summary", interactionType: "navigate" },
+        { pageType: "invented", interactionType: "custom" },
+      ],
+    };
+
+    expect(normalizeCoursePlannerModelOutput(output)).toEqual({
+      ...output,
+      pages: [
+        { pageType: "cover", interactionType: "navigate" },
+        { pageType: "knowledge_card", interactionType: "reveal" },
+        { pageType: "quiz", interactionType: "choice" },
+        { pageType: "summary", interactionType: "navigate" },
+        { pageType: "invented", interactionType: "custom" },
+      ],
+    });
   });
 });
 

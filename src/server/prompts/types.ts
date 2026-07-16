@@ -12,3 +12,25 @@ export type PromptTemplate = {
 export type PromptTemplateDefinition = Omit<PromptTemplate, "content"> & {
   fileName: string;
 };
+
+export type SpecialistPromptStatus = "active" | "draft";
+
+export type SpecialistPromptLibraryEntry = {
+  id:
+    | "planner"
+    | "pedagogy"
+    | "story"
+    | "visual"
+    | "page-writer"
+    | "image-prompt"
+    | "html-engineer"
+    | "qa"
+    | "repair";
+  agentName: string;
+  status: SpecialistPromptStatus;
+  outputSchema: string;
+  moduleFile?: string;
+  templateVariables: readonly string[];
+  system: PromptTemplateDefinition;
+  user: PromptTemplateDefinition;
+};

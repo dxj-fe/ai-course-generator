@@ -1,31 +1,12 @@
 import { styleTemplateToCssText } from "@/shared/templates/style";
 
 import { loadPromptTemplate, renderPromptTemplate } from "./prompt-loader";
-import type { PromptTemplateDefinition } from "./types";
+import { getSpecialistPromptDefinition } from "./specialist-library";
 
-const systemDefinition: PromptTemplateDefinition = {
-  name: "html-engineer-system",
-  version: "1.1.5",
-  role: "system",
-  inputContract: [
-    "只接收 PageContentDSL、FunctionalTemplate、StyleTemplate、VisualBrief 页面指导和已校验素材结果。",
-  ],
-  outputContract: [
-    "只返回以 <!doctype html> 开始的完整、自包含、静态 HTML 文档。",
-  ],
-  fileName: "html-engineer.system.v1.md",
-};
-
-const userDefinition: PromptTemplateDefinition = {
-  name: "html-engineer-user",
-  version: "1.0.0",
-  role: "user",
-  inputContract: [
-    "pageContentDslJson、functionalTemplateJson、styleTemplateJson、styleCssText、visualBriefJson、pageGuidanceJson 和 assetsJson 必须来自服务端已校验数据。",
-  ],
-  outputContract: ["只返回完整 HTML 文档，不返回 Markdown 或解释。"],
-  fileName: "html-engineer.user.v1.md",
-};
+const htmlEngineerPromptDefinition =
+  getSpecialistPromptDefinition("html-engineer");
+const systemDefinition = htmlEngineerPromptDefinition.system;
+const userDefinition = htmlEngineerPromptDefinition.user;
 
 /** 加载并渲染只负责单页表现层的版本化 Prompt。 */
 export async function buildHtmlEngineerPrompts(input: {

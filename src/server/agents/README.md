@@ -2,6 +2,8 @@
 
 本目录保存课程生成中的模型 Agent。当前系统已经把不同专业职责拆成多个 Agent，并由受限 Supervisor 在显式 `WorkflowNode` 候选中进行可恢复串行调度；Repair、自动 QA、页面并发和 LangGraph 尚未实现。本文只记录当前真实契约与后续角色边界，不把目标架构描述成已交付能力。
 
+Day 24 的九名 Specialist Prompt 版本、状态和模板文件由 [`specialist-library.ts`](../prompts/specialist-library.ts) 集中登记；统一合同、Lint 与版本规则见 [`docs/prompt-library.md`](../../../docs/prompt-library.md)。Repair 在该 Library 中仍为 `draft`，不因此获得运行能力。
+
 ## 状态说明
 
 - **已实现**：存在可调用源码，并已接入当前流程或独立 API。

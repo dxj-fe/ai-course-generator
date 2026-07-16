@@ -174,6 +174,39 @@ describe("HtmlEngineerAgent", () => {
     expect(generateHtml.mock.calls[0]?.[0]).not.toHaveProperty("userPrompt");
   });
 
+  it("canonicalizes a uniquely bound CSS background to the approved alt text", async () => {
+    const generatedHtml = buildAssetRichHtml()
+      .replace(
+        '<figure><img data-asset-slot-id="asset-slot-01" src="/api/assets/asset-background" alt="保留左侧文字安全区的太空观察背景。">',
+        '<figure class="course-hero-asset" data-asset-slot-id="asset-slot-01" role="img" aria-label="模型改写的背景说明">',
+      )
+      .replace(
+        "</style>",
+        ".course-hero-asset { background-image: url('/api/assets/asset-background'); }</style>",
+      );
+    const task = {
+      content: assetRichContent,
+      visualBrief,
+      assets: readyAssetResults,
+    };
+
+    expect(() => validateHtmlEngineerOutput(generatedHtml, task)).toThrow(
+      "CSS 背景必须提供匹配的可访问说明",
+    );
+
+    const result = await createHtmlEngineerAgent({
+      generateHtml: vi.fn().mockResolvedValue(generatedHtml),
+    }).run(createHtmlEngineerAgentState(task), {
+      traceId: "css-background-accessibility-normalization-test",
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.htmlOutput?.html).toContain(
+      'role="img" aria-label="保留左侧文字安全区的太空观察背景。"',
+    );
+    expect(result.htmlOutput?.html).not.toContain("模型改写的背景说明");
+  });
+
   it("rejects model HTML that asks for script execution", async () => {
     const unsafeHtml = buildValidGeneratedHtml(pageContentDsl).replace(
       "</body>",

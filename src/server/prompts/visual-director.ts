@@ -1,27 +1,9 @@
 import { loadPromptTemplate, renderPromptTemplate } from "./prompt-loader";
-import type { PromptTemplateDefinition } from "./types";
+import { getSpecialistPromptDefinition } from "./specialist-library";
 
-const systemDefinition: PromptTemplateDefinition = {
-  name: "visual-director-system",
-  version: "1.0.1",
-  role: "system",
-  inputContract: [
-    "接收 CourseIntent、CoursePlan、PedagogyPlan、StoryArc 和一个真实 StyleTemplate。",
-  ],
-  outputContract: ["只返回 VisualBrief 内容草稿 JSON。"],
-  fileName: "visual-director.system.v1.md",
-};
-
-const userDefinition: PromptTemplateDefinition = {
-  name: "visual-director-user",
-  version: "1.0.1",
-  role: "user",
-  inputContract: ["所有输入变量必须是 JSON 值。"],
-  outputContract: [
-    "pageGuidance 按页面顺序输出，不包含 pageId；不输出 styleTemplateId。",
-  ],
-  fileName: "visual-director.user.v1.md",
-};
+const visualPromptDefinition = getSpecialistPromptDefinition("visual");
+const systemDefinition = visualPromptDefinition.system;
+const userDefinition = visualPromptDefinition.user;
 
 /** 加载并渲染 VisualDirectorAgent 的版本化 Prompt。 */
 export async function buildVisualDirectorPrompts(input: {

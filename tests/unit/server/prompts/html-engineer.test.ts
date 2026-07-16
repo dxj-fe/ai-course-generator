@@ -27,7 +27,7 @@ describe("HTML Engineer prompts", () => {
       pageGuidance,
     });
 
-    expect(prompts.version).toBe("1.1.5/1.0.0");
+    expect(prompts.version).toBe("2.0.1/2.0.0");
     expect(prompts.systemPrompt).toContain("禁止任何 `<script>`");
     expect(prompts.systemPrompt).toContain("不得交换槽位");
     expect(prompts.systemPrompt).toContain("精确 altText");

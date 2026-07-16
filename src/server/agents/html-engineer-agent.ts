@@ -93,8 +93,12 @@ export function createHtmlEngineerAgent(
         },
       });
 
-      const { html, validation } = validateHtmlEngineerOutput(
+      const normalized = normalizeReadyCssBackgroundAccessibility(
         generated,
+        state.task,
+      );
+      const { html, validation } = validateHtmlEngineerOutput(
+        normalized,
         state.task,
       );
       const htmlOutput = HtmlOutputSchema.parse({
@@ -244,6 +248,64 @@ export function validateHtmlEngineerOutput(
   return { html, validation: { contract, safety } };
 }
 
+/**
+ * CSS 背景的可访问名称来自服务端已批准的 Asset.altText。模型常会对
+ * aria-label 做同义改写，导致相同输入在重试时重复失败；这里仅把已经
+ * 唯一绑定到真实素材槽的 CSS consumer 规范化，再交给原严格校验器复验。
+ */
+function normalizeReadyCssBackgroundAccessibility(
+  output: unknown,
+  input: HtmlEngineerInput,
+) {
+  if (typeof output !== "string") return output;
+
+  let html = output;
+  for (const result of input.assets ?? []) {
+    if (result.status !== "ready" || !result.asset?.uri) continue;
+
+    const { assetSlotId } = result.request;
+    const markers = findTagMatchesWithAttributes(html, {
+      "data-asset-slot-id": assetSlotId,
+    });
+    if (markers.length !== 1) continue;
+
+    const marker = markers[0];
+    const tagName = marker.tag
+      .match(/^<\s*([a-z][\w:-]*)/i)?.[1]
+      ?.toLowerCase();
+    const directImage =
+      tagName === "img" &&
+      hasAttributeValue(marker.tag, "src", result.asset.uri);
+    const descendantImage = directImage
+      ? undefined
+      : findUniqueDescendantImage(
+          html,
+          marker,
+          assetSlotId,
+          result.asset.uri,
+        );
+    if (directImage || descendantImage) continue;
+
+    const cssConsumer = findReadyCssAssetConsumer(
+      html,
+      marker,
+      result.asset.uri,
+    );
+    if (!cssConsumer) continue;
+
+    const altText = result.asset.altText ?? "";
+    if (hasAccessibleBackgroundContract(cssConsumer.tag, altText)) continue;
+
+    const normalizedTag = setBackgroundAccessibility(cssConsumer.tag, altText);
+    html =
+      html.slice(0, cssConsumer.index) +
+      normalizedTag +
+      html.slice(cssConsumer.index + cssConsumer.tag.length);
+  }
+
+  return html;
+}
+
 /** 调用文本模型生成原始 HTML 文档，避免再套一层 JSON 转义。 */
 async function generateHtml(
   input: HtmlEngineerResolvedInput & {
@@ -373,11 +435,8 @@ function validateReadyAssetNode(
     ? undefined
     : findUniqueDescendantImage(html, marker, assetSlotId, asset.uri);
   const imageTag = directImageTag ? tag : descendantImageTag;
-  const cssTag =
-    hasCssUrl(tag, asset.uri) ||
-    hasUniqueStylesheetBackground(html, tag, asset.uri)
-      ? tag
-      : findUniqueDescendantCssConsumer(html, marker, asset.uri);
+  const cssConsumer = findReadyCssAssetConsumer(html, marker, asset.uri);
+  const cssTag = cssConsumer?.tag;
   if (!imageTag && !cssTag) {
     issues.push(
       `素材槽 ${assetSlotId} 没有在对应节点引用已生成素材 URI（${describeUnboundAssetReference(html, asset.uri)}）。`,
@@ -571,6 +630,21 @@ function findUniqueDescendantImage(
   return candidates.length === 1 ? candidates[0] : undefined;
 }
 
+function findReadyCssAssetConsumer(
+  html: string,
+  marker: OpeningTagMatch,
+  uri: string,
+) {
+  if (
+    hasCssUrl(marker.tag, uri) ||
+    hasUniqueStylesheetBackground(html, marker.tag, uri)
+  ) {
+    return marker;
+  }
+
+  return findUniqueDescendantCssConsumer(html, marker, uri);
+}
+
 function findUniqueDescendantCssConsumer(
   html: string,
   marker: OpeningTagMatch,
@@ -581,8 +655,7 @@ function findUniqueDescendantCssConsumer(
 
   const candidates = findTagMatchesWithAttributes(elementHtml, {})
     .filter(({ index }) => index > 0)
-    .map(({ tag }) => tag)
-    .filter((tag) => {
+    .filter(({ tag }) => {
       const nestedSlotIds = getAttributeValues(tag, "data-asset-slot-id");
       return (
         nestedSlotIds.length === 0 &&
@@ -590,7 +663,12 @@ function findUniqueDescendantCssConsumer(
           hasUniqueStylesheetBackground(html, tag, uri))
       );
     });
-  return candidates.length === 1 ? candidates[0] : undefined;
+  return candidates.length === 1
+    ? {
+        index: marker.index + candidates[0].index,
+        tag: candidates[0].tag,
+      }
+    : undefined;
 }
 
 function hasAccessibleBackgroundContract(tag: string, altText: string) {
@@ -598,6 +676,27 @@ function hasAccessibleBackgroundContract(tag: string, altText: string) {
     ? hasAttributeValue(tag, "role", "img") &&
         hasAttributeValue(tag, "aria-label", altText)
     : hasAttributeValue(tag, "aria-hidden", "true");
+}
+
+function setBackgroundAccessibility(tag: string, altText: string) {
+  const withoutAccessibility = tag.replace(
+    /\s+(?:role|aria-label|aria-hidden)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s'"=<>`]+)/gi,
+    "",
+  );
+  const attributes = altText
+    ? ` role="img" aria-label="${escapeHtmlAttribute(altText)}"`
+    : ' aria-hidden="true"';
+
+  return withoutAccessibility.replace(/\s*(\/?>)$/, `${attributes}$1`);
+}
+
+function escapeHtmlAttribute(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("'", "&#39;");
 }
 
 function getElementHtml(html: string, marker: OpeningTagMatch) {

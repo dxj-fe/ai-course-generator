@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "prompt:lint": "node --experimental-strip-types scripts/prompt-lint.ts",
     "test": "vitest run"
   },
   "dependencies": {

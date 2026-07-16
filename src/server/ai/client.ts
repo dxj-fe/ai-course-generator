@@ -30,6 +30,7 @@ export type StructuredAiClientRequest<T> = {
   abortSignal?: AbortSignal;
   maxTokens?: number;
   model?: LanguageModel;
+  normalizeOutput?: (output: unknown) => unknown;
   prompt: string;
   promptVersion?: string;
   schema: z.ZodType<T>;
@@ -112,7 +113,10 @@ export async function generateStructuredObjectSafe<T>(
       timeout: DEFAULT_STRUCTURED_TIMEOUT_MS,
       abortSignal: request.abortSignal,
     });
-    const parsed = request.schema.safeParse(result.output);
+    const normalizedOutput = request.normalizeOutput
+      ? request.normalizeOutput(result.output)
+      : result.output;
+    const parsed = request.schema.safeParse(normalizedOutput);
 
     if (!parsed.success) {
       throw new AiSchemaValidationError(

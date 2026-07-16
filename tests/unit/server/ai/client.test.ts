@@ -38,6 +38,27 @@ describe("AI client", () => {
     );
   });
 
+  it("normalizes a provider JSON object before strict schema validation", async () => {
+    generateTextMock.mockResolvedValue({
+      output: { interactionType: "multiple-choice" },
+    });
+    const normalizeOutput = vi.fn(() => ({ interactionType: "choice" }));
+
+    const result = await generateStructuredObjectSafe({
+      model: {} as never,
+      normalizeOutput,
+      prompt: "Generate a course page",
+      schema: z.object({ interactionType: z.literal("choice") }),
+      schemaName: "course_page",
+      traceId: "structured-normalization-test",
+    });
+
+    expect(normalizeOutput).toHaveBeenCalledWith({
+      interactionType: "multiple-choice",
+    });
+    expect(result).toEqual({ interactionType: "choice" });
+  });
+
   it("allows a long raw HTML generation to request a 60 second timeout", async () => {
     generateTextMock.mockResolvedValue({ text: "<!doctype html>" });
 

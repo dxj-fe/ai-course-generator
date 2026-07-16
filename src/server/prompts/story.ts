@@ -1,25 +1,9 @@
 import { loadPromptTemplate, renderPromptTemplate } from "./prompt-loader";
-import type { PromptTemplateDefinition } from "./types";
+import { getSpecialistPromptDefinition } from "./specialist-library";
 
-const systemDefinition: PromptTemplateDefinition = {
-  name: "story-system",
-  version: "1.0.1",
-  role: "system",
-  inputContract: ["接收 CourseIntent、CoursePlan 和 PedagogyPlan。"],
-  outputContract: ["只返回 StoryArc 内容草稿 JSON。"],
-  fileName: "story.system.v1.md",
-};
-
-const userDefinition: PromptTemplateDefinition = {
-  name: "story-user",
-  version: "1.0.0",
-  role: "user",
-  inputContract: [
-    "courseIntentJson、coursePlanJson 和 pedagogyPlanJson 必须是 JSON 值。",
-  ],
-  outputContract: ["pageBeats 按页面顺序输出，不包含 pageId。"],
-  fileName: "story.user.v1.md",
-};
+const storyPromptDefinition = getSpecialistPromptDefinition("story");
+const systemDefinition = storyPromptDefinition.system;
+const userDefinition = storyPromptDefinition.user;
 
 /** 加载并渲染 StoryAgent 的版本化 Prompt。 */
 export async function buildStoryPrompts(input: {
