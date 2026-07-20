@@ -52,6 +52,7 @@ export type CourseRunTimelinePage = {
     assets: CourseRunTimelineStage;
     html: CourseRunTimelineStage;
     qa?: CourseRunTimelineStage;
+    repair?: CourseRunTimelineStage;
   };
 };
 
@@ -126,6 +127,7 @@ export function buildCourseRunTimelineModel(
       stages.assets,
       stages.html,
       ...(stages.qa ? [stages.qa] : []),
+      ...(stages.repair ? [stages.repair] : []),
     ]),
   ];
   const activeStage = allStages.find(({ status }) => status === "running");
@@ -297,11 +299,51 @@ function buildPages(run: SeacaCourseRun, nowMs: number) {
           nowMs,
         )
       : undefined;
+    const pageState = run.generation?.pages.find(
+      (candidate) => candidate.pageId === pageId,
+    );
+    const repairEvents =
+      run.generation?.events.filter(
+        (event) => event.stage === "repair" && event.pageId === pageId,
+      ) ?? [];
+    const repairError = run.generation?.errors.find(
+      (error) => error.stage === "repair" && error.pageId === pageId,
+    );
+    const hasRepair = Boolean(
+      pageState?.repairHistory?.length ||
+        repairEvents.length ||
+        repairError ||
+        pageState?.currentStage === "repair",
+    );
+    const repair = hasRepair
+      ? buildStage(
+          run,
+          {
+            id: `repair-${pageId}`,
+            label: "Repair / re-QA",
+            agent: "repair-agent",
+            stage: "repair",
+            pageId,
+          },
+          repairError
+            ? "failed"
+            : pageState?.currentStage === "repair" &&
+                pageState.status === "running"
+              ? "running"
+              : pageState?.repairHistory?.some(
+                    ({ status }) => status === "applied",
+                  )
+                ? "completed"
+                : "idle",
+          nowMs,
+        )
+      : undefined;
     const requiredStages = [
       writer,
       assets,
       html,
       ...(run.generation?.workerConfig && qa ? [qa] : []),
+      ...(repair ? [repair] : []),
     ];
     const completed = requiredStages.every(
       ({ status }) => status === "completed",
@@ -319,7 +361,7 @@ function buildPages(run: SeacaCourseRun, nowMs: number) {
             ? "running"
             : "idle",
       completed,
-      stages: { writer, assets, html, qa },
+      stages: { writer, assets, html, qa, repair },
     };
   });
 }

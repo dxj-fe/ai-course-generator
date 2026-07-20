@@ -86,6 +86,12 @@ Day 15 的页面总分按内容 30%、排版 22%、连贯 17%、风格 13%、HTM
 
 Day 26 增加内容错误优先的服务端稳定排序，并允许报告携带可选 `screenshotEvidence`。共享证据只有状态、opaque artifact ID、固定 viewport 和几何指标；真实 PNG 路径保持在服务器内部。旧报告缺少维度问题索引或截图证据时仍能直接解析。
 
+## RepairRequestSchema / RepairResultSchema
+
+`RepairRequest` 把一个页面、来源 `QualityReport`、允许 issue codes、DSL block/HTML selector scope 和固定两轮预算绑定在一起。DSL 请求必须至少定位一个真实 block；所有 issue code 必须存在于来源报告。
+
+`RepairResult` 是三分支联合：`dsl_candidate`、`html_patch_candidate` 或 `declined`。DSL 候选重新通过 `PageContentDSLSchema` 并拒绝未授权字段变化；HTML patches 必须唯一匹配、与 addressed issues 对应，应用后重新通过 HTML 文档、安全、DSL 文本、稳定标记和素材引用合同。`RepairAttemptRecord` 只持久化来源报告和公开审计摘要，不重复保存候选正文；旧页面 checkpoint 可以没有 `repairHistory`。
+
 ## 关键跨实体校验
 
 - 页面 ID 与素材 ID 必须唯一。

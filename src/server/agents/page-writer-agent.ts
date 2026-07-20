@@ -275,7 +275,7 @@ async function generateContent(
         altTextGuidance:
           need.role === "decorative"
             ? "装饰性素材不传达信息，最终使用空 alt 文本。"
-            : `描述素材如何实现以下教学用途：${need.purpose}`,
+            : `${need.purpose.replace(/[。.!！?？]+$/u, "")}。`,
       })),
       layoutHints: {
         contentDensity: normalizePageContentDensity(

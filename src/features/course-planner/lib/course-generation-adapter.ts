@@ -326,6 +326,7 @@ function eventStatus(
   }
   if (
     type === "agent_start" ||
+    type === "repair_attempt" ||
     type === "start" ||
     type === "model_call" ||
     type === "tool_call" ||
@@ -333,6 +334,8 @@ function eventStatus(
   ) {
     return "running";
   }
+
+  if (type === "repair_success") return "completed";
 
   return undefined;
 }

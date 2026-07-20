@@ -41,7 +41,13 @@ export type SupervisorStateSummary = {
     pageId: string;
     order: number;
     status: "pending" | "running" | "completed" | "failed";
-    currentStage: "page_writer" | "assets" | "html" | "qa" | "complete";
+    currentStage:
+      | "page_writer"
+      | "assets"
+      | "html"
+      | "qa"
+      | "repair"
+      | "complete";
     hasContent: boolean;
     hasHtml: boolean;
   }>;

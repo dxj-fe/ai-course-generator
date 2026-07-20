@@ -38,6 +38,7 @@ export type StructuredAiClientRequest<T> = {
   schemaName: string;
   systemPrompt?: string;
   temperature?: number;
+  timeoutMs?: number;
   traceId: string;
 };
 
@@ -110,7 +111,7 @@ export async function generateStructuredObjectSafe<T>(
       temperature: request.temperature,
       maxOutputTokens: request.maxTokens,
       // 课程规划类结构化响应比普通文本更长，30 秒会在模型仍正常输出时误杀请求。
-      timeout: DEFAULT_STRUCTURED_TIMEOUT_MS,
+      timeout: request.timeoutMs ?? DEFAULT_STRUCTURED_TIMEOUT_MS,
       abortSignal: request.abortSignal,
     });
     const normalizedOutput = request.normalizeOutput
@@ -168,7 +169,7 @@ function logStructuredAiEvent<T>(
     hasSystemPrompt: Boolean(request.systemPrompt),
     temperature: request.temperature,
     maxTokens: request.maxTokens,
-    timeoutMs: DEFAULT_STRUCTURED_TIMEOUT_MS,
+    timeoutMs: request.timeoutMs ?? DEFAULT_STRUCTURED_TIMEOUT_MS,
   });
 }
 

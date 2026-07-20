@@ -1,6 +1,6 @@
 # 多 Agent 架构设计
 
-> Day 21 架构评审文档，已补充 Days 22–25 的当前事实：全局 `WorkflowNode`、受限 Supervisor、隔离 Page Worker、自动 report-only QA 与受控页面并发已经实现；Repair 和 LangGraph 仍未进入运行时。
+> Day 21 架构评审文档，已补充 Days 22–27 的当前事实：全局 `WorkflowNode`、受限 Supervisor、隔离 Page Worker、受控页面并发与两轮 QA/Repair/re-QA 已经实现；LangGraph 仍未进入运行时。
 
 ## 1. 结论
 
@@ -44,10 +44,10 @@
 5. [runSequentialWorkflow](../src/server/workflows/sequential-workflow.ts)校验全局节点的 `requiredInputs`、`produces` 和集中状态合并；
 6. [runCourseDesignWorkflow](../src/server/workflows/course-design-workflow.ts)串行执行 Pedagogy、Story、Visual，再投影每页 `PageWorkerBrief`；
 7. [runCourseWorkersWorkflow](../src/server/workflows/course-workers-workflow.ts)按页面依赖和 serial/parallel 配置调度 [generatePageWorker](../src/server/workflows/page-worker.ts)，Promise Pool 默认并发度为 2；
-8. 每个 Worker 执行 Writer、Assets、HTML、QA，局部 update 经单一队列合并为经过校验的 [CourseGenerationState](../src/shared/course-schema/course-generation-state.ts) checkpoint；
+8. 每个 Worker 执行 Writer、Assets、HTML、QA，并在需要时进入最多两轮的定向 Repair/re-QA；局部 update 经单一队列合并为经过校验的 [CourseGenerationState](../src/shared/course-schema/course-generation-state.ts) checkpoint；
 9. Task Service 只在持久化成功后发布 strict snapshot、event 或 terminal；前端 Adapter 与 Controller 把并发页面状态投影到现有 `/chat` Timeline 和 learning workspace。
 
-Page QA 当前是每个新 Worker 的只读末段；报告不会修改 HTML，也不会触发 Repair。旧 checkpoint 可没有报告，Repair 当前不存在。
+Page QA 自身保持只读；Page Worker 根据报告执行确定性 issue 分类，再调用有界 Repair 并 re-QA。旧 checkpoint 可以没有报告或 `repairHistory`，恢复时不会重置已经持久化的 Repair 轮次。
 
 ## 4. 单一超级 Agent 的上限
 
@@ -87,7 +87,7 @@ Planner 关注课程节奏、依赖和跨页连贯；HTML Engineer 关注单页 
 
 让生成 HTML 的 Agent 同时宣布自己的结果正确，容易产生自我合理化，也可能在“修复”时越权修改内容。
 
-[PageQAAgent](../src/server/agents/page-qa-agent.ts)被设计为 report-only。未来 Repair 必须消费明确 issue，修复后仍需重新 QA，不能自行判定通过。
+[PageQAAgent](../src/server/agents/page-qa-agent.ts)保持 report-only。Day 27 Repair 只消费明确 issue 和运行层授权 scope，修复后仍需重新 QA，不能自行判定通过。
 
 ### 4.7 错误归因与可观测性不足
 
@@ -182,7 +182,7 @@ Supervisor 不得：
 权威角色索引位于 [src/server/agents/README.md](../src/server/agents/README.md)。它把职责分为四组：
 
 1. **入口解析：** Intent 把不可信用户输入转换为验证后的 `CourseIntent`；
-2. **业务产物 Specialist：** Planner、Pedagogy、Story、Visual、Page Writer、Image Prompt、HTML Engineer、QA 与未来 Repair；
+2. **业务产物 Specialist：** Planner、Pedagogy、Story、Visual、Page Writer、Image Prompt、HTML Engineer、QA 与 Repair；
 3. **协调范围：** 已实现的 Supervisor 与 Page Worker 页面执行范围；
 4. **确定性能力：** Generate Image Skill、Registry、Validator、Storage、checkpoint 和 SSE。
 
@@ -238,7 +238,7 @@ Route / Agent / Workflow
   -> 现有 Timeline 与 learning workspace
 ```
 
-Supervisor 事件已经在服务端映射成共享公开协议；未来 Repair 与 LangGraph 事件仍必须遵守同一边界。UI 不直接消费框架原生 chunk，也不从面向用户的 summary 推断调度规则。
+Supervisor 与 Repair 事件已经在服务端映射成共享公开协议；未来 LangGraph 事件仍必须遵守同一边界。UI 不直接消费框架原生 chunk，也不从面向用户的 summary 推断调度规则。
 
 ## 11. 不该使用多 Agent 的场景
 
@@ -273,7 +273,7 @@ Supervisor 是架构角色；LangGraph 是实现 State、Node、Edge、Reducer�
 2. **Day 22（已完成）：** 把固定顺序表达为显式手写 Specialist Workflow，同时保持 API、SSE、Schema、checkpoint、恢复和 UI 合同；
 3. **Day 23 已完成：** 引入有限 Supervisor 路由、重试、停止和可解释决策；
 4. **Days 24–26（已完成）：** 强化 Specialist Prompt，实现 Page Worker、自动 report-only QA、受控并发和多证据六维 QA；
-5. **Day 27：** 实现受限 Repair/re-QA；
+5. **Day 27（已完成）：** 实现受限 Repair/re-QA、两轮预算、失败分类和公开事件；
 6. **Days 28–31：** 在不重做前端的前提下评估并迁移稳定状态到 LangGraph。
 
 每一步都应独立验收，不提前宣称后续能力已经完成。

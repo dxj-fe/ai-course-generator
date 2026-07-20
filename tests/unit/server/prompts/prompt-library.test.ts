@@ -30,11 +30,9 @@ describe("Specialist Prompt Library", () => {
       "qa",
       "repair",
     ]);
-    expect(
-      SPECIALIST_PROMPT_LIBRARY.filter(({ status }) => status === "draft").map(
-        ({ id }) => id,
-      ),
-    ).toEqual(["repair"]);
+    expect(SPECIALIST_PROMPT_LIBRARY.every(({ status }) => status === "active")).toBe(
+      true,
+    );
   });
 
   it("passes the repository Prompt lint", async () => {

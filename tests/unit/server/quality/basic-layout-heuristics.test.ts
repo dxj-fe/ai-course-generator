@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { basicLayoutHeuristics } from "../../../../src/server/quality/basic-layout-heuristics";
+import { AssetGenerationResultSchema } from "../../../../src/shared/course-schema";
 import { pageContentDsl } from "../../../fixtures/course-design";
 import { buildValidGeneratedHtml } from "../../../fixtures/generated-html";
 
@@ -69,5 +70,63 @@ describe("basicLayoutHeuristics", () => {
     expect(
       basicLayoutHeuristics({ content, html }).map(({ code }) => code),
     ).toContain("ASSET_REQUIRED_SLOT_EMPTY");
+  });
+
+  it("accepts an inline background image as a usable required asset", () => {
+    const content = {
+      ...pageContentDsl,
+      assetSlots: [
+        {
+          id: "asset-slot-01" as const,
+          type: "illustration" as const,
+          role: "hero" as const,
+          purpose: "展示课程主题视觉标识",
+          required: true,
+          altTextGuidance: "描述课程主题视觉",
+        },
+      ],
+    };
+    const html = buildValidGeneratedHtml(content).replace(
+      '<figure data-asset-slot-id="asset-slot-01"><figcaption>展示课程主题视觉标识</figcaption></figure>',
+      '<div data-asset-slot-id="asset-slot-01" role="img" aria-label="课程主题视觉" style="background-image: url(\'/api/assets/asset-01\'); background-size: cover;"></div>',
+    );
+    const assets = [
+      AssetGenerationResultSchema.parse({
+        request: {
+          assetSlotId: "asset-slot-01" as const,
+          assetType: "background",
+          usage: "展示课程主题视觉标识",
+          prompt: "A calm educational course hero image without any embedded text.",
+          transparentBackground: false,
+          safeArea: {
+            position: "center",
+            coveragePercent: 40,
+            description: "中央保留内容安全区",
+          },
+          aspectRatio: "16:9",
+        },
+        status: "ready",
+        asset: {
+          id: "asset-01",
+          type: "image",
+          role: "hero",
+          source: "generated",
+          status: "ready",
+          uri: "/api/assets/asset-01",
+          altText: "课程主题视觉",
+          generationPrompt:
+            "A calm educational course hero image without any embedded text.",
+          mimeType: "image/png",
+          dimensions: { width: 1280, height: 720 },
+          usedByPageIds: [content.pageId],
+        },
+        warnings: [],
+        durationMs: 12,
+      }),
+    ];
+
+    expect(
+      basicLayoutHeuristics({ content, html, assets }).map(({ code }) => code),
+    ).not.toContain("ASSET_REQUIRED_SLOT_EMPTY");
   });
 });

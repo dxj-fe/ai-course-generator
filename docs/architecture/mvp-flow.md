@@ -145,7 +145,7 @@ SSE 合同由 [`course-task-event.ts`](../../src/shared/course-schema/course-tas
 
 展示组件不直接调用生成业务 API，也不消费框架原生流事件。
 
-## QA 是 Worker 的只读末段
+## QA 与有界 Repair 是 Worker 的页面质量闭环
 
 [`Page QA Agent`](../../src/server/agents/page-qa-agent.ts) 已接入每个新 Page Worker 的末段；已有 [`/api/pages/qa`](../../src/app/api/pages/qa/route.ts) 仍支持显式重跑：
 
@@ -156,14 +156,15 @@ SSE 合同由 [`course-task-event.ts`](../../src/shared/course-schema/course-tas
 - 截图文件只保存在 `.data/quality-screenshots`，共享报告不暴露服务器路径；截图失败不影响 QA 主流程；
 - QA 结果保存到页面局部 `qualityReport` 并投影到现有六维质量面板；
 - QA 执行失败只使当前 Worker 失败，不抹掉其他成功页面；
-- 当前没有自动 `QA -> Repair -> re-QA` 循环。
+- `shouldRepair=false` 时页面直接完成；否则由确定性分类器选择 located DSL blocks 或 HTML patches，Repair Agent 不能自行选页面、扩大 scope 或宣布通过；
+- 每页最多两轮 Repair，每轮保存来源报告、issue、目标和公开变更摘要，候选应用后必须经过原合同和 re-QA；
+- 预算耗尽、素材 Provider 问题、无定位 issue、候选越界或校验失败都会保留最新报告并结构化停止，不会无限循环。
 
 ## 当前明确不存在的能力
 
 - Supervisor 当前只调度全局课程节点，不拥有课程正文能力，也没有成本/token 计费器或人工审批队列。
-- 没有 Repair Agent 或自动修复循环。
 - 没有 LangGraph StateGraph、条件边、Reducer 或框架原生 streaming。
-- 自动 QA 只报告，不会把分数升级为自动 Repair 或发布门槛。
+- QA/Repair 只形成页面内部两轮闭环，尚未引入人工审批或课程发布门槛。
 - EventBus 与活动任务去重都是单进程实现，不是分布式任务队列或 lease。
 
 目标架构及其停止条件见 [`multi-agent-flow.md`](./multi-agent-flow.md)。

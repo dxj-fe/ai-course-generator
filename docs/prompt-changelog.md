@@ -2,6 +2,37 @@
 
 本文件记录 Specialist Prompt 的可审计合同变化。组合版本格式为 `system/user`。
 
+## 2026-07-16 · Day 27 本地回归修复
+
+### Page QA · 2.1.2/2.1.0 active
+
+- 明确六维摘要不得超过 300 字符，severity 只能使用 `info | warning | error`，每个 location 必须包含 description。
+- 对仅支持 JSON object mode 的 Provider，运行层只收敛超长展示文本、常见 severity 同义词和缺失的定位描述；未知严重度、非法维度与 issue 引用继续严格失败。
+- 同一规范化同时覆盖初次 QA 与 Repair 后 re-QA，不改变程序计算的总分、限分、shouldRepair 和 decision。
+- 硬合同拥有的静态行为不再被模型重新解释为 Repair issue：success 参考反馈允许常显、批准素材 alt 必须原样复用，readingOrder 只比较声明的 blockId 相对顺序。
+
+回滚方式：恢复 Page QA system 版本为 `2.1.0`，移除模型输出规范化与硬合同 issue 过滤；确定性启发式和报告计算无需迁移。
+
+### Repair · 1.0.1/1.0.0 active
+
+- HTML patch 增加受 selector scope 约束的标签边界插入操作；缺失结构不再用 `search` 匹配尚不存在的标签。
+- `HTML_MAIN_MISSING` 使用 body 开、闭标签的一对定向插入包裹主体，仍禁止返回整页 replacement，应用后继续执行完整 HTML 合同与 re-QA。
+- 省略 operation 时仍按 `replace` 解析，已有候选与 checkpoint 合同继续兼容。
+
+回滚方式：恢复 Repair system 版本为 `1.0.0`，移除边界插入操作，并保留现有 `replace` patch 解析。
+
+## 2026-07-16 · Day 27
+
+### Repair · 1.0.0/1.0.0 active
+
+- 将 Day 24 的合同草案激活为运行时 `RepairAgent`，输入必须通过 `RepairRequestSchema`，输出必须通过 `RepairResultSchema`。
+- DSL 修复只能修改 QA 定位并由运行层授权的 blocks；页面身份、模板、互动、素材槽、布局提示和其余 blocks 保持不变。
+- HTML 修复只返回带真实 issue code 的唯一匹配 search/replacement patches，不允许把完整页面重写塞入 replacement。
+- 无法安全定位、范围冲突或需要上游素材时返回结构化 `declined`；不得伪造候选。
+- 修复候选仍要通过原 DSL/HTML/asset 安全合同，并由运行层 re-QA；Repair 不能宣布通过或增加两轮预算。
+
+回滚方式：将 Repair 注册项恢复为 `draft 0.1.0/0.1.0` 并从 Page Worker 移除 qa-repair-loop；保留旧 checkpoint 的可选 repairHistory 兼容解析。
+
 ## 2026-07-16 · Day 26
 
 ### Page QA · 2.1.0/2.1.0

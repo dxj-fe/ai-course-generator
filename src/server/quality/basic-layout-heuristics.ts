@@ -324,8 +324,20 @@ function hasUsableAssetSlot(html: string, slotId: string) {
     `<(?:img|svg|picture|canvas)\\b[^>]*data-asset-slot-id\\s*=\\s*(["'])${escaped}\\1[^>]*>`,
     "i",
   ).test(html);
+  const openingTag = paired?.match(/^<[^>]+>/)?.[0];
+  const inlineStyle = openingTag
+    ? /\bstyle\s*=\s*(["'])([\s\S]*?)\1/i.exec(openingTag)?.[2]
+    : undefined;
+  const inlineBackground = Boolean(
+    inlineStyle &&
+      /\bbackground(?:-image)?\s*:[^;]*\burl\s*\([^)]*\)/i.test(inlineStyle),
+  );
 
-  return selfClosing || Boolean(paired && /<(?:img|svg|picture|canvas)\b/i.test(paired));
+  return (
+    selfClosing ||
+    inlineBackground ||
+    Boolean(paired && /<(?:img|svg|picture|canvas)\b/i.test(paired))
+  );
 }
 
 function hasLowContrastPair(html: string) {

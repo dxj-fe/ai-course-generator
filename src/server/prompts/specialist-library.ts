@@ -227,7 +227,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     templateVariables: ["pageQaInputJson"],
     system: {
       name: "page-qa-system",
-      version: "2.1.0",
+      version: "2.1.2",
       role: "system",
       inputContract: [
         "已校验的页面计划、DSL、HTML、课程上下文、brief、素材及静态/浏览器证据。",
@@ -249,15 +249,16 @@ export const SPECIALIST_PROMPT_LIBRARY = [
   {
     id: "repair",
     agentName: "RepairAgent",
-    status: "draft",
-    outputSchema: "RepairResult（合同草案，尚无共享运行时 Schema）",
+    status: "active",
+    outputSchema: "RepairResultSchema",
+    moduleFile: "repair.ts",
     templateVariables: ["repairInputJson"],
     system: {
       name: "repair-system",
-      version: "0.1.0",
+      version: "1.0.1",
       role: "system",
       inputContract: [
-        "未来只接收原始页面产物、已校验 QualityReport、限定目标和有限 repair budget。",
+        "只接收原始页面产物、已校验 QualityReport、限定目标和两轮 repair budget。",
       ],
       outputContract: [
         "返回定向修复候选及已处理 issue 引用；必须经过同一合同和 re-QA。",
@@ -266,10 +267,10 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     },
     user: {
       name: "repair-user",
-      version: "0.1.0",
+      version: "1.0.0",
       role: "user",
-      inputContract: ["未来的类型化 Repair 输入 JSON。"],
-      outputContract: ["返回合同草案约定的修复候选 JSON。"],
+      inputContract: ["经过 RepairRequestSchema 校验的单页输入 JSON。"],
+      outputContract: ["返回 RepairResultSchema 修复候选或结构化拒绝。"],
       fileName: "repair.user.v1.md",
     },
   },

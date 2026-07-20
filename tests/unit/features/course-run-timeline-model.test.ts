@@ -198,6 +198,44 @@ describe("buildCourseRunTimelineModel", () => {
     ]);
   });
 
+  it("projects Repair attempts as a page stage without exposing candidate data", () => {
+    const generation = createGeneration({
+      currentStage: "repair",
+      pages: [
+        {
+          pageId,
+          order: 1,
+          status: "running",
+          currentStage: "repair",
+          assets: [],
+        },
+      ],
+      events: [
+        createEvent(1, {
+          type: "repair_attempt",
+          stage: "repair",
+          pageId,
+          traceId: "trace-current",
+          agent: "repair-agent",
+          summary: "第 1 轮 Repair 开始：定向修复 HTML。",
+        }),
+      ],
+    });
+    const run = createRun(generation);
+    run.pageWrites[pageId] = { status: "completed", events: [] };
+    run.pageAssets[pageId] = { status: "completed", events: [] };
+    run.pageHtml[pageId] = { status: "completed", events: [] };
+
+    expect(
+      buildCourseRunTimelineModel(run).pages[0]?.stages.repair,
+    ).toMatchObject({
+      agent: "repair-agent",
+      label: "Repair / re-QA",
+      status: "running",
+      summaries: ["第 1 轮 Repair 开始：定向修复 HTML。"],
+    });
+  });
+
   it("counts attempts by trace and times the latest attempt from its earliest duplicate start", () => {
     const events = [
       createEvent(1, {

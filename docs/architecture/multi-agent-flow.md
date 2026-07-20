@@ -2,7 +2,7 @@
 
 > **PARTIALLY IMPLEMENTED / 按阶段校准**
 >
-> 本文最初是 Day 21 的目标架构，现已用 Days 23–25 校准：受限 Supervisor、显式全局 `WorkflowNode`、隔离 Page Worker、自动 report-only QA 与受控并发已经实现；Repair/re-QA 和 LangGraph 仍未实现。当前运行事实以 [`mvp-flow.md`](./mvp-flow.md) 为准。
+> 本文最初是 Day 21 的目标架构，现已用 Days 23–27 校准：受限 Supervisor、显式全局 `WorkflowNode`、隔离 Page Worker、受控并发与两轮 QA/Repair/re-QA 已经实现；LangGraph 仍未实现。当前运行事实以 [`mvp-flow.md`](./mvp-flow.md) 为准。
 
 ## 设计目标
 
@@ -181,7 +181,7 @@ Specialist 不获得 `courseStore.save`，也不能直接发布 SSE。当前 `ru
 
 ## 有界 QA、Repair 与 re-QA
 
-目标质量循环必须由代码预算约束。具体上限应在后续训练日进入类型化策略并由自动化测试保护，而不是在 Day 21 提前确定数值，或把预算藏在 Prompt 中。
+质量循环由代码预算约束。Day 27 已把页面 Repair 上限固定为两轮并写入类型化请求、checkpoint 和自动化测试，而不是把预算藏在 Prompt 中。
 
 ```mermaid
 stateDiagram-v2
@@ -240,5 +240,5 @@ flowchart LR
 2. **Day 23 已完成：** 加入只负责结构化调度的 Supervisor、持久化有限重试、确定性停止规则和公开决策摘要。
 3. **Day 24 已完成：** 收紧九名 Specialist 的 Prompt、输入输出和禁止项。
 4. **Day 25 已完成：** 实现隔离 Page Worker、页面局部重试、自动 QA、依赖感知调度和默认并发度 2 的 Promise Pool。
-5. **后续目标：** 将现有 report-only QA 接入质量门槛，并实现 Repair 候选与 re-QA。
+5. **Day 26–27 已完成：** 深化六维 QA，并接入定向 Repair 候选、原合同校验、两轮预算与 re-QA。
 6. **后续目标：** 最后评估是否用 LangGraph 替换手写运行层，同时保持 SSE 和前端数据合同不变。

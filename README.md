@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话生成一门由多页关联 HTML 组成的课程。当前 Day 22 版本由服务端显式手写 `WorkflowNode` 串行编排 3–5 页规划、专业设计、PageContentDSL、图片素材与 HTML，并通过严格公开事件、SSE 和持久化检查点向 Seaca 学习工作区实时交付任务、Agent、页面三层进度、统一预览与可定位的失败恢复能力。
+一句话生成一门由多页关联 HTML 组成的课程。当前 Day 27 版本由受限 Supervisor 调度全局 Specialist，依赖感知 Page Worker 以默认并发度 2 生成页面，并在每页执行 Writer → Assets → HTML → QA → 最多两轮定向 Repair/re-QA。严格公开事件、SSE 和持久化 checkpoint 向 Seaca 学习工作区实时交付任务、Agent、页面进度、统一预览和可定位恢复能力。
 
 ## Day 01 交付
 
@@ -207,6 +207,15 @@
 - API、SSE、公开事件 Schema、`CourseGenerationState`、checkpoint 时机、取消与断点恢复语义、Seaca `/chat` Timeline 和 learning workspace 均保持不变。
 - 本日没有实现 Supervisor、Repair、自动 QA、独立 Page Worker、页面并发或 LangGraph；固定顺序仍由服务端 TypeScript 节点列表决定。
 - 重构前后对比、节点合同、失败语义和详细面试复盘见 `notes/day-22.md`；当前/目标图与角色边界见 `docs/architecture/mvp-flow.md`、`docs/architecture/multi-agent-flow.md`、`docs/multi-agent-design.md` 和 `src/server/agents/README.md`。
+
+## Day 27 交付
+
+- 新增 `RepairRequestSchema`、`RepairResultSchema` 和持久化 `RepairAttemptRecord`，旧 checkpoint 可不包含 Repair 历史。
+- 内容/教学问题只允许修改 QA 定位的 DSL blocks；排版、风格和 HTML 问题使用唯一匹配 patches，并重新通过原 HTML/DSL/asset 安全合同。
+- Page Worker 接入最多两轮 QA → Repair → re-QA；预算耗尽、无定位问题、上游素材问题或候选越界会保留最新报告并结构化停止。
+- Repair Prompt 从 draft 升级为 active `1.0.0/1.0.0`，不能读取原始用户 Prompt、扩大 scope、增加预算或自行宣布通过。
+- `repair_attempt`、`repair_success` 和错误摘要进入现有 SSE、Timeline 与 learning workspace Repair 记录，不暴露候选正文和私有推理。
+- 实现说明和面试复盘见 `notes/day-27.md`。
 
 ## 启动
 

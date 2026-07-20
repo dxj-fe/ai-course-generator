@@ -25,6 +25,8 @@ type AgentEventType =
   | "model_call"
   | "tool_call"
   | "validation"
+  | "repair_attempt"
+  | "repair_success"
   | "page_done"
   | "finish"
   | "error";

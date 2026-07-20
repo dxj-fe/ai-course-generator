@@ -3,4 +3,4 @@
 Repair 输入：
 {{repairInputJson}}
 
-当前 Repair Agent 尚未接入运行链路。本模板仅用于合同审查；不要宣称已执行修复或已经通过 re-QA。
+只处理 request.issueCodes 和允许范围。返回修复候选不代表已经通过；运行层会重新校验并执行 re-QA。

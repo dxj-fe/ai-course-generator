@@ -14,6 +14,10 @@
 | QA | report-only 边界存在，但未说明输入冲突的处理 | 明确不得修复、自判通过或伪造几何证据 | 已采纳，升级 2.0.0 |
 | Repair | 当前没有实现 | 只建立 draft 合同，不创造虚假 Schema 或运行入口 | 已采纳，保持 0.1.0 draft |
 
+Day 27 复审：`RepairRequestSchema`、`RepairResultSchema`、定向候选校验和两轮 qa-repair-loop 已实现，因此 Repair 合同升级为 active `1.0.0/1.0.0`。原草案中的“不扩大范围、不跳过 re-QA、不自判通过”继续保留，并由代码执行。
+
+Day 27 本地回归复审：Repair system 升级为 `1.0.1` 以支持授权标签边界插入；Page QA system 升级为 `2.1.2`，由运行层规范化兼容 Provider 的超长摘要、常见 severity 同义词和缺失定位描述，并阻止模型把硬合同允许的静态反馈、批准 alt 和合法 block 顺序误报为 Repair issue。规范化不修复未知维度、issue code 或无法确定的严重度。
+
 ## 未采纳建议
 
 - 没有把九个 Prompt 合并成一个“全能课程 Prompt”，因为这会破坏 Specialist 的可验证 handoff。

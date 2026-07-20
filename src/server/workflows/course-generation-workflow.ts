@@ -3,6 +3,7 @@ import { runCoursePlannerAgent } from "@/server/agents/course-planner-agent";
 import { runHtmlEngineerAgent } from "@/server/agents/html-engineer-agent";
 import { runPageWriterAgent } from "@/server/agents/page-writer-agent";
 import { runPageQAAgent } from "@/server/agents/page-qa-agent";
+import { runRepairAgent } from "@/server/agents/repair-agent";
 import { runSupervisorAgent } from "@/server/agents/supervisor-agent";
 import type { AgentRuntimeContext } from "@/server/agents/core/types";
 import { createCourseStore } from "@/server/storage/course-store";
@@ -57,6 +58,7 @@ export type CourseGenerationWorkflowDependencies =
   CourseGenerationNodeDependencies & {
     runSupervisor: typeof runSupervisorAgent;
     runQA: typeof runPageQAAgent;
+    runRepair: typeof runRepairAgent;
     generatePage: typeof generatePageWorker;
     checkpoint(state: CourseGenerationState): Promise<void>;
     now(): string;
@@ -71,6 +73,7 @@ const defaultDependencies: CourseGenerationWorkflowDependencies = {
   runAssets: runImageAssetWorkflow,
   runHtml: runHtmlEngineerAgent,
   runQA: runPageQAAgent,
+  runRepair: runRepairAgent,
   generatePage: generatePageWorker,
   runSupervisor: runSupervisorAgent,
   checkpoint: courseStore.save,

@@ -7,6 +7,7 @@ import { CourseIntentSchema } from "./intent";
 import { HtmlOutputSchema } from "./page";
 import { PageContentDSLSchema } from "./page-content-dsl";
 import { QualityReportSchema } from "./quality";
+import { RepairAttemptRecordSchema } from "./repair";
 import { SupervisorRuntimeStateSchema } from "./supervisor";
 
 /** 可安全用作课程存储目录名的稳定 ID。 */
@@ -25,6 +26,7 @@ export const CourseGenerationStageSchema = z.enum([
   "assets",
   "html",
   "qa",
+  "repair",
   "complete",
 ]);
 
@@ -40,6 +42,7 @@ export const PageGenerationStageSchema = z.enum([
   "assets",
   "html",
   "qa",
+  "repair",
   "complete",
 ]);
 
@@ -67,6 +70,8 @@ export const CourseGenerationEventTypeSchema = z.enum([
   "tool_call",
   "validation",
   "supervisor_decision",
+  "repair_attempt",
+  "repair_success",
   "page_done",
   "finish",
   "error",
@@ -109,7 +114,7 @@ export const PageGenerationErrorSchema = CourseGenerationErrorSchema.omit({
 
 export const PageGenerationAttemptSchema = z
   .object({
-    stage: PageGenerationStageSchema.exclude(["complete"]),
+    stage: PageGenerationStageSchema.exclude(["complete", "repair"]),
     attempts: z.number().int().min(1).max(3),
   })
   .strict();
@@ -138,6 +143,7 @@ export const PageGenerationStateSchema = z
     assets: z.array(AssetGenerationResultSchema).max(12),
     htmlOutput: HtmlOutputSchema.optional(),
     qualityReport: QualityReportSchema.optional(),
+    repairHistory: z.array(RepairAttemptRecordSchema).max(2).optional(),
     attempts: z.array(PageGenerationAttemptSchema).max(4).optional(),
     error: PageGenerationErrorSchema.optional(),
   })
@@ -161,6 +167,26 @@ export const PageGenerationStateSchema = z
         path: ["qualityReport", "target", "pageId"],
       });
     }
+
+    (page.repairHistory ?? []).forEach((attempt, index) => {
+      if (attempt.round !== index + 1) {
+        context.addIssue({
+          code: "custom",
+          message: `Repair round 应连续为 ${index + 1}`,
+          path: ["repairHistory", index, "round"],
+        });
+      }
+      if (
+        attempt.sourceReport.target.type !== "page" ||
+        attempt.sourceReport.target.pageId !== page.pageId
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Repair attempt 的来源报告必须引用当前页面",
+          path: ["repairHistory", index, "sourceReport", "target"],
+        });
+      }
+    });
 
     if (page.status === "failed" && !page.error) {
       context.addIssue({

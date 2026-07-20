@@ -38,6 +38,23 @@ describe("AI client", () => {
     );
   });
 
+  it("allows a specialized structured request to use a longer finite timeout", async () => {
+    generateTextMock.mockResolvedValue({ output: { value: "ok" } });
+
+    await generateStructuredObjectSafe({
+      model: {} as never,
+      prompt: "Generate a bounded repair candidate",
+      schema: z.object({ value: z.string() }),
+      schemaName: "repair_candidate",
+      timeoutMs: 120_000,
+      traceId: "structured-custom-timeout-test",
+    });
+
+    expect(generateTextMock).toHaveBeenCalledWith(
+      expect.objectContaining({ timeout: 120_000 }),
+    );
+  });
+
   it("normalizes a provider JSON object before strict schema validation", async () => {
     generateTextMock.mockResolvedValue({
       output: { interactionType: "multiple-choice" },

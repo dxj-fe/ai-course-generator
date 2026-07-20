@@ -73,6 +73,35 @@ export const PageQAModelOutputSchema = z
   })
   .strict();
 
+const PAGE_QA_DIMENSION_NAMES = [
+  "contentAccuracy",
+  "layoutQuality",
+  "courseCoherence",
+  "styleConsistency",
+  "htmlRuntime",
+  "assetUsability",
+] as const;
+
+const MODEL_SEVERITY_ALIASES = {
+  blocker: "error",
+  critical: "error",
+  fatal: "error",
+  high: "error",
+  major: "error",
+  severe: "error",
+  medium: "warning",
+  minor: "warning",
+  moderate: "warning",
+  low: "info",
+  notice: "info",
+  suggestion: "info",
+} as const;
+
+const CONTRACT_OWNED_MODEL_ISSUE_CODES = new Set([
+  "ASSET_ALT_TEXT_INVALID",
+  "INTERACTION_FEEDBACK_VISIBLE_BY_DEFAULT",
+]);
+
 export type PageQACourseContext = {
   courseOverview?: string;
   learningObjectives: string[];
@@ -259,7 +288,9 @@ export function validatePageQAOutput(
   heuristicIssues: QualityIssue[],
   screenshot?: PageScreenshotResult,
 ) {
-  const parsed = PageQAModelOutputSchema.safeParse(output);
+  const parsed = PageQAModelOutputSchema.safeParse(
+    normalizePageQAModelOutput(output),
+  );
 
   if (!parsed.success) {
     throw new AiSchemaValidationError(
@@ -270,18 +301,20 @@ export function validatePageQAOutput(
   }
 
   const blockIds = new Set(input.content.blocks.map(({ id }) => id));
-  const modelIssues: QualityIssue[] = parsed.data.issues.map((issue) => ({
-    ...issue,
-    source: "model",
-    location: {
-      ...issue.location,
-      pageId: input.page.id,
-      blockId:
-        issue.location.blockId && blockIds.has(issue.location.blockId)
-          ? issue.location.blockId
-          : undefined,
-    },
-  }));
+  const modelIssues: QualityIssue[] = parsed.data.issues
+    .filter((issue) => shouldKeepModelIssue(issue, input))
+    .map((issue) => ({
+      ...issue,
+      source: "model",
+      location: {
+        ...issue.location,
+        pageId: input.page.id,
+        blockId:
+          issue.location.blockId && blockIds.has(issue.location.blockId)
+            ? issue.location.blockId
+            : undefined,
+      },
+    }));
 
   return buildPageQualityReport({
     pageId: input.page.id,
@@ -291,6 +324,131 @@ export function validatePageQAOutput(
     modelIssues,
     screenshotEvidence: screenshot?.evidence,
   });
+}
+
+/**
+ * 兼容只提供 JSON object mode 的 Provider：仅收敛可无损确定的展示文本和
+ * 常见严重度别名。维度、issue code、定位引用等语义字段仍由严格 Schema 拒绝。
+ */
+export function normalizePageQAModelOutput(output: unknown): unknown {
+  if (!isRecord(output)) return output;
+
+  let changed = false;
+  let dimensions = output.dimensions;
+  if (isRecord(dimensions)) {
+    const normalizedDimensions = { ...dimensions };
+    for (const name of PAGE_QA_DIMENSION_NAMES) {
+      const dimension = normalizedDimensions[name];
+      if (!isRecord(dimension)) continue;
+      const summary = truncateString(dimension.summary, 300);
+      if (summary !== dimension.summary) {
+        normalizedDimensions[name] = { ...dimension, summary };
+        changed = true;
+      }
+    }
+    dimensions = normalizedDimensions;
+  }
+
+  let issues = output.issues;
+  if (Array.isArray(issues)) {
+    issues = issues.map((issue) => {
+      if (!isRecord(issue)) return issue;
+      let normalizedIssue = issue;
+
+      const severity = normalizeModelSeverity(issue.severity);
+      if (severity !== issue.severity) {
+        normalizedIssue = { ...normalizedIssue, severity };
+        changed = true;
+      }
+
+      for (const field of ["message", "repairHint"] as const) {
+        const value = truncateString(normalizedIssue[field], 500);
+        if (value !== normalizedIssue[field]) {
+          normalizedIssue = { ...normalizedIssue, [field]: value };
+          changed = true;
+        }
+      }
+
+      if (isRecord(normalizedIssue.location)) {
+        const location = normalizedIssue.location;
+        const description = normalizeLocationDescription(location);
+        if (description !== location.description) {
+          normalizedIssue = {
+            ...normalizedIssue,
+            location: { ...location, description },
+          };
+          changed = true;
+        }
+      }
+
+      return normalizedIssue;
+    });
+  }
+
+  return changed ? { ...output, dimensions, issues } : output;
+}
+
+function normalizeModelSeverity(value: unknown) {
+  if (typeof value !== "string") return value;
+  const normalized = value.trim().toLowerCase();
+  if (["info", "warning", "error"].includes(normalized)) return normalized;
+  return MODEL_SEVERITY_ALIASES[
+    normalized as keyof typeof MODEL_SEVERITY_ALIASES
+  ] ?? value;
+}
+
+function shouldKeepModelIssue(
+  issue: z.infer<typeof PageQAModelIssueSchema>,
+  input: PageQAInput,
+) {
+  if (CONTRACT_OWNED_MODEL_ISSUE_CODES.has(issue.code)) return false;
+  if (
+    issue.code === "LAYOUT_READING_ORDER_MISMATCH" &&
+    followsDeclaredBlockOrder(input.html, input.content.layoutHints.readingOrder)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function followsDeclaredBlockOrder(html: string, blockIds: string[]) {
+  let previousIndex = -1;
+  return blockIds.every((blockId) => {
+    const marker = `data-block-id="${blockId}"`;
+    const index = html.indexOf(marker);
+    if (index < 0 || index <= previousIndex) return false;
+    previousIndex = index;
+    return true;
+  });
+}
+
+function normalizeLocationDescription(location: Record<string, unknown>) {
+  if (typeof location.description === "string") {
+    const description = truncateString(location.description, 240);
+    if (description.trim().length >= 2) return description;
+  }
+  if (typeof location.blockId === "string") {
+    return truncateString(`内容块 ${location.blockId}`, 240);
+  }
+  if (typeof location.selector === "string") {
+    return truncateString(`页面元素 ${location.selector}`, 240);
+  }
+  if (typeof location.viewport === "string") {
+    return truncateString(`${location.viewport} 视口`, 240);
+  }
+  return "当前页面相关内容";
+}
+
+function truncateString(value: string, maxLength: number): string;
+function truncateString(value: unknown, maxLength: number): unknown;
+function truncateString(value: unknown, maxLength: number) {
+  return typeof value === "string" && value.length > maxLength
+    ? value.slice(0, maxLength)
+    : value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 async function evaluate(
@@ -317,6 +475,7 @@ async function evaluate(
   return generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
     maxTokens: 4_000,
+    normalizeOutput: normalizePageQAModelOutput,
     prompt: prompts.userPrompt,
     promptVersion: prompts.version,
     schema: PageQAModelOutputSchema,

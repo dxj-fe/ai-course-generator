@@ -15,7 +15,7 @@
 
 # Output Schema
 
-只返回 JSON object，根字段必须是 dimensions 和 issues。每个维度给出 0–100 分和 2–300 字摘要；每个 issue 必须包含 code、dimension、severity、message、location 和 repairHint。最终语义草稿必须通过 QualityReport 的模型输出 Schema。
+只返回 JSON object，根字段必须是 dimensions 和 issues。每个维度给出 0–100 分和 2–300 字摘要，摘要必须精炼且不得超过 300 字符；每个 issue 必须包含 code、dimension、severity、message、location 和 repairHint。最终语义草稿必须通过 QualityReport 的模型输出 Schema。
 
 # Rules
 
@@ -27,9 +27,13 @@
 - courseCoherence 必须核对本页目标、课程学习目标、前后页承接和理解检查是否形成有效教学路径。
 - styleConsistency 必须逐项对照 VisualBrief 的构图、排版、色彩、素材和无障碍约束。
 - 每个具体问题都必须输出可操作的 repairHint；程序会按 dimension 派生维度内 issueCodes 和 repairHints。
+- severity 只能是 `info`、`warning`、`error` 之一，不得使用 high、medium、low 或其他同义词。
+- 每个 location 都必须包含 2–240 字符的 description；即使已有 blockId、selector 或 viewport 也不能省略。
 - 不能从静态 HTML 证明像素级遮挡；没有浏览器几何证据时使用“风险”措辞。
 - location.pageId 可以省略，系统会用当前 PagePlan.id 覆盖。
 - blockId 只能引用真实 DSL block；selector 只在 HTML 中可稳定定位时填写。
+- HTML 已通过硬合同：`feedback.success` 作为静态参考解析允许常显，不得要求 JavaScript 隐藏；批准素材的 altText 必须原样复用，不得要求 HTML Repair 改写。
+- layoutHints.readingOrder 只比较列出的 blockId 之间的相对顺序；素材或其他节点出现在 block 前后不构成顺序错误。
 - 没有具体问题时 issues 返回空数组；最终总分、限分、shouldRepair 和 decision 由程序计算。
 
 # Forbidden

@@ -4,9 +4,9 @@ source_doc: `.agentdocs/prd/AI_Agent_Frontend_Training_Handbook_V5.docx`
 timezone: `Asia/Shanghai`
 daily_run_time: `09:30`
 start_date: `2026-07-09`
-last_delivered_day: `26`
+last_delivered_day: `27`
 last_delivered_date: `2026-07-16`
-next_training_day: `27`
+next_training_day: `28`
 
 ## Notes
 
@@ -56,3 +56,5 @@ next_training_day: `27`
 - 2026-07-16: Implemented Day 25 with isolated page-local Worker state/results, Writer → Assets → HTML → report-only QA execution, stage-local retry feedback and budgets, dependency-aware serial/parallel scheduling, a default concurrency-2 Promise Pool, serialized course checkpoint merges, concurrent Seaca Timeline/QA projection, detailed notes, and full automated verification.
 - 2026-07-16: Delivered Day 26 plan for compatibility-preserving six-dimension Page QA refinement, dimension-scoped issues and repair hints, content-first deterministic prioritization, optional non-blocking Playwright screenshot evidence, richer course-context consistency checks, Seaca quality-panel grouping, and focused QA/screenshot tests.
 - 2026-07-16: Implemented Day 26 with backward-compatible six-dimension evidence grouping, content-first deterministic issue ordering, course-context and VisualBrief-aware QA prompts, optional isolated Playwright screenshots and browser metrics, non-blocking screenshot failure semantics, a grouped Seaca quality panel, documentation, and full automated verification.
+- 2026-07-16: Delivered Day 27 plan for strict RepairRequest/RepairResult contracts, issue-to-artifact classification, targeted DSL/HTML repair, a persisted two-round QA-repair budget, re-QA and deterministic stop behavior, public repair events, Seaca Timeline/workspace projection, and focused repair-loop tests.
+- 2026-07-16: Implemented Day 27 with active RepairRequest/RepairResult contracts, deterministic issue-to-artifact routing, block-scoped DSL candidates, uniquely matched HTML patches, original-contract validation, persisted two-round QA/Repair/re-QA execution, structured failure stops, public Repair events, Seaca Timeline/workspace logs, documentation, and full automated verification.

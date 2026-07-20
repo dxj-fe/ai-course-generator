@@ -108,6 +108,127 @@ describe("PageQAAgent", () => {
     );
   });
 
+  it("normalizes bounded QA text, common severity aliases, and missing location descriptions", async () => {
+    const state = await createPageQAAgent({
+      evaluate: vi.fn().mockResolvedValue({
+        ...modelOutput,
+        dimensions: {
+          ...modelOutput.dimensions,
+          contentAccuracy: {
+            score: 72,
+            summary: "内容结论需要进一步核对。".repeat(30),
+          },
+        },
+        issues: [
+          {
+            code: "CONTENT_EVIDENCE_WEAK",
+            dimension: "contentAccuracy",
+            severity: "high",
+            message: "正文中的结论缺少充分依据。",
+            location: { blockId: "block-01" },
+            repairHint: "补充与该结论直接相关的解释。",
+          },
+          {
+            code: "LAYOUT_DENSITY",
+            dimension: "layoutQuality",
+            severity: "minor",
+            message: "主要内容区域略显紧凑。",
+            location: { selector: "main" },
+            repairHint: "适当增加主要内容区域的留白。",
+          },
+        ],
+      }),
+    }).run(createPageQAAgentState(createInput()), {
+      traceId: "trace-normalized-page-qa",
+    });
+
+    expect(state.status).toBe("completed");
+    expect(state.report?.dimensions.contentAccuracy.summary.length).toBe(300);
+    expect(state.report?.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "CONTENT_EVIDENCE_WEAK",
+          severity: "error",
+          location: expect.objectContaining({ description: "内容块 block-01" }),
+        }),
+        expect.objectContaining({
+          code: "LAYOUT_DENSITY",
+          severity: "warning",
+          location: expect.objectContaining({ description: "页面元素 main" }),
+        }),
+      ]),
+    );
+  });
+
+  it("still rejects unknown severity values instead of guessing workflow impact", async () => {
+    const state = await createPageQAAgent({
+      evaluate: vi.fn().mockResolvedValue({
+        ...modelOutput,
+        issues: [
+          {
+            code: "UNKNOWN_SEVERITY",
+            dimension: "layoutQuality",
+            severity: "sometimes",
+            message: "该问题使用了未知严重度。",
+            location: { description: "页面主体" },
+            repairHint: "返回受支持的严重度。",
+          },
+        ],
+      }),
+    }).run(createPageQAAgentState(createInput()), {
+      traceId: "trace-invalid-page-qa-severity",
+    });
+
+    expect(state.status).toBe("failed");
+    expect(state.error?.message).toContain("issues.0.severity");
+  });
+
+  it("does not turn hard-contract HTML behavior into impossible Repair issues", async () => {
+    const state = await createPageQAAgent({
+      evaluate: vi.fn().mockResolvedValue({
+        ...modelOutput,
+        issues: [
+          {
+            code: "INTERACTION_FEEDBACK_VISIBLE_BY_DEFAULT",
+            dimension: "htmlRuntime",
+            severity: "error",
+            message: "成功反馈在静态预览中可见。",
+            location: {
+              selector: ".feedback.success",
+              description: "成功反馈",
+            },
+            repairHint: "使用脚本隐藏反馈。",
+          },
+          {
+            code: "ASSET_ALT_TEXT_INVALID",
+            dimension: "styleConsistency",
+            severity: "warning",
+            message: "建议重新改写已批准素材的 alt 文本。",
+            location: {
+              selector: "[data-asset-slot-id] img",
+              description: "素材图片",
+            },
+            repairHint: "改写 alt 文本。",
+          },
+          {
+            code: "LAYOUT_READING_ORDER_MISMATCH",
+            dimension: "layoutQuality",
+            severity: "warning",
+            message: "素材节点出现在内容块之前。",
+            location: { description: "页面主体" },
+            repairHint: "移动素材节点。",
+          },
+        ],
+      }),
+    }).run(createPageQAAgentState(createInput()), {
+      traceId: "trace-contract-owned-page-qa",
+    });
+
+    expect(state.status).toBe("completed");
+    expect(state.report?.issues).toEqual([]);
+    expect(state.report?.decision).toBe("pass");
+  });
+
   it("keeps browser evidence in the report and does not block on capture failure", async () => {
     const failedEvidence = {
       status: "failed" as const,

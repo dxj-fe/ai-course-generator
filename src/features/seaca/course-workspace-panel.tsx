@@ -10,6 +10,7 @@ import { AssetGallery } from "@/features/seaca/asset-gallery";
 import { CoursePreviewGrid } from "@/features/seaca/course-preview-grid";
 import { PageProgressPanel } from "@/features/seaca/page-progress-panel";
 import { PageQualityPanel } from "@/features/seaca/page-quality-panel";
+import { RepairLogPanel } from "@/features/seaca/repair-log-panel";
 import type { PageContentDSL, PagePlan } from "@/shared/course-schema";
 import type {
   CourseRunStageStatus,
@@ -319,6 +320,9 @@ function PageWorkspaceCard({
   const content = write?.data?.state.content;
   const error = write?.error ?? write?.data?.state.error?.message;
   const status = write?.status ?? "idle";
+  const repairHistory =
+    run.generation?.pages.find(({ pageId }) => pageId === page.id)
+      ?.repairHistory ?? [];
 
   return (
     <li>
@@ -362,6 +366,7 @@ function PageWorkspaceCard({
             assetStage={run.pageAssets[page.id]}
             htmlStage={run.pageHtml[page.id]}
             qaStage={run.pageQa[page.id]}
+            repairHistory={repairHistory}
             onGenerateHtml={onGenerateHtml}
             onGenerateAssets={onGenerateAssets}
             onEvaluatePage={onEvaluatePage}
@@ -379,6 +384,7 @@ function PageDslResult({
   assetStage,
   htmlStage,
   qaStage,
+  repairHistory,
   onGenerateHtml,
   onGenerateAssets,
   onEvaluatePage,
@@ -389,6 +395,9 @@ function PageDslResult({
   assetStage?: SeacaCourseRun["pageAssets"][string];
   htmlStage?: SeacaCourseRun["pageHtml"][string];
   qaStage?: SeacaCourseRun["pageQa"][string];
+  repairHistory: NonNullable<
+    NonNullable<SeacaCourseRun["generation"]>["pages"][number]["repairHistory"]
+  >;
   onGenerateHtml(): void;
   onGenerateAssets(): void;
   onEvaluatePage(): void;
@@ -597,7 +606,10 @@ function PageDslResult({
               {qaError ? (
                 <ErrorNotice>{qaError}</ErrorNotice>
               ) : qaReport ? (
-                <PageQualityPanel report={qaReport} />
+                <>
+                  <RepairLogPanel attempts={repairHistory} />
+                  <PageQualityPanel report={qaReport} />
+                </>
               ) : (
                 <PendingNotice
                   idleCopy="HTML 已就绪，可以运行六维页面质量评估。"

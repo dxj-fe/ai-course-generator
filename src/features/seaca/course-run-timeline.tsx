@@ -64,6 +64,7 @@ const agentCopy: Record<string, string> = {
   "image-assets": "Image Assets",
   "html-engineer": "HTML Engineer",
   "page-qa": "Page QA",
+  "repair-agent": "Repair Agent",
   supervisor: "Supervisor",
   Workflow: "Workflow",
 };
@@ -303,7 +304,7 @@ export function CourseRunTimeline({
           </h4>
           <span className="text-[11px] text-[#a1978a]">
             {run.generation?.workerConfig
-              ? "按页面定位 DSL、素材、HTML 与自动 QA"
+              ? "按页面定位 DSL、素材、HTML、QA 与定向 Repair"
               : "按页面定位 DSL、素材、HTML 与可选 QA"}
           </span>
         </div>
@@ -349,6 +350,7 @@ function PageGroup({ page }: { page: CourseRunTimelinePage }) {
     page.stages.assets,
     page.stages.html,
     ...(page.stages.qa ? [page.stages.qa] : []),
+    ...(page.stages.repair ? [page.stages.repair] : []),
   ];
 
   return (

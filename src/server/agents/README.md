@@ -1,8 +1,8 @@
 # Agent 契约索引
 
-本目录保存课程生成中的模型 Agent。当前系统已经把不同专业职责拆成多个 Agent：受限 Supervisor 调度全局 `WorkflowNode`，依赖感知运行层以隔离 Page Worker 和默认并发度 2 的 Promise Pool 生成页面，并自动执行 report-only QA。Repair 和 LangGraph 尚未实现。本文只记录当前真实契约与后续角色边界。
+本目录保存课程生成中的模型 Agent。当前系统已经把不同专业职责拆成多个 Agent：受限 Supervisor 调度全局 `WorkflowNode`，依赖感知运行层以隔离 Page Worker 和默认并发度 2 的 Promise Pool 生成页面，并执行 QA → 有界 Repair → re-QA。LangGraph 尚未实现。本文只记录当前真实契约与后续角色边界。
 
-Day 24 的九名 Specialist Prompt 版本、状态和模板文件由 [`specialist-library.ts`](../prompts/specialist-library.ts) 集中登记；统一合同、Lint 与版本规则见 [`docs/prompt-library.md`](../../../docs/prompt-library.md)。Repair 在该 Library 中仍为 `draft`，不因此获得运行能力。
+九名 Specialist Prompt 的版本、状态和模板文件由 [`specialist-library.ts`](../prompts/specialist-library.ts) 集中登记；统一合同、Lint 与版本规则见 [`docs/prompt-library.md`](../../../docs/prompt-library.md)。Day 27 已将 Repair 从合同草案升级为 active 运行角色。
 
 ## 状态说明
 
@@ -108,11 +108,13 @@ Day 24 的九名 Specialist Prompt 版本、状态和模板文件由 [`specialis
 
 ### 9. Repair
 
-- **状态**：**目标角色，尚未实现**；当前没有 `RepairAgent` 模块、输入输出类型或运行事件。
-- **目标输入边界**：应只消费原始页面产物、已经校验的 `QualityReport`、明确的问题定位和有限修复预算；最终类型留待对应训练日设计。
-- **目标输出边界**：应返回可审计的定向修复候选及已处理问题引用，再经过相同 Schema、HTML 合同与 QA 复验；本文不预先声明不存在的共享类型。
+- **状态**：已实现，对应 `RepairAgent`；只由 Page Worker 的确定性 QA/Repair 运行层调用。
+- **输入边界**：`RepairRequest` 只包含当前页 DSL、HTML、VisualBrief、素材、来源 `QualityReport`、允许 issue/scope 和最多两轮预算；不包含原始用户 Prompt 或其他页面。
+- **输出边界**：`RepairResult` 返回 located DSL block 候选、唯一匹配 HTML patches，或结构化拒绝。DSL 候选保持页面身份、模板、互动、素材槽、布局提示和未授权 blocks；HTML patch 应用后复用原 HTML/DSL/asset 安全校验。
+- **运行边界**：内容/教学问题优先路由 DSL；排版/风格/HTML 及可修复素材标记路由 HTML；Provider 素材失败不由 Repair 伪造。每轮 checkpoint 后必须 re-QA，只有运行层决定通过、下一轮或失败。
+- **公开状态**：页面 checkpoint 保存来源报告、轮次、目标、issue、状态、变更摘要和 re-QA report ID；候选正文不重复持久化。Timeline 只展示 `repair_attempt`、`repair_success` 和结构化错误摘要。
 - **禁止职责**：不改全局 CoursePlan，不掩盖原始报告，不自行宣布质量通过，不无限循环，不无差别重写整页，不扩展到未授权页面。
-- **现有前置协议**：[quality.ts](../../shared/course-schema/quality.ts)、[page-content-dsl.ts](../../shared/course-schema/page-content-dsl.ts)、[DSL 边界文档](../../../docs/dsl-boundary.md)。
+- **源码**：[repair-agent.ts](./repair-agent.ts)、[repair.ts](../../shared/course-schema/repair.ts)、[qa-repair-loop.ts](../workflows/qa-repair-loop.ts)、[repair-candidate.ts](../repair/repair-candidate.ts)。
 
 ## 协调角色与确定性能力
 
@@ -159,4 +161,4 @@ Day 24 的九名 Specialist Prompt 版本、状态和模板文件由 [`specialis
 
 当前运行链路是：Supervisor 在确定性候选集合中调度 Intent → Planner → Pedagogy → Story → Visual；全局设计完成后，依赖感知课程运行层调度隔离 Page Worker，每个 Worker 执行 PageWriter → ImagePrompt/GenerateImage Skill → HtmlEngineer → PageQA。全局节点继续由 `runSupervisedWorkflow` 持有限重试，页面阶段由 Worker 持有独立三次预算；checkpoint 与恢复继续由兼容 facade 和任务基础设施集中管理。
 
-后续训练日仍需实现受限 Repair/re-QA 和评估可选 LangGraph 执行层。当前没有 Repair Agent，QA 报告不会自动修改 HTML；Page Worker 并发也不会绕过页面依赖、Schema、checkpoint 或公开事件合同。
+后续训练日仍需评估可选 LangGraph 执行层。Repair 已受两轮预算、issue scope、原产物合同和 re-QA 约束；Page Worker 并发不会绕过页面依赖、Schema、checkpoint 或公开事件合同。
