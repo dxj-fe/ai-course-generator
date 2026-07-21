@@ -2,7 +2,7 @@
 
 > **PARTIALLY IMPLEMENTED / 按阶段校准**
 >
-> 本文最初是 Day 21 的目标架构，现已用 Days 23–27 校准：受限 Supervisor、显式全局 `WorkflowNode`、隔离 Page Worker、受控并发与两轮 QA/Repair/re-QA 已经实现；LangGraph 仍未实现。当前运行事实以 [`mvp-flow.md`](./mvp-flow.md) 为准。
+> 本文最初是 Day 21 的目标架构，现已用 Days 23–29 校准：受限 Supervisor、显式全局 `WorkflowNode`、隔离 Page Worker、受控并发、两轮 QA/Repair/re-QA，以及可选的固定 LangGraph 核心图已经实现。产品任务服务仍以手写 Supervisor workflow 为默认入口；当前运行事实以 [`mvp-flow.md`](./mvp-flow.md) 为准。
 
 ## 设计目标
 
@@ -212,20 +212,22 @@ stateDiagram-v2
 
 人工升级必须保存最后一个有效 checkpoint、QA 证据、已用 attempts 和公开停止原因。UI 可以提供“重新运行目标节点”或“接受当前页面”的产品决策，但不能让展示组件复制 Supervisor 规则。
 
-## LangGraph 的未来位置
+## LangGraph 的当前位置
 
-LangGraph 只是后续可替换的运行工具，不是多 Agent 架构本身。未来可以把：
+LangGraph 是可替换的运行工具，不是多 Agent 架构本身。Day 29 已完成第一阶段映射：
 
-- `CourseGenerationState` 映射为 graph state；
-- Specialist / validator / checkpoint 映射为 nodes；
-- Supervisor 决策映射为 conditional edges；
-- page results 和公开事件映射为有规则的 reducers。
+- `CourseGenerationStateSchema.shape` 直接成为 graph state 字段来源；
+- Intent、Planner、Briefs、Page Workers 与 Finalize 成为固定 graph nodes；
+- 既有 validator、公开事件和 checkpoint 继续由共享运行时持有；
+- Page Worker 内部的依赖、并发、QA/Repair 和页面合并保持不变。
+
+Supervisor 决策到 conditional edges、Graph checkpointer、原生 streaming 映射和生产默认切换仍未实施。顶层 Graph 当前串行返回完整已校验数组快照，不为尚未存在的顶层并行提前设计 `pages/events/errors` Reducer。
 
 但是业务合同仍由本项目的共享 schemas 和 Route Handler/workflow 规则拥有。LangGraph 原生 chunks、内部 node state 或 checkpoint 格式不能进入前端。
 
 ```mermaid
 flowchart LR
-  Runtime["handwritten workflow or future LangGraph"] --> Adapter["transport/state adapter"]
+  Runtime["handwritten workflow or optional LangGraph"] --> Adapter["transport/state adapter"]
   Adapter --> Shared["CourseGenerationState<br/>CourseGenerationPublicEvent"]
   Shared --> SSE["SSE"]
   SSE --> Controller["Task Controller"]
@@ -241,4 +243,6 @@ flowchart LR
 3. **Day 24 已完成：** 收紧九名 Specialist 的 Prompt、输入输出和禁止项。
 4. **Day 25 已完成：** 实现隔离 Page Worker、页面局部重试、自动 QA、依赖感知调度和默认并发度 2 的 Promise Pool。
 5. **Day 26–27 已完成：** 深化六维 QA，并接入定向 Repair 候选、原合同校验、两轮预算与 re-QA。
-6. **后续目标：** 最后评估是否用 LangGraph 替换手写运行层，同时保持 SSE 和前端数据合同不变。
+6. **Day 28 已完成：** 用独立 `START → Planner → END` Demo 验证 State、Node、Edge、Reducer 与 updates stream。
+7. **Day 29 已完成：** 实现复用生产状态、Agent、Page Worker 和 checkpoint 的固定 StateGraph runner，并用确定性测试证明与手写版本的领域产物兼容；手写入口仍是显式 fallback。
+8. **后续目标：** 把 Graph updates/custom stream 映射为现有公开事件与 SSE，再评估生产默认切换；前端合同保持不变。

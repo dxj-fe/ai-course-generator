@@ -408,7 +408,7 @@ function materializeInteraction(
       return {
         type: "reveal",
         prompt,
-        items: materializeItems(draft.items),
+        items: materializeInteractionItems(draft.items),
       };
     case "choice": {
       return {
@@ -417,7 +417,7 @@ function materializeInteraction(
       };
     }
     case "sort": {
-      const items = materializeItems(draft.items);
+      const items = materializeInteractionItems(draft.items);
 
       return {
         type: "sort",
@@ -439,18 +439,26 @@ function materializeInteraction(
       return {
         type: "explore",
         prompt,
-        items: materializeItems(draft.items),
+        items: materializeInteractionItems(draft.items),
       };
   }
 }
 
 /** 把模型返回的简洁文字列表转换为可被 QA 定位的互动项。 */
-function materializeItems(items: string[]) {
-  return items.map((content, index) => ({
-    id: `item-${String(index + 1).padStart(2, "0")}`,
-    label: `项目 ${index + 1}`,
-    content,
-  }));
+export function materializeInteractionItems(items: string[]) {
+  return items.map((content, index) => {
+    const normalized = content.trim();
+    const label =
+      normalized.length <= 80
+        ? normalized
+        : `${normalized.slice(0, 79).trimEnd()}…`;
+
+    return {
+      id: `item-${String(index + 1).padStart(2, "0")}`,
+      label,
+      content: normalized,
+    };
+  });
 }
 
 /** 将扁平的选择题并行数组转换为多道严格 question 协议。 */

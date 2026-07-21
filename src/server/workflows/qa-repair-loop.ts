@@ -51,19 +51,22 @@ export function planRepairRound(input: {
   );
   if (semanticIssues.length > 0) {
     const located = semanticIssues.filter(({ location }) => location.blockId);
-    if (located.length === 0) {
+    if (located.length > 0) {
+      return request(input, "dsl", located, {
+        allowedBlockIds: unique(
+          located.flatMap(({ location }) => location.blockId ?? []),
+        ),
+        allowedSelectors: [],
+      });
+    }
+
+    if (!semanticIssues.some(({ location }) => location.selector)) {
       return {
         status: "unavailable",
         failureClass: "unlocatable_issue",
         message: "内容或教学问题没有可授权的 blockId，拒绝盲目重写 DSL。",
       };
     }
-    return request(input, "dsl", located, {
-      allowedBlockIds: unique(
-        located.flatMap(({ location }) => location.blockId ?? []),
-      ),
-      allowedSelectors: [],
-    });
   }
 
   const hasUpstreamAssetIssue = input.report.issues.some(
@@ -123,6 +126,9 @@ function request(
 
 function isHtmlRepairable(issue: QualityIssue) {
   if (HTML_DIMENSIONS.has(issue.dimension)) return true;
+  if (DSL_DIMENSIONS.has(issue.dimension)) {
+    return Boolean(issue.location.selector) && !issue.location.blockId;
+  }
   return (
     issue.dimension === "assetUsability" &&
     !UPSTREAM_ASSET_CODES.has(issue.code) &&

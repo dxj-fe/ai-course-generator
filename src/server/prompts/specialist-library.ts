@@ -255,7 +255,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     templateVariables: ["repairInputJson"],
     system: {
       name: "repair-system",
-      version: "1.0.1",
+      version: "1.0.2",
       role: "system",
       inputContract: [
         "只接收原始页面产物、已校验 QualityReport、限定目标和两轮 repair budget。",

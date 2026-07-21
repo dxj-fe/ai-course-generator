@@ -100,7 +100,7 @@ export function createHtmlEngineerAgent(
       });
 
       const normalized = normalizeReadyCssBackgroundAccessibility(
-        generated,
+        normalizeNativeInteractionMarker(generated, state.task),
         state.task,
       );
       const { html, validation } = validateHtmlEngineerOutput(
@@ -253,6 +253,57 @@ export function validateHtmlEngineerOutput(
   }
 
   return { html, validation: { contract, safety } };
+}
+
+/**
+ * data-interaction-type 是技术定位元数据。模型遗漏它时，只在 reveal 已经
+ * 实现为与 DSL 逐项对应的完整 details/summary 结构时补到首个原生控件；
+ * 不完整或静态伪互动仍交给严格校验拒绝。
+ */
+export function normalizeNativeInteractionMarker(
+  output: unknown,
+  input: HtmlEngineerInput,
+) {
+  if (typeof output !== "string") return output;
+  const interaction = input.content.interaction;
+  if (
+    interaction.type !== "reveal" ||
+    hasDataAttribute(output, "data-interaction-type", "reveal") ||
+    interaction.items.length !== input.content.blocks.length
+  ) {
+    return output;
+  }
+
+  const details = [...output.matchAll(/<details\b[^>]*>[\s\S]*?<\/details\s*>/gi)];
+  if (
+    details.length !== interaction.items.length ||
+    details.some((match, index) => {
+      const block = input.content.blocks[index];
+      const visibleText = normalizeVisibleText(match[0]);
+      return (
+        !block ||
+        !/<summary\b[^>]*>[\s\S]*?<\/summary\s*>/i.test(match[0]) ||
+        !visibleText.includes(normalizeText(block.heading)) ||
+        !visibleText.includes(normalizeText(block.body))
+      );
+    })
+  ) {
+    return output;
+  }
+
+  const first = details[0];
+  const openingTag = first?.[0].match(/^<details\b[^>]*>/i)?.[0];
+  if (first?.index === undefined || !openingTag) return output;
+
+  const normalizedOpeningTag = openingTag.replace(
+    />$/,
+    ' data-interaction-type="reveal">',
+  );
+  return (
+    output.slice(0, first.index) +
+    normalizedOpeningTag +
+    output.slice(first.index + openingTag.length)
+  );
 }
 
 /**
@@ -877,7 +928,11 @@ function collectRequiredStaticContentText(content: PageContentDSL) {
     case "explore":
       interactionText = [
         interaction.prompt,
-        ...interaction.items.flatMap((item) => [item.label, item.content]),
+        ...interaction.items.flatMap((item, index) =>
+          isAlignedBlockReference(item, content.blocks[index])
+            ? []
+            : [item.label, item.content],
+        ),
       ];
       break;
     case "choice":
@@ -904,7 +959,37 @@ function collectRequiredStaticContentText(content: PageContentDSL) {
       break;
   }
 
-  return [content.title, ...content.narration, ...blockText, ...interactionText];
+  return [
+    ...new Set([
+      content.title,
+      ...content.narration,
+      ...blockText,
+      ...interactionText,
+    ]),
+  ];
+}
+
+/**
+ * reveal/explore 常用互动项指向同序内容块，例如“知识点1卡片”指向
+ * label="知识点1" 的 block。该引用不是额外教学正文；块标题、正文和稳定
+ * blockId 仍由原合同逐项校验。只有 label/content 都是同一块的结构引用时收敛。
+ */
+function isAlignedBlockReference(
+  item: { label: string; content: string },
+  block: PageContentDSL["blocks"][number] | undefined,
+) {
+  if (!block) return false;
+
+  const names = [block.label, block.heading]
+    .filter((value): value is string => Boolean(value))
+    .flatMap((value) => [value, `${value}卡片`])
+    .map(normalizeText);
+  const references = new Set(names);
+
+  return (
+    references.has(normalizeText(item.label)) &&
+    references.has(normalizeText(item.content))
+  );
 }
 
 /**

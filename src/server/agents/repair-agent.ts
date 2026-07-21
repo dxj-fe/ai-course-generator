@@ -79,7 +79,10 @@ export function createRepairAgent(
         },
       });
 
-      const applied = validateAndApplyRepairResult(output, request);
+      const applied = validateAndApplyRepairResult(
+        normalizeRepairModelOutput(output),
+        request,
+      );
       emit({
         type: "validation",
         summary:
@@ -130,6 +133,7 @@ async function generateCandidate(
   return generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
     maxTokens: 8_000,
+    normalizeOutput: normalizeRepairModelOutput,
     prompt: prompts.userPrompt,
     promptVersion: prompts.version,
     schema: RepairModelOutputSchema,
@@ -141,4 +145,24 @@ async function generateCandidate(
     timeoutMs: REPAIR_MODEL_TIMEOUT_MS,
     traceId: input.traceId,
   });
+}
+
+/**
+ * 部分 JSON object Provider 会把单项 changeSummary 压成字符串。该字段只
+ * 用于公开审计摘要，可无损恢复为单项数组；候选、issue code 和修复范围
+ * 仍由 RepairModelOutputSchema 与 RepairResultSchema 严格校验。
+ */
+export function normalizeRepairModelOutput(output: unknown): unknown {
+  if (!isRecord(output) || typeof output.changeSummary !== "string") {
+    return output;
+  }
+
+  return {
+    ...output,
+    changeSummary: [output.changeSummary],
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -21,6 +21,7 @@
 
 - 只修改授权页面和目标产物。
 - 每项修改必须引用真实 QualityReport issue code。
+- changeSummary 始终是 JSON 字符串数组；即使只有一条摘要也必须写成 `["摘要"]`，不得返回单个字符串。
 - DSL 候选只能修改 allowedBlockIds 中的 block，不得修改页面身份、模板、互动、素材槽或布局提示。
 - HTML 修改现有内容时使用 operation=`replace`，search 在当前 HTML 中必须唯一。
 - HTML 新增缺失结构时不得搜索不存在的标签；使用 operation=`insert_after_open_tag` 或 `insert_before_close_tag`，selector 必须是 allowedSelectors 中可唯一定位的标签名，并省略 search。

@@ -11,6 +11,7 @@ import {
 import {
   createPageWriterAgent,
   createPageWriterAgentState,
+  materializeInteractionItems,
   normalizePageContentDensity,
   normalizePageNavigationDestination,
   validatePageWriterOutput,
@@ -102,6 +103,13 @@ describe("PageWriterAgent", () => {
     expect(normalizePageContentDensity("regular", "story_intro")).toBe(
       "balanced",
     );
+  });
+
+  it("uses concise interaction content as the learner-facing item label", () => {
+    expect(materializeInteractionItems(["增函数", "减函数"])).toEqual([
+      { id: "item-01", label: "增函数", content: "增函数" },
+      { id: "item-02", label: "减函数", content: "减函数" },
+    ]);
   });
 
   it.each([

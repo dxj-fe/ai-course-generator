@@ -61,3 +61,4 @@ next_training_day: `30`
 - 2026-07-20: Delivered Day 28 plan for LangGraph State, Node, Edge, Conditional Edge, Reducer, Graph Runtime, and a standalone StateGraph demo.
 - 2026-07-20: Implemented Day 28 with current LangGraph StateSchema APIs, a standalone Planner Node module and deterministic START → Planner → END graph, reducer-based event accumulation, updates streaming, concept/workflow mapping notes, and focused automated coverage; the production workflow, APIs, SSE, Controller, and Seaca UI remain unchanged.
 - 2026-07-21: Delivered Day 29 plan for migrating the core course-generation path to a CourseGenerationState-backed LangGraph StateGraph while preserving the handwritten workflow as fallback.
+- 2026-07-21: Implemented Day 29 with a production-state LangGraph fixed graph, shared handwritten/Graph lifecycle runtime, explicit fallback boundaries, deterministic failure/resume/parity coverage, and unchanged API/SSE/Controller/Seaca UI contracts.

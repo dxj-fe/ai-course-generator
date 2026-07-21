@@ -238,7 +238,7 @@ Route / Agent / Workflow
   -> 现有 Timeline 与 learning workspace
 ```
 
-Supervisor 与 Repair 事件已经在服务端映射成共享公开协议；未来 LangGraph 事件仍必须遵守同一边界。UI 不直接消费框架原生 chunk，也不从面向用户的 summary 推断调度规则。
+Supervisor 与 Repair 事件已经在服务端映射成共享公开协议；Day 29 的可选固定 LangGraph runner 继续写入同一协议，后续 Graph streaming 也必须遵守这一边界。UI 不直接消费框架原生 chunk，也不从面向用户的 summary 推断调度规则。
 
 ## 11. 不该使用多 Agent 的场景
 

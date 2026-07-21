@@ -1,6 +1,6 @@
 # Agent 契约索引
 
-本目录保存课程生成中的模型 Agent。当前系统已经把不同专业职责拆成多个 Agent：受限 Supervisor 调度全局 `WorkflowNode`，依赖感知运行层以隔离 Page Worker 和默认并发度 2 的 Promise Pool 生成页面，并执行 QA → 有界 Repair → re-QA。LangGraph 尚未实现。本文只记录当前真实契约与后续角色边界。
+本目录保存课程生成中的模型 Agent。当前系统已经把不同专业职责拆成多个 Agent：受限 Supervisor 调度全局 `WorkflowNode`，依赖感知运行层以隔离 Page Worker 和默认并发度 2 的 Promise Pool 生成页面，并执行 QA → 有界 Repair → re-QA。Day 29 另有复用同一状态和业务节点的固定 LangGraph runner，但产品任务服务仍默认使用手写 Supervisor workflow。本文只记录当前真实契约与后续角色边界。
 
 九名 Specialist Prompt 的版本、状态和模板文件由 [`specialist-library.ts`](../prompts/specialist-library.ts) 集中登记；统一合同、Lint 与版本规则见 [`docs/prompt-library.md`](../../../docs/prompt-library.md)。Day 27 已将 Repair 从合同草案升级为 active 运行角色。
 
@@ -132,7 +132,7 @@
 - **状态**：**已实现**。`SupervisorDecisionSchema` 约束 `run / retry / complete / stop`，`SupervisorAgent` 只消费压缩状态、确定性可用节点、最近失败和持久化 attempts。
 - **职责**：基于已校验课程状态、可用节点、失败位置和有限预算提出下一节点、重试或停止，并只发布可解释的公开决策摘要；运行层再次校验节点白名单、输入合同、每目标最多 3 次执行、无进展、取消和全局决策上限。
 - **兼容降级**：OpenAI-compatible Provider 只返回 JSON object、但 union 结构校验失败时，只有在运行层已把合法动作压缩为唯一节点或唯一 complete 时才使用确定性决策；存在多个候选时仍抛出 Schema 错误，不猜测路由。
-- **禁止职责**：不写课程正文，不生成 HTML 或图片，不替 Specialist 修补输出，不泄露内部推理。LangGraph 将来可以承载调度图，但不是 Supervisor 思想本身。
+- **禁止职责**：不写课程正文，不生成 HTML 或图片，不替 Specialist 修补输出，不泄露内部推理。LangGraph 可以承载调度图，但不是 Supervisor 思想本身；Day 29 固定图没有把 Supervisor 模型决策伪装成固定边。
 - **源码**：[supervisor-agent.ts](./supervisor-agent.ts)、[supervisor.ts](../../shared/course-schema/supervisor.ts)、[supervised-workflow.ts](../workflows/supervised-workflow.ts)。
 
 ### Page Worker
@@ -161,4 +161,4 @@
 
 当前运行链路是：Supervisor 在确定性候选集合中调度 Intent → Planner → Pedagogy → Story → Visual；全局设计完成后，依赖感知课程运行层调度隔离 Page Worker，每个 Worker 执行 PageWriter → ImagePrompt/GenerateImage Skill → HtmlEngineer → PageQA。全局节点继续由 `runSupervisedWorkflow` 持有限重试，页面阶段由 Worker 持有独立三次预算；checkpoint 与恢复继续由兼容 facade 和任务基础设施集中管理。
 
-后续训练日仍需评估可选 LangGraph 执行层。Repair 已受两轮预算、issue scope、原产物合同和 re-QA 约束；Page Worker 并发不会绕过页面依赖、Schema、checkpoint 或公开事件合同。
+可选 LangGraph 固定执行层已实现 `Intent → Planner → Briefs → Page Workers → Finalize`，并复用同一 `CourseGenerationState`、节点生命周期和 checkpoint。产品默认仍是手写 Supervisor workflow；后续只在保持公开事件与 SSE 合同的前提下增加 Graph streaming 和评估默认切换。Repair 已受两轮预算、issue scope、原产物合同和 re-QA 约束；Page Worker 并发不会绕过页面依赖、Schema、checkpoint 或公开事件合同。

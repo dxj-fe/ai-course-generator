@@ -2,7 +2,7 @@
 
 > **IMPLEMENTED / 当前事实**
 >
-> 本文只描述当前产品真实运行的课程生成链路。全局 Specialist 由受限 Supervisor 串行调度，页面生成由隔离 Page Worker 和受控 Promise Pool 执行；全链路支持可恢复 checkpoint 和有限重试，没有使用 LangGraph。
+> 本文只描述当前产品真实运行的课程生成链路。全局 Specialist 由受限 Supervisor 串行调度，页面生成由隔离 Page Worker 和受控 Promise Pool 执行；全链路支持可恢复 checkpoint 和有限重试。Day 29 已实现共享同一状态与生命周期合同的 LangGraph 固定图，但产品任务服务仍显式使用本页所述手写入口。
 
 ## 产品入口与完整调用链
 
@@ -145,6 +145,14 @@ SSE 合同由 [`course-task-event.ts`](../../src/shared/course-schema/course-tas
 
 展示组件不直接调用生成业务 API，也不消费框架原生流事件。
 
+## Day 29 可选 LangGraph 运行时
+
+[`runCourseGenerationGraphWorkflow`](../../src/server/langgraph/course-generation/run-course-graph.ts) 已能以同一 `CourseGenerationWorkflowInput`、依赖注入和 `CourseGenerationState` 合同运行完整课程。它使用固定拓扑 `START → intent-node → planner-node → briefs-node → page-workers-node → finalize-node → END`：前三个节点复用既有 `WorkflowNode`，页面节点复用完整 Page Worker 调度，finalize 复用共享生命周期函数。
+
+两种运行时现在共同依赖 [`course-generation-runtime.ts`](../../src/server/workflows/course-generation-runtime.ts) 中的初始化、节点执行、公开事件投影、失败、完成和 checkpoint 逻辑。Graph State 的字段直接来自 `CourseGenerationStateSchema.shape`，每个节点输出仍重新通过完整聚合 Schema；没有第二套课程状态模型。
+
+当前产品没有自动切换或失败后双跑：`CourseGenerationTaskService` 仍注入手写 `runCourseGenerationWorkflow`，LangGraph runner 由服务端测试或显式调用方选择。这样可避免 Graph 失败后重复模型、生图和存储副作用。Graph 原生 streaming 尚未映射到 SSE，前端继续只消费共享快照与公开事件。
+
 ## QA 与有界 Repair 是 Worker 的页面质量闭环
 
 [`Page QA Agent`](../../src/server/agents/page-qa-agent.ts) 已接入每个新 Page Worker 的末段；已有 [`/api/pages/qa`](../../src/app/api/pages/qa/route.ts) 仍支持显式重跑：
@@ -163,7 +171,7 @@ SSE 合同由 [`course-task-event.ts`](../../src/shared/course-schema/course-tas
 ## 当前明确不存在的能力
 
 - Supervisor 当前只调度全局课程节点，不拥有课程正文能力，也没有成本/token 计费器或人工审批队列。
-- 没有 LangGraph StateGraph、条件边、Reducer 或框架原生 streaming。
+- 已有生产状态支持的固定 LangGraph StateGraph runner，但尚未成为任务服务默认入口，也没有生产 conditional edge、Graph checkpointer 或框架原生 streaming 到 SSE 的映射。
 - QA/Repair 只形成页面内部两轮闭环，尚未引入人工审批或课程发布门槛。
 - EventBus 与活动任务去重都是单进程实现，不是分布式任务队列或 lease。
 

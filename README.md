@@ -217,6 +217,14 @@
 - `repair_attempt`、`repair_success` 和错误摘要进入现有 SSE、Timeline 与 learning workspace Repair 记录，不暴露候选正文和私有推理。
 - 实现说明和面试复盘见 `notes/day-27.md`。
 
+## Day 29 交付
+
+- 从手写课程 facade 中提取共享运行时，统一初始化、恢复、节点生命周期、公开事件、失败、完成与 checkpoint；原手写 Supervisor workflow 行为保持不变。
+- 新增复用 `CourseGenerationStateSchema.shape` 的生产 LangGraph State，以及独立 Intent、Planner、Briefs、Page Workers、Finalize 节点。
+- 固定拓扑为 `START → intent-node → planner-node → briefs-node → page-workers-node → finalize-node → END`；Page Worker 内部依赖、并发、QA/Repair 不重复实现。
+- 新增 `runCourseGenerationGraphWorkflow`，它与手写入口共享输入、依赖和最终状态合同；调用方显式选择运行时，Graph 失败不会自动双跑 fallback。
+- 产品任务 API、SSE、Controller 与 Seaca UI 未改变，Graph streaming 映射留到 Day 30；迁移说明与面试复盘见 `notes/langgraph-migration.md` 和 `notes/day-29.md`。
+
 ## 启动
 
 ```bash

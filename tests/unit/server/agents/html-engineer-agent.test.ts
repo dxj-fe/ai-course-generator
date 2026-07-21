@@ -8,6 +8,7 @@ import { buildValidGeneratedHtml } from "../../../fixtures/generated-html";
 import {
   createHtmlEngineerAgent,
   createHtmlEngineerAgentState,
+  normalizeNativeInteractionMarker,
   resolveHtmlEngineerInput,
   validateHtmlEngineerOutput,
 } from "../../../../src/server/agents/html-engineer-agent";
@@ -265,6 +266,37 @@ describe("HtmlEngineerAgent", () => {
     );
   });
 
+  it("adds a missing reveal marker only to a complete DSL-aligned details structure", () => {
+    const details = pageContentDsl.blocks
+      .map(
+        (block) =>
+          `<details><summary>${block.heading}</summary><p>${block.body}</p></details>`,
+      )
+      .join("");
+    const html = buildValidGeneratedHtml(pageContentDsl).replace(
+      /<section data-interaction-type="reveal">[\s\S]*?<\/section>/,
+      `<section>${pageContentDsl.interaction.type === "reveal" ? pageContentDsl.interaction.prompt : ""}${details}</section>`,
+    );
+
+    const normalized = normalizeNativeInteractionMarker(html, input);
+
+    expect(normalized).toContain('<details data-interaction-type="reveal">');
+    expect(() => validateHtmlEngineerOutput(normalized, input)).not.toThrow();
+  });
+
+  it("does not invent a reveal marker for an incomplete native interaction", () => {
+    const block = pageContentDsl.blocks[0];
+    const html = buildValidGeneratedHtml(pageContentDsl).replace(
+      /<section data-interaction-type="reveal">[\s\S]*?<\/section>/,
+      `<section><details><summary>${block.heading}</summary><p>${block.body}</p></details></section>`,
+    );
+
+    expect(normalizeNativeInteractionMarker(html, input)).toBe(html);
+    expect(() => validateHtmlEngineerOutput(html, input)).toThrow(
+      '缺少 data-interaction-type="reveal"',
+    );
+  });
+
   it("rejects output that drops DSL teaching text", () => {
     const html = buildValidGeneratedHtml(pageContentDsl).replace(
       pageContentDsl.blocks[1].body,
@@ -273,6 +305,48 @@ describe("HtmlEngineerAgent", () => {
 
     expect(() => validateHtmlEngineerOutput(html, input)).toThrow(
       `页面正文缺少 DSL 文本：${pageContentDsl.blocks[1].body}`,
+    );
+  });
+
+  it("accepts reveal item references already represented by their aligned content blocks", () => {
+    const content = {
+      ...pageContentDsl,
+      blocks: pageContentDsl.blocks.map((block, index) => ({
+        ...block,
+        label: `知识点${index + 1}`,
+      })),
+      interaction: {
+        type: "reveal" as const,
+        prompt: "点击任意知识点卡片，展开查看详细内容",
+        items: pageContentDsl.blocks.map((_block, index) => ({
+          id: `item-${String(index + 1).padStart(2, "0")}`,
+          label: `知识点${index + 1}卡片`,
+          content: `知识点${index + 1}卡片`,
+        })),
+      },
+    };
+    const html = content.interaction.items.reduce(
+      (document, item) => document.replaceAll(item.content, ""),
+      buildValidGeneratedHtml(content),
+    );
+
+    expect(() =>
+      validateHtmlEngineerOutput(html, { content, visualBrief }),
+    ).not.toThrow();
+  });
+
+  it("still rejects reveal teaching content that is not a block reference", () => {
+    const item = pageContentDsl.interaction.type === "reveal"
+      ? pageContentDsl.interaction.items[0]
+      : undefined;
+    if (!item) throw new Error("fixture must use reveal interaction");
+    const html = buildValidGeneratedHtml(pageContentDsl).replaceAll(
+      item.content,
+      "",
+    );
+
+    expect(() => validateHtmlEngineerOutput(html, input)).toThrow(
+      `页面正文缺少 DSL 文本：${item.content}`,
     );
   });
 

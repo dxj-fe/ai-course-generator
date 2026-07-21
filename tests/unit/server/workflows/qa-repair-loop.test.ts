@@ -46,6 +46,39 @@ describe("QA repair planning", () => {
     });
   });
 
+  it("routes selector-located interaction coherence issues to bounded HTML repair", () => {
+    const request = planRepairRound({
+      ...base,
+      report: qualityReportWithIssue({
+        code: "INTERACTION_LABEL_MISMATCH",
+        dimension: "courseCoherence",
+        selector: ".interaction-items .interaction-item",
+      }),
+    });
+
+    expect(request).toMatchObject({
+      targetArtifact: "html",
+      issueCodes: ["INTERACTION_LABEL_MISMATCH"],
+      allowedBlockIds: [],
+      allowedSelectors: [".interaction-items .interaction-item"],
+    });
+  });
+
+  it("still refuses semantic issues with neither a block nor a selector", () => {
+    const request = planRepairRound({
+      ...base,
+      report: qualityReportWithIssue({
+        code: "CONTENT_FACT",
+        dimension: "contentAccuracy",
+      }),
+    });
+
+    expect(request).toMatchObject({
+      status: "unavailable",
+      failureClass: "unlocatable_issue",
+    });
+  });
+
   it("refuses upstream asset failures and exhausted budgets", () => {
     const asset = planRepairRound({
       ...base,

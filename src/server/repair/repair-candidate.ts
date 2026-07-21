@@ -248,8 +248,25 @@ function isAllowedHtmlScope(
       );
     }
 
+    const terminalClass = selector.match(/\.([a-z0-9_-]+)\s*$/i)?.[1];
+    if (terminalClass && hasAttributeToken(search, "class", terminalClass)) {
+      return true;
+    }
+
+    const terminalId = selector.match(/#([a-z0-9_-]+)\s*$/i)?.[1];
+    if (terminalId && hasAttributeToken(search, "id", terminalId)) {
+      return true;
+    }
+
     return search.includes(selector);
   });
+}
+
+function hasAttributeToken(html: string, attribute: "class" | "id", token: string) {
+  const pattern = new RegExp(`${attribute}=["']([^"']*)["']`, "gi");
+  return [...html.matchAll(pattern)].some((match) =>
+    match[1]?.split(/\s+/).includes(token),
+  );
 }
 
 function rangesForTag(html: string, tag: string): Array<[number, number]> {
