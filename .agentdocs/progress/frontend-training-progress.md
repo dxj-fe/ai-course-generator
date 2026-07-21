@@ -4,9 +4,9 @@ source_doc: `.agentdocs/prd/AI_Agent_Frontend_Training_Handbook_V5.docx`
 timezone: `Asia/Shanghai`
 daily_run_time: `09:30`
 start_date: `2026-07-09`
-last_delivered_day: `27`
-last_delivered_date: `2026-07-16`
-next_training_day: `28`
+last_delivered_day: `29`
+last_delivered_date: `2026-07-21`
+next_training_day: `30`
 
 ## Notes
 
@@ -58,3 +58,6 @@ next_training_day: `28`
 - 2026-07-16: Implemented Day 26 with backward-compatible six-dimension evidence grouping, content-first deterministic issue ordering, course-context and VisualBrief-aware QA prompts, optional isolated Playwright screenshots and browser metrics, non-blocking screenshot failure semantics, a grouped Seaca quality panel, documentation, and full automated verification.
 - 2026-07-16: Delivered Day 27 plan for strict RepairRequest/RepairResult contracts, issue-to-artifact classification, targeted DSL/HTML repair, a persisted two-round QA-repair budget, re-QA and deterministic stop behavior, public repair events, Seaca Timeline/workspace projection, and focused repair-loop tests.
 - 2026-07-16: Implemented Day 27 with active RepairRequest/RepairResult contracts, deterministic issue-to-artifact routing, block-scoped DSL candidates, uniquely matched HTML patches, original-contract validation, persisted two-round QA/Repair/re-QA execution, structured failure stops, public Repair events, Seaca Timeline/workspace logs, documentation, and full automated verification.
+- 2026-07-20: Delivered Day 28 plan for LangGraph State, Node, Edge, Conditional Edge, Reducer, Graph Runtime, and a standalone StateGraph demo.
+- 2026-07-20: Implemented Day 28 with current LangGraph StateSchema APIs, a standalone Planner Node module and deterministic START → Planner → END graph, reducer-based event accumulation, updates streaming, concept/workflow mapping notes, and focused automated coverage; the production workflow, APIs, SSE, Controller, and Seaca UI remain unchanged.
+- 2026-07-21: Delivered Day 29 plan for migrating the core course-generation path to a CourseGenerationState-backed LangGraph StateGraph while preserving the handwritten workflow as fallback.

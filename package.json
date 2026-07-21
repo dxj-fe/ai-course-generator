@@ -13,6 +13,8 @@
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.5",
     "@ai-sdk/react": "^4.0.18",
+    "@langchain/core": "^1.2.3",
+    "@langchain/langgraph": "^1.4.8",
     "ai": "^7.0.17",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
