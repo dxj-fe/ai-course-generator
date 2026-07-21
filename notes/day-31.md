@@ -48,6 +48,8 @@ Graph 允许回到 Supervisor，但不允许无条件自循环：
 - `repair-page-node` 每次只授权一轮，完成后必须重新经过 Supervisor；
 - `mark-failed-node` 保留具体页面错误码，Supervisor stop 原因保存在 `lastDecision`，显式恢复时可以重新评估已重置阶段的 retryability。
 
+LangGraph 自身的 recursion limit 是框架步数保险，不是业务重试预算。一个 Supervisor decision 和其目标节点最多占用两个 Graph steps；五页课程在前三页各执行两轮合法 Repair 时会超过框架默认的 25 steps。生产 `invoke` 与 `stream` 因此统一使用 130-step ceiling，使其高于持久化的 64-decision 领域 guard。真正的停止条件仍是 node/page 三次 attempt、两轮 Repair 和全局 decision limit；提高框架 ceiling 不会放开无限重试。早期被默认 25-step 错误覆盖的 checkpoint 也可以在显式恢复时重新进入当前页面。
+
 ## 数据与 UI 边界
 
 ```text
@@ -71,6 +73,7 @@ Agent / Page Worker
 - 页面失败单测覆盖可重试错误与三次预算耗尽；
 - Page Worker 单测覆盖 QA 后暂停、单轮 Repair 后继续；
 - Graph 集成测试覆盖完整课程、Planner 失败、事件 streaming 和失败页面断点恢复；
+- 五页多 Repair 回归同时覆盖 `invoke` 与产品 `stream`，证明超过默认 25 steps 后仍由领域预算完成或停止；
 - parity 测试确认手写入口与 Graph 领域产物一致，且两者都有安全的 Supervisor decision 事件。
 
 ## 面试题与参考答案

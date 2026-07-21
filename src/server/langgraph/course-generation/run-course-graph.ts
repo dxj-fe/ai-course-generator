@@ -25,6 +25,13 @@ export type CourseGenerationGraphStreamObserver = (
 ) => void | Promise<void>;
 
 /**
+ * One Supervisor decision and its target consume up to two LangGraph steps.
+ * Keep the framework ceiling above the persisted 64-decision domain guard so
+ * valid five-page Repair paths reach their explicit complete/stop branch.
+ */
+export const COURSE_GENERATION_GRAPH_RECURSION_LIMIT = 130;
+
+/**
  * LangGraph 课程入口与手写 workflow 共享输入、依赖和最终状态合同。
  * 调用方显式选择运行时，失败时不会自动重复执行另一条链路。
  */
@@ -43,7 +50,10 @@ export async function runCourseGenerationGraphWorkflow(
     runtime: context,
     dependencies,
   });
-  const result = await graph.invoke(state);
+  const result = await graph.invoke(state, {
+    signal: context.abortSignal,
+    recursionLimit: COURSE_GENERATION_GRAPH_RECURSION_LIMIT,
+  });
   return CourseGenerationStateSchema.parse(result);
 }
 
@@ -85,6 +95,7 @@ export async function streamCourseGenerationGraphWorkflow(
   });
   const stream = await graph.stream(state, {
     signal: context.abortSignal,
+    recursionLimit: COURSE_GENERATION_GRAPH_RECURSION_LIMIT,
     streamMode: ["updates", "custom"],
   });
 

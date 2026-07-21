@@ -185,9 +185,12 @@ function retryOrStopPage(
     )?.attempts ?? 0;
   const attempts = Math.max(stageAttempts, graphAttempts);
   const code = page.error?.code ?? "PAGE_WORKER_FAILED";
+  const retryable =
+    isPageWorkerRetryableError(code) ||
+    isLegacyGraphRecursionFailure(page.error);
   if (
     page.currentStage !== "repair" &&
-    isPageWorkerRetryableError(code) &&
+    retryable &&
     attempts < PAGE_WORKER_MAX_STAGE_ATTEMPTS
   ) {
     const target = { nodeName: "page-worker" as const, pageId: page.pageId };
@@ -205,6 +208,16 @@ function retryOrStopPage(
       : "non_retryable_error",
     page.error?.message ?? `页面 ${page.pageId} 无法继续执行。`,
     true,
+  );
+}
+
+/** Day 31 默认 25-step 上限曾覆盖具体页面错误；只为该旧 checkpoint 开放恢复。 */
+function isLegacyGraphRecursionFailure(
+  error: PageGenerationState["error"],
+) {
+  return (
+    error?.code === "COURSE_TASK_EXECUTION_ERROR" &&
+    error.message.startsWith("Recursion limit of 25 reached")
   );
 }
 

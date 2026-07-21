@@ -78,6 +78,16 @@ describe("LangGraph Supervisor routing", () => {
       action: "stop",
       stopReason: { code: "retry_exhausted" },
     });
+
+    const legacyRecursionCheckpoint = failedPageRoutingState({
+      attempts: 0,
+      code: "COURSE_TASK_EXECUTION_ERROR",
+      message: "Recursion limit of 25 reached without hitting a stop condition.",
+    });
+    expect(decideCourseGraphSupervisor(legacyRecursionCheckpoint)).toMatchObject({
+      action: "retry",
+      nextNode: { nodeName: "page-worker", pageId: "page-01" },
+    });
   });
 });
 
@@ -117,7 +127,15 @@ function pageRoutingState({ repairRounds }: { repairRounds: number }) {
   } as CourseGenerationState;
 }
 
-function failedPageRoutingState({ attempts }: { attempts: number }) {
+function failedPageRoutingState({
+  attempts,
+  code = "HTML_ENGINEER_FAILED",
+  message = "HTML 生成失败。",
+}: {
+  attempts: number;
+  code?: string;
+  message?: string;
+}) {
   return {
     ...pageRoutingState({ repairRounds: 0 }),
     currentStage: "html",
@@ -129,10 +147,7 @@ function failedPageRoutingState({ attempts }: { attempts: number }) {
         currentStage: "html",
         assets: [],
         attempts: [{ stage: "html", attempts }],
-        error: {
-          code: "HTML_ENGINEER_FAILED",
-          message: "HTML 生成失败。",
-        },
+        error: { code, message },
       },
     ],
   } as CourseGenerationState;

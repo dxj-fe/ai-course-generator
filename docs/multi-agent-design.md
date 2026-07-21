@@ -348,4 +348,5 @@ flowchart TD
 - [x] 普通 Page Worker 在 QA 后暂停；Repair 节点每次只执行一轮 Repair/re-QA，失败页 Retry 每次只恢复一个页面，避免节点内部形成无界循环。
 - [x] Supervisor decisions 与手写入口共享 attempt、checkpoint 和公开事件语义；Graph streaming 继续经过 Day 30 的严格映射。
 - [x] 原始页面错误码在终态中保留，使用户显式恢复时可以重新判断 retryability；Supervisor stop 原因保存在 `lastDecision`。
+- [x] Graph `invoke`/`stream` 的 130-step ceiling 高于 64 次领域 decision guard，避免五页合法 Repair 路径被框架默认 25-step 上限提前截断；旧递归错误 checkpoint 可显式恢复。
 - [x] API、Controller、Timeline、learning workspace、路由和视觉系统均未新增或重做。

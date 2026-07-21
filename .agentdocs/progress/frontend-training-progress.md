@@ -68,3 +68,4 @@ next_training_day: `32`
 - 2026-07-21: Fixed a second post-Day 30 Repair failure by limiting each repair request to issues that actually trigger the report's revise decision, so non-blocking QA warnings cannot remove DSL-required interaction content.
 - 2026-07-21: Delivered Day 31 plan for LangGraph Supervisor conditional routing, QA-to-Repair loops, bounded page retries, deterministic fallbacks, and architecture documentation.
 - 2026-07-21: Implemented Day 31 with a rule-first LangGraph Supervisor, schema-validated conditional edges, one-round QA/Repair routing, bounded single-page retries, deterministic terminal guards, shared public decision checkpoints, architecture documentation, and full automated verification.
+- 2026-07-21: Fixed the post-Day 31 LangGraph recursion failure by setting invoke/stream ceilings above the persisted domain decision guard, adding five-page multi-Repair coverage beyond 25 steps, and allowing affected legacy checkpoints to resume.

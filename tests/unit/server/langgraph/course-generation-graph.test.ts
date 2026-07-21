@@ -91,6 +91,48 @@ describe("production course generation graph", () => {
     ).toEqual(state.outline?.pages.map(({ id }) => id));
   });
 
+  it("finishes bounded invoke and stream runs whose valid Repair routes exceed LangGraph's default 25 steps", async () => {
+    const fivePageInput = {
+      ...input,
+      courseId: "course-day-31-recursion-budget",
+      pageCount: 5 as const,
+    };
+    const state = await runCourseGenerationGraphWorkflow(
+      fivePageInput,
+      context,
+      createCourseRuntimeTestDependencies([], [], {
+        pageCount: 5,
+        repairRoundsByPageId: {
+          "page-01-cover": 2,
+          "page-02-knowledge": 2,
+          "page-03-comparison": 2,
+        },
+      }),
+    );
+
+    expect(state.status).toBe("completed");
+    expect(state.supervisor?.decisionCount).toBe(14);
+    expect(state.pages.map((page) => page.repairHistory?.length ?? 0)).toEqual([
+      2, 2, 2, 0, 0,
+    ]);
+
+    const streamed = await streamCourseGenerationGraphWorkflow(
+      { ...fivePageInput, courseId: "course-day-31-stream-recursion-budget" },
+      context,
+      createCourseRuntimeTestDependencies([], [], {
+        pageCount: 5,
+        repairRoundsByPageId: {
+          "page-01-cover": 2,
+          "page-02-knowledge": 2,
+          "page-03-comparison": 2,
+        },
+      }),
+    );
+
+    expect(streamed.status).toBe("completed");
+    expect(streamed.supervisor?.decisionCount).toBe(14);
+  });
+
   it("compiles the explicit START-to-END topology", () => {
     const graph = createCourseGenerationGraph({
       input,

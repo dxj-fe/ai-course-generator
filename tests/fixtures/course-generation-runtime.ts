@@ -26,6 +26,7 @@ export type CourseRuntimeTestOptions = {
   failPlanner?: boolean;
   failPageId?: string;
   pageCount?: 3 | 5;
+  repairRoundsByPageId?: Record<string, 0 | 1 | 2>;
 };
 
 export function createCourseRuntimeTestDependencies(
@@ -35,6 +36,7 @@ export function createCourseRuntimeTestDependencies(
 ): Partial<CourseGenerationWorkflowDependencies> {
   const intent = courseIntentFor(options.pageCount ?? 3);
   const outline = courseOutlineFor(options.pageCount ?? 3);
+  const pageCalls = new Map<string, number>();
   let eventSequence = 0;
   const nextEvent = (summary: string): AgentEvent => ({
     id: `fixture-event-${++eventSequence}`,
@@ -127,7 +129,16 @@ export function createCourseRuntimeTestDependencies(
     },
     generatePage: async (page, _briefs, context) => {
       order.push(`worker:${page.id}`);
+      const call = (pageCalls.get(page.id) ?? 0) + 1;
+      pageCalls.set(page.id, call);
       const failed = options.failPageId === page.id;
+      const requestedRepairRounds =
+        options.repairRoundsByPageId?.[page.id] ?? 0;
+      const shouldRepair = !failed && call <= requestedRepairRounds;
+      const completedRepairRounds = Math.min(
+        call - 1,
+        requestedRepairRounds,
+      );
       const content = contentForPage(page);
       const state = PageGenerationStateSchema.parse(
         failed
@@ -145,39 +156,84 @@ export function createCourseRuntimeTestDependencies(
                 message: `页面 ${page.id} HTML 生成失败。`,
               },
             }
-          : {
-              ...context.initialState,
-              pageId: page.id,
-              order: page.order,
-              status: "completed",
-              currentStage: "complete",
-              content,
-              assets: [],
-              htmlOutput: {
-                version: 1,
-                html: `<!doctype html><html data-page-id="${page.id}"><body>${page.title}</body></html>`,
-                generatedAt: courseRuntimeTimestamp,
+          : shouldRepair
+            ? {
+                ...context.initialState,
+                pageId: page.id,
+                order: page.order,
+                status: "running",
+                currentStage: "qa",
+                content,
+                assets: [],
+                htmlOutput: htmlOutputForPage(page),
+                qualityReport: repairReportForPage(page.id),
+                repairHistory: repairHistoryForPage(
+                  page.id,
+                  completedRepairRounds,
+                ),
+                error: undefined,
+              }
+            : {
+                ...context.initialState,
+                pageId: page.id,
+                order: page.order,
+                status: "completed",
+                currentStage: "complete",
+                content,
+                assets: [],
+                htmlOutput: htmlOutputForPage(page),
+                qualityReport: qualityReportForPage(page.id),
+                repairHistory: repairHistoryForPage(
+                  page.id,
+                  completedRepairRounds,
+                ),
+                error: undefined,
               },
-              qualityReport: qualityReportForPage(page.id),
-              error: undefined,
-            },
       );
       const events: PageWorkerEvent[] = [
         {
-          type: failed ? "error" : "page_done",
+          type: failed ? "error" : shouldRepair ? "validation" : "page_done",
           stage: failed ? "html" : "qa",
           pageId: page.id,
-          agent: failed ? "html-engineer" : "page-worker",
+          agent: failed
+            ? "html-engineer"
+            : shouldRepair
+              ? "page-qa"
+              : "page-worker",
           timestamp: courseRuntimeTimestamp,
           summary: failed
             ? `页面 ${page.id} HTML 生成失败。`
-            : `页面 ${page.id} 已完成。`,
+            : shouldRepair
+              ? `页面 ${page.id} 需要第 ${completedRepairRounds + 1} 轮 Repair。`
+              : `页面 ${page.id} 已完成。`,
         },
       ];
       await context.onUpdate?.({ state, events });
       return PageWorkerResultSchema.parse({ pageId: page.id, state, events });
     },
   };
+}
+
+function htmlOutputForPage(page: PagePlan) {
+  return {
+    version: 1 as const,
+    html: `<!doctype html><html data-page-id="${page.id}"><body>${page.title}</body></html>`,
+    generatedAt: courseRuntimeTimestamp,
+  };
+}
+
+function repairHistoryForPage(pageId: string, rounds: number) {
+  return Array.from({ length: rounds }, (_, index) => ({
+    round: index + 1,
+    sourceReport: repairReportForPage(pageId),
+    targetArtifact: "html" as const,
+    issueCodes: ["HTML_MAIN_MISSING"],
+    status: "applied" as const,
+    changeSummary: ["补充页面主内容语义。"],
+    resultReportId: `quality-${pageId}-repair-${index + 1}`,
+    startedAt: courseRuntimeTimestamp,
+    completedAt: courseRuntimeTimestamp,
+  }));
 }
 
 function courseIntentFor(pageCount: 3 | 5): CourseIntent {
@@ -341,6 +397,45 @@ function qualityReportForPage(pageId: string) {
     issues: [],
     shouldRepair: false,
     decision: "pass",
+    createdAt: courseRuntimeTimestamp,
+  });
+}
+
+function repairReportForPage(pageId: string) {
+  return QualityReportSchema.parse({
+    id: `quality-${pageId}-repair`,
+    target: { type: "page", pageId },
+    overallScore: 70,
+    dimensions: {
+      contentAccuracy: { score: 95, summary: "内容准确。" },
+      layoutQuality: { score: 70, summary: "布局需要修订。" },
+      courseCoherence: { score: 95, summary: "课程连贯。" },
+      styleConsistency: { score: 95, summary: "风格一致。" },
+      htmlRuntime: {
+        score: 60,
+        summary: "缺少主内容语义。",
+        issueCodes: ["HTML_MAIN_MISSING"],
+        repairHints: ["补充 main 元素。"],
+      },
+      assetUsability: { score: 95, summary: "素材可用。" },
+    },
+    issues: [
+      {
+        code: "HTML_MAIN_MISSING",
+        dimension: "htmlRuntime",
+        severity: "error",
+        source: "heuristic",
+        message: "页面缺少 main 元素。",
+        location: {
+          pageId,
+          selector: "body",
+          description: "页面正文根节点。",
+        },
+        repairHint: "补充 main 元素。",
+      },
+    ],
+    shouldRepair: true,
+    decision: "revise",
     createdAt: courseRuntimeTimestamp,
   });
 }
