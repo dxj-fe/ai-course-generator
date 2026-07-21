@@ -46,7 +46,10 @@ export function planRepairRound(input: {
     };
   }
 
-  const semanticIssues = input.report.issues.filter((issue) =>
+  const actionableIssues = input.report.issues.filter((issue) =>
+    contributesToRepairDecision(issue, input.report),
+  );
+  const semanticIssues = actionableIssues.filter((issue) =>
     DSL_DIMENSIONS.has(issue.dimension),
   );
   if (semanticIssues.length > 0) {
@@ -69,12 +72,12 @@ export function planRepairRound(input: {
     }
   }
 
-  const hasUpstreamAssetIssue = input.report.issues.some(
+  const hasUpstreamAssetIssue = actionableIssues.some(
     (issue) =>
       issue.dimension === "assetUsability" &&
       UPSTREAM_ASSET_CODES.has(issue.code),
   );
-  const htmlIssues = input.report.issues.filter(
+  const htmlIssues = actionableIssues.filter(
     (issue) =>
       isHtmlRepairable(issue) &&
       !(hasUpstreamAssetIssue && issue.dimension === "assetUsability"),
@@ -101,6 +104,25 @@ export function planRepairRound(input: {
     failureClass: "unlocatable_issue",
     message: "QualityReport 要求修订，但没有可定位且受支持的 Repair issue。",
   };
+}
+
+/** Repair 只处理触发本轮 revise 的问题，不把旁路 warning 搭车进候选范围。 */
+function contributesToRepairDecision(
+  issue: QualityIssue,
+  report: QualityReport,
+) {
+  if (issue.severity === "error") return true;
+
+  if (issue.dimension === "contentAccuracy") {
+    return report.dimensions.contentAccuracy.score < 85;
+  }
+  if (issue.dimension === "layoutQuality") {
+    return report.dimensions.layoutQuality.score < 75;
+  }
+  if (issue.dimension === "htmlRuntime") {
+    return report.dimensions.htmlRuntime.score < 90;
+  }
+  return false;
 }
 
 function request(

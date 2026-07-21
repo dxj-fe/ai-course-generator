@@ -1,6 +1,7 @@
 import type {
   CourseGenerationError,
   CourseGenerationStage,
+  CourseTaskRuntimeSource,
   CourseTaskStatus,
 } from "@/shared/course-schema";
 import type {
@@ -61,6 +62,7 @@ export type CourseRunTimelineTaskSummary = {
   taskId?: string;
   courseId?: string;
   traceId: string;
+  source: CourseTaskRuntimeSource;
   status: CourseTaskStatus;
   connectionStatus: CourseRunTimelineConnectionStatus;
   completedPages: number;
@@ -146,6 +148,7 @@ export function buildCourseRunTimelineModel(
       taskId: run.taskId,
       courseId: run.courseId,
       traceId: run.traceId,
+      source: run.source ?? "workflow",
       status: options.taskStatus ?? deriveTaskStatus(run, pages),
       connectionStatus: options.connectionStatus ?? "idle",
       completedPages,

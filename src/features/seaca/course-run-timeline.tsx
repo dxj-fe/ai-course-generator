@@ -157,6 +157,12 @@ export function CourseRunTimeline({
               已从断点恢复
             </Badge>
           ) : null}
+          <Badge
+            className="h-auto rounded-full border-[#d7c9b9] bg-[#fffaf2] px-2.5 py-1 text-[11px] font-semibold text-[#7c674e]"
+            variant="outline"
+          >
+            来源 · {model.task.source === "langgraph" ? "LangGraph" : "Workflow"}
+          </Badge>
           {connectionStatus ? (
             <ConnectionBadge status={model.task.connectionStatus} />
           ) : null}

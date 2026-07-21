@@ -5,7 +5,10 @@ import {
   PageGenerationStateSchema,
   PageWorkerResultSchema,
   QualityReportSchema,
+  type CourseDesignBriefs,
   type CourseGenerationState,
+  type CourseIntent,
+  type CoursePlan,
   type PagePlan,
   type PageWorkerEvent,
 } from "../../src/shared/course-schema";
@@ -22,6 +25,7 @@ export const courseRuntimeTimestamp = "2026-07-21T02:00:00.000Z";
 export type CourseRuntimeTestOptions = {
   failPlanner?: boolean;
   failPageId?: string;
+  pageCount?: 3 | 5;
 };
 
 export function createCourseRuntimeTestDependencies(
@@ -29,6 +33,8 @@ export function createCourseRuntimeTestDependencies(
   checkpoints: CourseGenerationState[],
   options: CourseRuntimeTestOptions = {},
 ): Partial<CourseGenerationWorkflowDependencies> {
+  const intent = courseIntentFor(options.pageCount ?? 3);
+  const outline = courseOutlineFor(options.pageCount ?? 3);
   let eventSequence = 0;
   const nextEvent = (summary: string): AgentEvent => ({
     id: `fixture-event-${++eventSequence}`,
@@ -84,7 +90,7 @@ export function createCourseRuntimeTestDependencies(
     },
     generateIntent: async () => {
       order.push("intent");
-      return courseDesignIntent;
+      return intent;
     },
     runPlanner: async (intent) => {
       order.push("planner");
@@ -94,7 +100,7 @@ export function createCourseRuntimeTestDependencies(
         maxSteps: 1,
         events: [nextEvent(options.failPlanner ? "planner failed" : "planner completed")],
         task: { intent },
-        outline: options.failPlanner ? undefined : courseDesignOutline,
+        outline: options.failPlanner ? undefined : outline,
         error: options.failPlanner
           ? {
               code: "AGENT_EXECUTION_ERROR" as const,
@@ -105,16 +111,17 @@ export function createCourseRuntimeTestDependencies(
     },
     runDesign: async ({ outline }) => {
       order.push("design");
+      const briefs = designBriefsFor(outline);
       return {
         status: "completed" as const,
         events: [{ ...nextEvent("design completed"), agent: "visual" as const }],
-        briefs: { pedagogy: pedagogyPlan, story: storyArc, visual: visualBrief },
+        briefs,
         pageWorkerBriefs: outline.pages.map((page, index) => ({
           pageId: page.id,
           styleTemplateId: page.styleTemplateId,
-          pedagogy: pedagogyPlan.pageGuidance[index]!,
-          story: storyArc.pageBeats[index]!,
-          visual: visualBrief.pageGuidance[index]!,
+          pedagogy: briefs.pedagogy.pageGuidance[index]!,
+          story: briefs.story.pageBeats[index]!,
+          visual: briefs.visual.pageGuidance[index]!,
         })),
       };
     },
@@ -172,6 +179,78 @@ export function createCourseRuntimeTestDependencies(
   };
 }
 
+function courseIntentFor(pageCount: 3 | 5): CourseIntent {
+  return pageCount === 3
+    ? courseDesignIntent
+    : { ...courseDesignIntent, courseLength: 5 };
+}
+
+function courseOutlineFor(pageCount: 3 | 5): CoursePlan {
+  if (pageCount === 3) return courseDesignOutline;
+
+  const [cover, knowledge, summary] = courseDesignOutline.pages;
+  return {
+    ...courseDesignOutline,
+    overview: "通过五页观察、比较、练习和回顾认识太阳系基础结构。",
+    pages: [
+      cover!,
+      knowledge!,
+      {
+        ...knowledge!,
+        id: "page-03-comparison",
+        order: 3,
+        pageType: "comparison",
+        title: "恒星与行星对比",
+        interactionType: "explore",
+        functionalTemplateId: "comparison-split",
+        dependsOnPageIds: [knowledge!.id],
+      },
+      {
+        ...knowledge!,
+        id: "page-04-quiz",
+        order: 4,
+        pageType: "quiz",
+        title: "太阳系知识练习",
+        interactionType: "choice",
+        functionalTemplateId: "quiz-choice",
+        dependsOnPageIds: ["page-03-comparison"],
+      },
+      {
+        ...summary!,
+        id: "page-05-summary",
+        order: 5,
+        dependsOnPageIds: ["page-04-quiz"],
+      },
+    ],
+  };
+}
+
+function designBriefsFor(outline: CoursePlan): CourseDesignBriefs {
+  return {
+    pedagogy: {
+      ...pedagogyPlan,
+      pageGuidance: outline.pages.map((page, index) => ({
+        ...pedagogyPlan.pageGuidance[Math.min(index, 2)]!,
+        pageId: page.id,
+      })),
+    },
+    story: {
+      ...storyArc,
+      pageBeats: outline.pages.map((page, index) => ({
+        ...storyArc.pageBeats[Math.min(index, 2)]!,
+        pageId: page.id,
+      })),
+    },
+    visual: {
+      ...visualBrief,
+      pageGuidance: outline.pages.map((page, index) => ({
+        ...visualBrief.pageGuidance[Math.min(index, 2)]!,
+        pageId: page.id,
+      })),
+    },
+  };
+}
+
 function contentForPage(page: PagePlan) {
   return PageContentDSLSchema.parse({
     version: 1,
@@ -201,11 +280,40 @@ function contentForPage(page: PagePlan) {
               },
             ],
           }
-        : {
-            type: "navigate",
-            actionLabel: page.order === 3 ? "完成课程" : "继续学习",
-            destination: page.order === 3 ? "course-home" : "next",
-          },
+        : page.interactionType === "explore"
+          ? {
+              type: "explore",
+              prompt: "探索并比较两个太阳系对象。",
+              items: [
+                { id: "item-01", label: "恒星", content: "能够自己发光。" },
+                { id: "item-02", label: "行星", content: "反射恒星的光。" },
+              ],
+            }
+          : page.interactionType === "choice"
+            ? {
+                type: "choice",
+                questions: [
+                  {
+                    id: "question-01",
+                    prompt: "太阳属于哪一类天体？",
+                    options: [
+                      { id: "option-star", label: "恒星" },
+                      { id: "option-planet", label: "行星" },
+                    ],
+                    correctOptionId: "option-star",
+                    feedback: {
+                      success: "正确，太阳会自己发光。",
+                      retry: "再想想哪类天体会自己发光。",
+                    },
+                    maxAttempts: 2,
+                  },
+                ],
+              }
+            : {
+                type: "navigate",
+                actionLabel: page.pageType === "summary" ? "完成课程" : "继续学习",
+                destination: page.pageType === "summary" ? "course-home" : "next",
+              },
     assetSlots: [],
     layoutHints: {
       contentDensity: "balanced",

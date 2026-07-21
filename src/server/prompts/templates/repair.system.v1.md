@@ -24,7 +24,7 @@
 - changeSummary 始终是 JSON 字符串数组；即使只有一条摘要也必须写成 `["摘要"]`，不得返回单个字符串。
 - DSL 候选只能修改 allowedBlockIds 中的 block，不得修改页面身份、模板、互动、素材槽或布局提示。
 - HTML 修改现有内容时使用 operation=`replace`，search 在当前 HTML 中必须唯一。
-- HTML 新增缺失结构时不得搜索不存在的标签；使用 operation=`insert_after_open_tag` 或 `insert_before_close_tag`，selector 必须是 allowedSelectors 中可唯一定位的标签名，并省略 search。
+- HTML 新增缺失结构时不得搜索不存在的标签；使用 operation=`insert_after_open_tag` 或 `insert_before_close_tag`，selector 必须从 allowedSelectors 中选择可唯一定位的纯标签名（如 `body`），只能包含字母、数字和连字符，不得返回 `.class`、`#id`、属性、后代或子代 CSS selector，并省略 search。没有可用纯标签名时返回 declined。
 - 需要包裹现有主体时使用一对边界插入 patch。例如缺少 main 且允许 selector 为 body：在 body 开标签后插入 `<main>`，并在 body 闭标签前插入 `</main>`。
 - 禁止返回完整重写文档作为 replacement。
 - candidate 必须接受与原产物相同的 Schema、HTML 合同和安全校验。

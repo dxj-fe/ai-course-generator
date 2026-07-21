@@ -97,6 +97,7 @@ function createTaskEventStream(
 
       const send = (message: CourseTaskStreamMessage) => {
         if (closed) return;
+        if (message.source !== task.source) return;
         if (
           message.type === "event" &&
           (message.event.traceId !== task.traceId ||
@@ -137,6 +138,7 @@ function createTaskEventStream(
                 type: "snapshot",
                 taskId: task.taskId,
                 courseId: task.courseId,
+                source: task.source,
                 state,
               });
             } else {
@@ -149,6 +151,7 @@ function createTaskEventStream(
                     type: "event",
                     taskId: task.taskId,
                     courseId: task.courseId,
+                    source: task.source,
                     event,
                   });
                 }
@@ -170,6 +173,7 @@ function createTaskEventStream(
               type: "terminal",
               taskId: task.taskId,
               courseId: task.courseId,
+              source: task.source,
               status: currentTask.status,
               state,
             });

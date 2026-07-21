@@ -76,6 +76,7 @@ describe("course task Route Handlers", () => {
       courseId,
       traceId,
       status: "queued",
+      source: "langgraph",
     });
     mocks.run.mockResolvedValue(runningState());
 
@@ -99,6 +100,7 @@ describe("course task Route Handlers", () => {
       courseId,
       traceId,
       status: "queued",
+      source: "langgraph",
     });
     expect(mocks.create).toHaveBeenCalledWith({
       userPrompt: "生成三页太阳系互动课程",
@@ -200,6 +202,7 @@ describe("course task Route Handlers", () => {
       type: "event",
       taskId,
       courseId,
+      source: "workflow",
       event: publicEvent(2, "agent_done"),
     });
     const second = await readSseChunk(reader!);
@@ -316,6 +319,7 @@ function taskRecord(
     userPrompt: "生成三页太阳系互动课程",
     pageCount: 3,
     status: "running",
+    source: "workflow",
     createdAt: timestamp,
     updatedAt: timestamp,
     ...overrides,

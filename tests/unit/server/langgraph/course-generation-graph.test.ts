@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { createCourseGenerationGraph } from "../../../../src/server/langgraph/course-generation/course-graph";
-import { runCourseGenerationGraphWorkflow } from "../../../../src/server/langgraph/course-generation/run-course-graph";
+import {
+  runCourseGenerationGraphWorkflow,
+  streamCourseGenerationGraphWorkflow,
+} from "../../../../src/server/langgraph/course-generation/run-course-graph";
 import { resolveCourseGenerationDependencies } from "../../../../src/server/workflows/course-generation-runtime";
 import {
   CourseGenerationStateSchema,
@@ -48,6 +51,44 @@ describe("production course generation graph", () => {
     expect(state.events.every((event) => !("data" in event))).toBe(true);
     expect(CourseGenerationStateSchema.parse(state)).toEqual(state);
     expect(checkpoints.length).toBeGreaterThan(6);
+  });
+
+  it("streams checkpoint events before returning the terminal graph state", async () => {
+    const fivePageInput = {
+      ...input,
+      courseId: "course-day-30-five-page-stream",
+      pageCount: 5 as const,
+    };
+    const updates: Array<{ sequences: number[]; status: string }> = [];
+    let returned = false;
+    const state = await streamCourseGenerationGraphWorkflow(
+      fivePageInput,
+      context,
+      createCourseRuntimeTestDependencies([], [], { pageCount: 5 }),
+      ({ events, state: checkpoint }) => {
+        expect(returned).toBe(false);
+        if (events.length > 0) {
+          updates.push({
+            sequences: events.map(({ sequence }) => sequence),
+            status: checkpoint.status,
+          });
+        }
+      },
+    );
+    returned = true;
+
+    const sequences = updates.flatMap(({ sequences }) => sequences);
+    expect(sequences).toEqual(
+      Array.from({ length: state.events.length }, (_, index) => index + 1),
+    );
+    expect(updates.some(({ status }) => status === "running")).toBe(true);
+    expect(state.status).toBe("completed");
+    expect(state.pages).toHaveLength(5);
+    expect(
+      state.events
+        .filter(({ type }) => type === "page_done")
+        .map(({ pageId }) => pageId),
+    ).toEqual(state.outline?.pages.map(({ id }) => id));
   });
 
   it("compiles the explicit START-to-END topology", () => {

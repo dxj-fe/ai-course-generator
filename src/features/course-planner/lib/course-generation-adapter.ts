@@ -13,6 +13,7 @@ import type {
   CourseGenerationPublicEvent,
   CourseGenerationStage,
   CourseGenerationState,
+  CourseTaskRuntimeSource,
   PageGenerationState,
 } from "@/shared/course-schema";
 import type {
@@ -24,6 +25,7 @@ import type {
 type RunSeed = {
   id: string;
   taskId?: string;
+  source?: CourseTaskRuntimeSource;
   prompt: string;
   startedAt: number;
 };
@@ -122,6 +124,7 @@ export function courseGenerationToSeacaRun(
     courseId: state.courseId,
     prompt: seed.prompt,
     traceId: state.traceId,
+    source: seed.source,
     startedAt: seed.startedAt,
     generation: state,
     planner: {

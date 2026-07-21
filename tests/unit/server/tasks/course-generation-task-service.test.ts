@@ -4,6 +4,7 @@ import type { CourseStore } from "../../../../src/server/storage/course-store";
 import type { CourseTaskStore } from "../../../../src/server/storage/course-task-store";
 import { createCourseTaskEventBus } from "../../../../src/server/tasks/course-task-event-bus";
 import { createCourseGenerationTaskService } from "../../../../src/server/tasks/course-generation-task-service";
+import type { streamCourseGenerationGraphWorkflow } from "../../../../src/server/langgraph/course-generation/run-course-graph";
 import type { runCourseGenerationWorkflow } from "../../../../src/server/workflows/course-generation-workflow";
 import type {
   CourseGenerationState,
@@ -31,6 +32,44 @@ describe("course generation task service", () => {
       executionMode: "parallel",
       concurrency: 2,
     });
+  });
+
+  it("persists the LangGraph source and publishes only mapped product messages", async () => {
+    const running = courseState("running", 1);
+    const failed = courseState("failed", 2);
+    const runGraph = vi.fn(async (_input, _context, overrides, observe) => {
+      await overrides.checkpoint?.(running);
+      await observe?.({ state: running, events: running.events, cursor: 1 });
+      await overrides.checkpoint?.(failed);
+      await observe?.({
+        state: failed,
+        events: [failed.events[1]!],
+        cursor: 2,
+      });
+      return failed;
+    }) as typeof streamCourseGenerationGraphWorkflow;
+    const fixture = createFixture({ runGraph });
+    const messages: CourseTaskStreamMessage[] = [];
+    fixture.eventBus.subscribe(taskId, (message) => messages.push(message));
+
+    const created = await fixture.service.create({
+      userPrompt: "生成五页太阳系互动课程",
+      pageCount: 5,
+      source: "langgraph",
+    });
+    await fixture.service.run(taskId);
+
+    expect(created.source).toBe("langgraph");
+    expect(fixture.tasks.get(taskId)?.source).toBe("langgraph");
+    expect(fixture.runWorkflow).not.toHaveBeenCalled();
+    expect(runGraph).toHaveBeenCalledOnce();
+    expect(messages.map(({ type }) => type)).toEqual([
+      "snapshot",
+      "event",
+      "terminal",
+    ]);
+    expect(messages.every(({ source }) => source === "langgraph")).toBe(true);
+    expect(JSON.stringify(messages)).not.toContain("private");
   });
 
   it("persists and publishes a queued cancellation before the runner starts", async () => {
@@ -176,7 +215,10 @@ describe("course generation task service", () => {
 });
 
 function createFixture(
-  overrides: { runWorkflow?: typeof runCourseGenerationWorkflow } = {},
+  overrides: {
+    runWorkflow?: typeof runCourseGenerationWorkflow;
+    runGraph?: typeof streamCourseGenerationGraphWorkflow;
+  } = {},
 ) {
   const tasks = new Map<string, CourseTaskRecord>();
   const courses = new Map<string, CourseGenerationState>();
@@ -207,6 +249,7 @@ function createFixture(
     courseStore,
     eventBus,
     runWorkflow,
+    ...(overrides.runGraph ? { runGraph: overrides.runGraph } : {}),
     now: () => timestamp,
     createTaskId: () => taskId,
     createCourseId: () => courseId,
@@ -214,4 +257,45 @@ function createFixture(
   });
 
   return { service, taskStore, courseStore, eventBus, runWorkflow, tasks, courses };
+}
+
+function courseState(
+  status: "running" | "failed",
+  eventCount: number,
+): CourseGenerationState {
+  return {
+    version: 1,
+    courseId,
+    traceId,
+    userPrompt: "生成五页太阳系互动课程",
+    status,
+    currentStage: "planner",
+    pages: [],
+    events: Array.from({ length: eventCount }, (_, index) => ({
+      id: `event-day-30-${index + 1}`,
+      sequence: index + 1,
+      type: index === 0 ? ("agent_start" as const) : ("error" as const),
+      traceId,
+      timestamp,
+      step: index + 1,
+      summary: index === 0 ? "Planner 开始。" : "Planner 失败。",
+      stage: "planner" as const,
+      agent: "planner",
+    })),
+    errors:
+      status === "failed"
+        ? [
+            {
+              stage: "planner",
+              code: "PLANNER_FAILED",
+              message: "Planner 失败。",
+            },
+          ]
+        : [],
+    startedAt: timestamp,
+    updatedAt: timestamp,
+    ...(status === "failed"
+      ? { completedAt: timestamp, durationMs: 0 }
+      : {}),
+  };
 }

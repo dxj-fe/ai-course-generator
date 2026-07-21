@@ -44,6 +44,42 @@ describe("RepairAgent", () => {
     });
   });
 
+  it("normalizes a rooted CSS selector to its authorized tag boundary", () => {
+    expect(
+      normalizeRepairModelOutput({
+        kind: "html_patch_candidate",
+        patches: [
+          {
+            operation: "insert_after_open_tag",
+            selector: "body > .container",
+          },
+        ],
+      }),
+    ).toEqual({
+      kind: "html_patch_candidate",
+      patches: [
+        {
+          operation: "insert_after_open_tag",
+          selector: "body",
+        },
+      ],
+    });
+  });
+
+  it("keeps class-only boundary selectors invalid instead of widening scope", () => {
+    const output = {
+      kind: "html_patch_candidate",
+      patches: [
+        {
+          operation: "insert_after_open_tag",
+          selector: ".container",
+        },
+      ],
+    };
+
+    expect(normalizeRepairModelOutput(output)).toBe(output);
+  });
+
   it("applies one exact HTML patch and preserves the original HTML contract", async () => {
     const request = htmlRequest();
     const state = await createRepairAgent({
@@ -154,6 +190,58 @@ describe("RepairAgent", () => {
     expect(state.repairedHtml).toContain(
       `<main data-page-id="${pageContentDsl.pageId}">`,
     );
+    expect(state.repairedHtml).toMatch(/<body>\s*<main[\s\S]*<\/main>\s*<\/body>/);
+  });
+
+  it("applies a main wrapper when the provider repeats a rooted QA selector", async () => {
+    const htmlWithoutMain = buildValidGeneratedHtml(pageContentDsl)
+      .replace(`<main data-page-id="${pageContentDsl.pageId}">`, "")
+      .replace("</main>", "");
+    const request = planRepairRound({
+      pageId: pageContentDsl.pageId,
+      content: pageContentDsl,
+      html: htmlWithoutMain,
+      visualBrief,
+      assets: [],
+      completedRounds: 0,
+      report: qualityReportWithIssue({
+        code: "HTML_MAIN_MISSING",
+        dimension: "htmlRuntime",
+        selector: "body",
+      }),
+    });
+    if ("status" in request) throw new Error(request.message);
+
+    const state = await createRepairAgent({
+      generateCandidate: vi.fn().mockResolvedValue({
+        kind: "html_patch_candidate",
+        pageId: request.pageId,
+        targetArtifact: "html",
+        addressedIssueCodes: request.issueCodes,
+        unresolvedIssueCodes: [],
+        changeSummary: ["使用 main 包裹页面主体。"],
+        patches: [
+          {
+            issueCode: "HTML_MAIN_MISSING",
+            operation: "insert_after_open_tag",
+            selector: "body > .container",
+            replacement: `\n    <main data-page-id="${pageContentDsl.pageId}">`,
+            summary: "插入 main 开标签。",
+          },
+          {
+            issueCode: "HTML_MAIN_MISSING",
+            operation: "insert_before_close_tag",
+            selector: "body > .container",
+            replacement: "\n    </main>",
+            summary: "插入 main 闭标签。",
+          },
+        ],
+      }),
+    }).run(createRepairAgentState(request), {
+      traceId: "trace-repair-rooted-selector",
+    });
+
+    expect(state.status).toBe("completed");
     expect(state.repairedHtml).toMatch(/<body>\s*<main[\s\S]*<\/main>\s*<\/body>/);
   });
 

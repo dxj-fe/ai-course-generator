@@ -6,7 +6,7 @@ describe("Page QA prompts", () => {
   it("keeps QA report-only and renders the structured input", async () => {
     const prompts = await buildPageQAPrompts({ pageId: "page-02" });
 
-    expect(prompts.version).toBe("2.1.2/2.1.0");
+    expect(prompts.version).toBe("2.1.3/2.1.0");
     expect(prompts.systemPrompt).toContain("不负责修改 HTML");
     expect(prompts.systemPrompt).toContain("contentAccuracy");
     expect(prompts.systemPrompt).toContain("Playwright 浏览器证据");
@@ -15,6 +15,7 @@ describe("Page QA prompts", () => {
     expect(prompts.systemPrompt).toContain("description");
     expect(prompts.systemPrompt).toContain("feedback.success");
     expect(prompts.systemPrompt).toContain("readingOrder 只比较");
+    expect(prompts.systemPrompt).toContain("不构成内容冗余");
     expect(prompts.userPrompt).toContain('"pageId":"page-02"');
   });
 });

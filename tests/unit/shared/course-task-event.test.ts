@@ -72,6 +72,7 @@ describe("Day 19 course task protocol", () => {
       traceId: "trace-day-19",
       userPrompt: "生成三页太阳系互动课程",
       pageCount: 3,
+      source: "langgraph",
       status: "queued",
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -83,12 +84,14 @@ describe("Day 19 course task protocol", () => {
         courseId: record.courseId,
         traceId: record.traceId,
         status: record.status,
+        source: record.source,
       }),
     ).toEqual({
       taskId: "task-day-19",
       courseId: "course-day-19",
       traceId: "trace-day-19",
       status: "queued",
+      source: "langgraph",
     });
   });
 
@@ -102,6 +105,7 @@ describe("Day 19 course task protocol", () => {
         type: "snapshot",
         taskId: "task-day-19",
         courseId: state.courseId,
+        source: "langgraph",
         state,
       }).type,
     ).toBe("snapshot");
@@ -110,6 +114,7 @@ describe("Day 19 course task protocol", () => {
         type: "event",
         taskId: "task-day-19",
         courseId: state.courseId,
+        source: "langgraph",
         event,
       }).type,
     ).toBe("event");
@@ -118,6 +123,7 @@ describe("Day 19 course task protocol", () => {
         type: "terminal",
         taskId: "task-day-19",
         courseId: failedState.courseId,
+        source: "langgraph",
         status: "failed",
         state: failedState,
       }).type,

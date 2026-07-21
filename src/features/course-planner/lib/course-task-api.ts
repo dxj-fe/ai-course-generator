@@ -2,12 +2,14 @@ import { getErrorText } from "@/features/ai-playground/lib/messages";
 import {
   CourseTaskCreateResponseSchema,
   type CourseTaskCreateResponse,
+  type CourseTaskRuntimeSource,
 } from "@/shared/course-schema";
 
 export type CourseTaskPageCount = 3 | 4 | 5;
 type CourseTaskWorkerOptions = {
   executionMode?: "serial" | "parallel";
   concurrency?: number;
+  source?: CourseTaskRuntimeSource;
 };
 
 export type CreateCourseTaskInput =

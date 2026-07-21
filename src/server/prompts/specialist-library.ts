@@ -227,7 +227,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     templateVariables: ["pageQaInputJson"],
     system: {
       name: "page-qa-system",
-      version: "2.1.2",
+      version: "2.1.3",
       role: "system",
       inputContract: [
         "已校验的页面计划、DSL、HTML、课程上下文、brief、素材及静态/浏览器证据。",
@@ -255,7 +255,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     templateVariables: ["repairInputJson"],
     system: {
       name: "repair-system",
-      version: "1.0.2",
+      version: "1.0.3",
       role: "system",
       inputContract: [
         "只接收原始页面产物、已校验 QualityReport、限定目标和两轮 repair budget。",

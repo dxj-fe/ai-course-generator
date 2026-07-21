@@ -148,19 +148,59 @@ async function generateCandidate(
 }
 
 /**
- * 部分 JSON object Provider 会把单项 changeSummary 压成字符串。该字段只
- * 用于公开审计摘要，可无损恢复为单项数组；候选、issue code 和修复范围
- * 仍由 RepairModelOutputSchema 与 RepairResultSchema 严格校验。
+ * 只归一化可确定恢复的 Provider 形态偏差：单项公开摘要，以及边界插入时
+ * 以安全标签名开头的 CSS selector。归一化后的标签仍须通过请求授权范围、
+ * 唯一边界和完整 HTML 合同校验；class/id-only selector 不会被放宽。
  */
 export function normalizeRepairModelOutput(output: unknown): unknown {
-  if (!isRecord(output) || typeof output.changeSummary !== "string") {
-    return output;
+  if (!isRecord(output)) return output;
+
+  let normalized = output;
+  if (typeof output.changeSummary === "string") {
+    normalized = {
+      ...normalized,
+      changeSummary: [output.changeSummary],
+    };
   }
 
-  return {
-    ...output,
-    changeSummary: [output.changeSummary],
-  };
+  if (!Array.isArray(normalized.patches)) return normalized;
+
+  let patchesChanged = false;
+  const patches = normalized.patches.map((patch) => {
+    if (
+      !isRecord(patch) ||
+      (patch.operation !== "insert_after_open_tag" &&
+        patch.operation !== "insert_before_close_tag") ||
+      typeof patch.selector !== "string"
+    ) {
+      return patch;
+    }
+
+    const selector = normalizeBoundarySelector(patch.selector);
+    if (selector === patch.selector) return patch;
+
+    patchesChanged = true;
+    return { ...patch, selector };
+  });
+
+  if (patchesChanged) {
+    normalized = { ...normalized, patches };
+  }
+
+  return normalized;
+}
+
+function normalizeBoundarySelector(selector: string) {
+  if (/^[a-z][a-z0-9-]*$/i.test(selector)) return selector;
+
+  const rootedSelector = selector.match(/^([a-z][a-z0-9-]*)(.*)$/i);
+  if (!rootedSelector) return selector;
+
+  const suffix = rootedSelector[2]!;
+  const startsCssContinuation =
+    /^\s/.test(suffix) ||
+    [".", "#", "[", ":", ">", "+", "~"].includes(suffix[0] ?? "");
+  return startsCssContinuation ? rootedSelector[1]! : selector;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

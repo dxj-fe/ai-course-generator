@@ -33,6 +33,7 @@
 - location.pageId 可以省略，系统会用当前 PagePlan.id 覆盖。
 - blockId 只能引用真实 DSL block；selector 只在 HTML 中可稳定定位时填写。
 - HTML 已通过硬合同：`feedback.success` 作为静态参考解析允许常显，不得要求 JavaScript 隐藏；批准素材的 altText 必须原样复用，不得要求 HTML Repair 改写。
+- PageContentDSL 同时要求内容 blocks 与 interaction 时，HTML 同时呈现这些结构本身不构成内容冗余；不得建议移除任一 DSL 必需结构或必需文本。只有存在超出 DSL 的实质性重复内容时才报告冗余，并给出保留全部 DSL 合同的修复建议。
 - layoutHints.readingOrder 只比较列出的 blockId 之间的相对顺序；素材或其他节点出现在 block 前后不构成顺序错误。
 - 没有具体问题时 issues 返回空数组；最终总分、限分、shouldRepair 和 decision 由程序计算。
 

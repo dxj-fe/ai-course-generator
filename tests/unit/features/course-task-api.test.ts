@@ -16,6 +16,7 @@ describe("course task API client", () => {
       courseId: "course-123e4567-e89b-42d3-a456-426614174000",
       traceId: "trace-task-create",
       status: "queued",
+      source: "langgraph",
     };
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(payload), {
@@ -28,7 +29,11 @@ describe("course task API client", () => {
 
     await expect(
       createCourseTask(
-        { userPrompt: "生成三页太阳系课程", pageCount: 3 },
+        {
+          userPrompt: "生成三页太阳系课程",
+          pageCount: 3,
+          source: "langgraph",
+        },
         { signal: controller.signal, traceId: payload.traceId },
       ),
     ).resolves.toEqual(payload);
@@ -44,6 +49,7 @@ describe("course task API client", () => {
     expect(JSON.parse(String(init.body))).toEqual({
       userPrompt: "生成三页太阳系课程",
       pageCount: 3,
+      source: "langgraph",
       traceId: payload.traceId,
     });
   });

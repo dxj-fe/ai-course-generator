@@ -22,6 +22,12 @@ export const CourseTaskStatusSchema = z.enum([
   "cancelled",
 ]);
 
+/** 公开标识任务由兼容手写编排还是 LangGraph 运行。 */
+export const CourseTaskRuntimeSourceSchema = z.enum([
+  "workflow",
+  "langgraph",
+]);
+
 const CourseTaskPageCountSchema = z.union([
   z.literal(3),
   z.literal(4),
@@ -46,6 +52,7 @@ export const CourseTaskRecordSchema = z
     pageCount: CourseTaskPageCountSchema.optional(),
     executionMode: PageWorkerModeSchema.optional(),
     concurrency: z.number().int().min(1).max(5).optional(),
+    source: CourseTaskRuntimeSourceSchema.default("workflow"),
     status: CourseTaskStatusSchema,
     createdAt: z.string().datetime({ offset: true }),
     updatedAt: z.string().datetime({ offset: true }),
@@ -60,6 +67,7 @@ export const CourseTaskCreateResponseSchema = z
     courseId: CourseIdSchema,
     traceId: z.string().min(1).max(120),
     status: z.literal("queued"),
+    source: CourseTaskRuntimeSourceSchema.default("workflow"),
   })
   .strict();
 
@@ -68,6 +76,7 @@ const CourseTaskStreamSnapshotSchema = z
     type: z.literal("snapshot"),
     taskId: CourseTaskIdSchema,
     courseId: CourseIdSchema,
+    source: CourseTaskRuntimeSourceSchema.default("workflow"),
     state: CourseGenerationStateSchema,
   })
   .strict();
@@ -77,6 +86,7 @@ const CourseTaskStreamEventSchema = z
     type: z.literal("event"),
     taskId: CourseTaskIdSchema,
     courseId: CourseIdSchema,
+    source: CourseTaskRuntimeSourceSchema.default("workflow"),
     event: CourseGenerationPublicEventSchema,
   })
   .strict();
@@ -92,6 +102,7 @@ const CourseTaskStreamTerminalSchema = z
     type: z.literal("terminal"),
     taskId: CourseTaskIdSchema,
     courseId: CourseIdSchema,
+    source: CourseTaskRuntimeSourceSchema.default("workflow"),
     status: CourseTaskTerminalStatusSchema,
     state: CourseGenerationStateSchema,
   })
@@ -130,6 +141,9 @@ export const CourseTaskStreamMessageSchema = z
 
 export type CourseTaskId = z.infer<typeof CourseTaskIdSchema>;
 export type CourseTaskStatus = z.infer<typeof CourseTaskStatusSchema>;
+export type CourseTaskRuntimeSource = z.infer<
+  typeof CourseTaskRuntimeSourceSchema
+>;
 export type CourseTaskRecord = z.infer<typeof CourseTaskRecordSchema>;
 export type CourseTaskCreateResponse = z.infer<
   typeof CourseTaskCreateResponseSchema

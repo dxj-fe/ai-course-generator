@@ -38,12 +38,14 @@ describe("course task SSE codec", () => {
       type: "snapshot",
       taskId: "task-123e4567-e89b-42d3-a456-426614174000",
       courseId: state.courseId,
+      source: "langgraph",
       state,
     });
 
     expect(frame).toContain("id: 1\n");
     expect(frame).toContain("event: snapshot\n");
     expect(frame).toContain('"type":"snapshot"');
+    expect(frame).toContain('"source":"langgraph"');
     expect(frame.endsWith("\n\n")).toBe(true);
   });
 

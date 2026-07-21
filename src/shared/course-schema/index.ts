@@ -238,11 +238,13 @@ export {
   CourseTaskCreateResponseSchema,
   CourseTaskIdSchema,
   CourseTaskRecordSchema,
+  CourseTaskRuntimeSourceSchema,
   CourseTaskStatusSchema,
   CourseTaskStreamMessageSchema,
   type CourseTaskCreateResponse,
   type CourseTaskId,
   type CourseTaskRecord,
+  type CourseTaskRuntimeSource,
   type CourseTaskStatus,
   type CourseTaskStreamMessage,
 } from "./course-task-event";

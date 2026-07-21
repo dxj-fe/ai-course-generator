@@ -64,6 +64,42 @@ describe("QA repair planning", () => {
     });
   });
 
+  it("does not add a non-blocking coherence warning to an error-driven repair", () => {
+    const report = qualityReportWithIssue({
+      code: "HTML_MAIN_MISSING",
+      dimension: "htmlRuntime",
+      selector: "body",
+    });
+    const request = planRepairRound({
+      ...base,
+      report: {
+        ...report,
+        issues: [
+          ...report.issues,
+          {
+            code: "CONTENT_REDUNDANCY",
+            dimension: "courseCoherence" as const,
+            severity: "warning" as const,
+            source: "model" as const,
+            message: "知识卡与交互区域包含重复内容。",
+            location: {
+              pageId: pageContentDsl.pageId,
+              selector: ".interaction-section",
+              description: "DSL 要求的 reveal 交互区域",
+            },
+            repairHint: "移除知识卡或交互区域。",
+          },
+        ],
+      },
+    });
+
+    expect(request).toMatchObject({
+      targetArtifact: "html",
+      issueCodes: ["HTML_MAIN_MISSING"],
+      allowedSelectors: ["body"],
+    });
+  });
+
   it("still refuses semantic issues with neither a block nor a selector", () => {
     const request = planRepairRound({
       ...base,

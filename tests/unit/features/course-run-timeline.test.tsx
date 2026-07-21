@@ -11,6 +11,7 @@ import {
 function createRun(): SeacaCourseRun {
   return {
     id: "run-day-18",
+    source: "langgraph",
     prompt: "生成太阳系课程",
     traceId: "trace-day-18",
     startedAt: 0,
@@ -48,6 +49,7 @@ describe("CourseRunTimeline", () => {
 
     expect(markup).toContain("生成中");
     expect(markup).toContain("正在重连");
+    expect(markup).toContain("来源 · LangGraph");
     expect(markup).toContain("0 / 3");
     expect(markup).toContain("5 秒");
     expect(markup).toContain("全局 Agent");

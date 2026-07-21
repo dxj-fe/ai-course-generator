@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { AiRequestError, createTraceId } from "@/server/ai/error";
+import { streamCourseGenerationGraphWorkflow } from "@/server/langgraph/course-generation/run-course-graph";
 import {
   createCourseStore,
   type CourseStore,
@@ -22,6 +23,7 @@ import {
   CourseTaskCreateResponseSchema,
   CourseTaskIdSchema,
   CourseTaskRecordSchema,
+  CourseTaskRuntimeSourceSchema,
   CourseGenerationStateSchema,
   type CourseGenerationState,
   type CourseTaskCreateResponse,
@@ -35,6 +37,7 @@ const CourseTaskCreateInputSchema = z
     pageCount: z.union([z.literal(3), z.literal(4), z.literal(5)]).optional(),
     executionMode: z.enum(["serial", "parallel"]).optional(),
     concurrency: z.number().int().min(1).max(5).optional(),
+    source: CourseTaskRuntimeSourceSchema.optional(),
     traceId: z.string().trim().min(1).max(120).optional(),
   })
   .strict()
@@ -58,6 +61,7 @@ type CourseGenerationTaskServiceDependencies = {
   courseStore: CourseStore;
   eventBus: CourseTaskEventBus;
   runWorkflow: typeof runCourseGenerationWorkflow;
+  runGraph: typeof streamCourseGenerationGraphWorkflow;
   now(): string;
   createTaskId(): string;
   createCourseId(): string;
@@ -74,6 +78,7 @@ const defaultDependencies: CourseGenerationTaskServiceDependencies = {
   courseStore: createCourseStore(),
   eventBus: courseTaskEventBus,
   runWorkflow: runCourseGenerationWorkflow,
+  runGraph: streamCourseGenerationGraphWorkflow,
   now: () => new Date().toISOString(),
   createTaskId: () => `task-${crypto.randomUUID()}`,
   createCourseId: () => `course-${crypto.randomUUID()}`,
@@ -159,6 +164,7 @@ export function createCourseGenerationTaskService(
           existingState?.workerConfig?.mode ?? parsed.data.executionMode,
         concurrency:
           existingState?.workerConfig?.concurrency ?? parsed.data.concurrency,
+        source: parsed.data.source ?? "workflow",
         status: "queued",
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -170,6 +176,7 @@ export function createCourseGenerationTaskService(
         courseId,
         traceId,
         status: "queued",
+        source: record.source,
       });
     },
 
@@ -223,6 +230,7 @@ export function createCourseGenerationTaskService(
         type: "terminal",
         taskId: cancelled.taskId,
         courseId: cancelled.courseId,
+        source: cancelled.source,
         status: state.status,
         state,
       });
@@ -258,69 +266,89 @@ async function executeTask(
     await dependencies.taskStore.save(running);
 
     const existingState = await dependencies.courseStore.load(running.courseId);
-    let lastPublishedSequence = existingState?.events.length ?? 0;
+    let lastPublishedSequence =
+      existingState?.events.at(-1)?.sequence ?? 0;
     let sentSnapshot = false;
+    const persistCheckpoint = async (checkpoint: CourseGenerationState) => {
+      const currentTask = await dependencies.taskStore.load(running.taskId);
+      if (
+        currentTask?.status === "cancelled" &&
+        checkpoint.status !== "cancelled"
+      ) {
+        controller.abort();
+        throw new Error("课程任务已取消。");
+      }
+      await dependencies.courseStore.save(checkpoint);
+    };
+    const publishCheckpoint = (checkpoint: CourseGenerationState) => {
+      const newEvents = checkpoint.events.filter(
+        (event) =>
+          event.sequence > lastPublishedSequence &&
+          event.traceId === running.traceId,
+      );
 
-    const state = await dependencies.runWorkflow(
-      {
-        courseId: running.courseId,
-        userPrompt: running.userPrompt,
-        pageCount: running.pageCount,
-        executionMode: running.executionMode,
-        concurrency: running.concurrency,
-        existingState,
-      },
-      { abortSignal: controller.signal, traceId: running.traceId },
-      {
-        checkpoint: async (checkpoint) => {
-          const currentTask = await dependencies.taskStore.load(running.taskId);
-          if (
-            currentTask?.status === "cancelled" &&
-            checkpoint.status !== "cancelled"
-          ) {
-            controller.abort();
-            throw new Error("课程任务已取消。");
-          }
+      if (!sentSnapshot) {
+        dependencies.eventBus.publish({
+          type: "snapshot",
+          taskId: running.taskId,
+          courseId: running.courseId,
+          source: running.source,
+          state: checkpoint,
+        });
+        sentSnapshot = true;
+      } else {
+        for (const event of newEvents) {
+          dependencies.eventBus.publish({
+            type: "event",
+            taskId: running.taskId,
+            courseId: running.courseId,
+            source: running.source,
+            event,
+          });
+        }
 
-          await dependencies.courseStore.save(checkpoint);
-          const newEvents = checkpoint.events.filter(
-            (event) =>
-              event.sequence > lastPublishedSequence &&
-              event.traceId === running.traceId,
-          );
+        if (shouldPublishSnapshot(newEvents)) {
+          dependencies.eventBus.publish({
+            type: "snapshot",
+            taskId: running.taskId,
+            courseId: running.courseId,
+            source: running.source,
+            state: checkpoint,
+          });
+        }
+      }
 
-          if (!sentSnapshot) {
-            dependencies.eventBus.publish({
-              type: "snapshot",
-              taskId: running.taskId,
-              courseId: running.courseId,
-              state: checkpoint,
-            });
-            sentSnapshot = true;
-          } else {
-            for (const event of newEvents) {
-              dependencies.eventBus.publish({
-                type: "event",
-                taskId: running.taskId,
-                courseId: running.courseId,
-                event,
-              });
-            }
-
-            if (shouldPublishSnapshot(newEvents)) {
-              dependencies.eventBus.publish({
-                type: "snapshot",
-                taskId: running.taskId,
-                courseId: running.courseId,
-                state: checkpoint,
-              });
-            }
-          }
-
-          lastPublishedSequence = checkpoint.events.length;
-        },
-      },
-    );
+      lastPublishedSequence = Math.max(
+        lastPublishedSequence,
+        checkpoint.events.at(-1)?.sequence ?? 0,
+      );
+    };
+    const workflowInput = {
+      courseId: running.courseId,
+      userPrompt: running.userPrompt,
+      pageCount: running.pageCount,
+      executionMode: running.executionMode,
+      concurrency: running.concurrency,
+      existingState,
+    };
+    const runtimeContext = {
+      abortSignal: controller.signal,
+      traceId: running.traceId,
+    };
+    const state =
+      running.source === "langgraph"
+        ? await dependencies.runGraph(
+            workflowInput,
+            runtimeContext,
+            { checkpoint: persistCheckpoint },
+            ({ state: checkpoint }) => publishCheckpoint(checkpoint),
+          )
+        : await dependencies.runWorkflow(workflowInput, runtimeContext, {
+            checkpoint: async (checkpoint) => {
+              await persistCheckpoint(checkpoint);
+              publishCheckpoint(checkpoint);
+            },
+          });
     if (!isCourseTerminalStatus(state.status)) {
       throw new Error("课程工作流返回了非终态结果。");
     }
@@ -349,6 +377,7 @@ async function executeTask(
       type: "terminal",
       taskId: running.taskId,
       courseId: running.courseId,
+      source: running.source,
       status: state.status,
       state,
     });
@@ -403,6 +432,7 @@ async function executeTask(
       type: "terminal",
       taskId: running.taskId,
       courseId: running.courseId,
+      source: running.source,
       status: terminalState.status,
       state: terminalState,
     });

@@ -13,6 +13,7 @@ function eventMessage(
     type: "event",
     taskId,
     courseId: "course-day-19",
+    source: "workflow",
     event: {
       id: `event-${sequence}`,
       sequence,

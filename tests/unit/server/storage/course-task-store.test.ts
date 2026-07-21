@@ -25,6 +25,7 @@ function taskRecord(
     traceId: "trace-day-19",
     userPrompt: "生成三页太阳系互动课程",
     pageCount: 3,
+    source: "workflow",
     status: "queued",
     createdAt: "2026-07-15T03:00:00.000Z",
     updatedAt: "2026-07-15T03:00:00.000Z",

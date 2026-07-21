@@ -6,6 +6,7 @@ import {
   CourseGenerationStateSchema,
   CourseTaskStreamMessageSchema,
   type CourseGenerationState,
+  type CourseTaskRuntimeSource,
   type CourseTaskStatus,
   type CourseTaskStreamMessage,
 } from "@/shared/course-schema";
@@ -37,6 +38,7 @@ export type CourseTaskEventSourceFactory = (
 export type CourseTaskStreamState = {
   connectionStatus: CourseTaskConnectionStatus;
   taskStatus?: CourseTaskStatus;
+  source?: CourseTaskRuntimeSource;
   messages: CourseTaskStreamMessage[];
   latestState?: CourseGenerationState;
   error?: Error;
@@ -336,6 +338,14 @@ function applyStreamMessage(
   state: CourseTaskStreamState,
   message: CourseTaskStreamMessage,
 ): CourseTaskStreamState {
+  if (state.source && message.source !== state.source) {
+    return {
+      ...state,
+      connectionStatus: "closed",
+      error: new Error("课程任务流在运行期间切换了执行来源。"),
+    };
+  }
+
   if (
     state.latestState &&
     message.courseId !== state.latestState.courseId
@@ -361,6 +371,7 @@ function applyStreamMessage(
     return {
       connectionStatus: "open",
       taskStatus: message.state.status,
+      source: message.source,
       messages: [...state.messages, message],
       latestState: message.state,
     };
@@ -370,6 +381,7 @@ function applyStreamMessage(
     return {
       connectionStatus: "closed",
       taskStatus: message.status,
+      source: message.source,
       messages: [...state.messages, message],
       latestState: message.state,
     };
@@ -425,6 +437,7 @@ function applyStreamMessage(
   return {
     connectionStatus: "open",
     taskStatus: "running",
+    source: message.source,
     messages: [...state.messages, message],
     latestState: parsedState.data,
   };

@@ -32,7 +32,10 @@ import { ChatThread } from "@/features/seaca/chat-thread";
 import { CourseWorkspacePanel } from "@/features/seaca/course-workspace-panel";
 import { conversations as initialConversations } from "@/data/seaca";
 import { saveGeneratedHtmlPreview } from "@/shared/html-preview";
-import type { CourseGenerationState } from "@/shared/course-schema";
+import type {
+  CourseGenerationState,
+  CourseTaskRuntimeSource,
+} from "@/shared/course-schema";
 import type {
   SeacaChatMessage,
   SeacaConversation,
@@ -119,6 +122,7 @@ type ActiveCourseTask = {
   runStartedAt: number;
   requestStartedAt: number;
   mode: "create" | "resume";
+  source: CourseTaskRuntimeSource;
 };
 
 function mapStreamedCourseRun(
@@ -134,6 +138,7 @@ function mapStreamedCourseRun(
     {
       id: task.runId,
       taskId: task.taskId,
+      source: task.source,
       prompt: task.prompt,
       startedAt: task.runStartedAt,
     },
@@ -401,6 +406,7 @@ export function ChatApp({
       courseId,
       prompt: text,
       traceId,
+      source: "langgraph",
       startedAt,
       planner: { status: "running", events: [] },
       design: { status: "idle", events: [] },
@@ -445,7 +451,7 @@ export function ChatApp({
 
     try {
       const task = await createCourseTask(
-        { courseId, userPrompt: text },
+        { courseId, userPrompt: text, source: "langgraph" },
         { signal: controller.signal, traceId },
       );
       setConversations((current) =>
@@ -457,6 +463,7 @@ export function ChatApp({
                 taskId: task.taskId,
                 courseId: task.courseId,
                 traceId: task.traceId,
+                source: task.source,
               }
             : conversation.courseRun,
         })),
@@ -471,6 +478,7 @@ export function ChatApp({
         runStartedAt: startedAt,
         requestStartedAt: startedAt,
         mode: "create",
+        source: task.source,
       });
       if (selectedIdRef.current === conversationId) {
         setRightPanelOpen(true);
@@ -543,6 +551,7 @@ export function ChatApp({
           courseId,
           userPrompt: run.prompt,
           ...(pageCount ? { pageCount } : {}),
+          source: run.source ?? "langgraph",
         },
         { signal: controller.signal, traceId },
       );
@@ -555,6 +564,7 @@ export function ChatApp({
                 taskId: task.taskId,
                 courseId: task.courseId,
                 traceId: task.traceId,
+                source: task.source,
               }
             : conversation.courseRun,
         })),
@@ -569,6 +579,7 @@ export function ChatApp({
         runStartedAt: run.startedAt,
         requestStartedAt: startedAt,
         mode: "resume",
+        source: task.source,
       });
     } catch (error) {
       const message = getErrorMessage(error, "断点恢复请求失败。");
