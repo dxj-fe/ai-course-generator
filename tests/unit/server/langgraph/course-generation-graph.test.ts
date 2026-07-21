@@ -101,11 +101,14 @@ describe("production course generation graph", () => {
     });
     const mermaid = graph.getGraph().drawMermaid();
 
-    expect(mermaid).toContain("__start__ --> intent-node");
-    expect(mermaid).toContain("intent-node --> planner-node");
-    expect(mermaid).toContain("planner-node --> briefs-node");
-    expect(mermaid).toContain("briefs-node --> page-workers-node");
-    expect(mermaid).toContain("page-workers-node --> finalize-node");
+    expect(mermaid).toContain("__start__ --> supervisor-node");
+    expect(mermaid).toContain("intent-node --> supervisor-node");
+    expect(mermaid).toContain("planner-node --> supervisor-node");
+    expect(mermaid).toContain("briefs-node --> supervisor-node");
+    expect(mermaid).toContain("page-workers-node --> supervisor-node");
+    expect(mermaid).toContain("repair-page-node --> supervisor-node");
+    expect(mermaid).toContain("retry-page-node --> supervisor-node");
+    expect(mermaid).toContain("mark-failed-node --> __end__");
     expect(mermaid).toContain("finalize-node --> __end__");
   });
 
@@ -124,9 +127,13 @@ describe("production course generation graph", () => {
       stage: "planner",
       code: "AGENT_EXECUTION_ERROR",
     });
-    expect(state.events.at(-1)).toMatchObject({
+    expect(state.events.at(-2)).toMatchObject({
       type: "error",
       agent: "planner",
+    });
+    expect(state.events.at(-1)).toMatchObject({
+      type: "supervisor_decision",
+      agent: "supervisor",
     });
   });
 

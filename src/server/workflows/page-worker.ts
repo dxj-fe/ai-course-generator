@@ -31,7 +31,7 @@ import {
   type VisualBrief,
 } from "@/shared/course-schema";
 
-const MAX_STAGE_ATTEMPTS = 3;
+export const PAGE_WORKER_MAX_STAGE_ATTEMPTS = 3;
 const HTML_VALIDATION_PREFIX = "生成 HTML 校验失败：";
 
 export type PageWorkerDependencies = {
@@ -59,6 +59,8 @@ export type GeneratePageWorkerContext = {
   runtime: AgentRuntimeContext;
   initialState?: PageGenerationState;
   dependencies?: Partial<PageWorkerDependencies>;
+  /** LangGraph 条件边每次最多推进的 Repair 轮数；省略时保持原有完整闭环。 */
+  maxRepairRoundsPerRun?: number;
   onUpdate?(update: PageWorkerUpdate): void | Promise<void>;
 };
 
@@ -330,7 +332,20 @@ export async function generatePageWorker(
     );
   }
 
+  const maxRepairRoundsPerRun =
+    context.maxRepairRoundsPerRun ?? Number.POSITIVE_INFINITY;
+  if (
+    maxRepairRoundsPerRun < 0 ||
+    (!Number.isInteger(maxRepairRoundsPerRun) &&
+      maxRepairRoundsPerRun !== Number.POSITIVE_INFINITY)
+  ) {
+    throw new Error("Page Worker 单次 Repair 轮数必须是非负整数。");
+  }
+  let repairRoundsRun = 0;
+
   while (state.qualityReport?.shouldRepair) {
+    if (repairRoundsRun >= maxRepairRoundsPerRun) return result();
+
     if (context.runtime.abortSignal?.aborted) {
       await failStage(
         "repair",
@@ -575,6 +590,7 @@ export async function generatePageWorker(
         ),
       },
     );
+    repairRoundsRun += 1;
   }
 
   await publish(
@@ -612,7 +628,7 @@ export async function generatePageWorker(
   ) {
     let previousFailure = state.error;
 
-    while (attemptCount(state, stage) < MAX_STAGE_ATTEMPTS) {
+    while (attemptCount(state, stage) < PAGE_WORKER_MAX_STAGE_ATTEMPTS) {
       if (context.runtime.abortSignal?.aborted) {
         await failStage(
           stage,
@@ -686,8 +702,8 @@ export async function generatePageWorker(
 
       previousFailure = { code: outcome.code, message: outcome.message };
       const attempts = attemptCount(state, stage);
-      const retryable = isRetryableError(outcome.code);
-      if (retryable && attempts < MAX_STAGE_ATTEMPTS) {
+      const retryable = isPageWorkerRetryableError(outcome.code);
+      if (retryable && attempts < PAGE_WORKER_MAX_STAGE_ATTEMPTS) {
         state = PageGenerationStateSchema.parse({
           ...state,
           error: previousFailure,
@@ -708,7 +724,7 @@ export async function generatePageWorker(
       await failStage(
         stage,
         agent,
-        retryable && attempts >= MAX_STAGE_ATTEMPTS
+        retryable && attempts >= PAGE_WORKER_MAX_STAGE_ATTEMPTS
           ? "PAGE_WORKER_RETRY_EXHAUSTED"
           : outcome.code,
         outcome.message,
@@ -879,7 +895,7 @@ function toHtmlValidationFeedback(
   return issues.length > 0 ? { code: failure.code, issues } : undefined;
 }
 
-function isRetryableError(code: string) {
+export function isPageWorkerRetryableError(code: string) {
   return new Set([
     "AGENT_EXECUTION_ERROR",
     "AGENT_STEP_LIMIT",

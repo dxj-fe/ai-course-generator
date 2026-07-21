@@ -1,6 +1,6 @@
 # 多 Agent 架构设计
 
-> Day 21 架构评审文档，已补充 Days 22–27 的当前事实：全局 `WorkflowNode`、受限 Supervisor、隔离 Page Worker、受控页面并发与两轮 QA/Repair/re-QA 已经实现；LangGraph 仍未进入运行时。
+> Day 21 架构评审文档，已更新至 Day 31：手写 Supervisor 兼容入口与生产 LangGraph 入口共享领域状态、节点生命周期和公开事件；LangGraph 已通过受限条件边调度 Specialist、页面重试及两轮 QA/Repair/re-QA。
 
 ## 1. 结论
 
@@ -13,7 +13,7 @@
 - 服务端负责执行顺序、checkpoint、取消和公开事件；
 - 浏览器只消费类型化任务状态，不消费模型框架原生 chunk。
 
-当前 [课程生成工作流](../src/server/workflows/course-generation-workflow.ts)保留为兼容 facade：受限 Supervisor 只能在确定性全局节点候选中选择，完成 Course Design 后由依赖感知运行层调度隔离 Page Worker。页面模型调用可以受控并发，但跨页状态仍由单一 merge/checkpoint 队列写入。
+当前 [课程生成工作流](../src/server/workflows/course-generation-workflow.ts)保留为兼容 facade；[生产 LangGraph](../src/server/langgraph/course-generation/course-graph.ts)则由规则优先的 Supervisor 条件边选择全局 Specialist、Page Worker、Retry、Repair 或终态节点。两种入口都复用同一领域状态和底层 Agent/Worker。页面模型调用可以受控并发，但跨页状态仍由单一 merge/checkpoint 队列写入。
 
 因此，目标不是“增加更多 Agent”，而是：
 
@@ -29,7 +29,7 @@
 | --- | --- | --- | --- | --- |
 | 单一超级 Agent | 一个模型上下文同时生成规划、内容、视觉、HTML 与评估 | 同一个模型隐式决定 | 不采用 | 入口简单，但上下文过载、失败粒度粗 |
 | 固定多 Specialist 工作流 | 聚焦 Agent 与确定性 Skill | TypeScript `WorkflowNode[]` 按固定顺序调度 | **作为底层原语保留** | handoff 与错误边界显式、可测试 |
-| Supervisor + Specialist + Page Worker | 聚焦 Agent 与确定性 Skill | Supervisor 调度全局节点；运行层调度页面 Worker | **已实现** | 支持有限重试、页面隔离和受控并发，但成本与状态管理更复杂 |
+| Supervisor + Specialist + Page Worker | 聚焦 Agent 与确定性 Skill | 手写兼容入口或 LangGraph 条件边调度；运行层执行页面 Worker | **已实现** | 支持有限重试、页面隔离和受控并发，但成本与状态管理更复杂 |
 
 把大函数拆成多个带 Agent 名字的函数，不会自动得到 Supervisor 架构；同样，一个有明确 Specialist 的确定性工作流，在没有动态路由之前也已经具有工程价值。
 
@@ -39,13 +39,14 @@
 
 1. `/chat` 创建类型化课程任务；
 2. [CourseGenerationTaskService](../src/server/tasks/course-generation-task-service.ts)负责任务生命周期和取消；
-3. [runCourseGenerationWorkflow](../src/server/workflows/course-generation-workflow.ts)保留为兼容 facade，负责状态初始化/恢复、上下文装配和原有结果映射；
+3. 新建产品任务选择生产 LangGraph 流入口；[runCourseGenerationWorkflow](../src/server/workflows/course-generation-workflow.ts)保留为显式兼容入口，两者共享初始化、恢复、checkpoint 和终态合同；
 4. [course-generation-nodes.ts](../src/server/workflows/course-generation-nodes.ts)提供 Intent、Planner、Course Design 全局节点候选，[runSupervisedWorkflow](../src/server/workflows/supervised-workflow.ts)负责白名单、预算和停止规则；
 5. [runSequentialWorkflow](../src/server/workflows/sequential-workflow.ts)校验全局节点的 `requiredInputs`、`produces` 和集中状态合并；
 6. [runCourseDesignWorkflow](../src/server/workflows/course-design-workflow.ts)串行执行 Pedagogy、Story、Visual，再投影每页 `PageWorkerBrief`；
 7. [runCourseWorkersWorkflow](../src/server/workflows/course-workers-workflow.ts)按页面依赖和 serial/parallel 配置调度 [generatePageWorker](../src/server/workflows/page-worker.ts)，Promise Pool 默认并发度为 2；
-8. 每个 Worker 执行 Writer、Assets、HTML、QA，并在需要时进入最多两轮的定向 Repair/re-QA；局部 update 经单一队列合并为经过校验的 [CourseGenerationState](../src/shared/course-schema/course-generation-state.ts) checkpoint；
-9. Task Service 只在持久化成功后发布 strict snapshot、event 或 terminal；前端 Adapter 与 Controller 把并发页面状态投影到现有 `/chat` Timeline 和 learning workspace。
+8. 每个 Worker 执行 Writer、Assets、HTML、QA；LangGraph 在 QA 要求修订时每次只授权一轮定向 Repair/re-QA，并在页面失败时按同一三次预算选择 Retry 或 Stop；
+9. [routeBySupervisor](../src/server/langgraph/course-generation/supervisor-routing.ts)只读取已经校验并持久化的 `SupervisorDecision`，条件边不会从公开摘要文本推断业务状态；
+10. Task Service 只在持久化成功后发布 strict snapshot、event 或 terminal；前端 Adapter 与 Controller 把并发页面状态投影到现有 `/chat` Timeline 和 learning workspace。
 
 Page QA 自身保持只读；Page Worker 根据报告执行确定性 issue 分类，再调用有界 Repair 并 re-QA。旧 checkpoint 可以没有报告或 `repairHistory`，恢复时不会重置已经持久化的 Repair 轮次。
 
@@ -216,7 +217,7 @@ HTML 候选
 
 Repair 只能针对明确 issue 和最小责任产物。HTML 排版问题不能授权它重写课程规划，事实错误也不能用 CSS 隐藏。每次修复都要保留原报告并生成可追踪结果。
 
-Repair 当前未实现。现有 `QualityReport` 已提供 issue 位置与 `repairHint`，但 Repair 输入输出 Schema、retry budget 与合并规则属于后续训练日。
+Repair 已由 Page Worker 按 `QualityReport` 的明确 issue 和授权 scope 实现。Day 31 没有复制修复规则到 Graph：Supervisor 只判断 `shouldRepair`、已用轮次和停止预算，`repair-page-node` 每次只授权一个现有 Repair/re-QA round；候选校验、issue 分类和产物合并仍由 Page Worker 负责。
 
 ## 10. 产品和事件边界
 
@@ -254,7 +255,28 @@ Supervisor 与 Repair 事件已经在服务端映射成共享公开协议；Day 
 
 ## 12. Supervisor 与 LangGraph 的关系
 
-Supervisor 是架构角色；LangGraph 是实现 State、Node、Edge、Reducer、Streaming 与持久化的一种运行工具。Day 22 已先把当前固定流程整理为显式手写节点、前置输入、声明产物和集中状态迁移。只有等这些合同在真实恢复和失败场景中稳定后，才应评估 Supervisor 或映射到图运行时。
+Supervisor 是架构角色；LangGraph 是实现 State、Node、Edge、Reducer、Streaming 与持久化的一种运行工具。Day 31 已把稳定的调度合同映射成生产条件图，同时保留手写兼容入口。Graph Supervisor 采用规则优先策略，不调用模型重复判断唯一合法的下一步。
+
+```mermaid
+flowchart TD
+  START --> S["Supervisor"]
+  S -->|missing intent| I["Intent"]
+  S -->|missing outline| P["Planner"]
+  S -->|missing briefs| B["Course Design"]
+  S -->|page ready| W["Page Worker batch"]
+  S -->|QA shouldRepair| R["one Repair / re-QA round"]
+  S -->|retryable page failure| T["retry one page"]
+  S -->|all pages complete| F["Finalize"]
+  S -->|budget exhausted / cancelled / invalid state| X["Mark failed"]
+  I --> S
+  P --> S
+  B --> S
+  W --> S
+  R --> S
+  T --> S
+  F --> END
+  X --> END
+```
 
 迁移必须保留：
 
@@ -274,7 +296,8 @@ Supervisor 是架构角色；LangGraph 是实现 State、Node、Edge、Reducer�
 3. **Day 23 已完成：** 引入有限 Supervisor 路由、重试、停止和可解释决策；
 4. **Days 24–26（已完成）：** 强化 Specialist Prompt，实现 Page Worker、自动 report-only QA、受控并发和多证据六维 QA；
 5. **Day 27（已完成）：** 实现受限 Repair/re-QA、两轮预算、失败分类和公开事件；
-6. **Days 28–31：** 在不重做前端的前提下评估并迁移稳定状态到 LangGraph。
+6. **Days 28–30（已完成）：** 学习 LangGraph、迁移生产状态图，并把 Graph stream 映射到既有公开 SSE；
+7. **Day 31（已完成）：** 用条件边接入规则优先 Supervisor、单页重试和有界 QA/Repair 回路，不重做前端。
 
 每一步都应独立验收，不提前宣称后续能力已经完成。
 
@@ -315,4 +338,14 @@ Supervisor 是架构角色；LangGraph 是实现 State、Node、Edge、Reducer�
 - [x] `runPromisePool` 默认并发度为 2，结果保持输入顺序，单项失败隔离，取消后不启动新任务。
 - [x] 课程运行层根据页面依赖和 serial/parallel 配置调度，并通过单一 merge/checkpoint 队列写入整课状态。
 - [x] Seaca Timeline 和质量面板复用现有产品表面展示并发页面状态与 QA 报告。
-- [x] Repair/re-QA 和 LangGraph 仍未实现。
+- [x] Day 25 当日 Repair/re-QA 和 LangGraph 尚未实现；它们已分别在 Day 27 与 Days 28–31 完成。
+
+## 18. Day 31 当前实现说明
+
+- [x] `START` 先进入 Supervisor；所有非终态 Specialist、Page Worker、Retry 和 Repair 节点执行后都返回 Supervisor。
+- [x] `routeBySupervisor` 只接受 `SupervisorDecisionSchema` 校验后的最后决策，并只返回图中声明的节点白名单。
+- [x] 缺失产物、页面依赖、QA `shouldRepair`、阶段 attempts、两轮 Repair 预算、取消和完成状态都由确定性规则判断。
+- [x] 普通 Page Worker 在 QA 后暂停；Repair 节点每次只执行一轮 Repair/re-QA，失败页 Retry 每次只恢复一个页面，避免节点内部形成无界循环。
+- [x] Supervisor decisions 与手写入口共享 attempt、checkpoint 和公开事件语义；Graph streaming 继续经过 Day 30 的严格映射。
+- [x] 原始页面错误码在终态中保留，使用户显式恢复时可以重新判断 retryability；Supervisor stop 原因保存在 `lastDecision`。
+- [x] API、Controller、Timeline、learning workspace、路由和视觉系统均未新增或重做。

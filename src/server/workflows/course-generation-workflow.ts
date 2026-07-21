@@ -6,7 +6,6 @@ import {
   type CourseGenerationNode,
 } from "@/server/workflows/course-generation-nodes";
 import {
-  appendCourseGenerationEvent,
   checkpointCourseGenerationState,
   completeCourseGeneration,
   failCourseGeneration,
@@ -22,11 +21,9 @@ import {
 } from "@/server/workflows/course-generation-runtime";
 import { runCourseWorkersWorkflow } from "@/server/workflows/course-workers-workflow";
 import { runSupervisedWorkflow } from "@/server/workflows/supervised-workflow";
+import { recordSupervisorDecision } from "@/server/workflows/supervisor-state";
 import {
-  targetKey,
   type CourseGenerationState,
-  type SupervisorDecision,
-  type SupervisorNodeTarget,
 } from "@/shared/course-schema";
 
 export type { CourseMvpPageCount } from "@/server/workflows/course-generation-nodes";
@@ -68,7 +65,12 @@ export async function runCourseGenerationWorkflow(
         getCourseNodeRetryFeedback(current, node, retryFailure),
       ),
     recordDecision: (current, decision, node) =>
-      recordSupervisorDecision(current, decision, node, dependencies),
+      recordSupervisorDecision(
+        current,
+        decision,
+        node ? { stage: node.stage, pageId: node.pageId } : undefined,
+        dependencies,
+      ),
     checkpoint: (current) =>
       checkpointCourseGenerationState(current, dependencies),
   });
@@ -125,6 +127,20 @@ export async function runCourseGenerationWorkflow(
       { agent: "page-worker" },
     );
   }
+  if (workersResult.status === "paused") {
+    return failCourseGeneration(
+      workersResult.state,
+      {
+        stage: workersResult.state.currentStage,
+        pageId: workersResult.state.currentPageId,
+        code: "WORKFLOW_UNEXPECTED_PAUSE",
+        message: "手写工作流不应在 Page Worker 批次后暂停。",
+      },
+      context,
+      dependencies,
+      { agent: "page-worker" },
+    );
+  }
 
   return completeCourseGeneration(workersResult.state, dependencies);
 }
@@ -150,70 +166,5 @@ function listAvailableGlobalNodes(
 function isGlobalWorkReady(state: CourseGenerationState) {
   return Boolean(
     state.intent && state.outline && state.briefs && state.pageWorkerBriefs,
-  );
-}
-
-async function recordSupervisorDecision(
-  state: CourseGenerationState,
-  decision: SupervisorDecision,
-  node: CourseGenerationNode | undefined,
-  dependencies: CourseGenerationWorkflowDependencies,
-) {
-  const currentSupervisor = state.supervisor ?? {
-    decisionCount: 0,
-    attempts: [],
-  };
-  const target = decisionTarget(decision);
-  const attempts = target
-    ? incrementAttempt(currentSupervisor.attempts, target)
-    : currentSupervisor.attempts;
-  const attemptCount = target
-    ? attempts.find((attempt) => targetKey(attempt) === targetKey(target))
-        ?.attempts
-    : undefined;
-  const summary = attemptCount
-    ? `${decision.reasonSummary}（第 ${attemptCount} 次执行）`
-    : decision.reasonSummary;
-  const next = appendCourseGenerationEvent(
-    {
-      ...state,
-      supervisor: {
-        decisionCount: currentSupervisor.decisionCount + 1,
-        attempts,
-        lastDecision: decision,
-      },
-    },
-    dependencies.now,
-    {
-      type: "supervisor_decision",
-      stage: node?.stage ?? state.currentStage,
-      pageId: node?.pageId,
-      agent: "supervisor",
-      summary,
-    },
-  );
-  return checkpointCourseGenerationState(next, dependencies);
-}
-
-function decisionTarget(
-  decision: SupervisorDecision,
-): SupervisorNodeTarget | undefined {
-  return decision.action === "run" || decision.action === "retry"
-    ? decision.nextNode
-    : undefined;
-}
-
-function incrementAttempt(
-  attempts: NonNullable<CourseGenerationState["supervisor"]>["attempts"],
-  target: SupervisorNodeTarget,
-) {
-  const key = targetKey(target);
-  const existing = attempts.find((attempt) => targetKey(attempt) === key);
-
-  if (!existing) return [...attempts, { ...target, attempts: 1 }];
-  return attempts.map((attempt) =>
-    targetKey(attempt) === key
-      ? { ...attempt, attempts: attempt.attempts + 1 }
-      : attempt,
   );
 }

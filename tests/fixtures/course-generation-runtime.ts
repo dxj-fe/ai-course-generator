@@ -139,6 +139,7 @@ export function createCourseRuntimeTestDependencies(
               currentStage: "html",
               content,
               assets: [],
+              attempts: [{ stage: "html" as const, attempts: 3 }],
               error: {
                 code: "HTML_ENGINEER_FAILED",
                 message: `页面 ${page.id} HTML 生成失败。`,

@@ -4,9 +4,9 @@ source_doc: `.agentdocs/prd/AI_Agent_Frontend_Training_Handbook_V5.docx`
 timezone: `Asia/Shanghai`
 daily_run_time: `09:30`
 start_date: `2026-07-09`
-last_delivered_day: `30`
+last_delivered_day: `31`
 last_delivered_date: `2026-07-21`
-next_training_day: `31`
+next_training_day: `32`
 
 ## Notes
 
@@ -66,3 +66,5 @@ next_training_day: `31`
 - 2026-07-21: Implemented Day 30 with a strict LangGraph updates/custom mapper, persisted workflow/langgraph task sources, sequence-safe task/SSE integration, Seaca Timeline source badges, five-page streaming coverage, and unchanged product routes.
 - 2026-07-21: Fixed the post-Day 30 local HTML Repair failure by safely normalizing rooted QA CSS selectors to an already-authorized unique tag boundary, tightening the Repair prompt, and retaining strict rejection for class/id-only selectors.
 - 2026-07-21: Fixed a second post-Day 30 Repair failure by limiting each repair request to issues that actually trigger the report's revise decision, so non-blocking QA warnings cannot remove DSL-required interaction content.
+- 2026-07-21: Delivered Day 31 plan for LangGraph Supervisor conditional routing, QA-to-Repair loops, bounded page retries, deterministic fallbacks, and architecture documentation.
+- 2026-07-21: Implemented Day 31 with a rule-first LangGraph Supervisor, schema-validated conditional edges, one-round QA/Repair routing, bounded single-page retries, deterministic terminal guards, shared public decision checkpoints, architecture documentation, and full automated verification.

@@ -11,6 +11,10 @@ const CourseGenerationGraphNodeNameSchema = z.enum([
   "planner-node",
   "briefs-node",
   "page-workers-node",
+  "repair-page-node",
+  "retry-page-node",
+  "supervisor-node",
+  "mark-failed-node",
   "finalize-node",
 ]);
 

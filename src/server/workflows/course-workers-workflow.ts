@@ -25,11 +25,19 @@ export type CourseWorkersWorkflowDependencies = PageWorkerDependencies & {
 
 export type CourseWorkersWorkflowResult =
   | { status: "completed"; state: CourseGenerationState }
+  | { status: "paused"; state: CourseGenerationState }
   | {
       status: "failed";
       state: CourseGenerationState;
       error: CourseGenerationError;
     };
+
+export type CourseWorkersWorkflowOptions = {
+  targetPageId?: string;
+  maxRepairRoundsPerRun?: number;
+  pauseAfterBatch?: boolean;
+  pauseOnRoutablePage?: boolean;
+};
 
 /**
  * 根据页面依赖分批调度 Worker。Worker 之间不共享可变状态；所有局部更新都
@@ -40,6 +48,7 @@ export async function runCourseWorkersWorkflow(
   context: AgentRuntimeContext,
   config: PageWorkerConfig,
   dependencies: CourseWorkersWorkflowDependencies,
+  options: CourseWorkersWorkflowOptions = {},
 ): Promise<CourseWorkersWorkflowResult> {
   let state = CourseGenerationStateSchema.parse(initialState);
   let mergeQueue = Promise.resolve();
@@ -68,6 +77,7 @@ export async function runCourseWorkersWorkflow(
       (page) => {
         const pageState = findPage(state, page.id);
         return (
+          (!options.targetPageId || page.id === options.targetPageId) &&
           pageState?.status !== "completed" &&
           !attempted.has(page.id) &&
           page.dependsOnPageIds.every(
@@ -109,6 +119,7 @@ export async function runCourseWorkersWorkflow(
             runtime: context,
             initialState: requireValue(findPage(state, page.id), "page state"),
             dependencies,
+            maxRepairRoundsPerRun: options.maxRepairRoundsPerRun,
             onUpdate: (update) => {
               const operation = mergeQueue.then(async () => {
                 state = mergeWorkerUpdate(
@@ -159,6 +170,19 @@ export async function runCourseWorkersWorkflow(
         context.traceId,
         dependencies,
       );
+    }
+
+    if (
+      options.pauseAfterBatch ||
+      (options.pauseOnRoutablePage &&
+        state.pages.some(
+          (page) =>
+            page.status === "failed" ||
+            (page.status !== "completed" &&
+              Boolean(page.qualityReport?.shouldRepair)),
+        ))
+    ) {
+      return { status: "paused", state };
     }
   }
 }

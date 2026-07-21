@@ -16,7 +16,7 @@ const input = {
 const context = { traceId: "trace-day-29" };
 
 describe("LangGraph and handwritten workflow parity", () => {
-  it("keeps the same domain outputs while leaving handwritten Supervisor events as runtime-specific", async () => {
+  it("keeps the same domain outputs and public Supervisor decisions", async () => {
     const handwrittenOrder: string[] = [];
     const graphOrder: string[] = [];
     const handwritten = await runCourseGenerationWorkflow(
@@ -37,7 +37,7 @@ describe("LangGraph and handwritten workflow parity", () => {
     ).toBe(true);
     expect(
       graph.events.some(({ type }) => type === "supervisor_decision"),
-    ).toBe(false);
+    ).toBe(true);
     expect(graph.events.map((event) => CourseGenerationPublicEventSchema.parse(event)))
       .toHaveLength(graph.events.length);
   });
@@ -53,7 +53,7 @@ describe("LangGraph and handwritten workflow parity", () => {
     expect(graph.status).toBe("failed");
     expect(order).toEqual(["intent", "planner"]);
     expect(graph.events.some(({ type }) => type === "supervisor_decision")).toBe(
-      false,
+      true,
     );
   });
 });

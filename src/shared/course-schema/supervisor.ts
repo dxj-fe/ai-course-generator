@@ -7,6 +7,9 @@ export const CourseGenerationNodeNameSchema = z.enum([
   "page-writer",
   "assets",
   "html-engineer",
+  "page-worker",
+  "page-qa",
+  "repair",
 ]);
 
 export const SupervisorNodeTargetSchema = z

@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话生成一门由多页关联 HTML 组成的课程。当前 Day 27 版本由受限 Supervisor 调度全局 Specialist，依赖感知 Page Worker 以默认并发度 2 生成页面，并在每页执行 Writer → Assets → HTML → QA → 最多两轮定向 Repair/re-QA。严格公开事件、SSE 和持久化 checkpoint 向 Seaca 学习工作区实时交付任务、Agent、页面进度、统一预览和可定位恢复能力。
+一句话生成一门由多页关联 HTML 组成的课程。当前 Day 31 版本由 LangGraph 中规则优先的受限 Supervisor 通过条件边调度全局 Specialist、依赖感知 Page Worker、有限页面重试和最多两轮定向 Repair/re-QA；默认并发度为 2。严格公开事件、SSE 和持久化 checkpoint 向 Seaca 学习工作区实时交付任务、Agent、页面进度、统一预览和可定位恢复能力。
 
 ## Day 01 交付
 
@@ -224,6 +224,14 @@
 - 固定拓扑为 `START → intent-node → planner-node → briefs-node → page-workers-node → finalize-node → END`；Page Worker 内部依赖、并发、QA/Repair 不重复实现。
 - 新增 `runCourseGenerationGraphWorkflow`，它与手写入口共享输入、依赖和最终状态合同；调用方显式选择运行时，Graph 失败不会自动双跑 fallback。
 - 产品任务 API、SSE、Controller 与 Seaca UI 未改变，Graph streaming 映射留到 Day 30；迁移说明与面试复盘见 `notes/langgraph-migration.md` 和 `notes/day-29.md`。
+
+## Day 31 交付
+
+- 生产 Graph 改为 `START → Supervisor`，由类型化条件边在 Intent、Planner、Course Design、Page Worker、Retry、Repair、Finalize 和失败终态之间路由。
+- Supervisor 使用验证后的状态事实与持久化预算做规则优先决策；条件边只读取 `SupervisorDecisionSchema`，不解析事件摘要或调用模型重复判断唯一分支。
+- Page Worker 可在初次 QA 后交还控制权；每个 Repair 节点只授权一轮既有 Repair/re-QA，失败页每次只重试一个页面，三次阶段预算或两轮 Repair 预算耗尽后确定性停止。
+- 手写兼容入口与 LangGraph 共享 Supervisor attempts、checkpoint 和公开 decision 事件；Day 30 SSE mapper、Controller 与现有 Seaca UI 不变。
+- 实现说明、路由表和面试复盘见 `notes/day-31.md` 与 `docs/multi-agent-design.md`。
 
 ## 启动
 

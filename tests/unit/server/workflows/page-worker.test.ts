@@ -253,6 +253,50 @@ describe("generatePageWorker", () => {
     expect(result.events.map(({ type }) => type)).toContain("repair_success");
   });
 
+  it("pauses at QA so a graph condition can route one bounded Repair round", async () => {
+    const order: string[] = [];
+    const dependencies = createDependencies(order, {
+      qaReports: [repairReport, report],
+    });
+    const handoff = {
+      intent: courseDesignIntent,
+      brief,
+      visualBrief,
+      courseContext: {
+        learningObjectives: courseDesignOutline.learningObjectives,
+      },
+    };
+
+    const paused = await generatePageWorker(page, handoff, {
+      runtime: { traceId: "trace-page-graph-qa" },
+      dependencies,
+      maxRepairRoundsPerRun: 0,
+    });
+
+    expect(order).toEqual(["writer", "html", "qa"]);
+    expect(paused.state).toMatchObject({
+      status: "running",
+      currentStage: "qa",
+      qualityReport: { shouldRepair: true },
+    });
+    expect(paused.state.repairHistory ?? []).toHaveLength(0);
+
+    const completed = await generatePageWorker(page, handoff, {
+      runtime: { traceId: "trace-page-graph-repair" },
+      dependencies,
+      initialState: paused.state,
+      maxRepairRoundsPerRun: 1,
+    });
+
+    expect(order).toEqual(["writer", "html", "qa", "repair", "qa"]);
+    expect(completed.state).toMatchObject({
+      status: "completed",
+      currentStage: "complete",
+      qualityReport: { shouldRepair: false },
+    });
+    expect(completed.state.repairHistory).toHaveLength(1);
+  });
+
   it("classifies a Repair model timeout as a recoverable checkpoint error", async () => {
     const order: string[] = [];
     const dependencies = createDependencies(order, {

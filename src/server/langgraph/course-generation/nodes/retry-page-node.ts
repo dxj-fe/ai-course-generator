@@ -1,7 +1,4 @@
-import {
-  failCourseGeneration,
-  requireCourseGenerationValue,
-} from "@/server/workflows/course-generation-runtime";
+import { requireCourseGenerationValue } from "@/server/workflows/course-generation-runtime";
 import { runCourseWorkersWorkflow } from "@/server/workflows/course-workers-workflow";
 
 import {
@@ -11,16 +8,15 @@ import {
 } from "../course-state";
 import type { CourseGenerationGraphNodeContext } from "./types";
 
-export function createPageWorkersGraphNode(
+export function createRetryPageGraphNode(
   context: CourseGenerationGraphNodeContext,
 ): CourseGenerationGraphNode {
   return async (graphState) => {
     const state = parseCourseGenerationGraphState(graphState);
-    if (
-      state.status !== "running" ||
-      (state.pages.length > 0 &&
-        state.pages.every(({ status }) => status === "completed"))
-    ) {
+    const decision = state.supervisor?.lastDecision;
+    const pageId =
+      decision?.action === "retry" ? decision.nextNode.pageId : undefined;
+    if (state.status !== "running" || !pageId) {
       return toCourseGenerationGraphUpdate(state);
     }
 
@@ -30,21 +26,11 @@ export function createPageWorkersGraphNode(
       requireCourseGenerationValue(state.workerConfig, "page worker config"),
       context.dependencies,
       {
+        targetPageId: pageId,
         maxRepairRoundsPerRun: 0,
-        pauseOnRoutablePage: true,
+        pauseAfterBatch: true,
       },
     );
-    const next =
-      result.status === "failed" &&
-      !result.state.pages.some(({ status }) => status === "failed")
-        ? await failCourseGeneration(
-            result.state,
-            result.error,
-            context.runtime,
-            context.dependencies,
-            { agent: "page-worker" },
-          )
-        : result.state;
-    return toCourseGenerationGraphUpdate(next);
+    return toCourseGenerationGraphUpdate(result.state);
   };
 }
