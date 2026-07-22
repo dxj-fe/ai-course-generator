@@ -10,6 +10,7 @@ export const metadata: Metadata = {
 interface ChatPageProps {
   searchParams: Promise<{
     conversation?: string | string[];
+    course?: string | string[];
     prompt?: string | string[];
   }>;
 }
@@ -24,6 +25,7 @@ export default async function ChatPage({ searchParams }: ChatPageProps) {
   return (
     <ChatApp
       initialConversationId={first(params.conversation)}
+      initialCourseId={first(params.course)}
       initialPrompt={first(params.prompt)}
     />
   );

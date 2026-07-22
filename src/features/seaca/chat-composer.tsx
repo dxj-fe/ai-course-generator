@@ -18,6 +18,7 @@ import {
   Plus as PlusIcon,
   Presentation,
   RefreshCw,
+  Settings2,
   Sparkles,
   Square,
   TriangleAlert,
@@ -27,6 +28,10 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
 
 interface ChatComposerProps {
   attachments?: ReferenceAttachment[];
@@ -41,6 +46,8 @@ interface ChatComposerProps {
   onRetryAttachment?(id: string): void;
   onSubmit(value: string): void;
   onSelectSuggestion?(value: string): void;
+  taskOptions?: CourseCreationOptions;
+  onTaskOptionsChange?(options: CourseCreationOptions): void;
   showSuggestions: boolean;
 }
 
@@ -51,6 +58,12 @@ export type ReferenceAttachment = {
   error?: string;
   summary?: string;
   keyFacts?: string[];
+};
+
+export type CourseCreationOptions = {
+  pageCount: "auto" | 3 | 4 | 5;
+  executionMode: "serial" | "parallel";
+  concurrency: 1 | 2 | 3 | 4 | 5;
 };
 
 const suggestions = [
@@ -89,6 +102,8 @@ export function ChatComposer({
   onRemoveAttachment,
   onRetryAttachment,
   onSelectSuggestion,
+  taskOptions,
+  onTaskOptionsChange,
   onSubmit,
   showSuggestions,
 }: ChatComposerProps) {
@@ -150,6 +165,45 @@ export function ChatComposer({
         className="relative mx-auto w-full max-w-[750px]"
         onSubmit={handleSubmit}
       >
+        {taskOptions && onTaskOptionsChange ? (
+          <details className="mb-2 rounded-2xl border border-[#e7ddd1] bg-[#fffdf7] px-3 py-2 text-xs text-[#6f6355] shadow-sm">
+            <summary className="flex cursor-pointer list-none items-center gap-2 rounded outline-none focus-visible:ring-2 focus-visible:ring-[#77cc57] [&::-webkit-details-marker]:hidden">
+              <Settings2 aria-hidden="true" className="size-4 text-[#77a863]" />
+              <span className="font-medium text-[#5b4c3b]">生成参数</span>
+              <span className="ml-auto text-[#988e80]">
+                {taskOptions.pageCount === "auto"
+                  ? "自动页数"
+                  : `${taskOptions.pageCount} 页`}
+                · {taskOptions.executionMode === "parallel" ? "并行" : "串行"}
+              </span>
+            </summary>
+            <div className="mt-3 grid gap-3 border-t border-[#eee5da] pt-3 sm:grid-cols-3">
+              <label className="grid gap-1">
+                <span>课程页数</span>
+                <NativeSelect className="w-full" disabled={busy} value={taskOptions.pageCount} onChange={(event) => onTaskOptionsChange({ ...taskOptions, pageCount: event.target.value === "auto" ? "auto" : Number(event.target.value) as 3 | 4 | 5 })}>
+                  <NativeSelectOption value="auto">自动（3–5 页）</NativeSelectOption>
+                  <NativeSelectOption value="3">3 页</NativeSelectOption>
+                  <NativeSelectOption value="4">4 页</NativeSelectOption>
+                  <NativeSelectOption value="5">5 页</NativeSelectOption>
+                </NativeSelect>
+              </label>
+              <label className="grid gap-1">
+                <span>执行方式</span>
+                <NativeSelect className="w-full" disabled={busy} value={taskOptions.executionMode} onChange={(event) => onTaskOptionsChange({ ...taskOptions, executionMode: event.target.value as "serial" | "parallel" })}>
+                  <NativeSelectOption value="parallel">并行生成</NativeSelectOption>
+                  <NativeSelectOption value="serial">串行生成</NativeSelectOption>
+                </NativeSelect>
+              </label>
+              <label className="grid gap-1">
+                <span>最大并发</span>
+                <NativeSelect className="w-full" disabled={busy || taskOptions.executionMode === "serial"} value={taskOptions.executionMode === "serial" ? 1 : taskOptions.concurrency} onChange={(event) => onTaskOptionsChange({ ...taskOptions, concurrency: Number(event.target.value) as 1 | 2 | 3 | 4 | 5 })}>
+                  {[1, 2, 3, 4, 5].map((value) => <NativeSelectOption key={value} value={value}>{value}</NativeSelectOption>)}
+                </NativeSelect>
+              </label>
+            </div>
+          </details>
+        ) : null}
+
         {attachments.length > 0 ? (
           <ul
             aria-label="已选参考资料"

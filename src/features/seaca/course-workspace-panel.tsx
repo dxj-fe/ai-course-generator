@@ -1,5 +1,6 @@
 "use client";
 
+import { Download, LoaderCircle, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Alert } from "@/components/ui/alert";
@@ -28,6 +29,9 @@ type CourseWorkspacePanelProps = {
   onGeneratePage(pageId: string): void;
   onOpenHtmlPreview(pageId: string): void;
   onResumeCourse(): void;
+  onExportCourse(): void;
+  exporting?: boolean;
+  exportError?: string;
 };
 
 const statusCopy: Record<CourseRunStageStatus, string> = {
@@ -48,6 +52,9 @@ export function CourseWorkspacePanel({
   onGeneratePage,
   onOpenHtmlPreview,
   onResumeCourse,
+  onExportCourse,
+  exporting = false,
+  exportError,
 }: CourseWorkspacePanelProps) {
   const plannerResult = run?.planner.data;
   const outline = plannerResult?.state.outline;
@@ -101,6 +108,35 @@ export function CourseWorkspacePanel({
             <WarmTag>{intent.visualStyle}</WarmTag>
             <WarmTag>{intent.language}</WarmTag>
           </div>
+        ) : null}
+        {run?.generation?.status === "completed" ? (
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Button
+              className="rounded-full bg-[#77cc57] px-4 text-[#1f3b16] hover:bg-[#6bc04d]"
+              disabled={exporting}
+              onClick={onExportCourse}
+              type="button"
+            >
+              {exporting ? (
+                <LoaderCircle aria-hidden="true" className="animate-spin" />
+              ) : (
+                <Download aria-hidden="true" />
+              )}
+              {exporting ? "正在导出…" : "导出课程 ZIP"}
+            </Button>
+            <span className="text-xs text-[#817568]">
+              包含 course.json、页面 HTML 与素材清单
+            </span>
+          </div>
+        ) : null}
+        {exportError ? (
+          <Alert
+            className="mt-3 rounded-2xl border-[#edc4b9] bg-[#fff0eb] px-3 py-3 text-[#984735]"
+            variant="destructive"
+          >
+            <TriangleAlert aria-hidden="true" />
+            {exportError}
+          </Alert>
         ) : null}
         {canResumeCourse ? (
           <Alert

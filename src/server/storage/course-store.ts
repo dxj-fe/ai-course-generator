@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   mkdir,
   readFile,
+  readdir,
   rename,
   unlink,
   writeFile,
@@ -21,7 +22,13 @@ export const StoredCourseIdSchema = CourseIdSchema;
 
 export type CourseStore = {
   load(courseId: string): Promise<CourseGenerationState | undefined>;
+  list(): Promise<CourseStoreListResult>;
   save(state: CourseGenerationState): Promise<void>;
+};
+
+export type CourseStoreListResult = {
+  items: CourseGenerationState[];
+  unavailableCount: number;
 };
 
 type CourseStoreOptions = {
@@ -40,23 +47,30 @@ export function createCourseStore(
   return {
     async load(courseId) {
       const safeCourseId = StoredCourseIdSchema.parse(courseId);
-      const filePath = courseFilePath(rootDir, safeCourseId);
-      let source: string;
+      return readStoredCourse(rootDir, safeCourseId);
+    },
 
-      try {
-        source = await readFile(filePath, "utf8");
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-          return undefined;
+    async list() {
+      const entries = await readDirectories(rootDir);
+      const items: CourseGenerationState[] = [];
+      let unavailableCount = 0;
+
+      for (const entry of entries) {
+        const parsedId = StoredCourseIdSchema.safeParse(entry.name);
+        if (!entry.isDirectory() || !parsedId.success) {
+          unavailableCount += 1;
+          continue;
         }
-        throw error;
+        try {
+          const state = await readStoredCourse(rootDir, parsedId.data);
+          if (state) items.push(state);
+        } catch {
+          unavailableCount += 1;
+        }
       }
 
-      const state = CourseGenerationStateSchema.parse(JSON.parse(source));
-      if (state.courseId !== safeCourseId) {
-        throw new Error("课程检查点 ID 与存储目录不一致");
-      }
-      return state;
+      items.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+      return { items, unavailableCount };
     },
 
     async save(state) {
@@ -70,6 +84,33 @@ export function createCourseStore(
       return operation;
     },
   };
+}
+
+async function readStoredCourse(rootDir: string, courseId: string) {
+  const filePath = courseFilePath(rootDir, courseId);
+  let source: string;
+
+  try {
+    source = await readFile(filePath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+
+  const state = CourseGenerationStateSchema.parse(JSON.parse(source));
+  if (state.courseId !== courseId) {
+    throw new Error("课程检查点 ID 与存储目录不一致");
+  }
+  return state;
+}
+
+async function readDirectories(rootDir: string) {
+  try {
+    return await readdir(rootDir, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
 }
 
 function courseFilePath(rootDir: string, courseId: string) {

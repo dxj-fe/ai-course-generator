@@ -288,3 +288,13 @@ export {
   type CourseTaskStatus,
   type CourseTaskStreamMessage,
 } from "./course-task-event";
+export {
+  CourseHistoryDetailResponseSchema,
+  CourseHistoryItemSchema,
+  CourseHistoryListResponseSchema,
+  CourseRunSummarySchema,
+  type CourseHistoryDetailResponse,
+  type CourseHistoryItem,
+  type CourseHistoryListResponse,
+  type CourseRunSummary,
+} from "./course-history";

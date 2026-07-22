@@ -139,4 +139,23 @@ describe("course store", () => {
       readdir(path.join(rootDir, second.courseId)),
     ).resolves.toEqual(["course.json"]);
   });
+
+  it("lists valid checkpoints by update time and counts unavailable records", async () => {
+    const rootDir = await temporaryRoot();
+    const store = createCourseStore({ rootDir });
+    await store.save(runningState());
+    await store.save(
+      runningState({
+        courseId: "course-456",
+        updatedAt: "2026-07-15T01:00:02.000Z",
+      }),
+    );
+    await mkdir(path.join(rootDir, "course-broken"), { recursive: true });
+    await writeFile(path.join(rootDir, "course-broken", "course.json"), "{}", "utf8");
+
+    await expect(store.list()).resolves.toMatchObject({
+      items: [{ courseId: "course-456" }, { courseId: "course-123" }],
+      unavailableCount: 1,
+    });
+  });
 });

@@ -23,7 +23,7 @@ const routeLinkClass =
 export function SiteHeader() {
   const pathname = usePathname();
   const exploreActive = pathname === "/";
-  const libraryActive = pathname === "/course";
+  const libraryActive = pathname.startsWith("/course");
 
   return (
     <nav className="fixed inset-x-0 top-0 z-50 h-[65px] w-full bg-[#fcf9f2] backdrop-blur-[6px]">

@@ -4,9 +4,9 @@ source_doc: `.agentdocs/prd/AI_Agent_Frontend_Training_Handbook_V5.docx`
 timezone: `Asia/Shanghai`
 daily_run_time: `09:30`
 start_date: `2026-07-09`
-last_delivered_day: `33`
+last_delivered_day: `34`
 last_delivered_date: `2026-07-22`
-next_training_day: `34`
+next_training_day: `35`
 
 ## Notes
 
@@ -76,3 +76,5 @@ next_training_day: `34`
 - 2026-07-22: Improved the Day 32 pre-submit attachment UX with grounded summary previews, expandable key facts, explicit next-step guidance, state-aware composer copy, accessible status announcements, and responsive verification.
 - 2026-07-22: Delivered Day 33 plan for structured Skill/Template/Reference cards, bounded registry retrieval, compact Agent context, Supervisor/Planner integration, documentation drift checks, and focused tests.
 - 2026-07-22: Implemented Day 33 with strict Tool/Skill/Template/Reference cards, three bounded retrieval Skills and scoped AI SDK tools, compact Planner template/reference context, Supervisor capability summaries, synchronized registry documentation, and full automated verification.
+- 2026-07-22: Delivered Day 34 plan for productizing the existing Seaca prompt/reference composer, durable course and run history, persisted course preview, ZIP export, complete UI states, and a five-minute demo path.
+- 2026-07-22: Implemented Day 34 with typed creation parameters, schema-validated course/run history, durable course details, checkpoint return, single-iframe persisted previews, ZIP export, product UI states, documentation, and automated verification.

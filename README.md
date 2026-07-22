@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话或一份不超过 5 MB 的 txt/md/pdf 参考资料生成一门由多页关联 HTML 组成的课程。当前 Day 33 版本把 Skill、模板和任务内 Reference Packs 转换为可查询的有限结构化 Cards/Hits，再由 LangGraph 中规则优先的受限 Supervisor 通过条件边调度全局 Specialist、依赖感知 Page Worker、有限页面重试和最多两轮定向 Repair/re-QA；默认并发度为 2。严格公开事件、SSE 和持久化 checkpoint 向 Seaca 学习工作区实时交付任务、Agent、页面进度、资料引用、统一预览和可定位恢复能力。
+一句话或一份不超过 5 MB 的 txt/md/pdf 参考资料生成一门由多页关联 HTML 组成的课程。当前 Day 34 版本在 Day 33 结构化检索与 LangGraph 受限 Supervisor 之上补齐可配置创建、持久化课程/运行历史、可恢复详情、多页 sandbox 预览和 ZIP 导出。严格公开事件、SSE 和 checkpoint 仍是任务、Agent、页面进度与错误的唯一前端数据边界。
 
 ## Day 01 交付
 
@@ -250,6 +250,15 @@
 - 手写 Supervisor 的合法节点携带 Skill 摘要；规则优先的 LangGraph Supervisor 仅将匹配能力用于公开解释，不改变节点、预算和终止规则。
 - Registry JSON/Markdown 由运行时定义驱动并受同步测试保护；`/chat`、`/templates`、SSE、Controller 和 Seaca 视觉系统保持不变。
 - 实现边界与结构化检索/向量检索取舍见 `notes/day-33.md`，能力目录见 `docs/agent-retrieval-registry.md`。
+
+## Day 34 交付
+
+- `/chat` composer 在现有 Prompt/资料上传上增加页数、串并行和并发数参数，只传递任务 API 已支持字段。
+- Course/Task Store 增加逐条 Schema 校验的列表读取；损坏记录被隔离，不会让全部历史不可用。
+- `GET /api/courses` 提供有限历史摘要，`GET /api/courses/[courseId]` 提供持久课程与关联运行记录。
+- `/course` 展示真实搜索、状态/运行源筛选、loading/empty/error/retry；`/course/[courseId]` 复用单 iframe 多页预览并可返回原检查点。
+- `GET /api/courses/[courseId]/export` 为完成课程流式生成 ZIP，包含 `course.json`、`pages/*.html` 和 `assets/manifest.json`。
+- 产品化边界、演示路径和面试复盘见 `notes/day-34.md`。
 
 ## 启动
 

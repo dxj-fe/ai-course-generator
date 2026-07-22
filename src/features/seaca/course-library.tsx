@@ -1,155 +1,180 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Clock as ClockIcon, Search as SearchIcon } from "lucide-react";
+import {
+  BookOpen,
+  Clock3,
+  FileArchive,
+  LoaderCircle,
+  Plus,
+  RefreshCw,
+  Search,
+  TriangleAlert,
+} from "lucide-react";
 
+import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import { Toggle } from "@/components/ui/toggle";
-import type { CourseLibraryTab } from "@/types/seaca";
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import {
+  listCourseHistory,
+  type CourseHistoryFilters,
+} from "@/features/course-planner/lib/course-library-api";
+import type {
+  CourseHistoryItem,
+  CourseHistoryListResponse,
+} from "@/shared/course-schema";
 
-const tabs: Array<{ id: CourseLibraryTab; label: string; query: string }> = [
-  { id: "learning", label: "学习", query: "learning" },
-  { id: "works", label: "作品", query: "works" },
-  { id: "likes", label: "点赞", query: "likes" },
-  { id: "saved", label: "收藏", query: "favorites" },
-];
-
-const emptyCopy: Record<CourseLibraryTab, string> = {
-  learning: "去探索广场发现喜欢的作品吧",
-  works: "开始创作属于你的第一个作品吧",
-  likes: "为喜欢的作品点个赞吧",
-  saved: "收藏喜欢的作品，随时回来看看吧",
-};
-
-function tabFromLocation(): CourseLibraryTab {
-  const query = new URLSearchParams(window.location.search).get("tab");
-  return tabs.find((tab) => tab.query === query)?.id ?? "learning";
-}
+const statusCopy = {
+  running: "生成中",
+  completed: "已完成",
+  failed: "生成失败",
+  cancelled: "已取消",
+} as const;
 
 export function CourseLibrary() {
-  const [activeTab, setActiveTab] = useState<CourseLibraryTab>("learning");
   const [query, setQuery] = useState("");
-  const [sortPressed, setSortPressed] = useState(false);
+  const [status, setStatus] = useState<CourseHistoryFilters["status"]>();
+  const [source, setSource] = useState<CourseHistoryFilters["source"]>();
+  const [result, setResult] = useState<CourseHistoryListResponse>();
+  const [error, setError] = useState<string>();
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    const syncTab = () => setActiveTab(tabFromLocation());
-    syncTab();
-    window.addEventListener("popstate", syncTab);
-    return () => window.removeEventListener("popstate", syncTab);
-  }, []);
-
-  const selectTab = (tab: (typeof tabs)[number]) => {
-    setActiveTab(tab.id);
-    const url = new URL(window.location.href);
-    url.searchParams.set("tab", tab.query);
-    window.history.pushState({}, "", url);
-  };
-
-  const hasQuery = query.trim().length > 0;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setError(undefined);
+      void listCourseHistory({ query, status, source }, controller.signal)
+        .then(setResult)
+        .catch((loadError) => {
+          if (loadError instanceof DOMException && loadError.name === "AbortError") {
+            return;
+          }
+          setError(
+            loadError instanceof Error ? loadError.message : "课程历史加载失败。",
+          );
+        });
+    }, 200);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [query, reloadKey, source, status]);
 
   return (
     <main className="min-h-[calc(100vh-64px)] bg-[#fcf9f2] pb-16 text-[#382c19]">
-      <Tabs
-        className="mx-auto block w-[calc(100%-48px)] max-w-[1200px] pt-8"
-        onValueChange={(value) => {
-          const tab = tabs.find(({ id }) => id === value);
-          if (tab) selectTab(tab);
-        }}
-        value={activeTab}
-      >
-        <TabsList
-          aria-label="课程库分类"
-          className="scrollbar-hide flex h-12 w-full justify-start overflow-x-auto rounded-none border-b border-[#e8e1d7] bg-transparent p-0 text-inherit group-data-horizontal/tabs:h-12"
-          variant="line"
-        >
-          {tabs.map((tab) => {
-            const isActive = activeTab === tab.id;
+      <div className="mx-auto w-[calc(100%-32px)] max-w-[1200px] pt-8 sm:w-[calc(100%-48px)]">
+        <header className="flex flex-wrap items-end justify-between gap-4 border-b border-[#e8e1d7] pb-6">
+          <div>
+            <p className="text-xs font-semibold tracking-[0.08em] text-[#77a863]">
+              COURSE HISTORY
+            </p>
+            <h1 className="mt-1 text-2xl font-semibold">我的课程</h1>
+            <p className="mt-2 text-sm text-[#817568]">
+              查看持久化课程、运行记录、页面预览与可交付导出。
+            </p>
+          </div>
+          <Button asChild className="rounded-full bg-[#77cc57] px-4 text-[#1f3b16] hover:bg-[#6bc04d]">
+            <Link href="/chat">
+              <Plus aria-hidden="true" /> 新建课程
+            </Link>
+          </Button>
+        </header>
 
-            return (
-              <TabsTrigger
-                aria-controls={`course-library-panel-${tab.id}`}
-                aria-selected={isActive}
-                className={`relative h-12 w-[84.7656px] flex-none shrink-0 rounded-none border-0 bg-transparent p-0 text-[20px] leading-7 shadow-none transition-colors after:hidden hover:bg-transparent focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#77cc57] data-active:bg-transparent data-active:shadow-none ${
-                  isActive
-                    ? "font-semibold text-[#382c19]"
-                    : "font-normal text-[#988e80] hover:text-[#665b4d]"
-                }`}
-                id={`course-tab-${tab.id}`}
-                key={tab.id}
-                value={tab.id}
-              >
-                {tab.label}
-                {isActive ? (
-                  <span className="absolute inset-x-0 bottom-[-1px] h-0.5 bg-[#77cc57]" />
-                ) : null}
-              </TabsTrigger>
-            );
-          })}
-        </TabsList>
-
-        <div className="mt-7 flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-stretch">
-          <Toggle
-            className={`flex h-10 w-[113.125px] shrink-0 items-center justify-center gap-2 rounded-full text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#77cc57] max-sm:self-start ${
-              sortPressed
-                ? "bg-[#e8dfd3] data-[state=on]:bg-[#e8dfd3]"
-                : "bg-[#f3ede4] hover:bg-[#ece4d9]"
-            }`}
-            onPressedChange={setSortPressed}
-            pressed={sortPressed}
-            type="button"
-          >
-            <ClockIcon
-              aria-hidden="true"
-              size={15}
-              strokeWidth={1.7}
-            />
-            最近打开
-          </Toggle>
-
-          <label className="flex h-10 w-60 items-center gap-2 rounded-full bg-[#f3ede4] px-4 text-[#988e80] transition-shadow focus-within:ring-1 focus-within:ring-[#77cc57] max-sm:w-full">
-            <SearchIcon
-              aria-hidden="true"
-              className="shrink-0"
-              size={17}
-              strokeWidth={1.7}
-            />
-            <span className="sr-only">搜索在学的作品</span>
+        <section aria-label="筛选课程历史" className="mt-6 flex flex-wrap gap-3">
+          <label className="flex h-10 min-w-[220px] flex-1 items-center gap-2 rounded-full bg-[#f3ede4] px-4 text-[#988e80] focus-within:ring-2 focus-within:ring-[#77cc57]">
+            <Search aria-hidden="true" className="size-4 shrink-0" />
+            <span className="sr-only">搜索课程</span>
             <Input
-              className="h-auto min-w-0 flex-1 rounded-none border-0 bg-transparent p-0 text-sm text-[#382c19] outline-none placeholder:text-[#988e80] focus-visible:border-0 focus-visible:ring-0"
+              className="h-auto border-0 bg-transparent p-0 text-[#382c19] focus-visible:ring-0"
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索在学的作品"
+              placeholder="搜索标题、提示词或课程 ID"
               type="search"
               value={query}
             />
           </label>
-        </div>
+          <NativeSelect className="w-36" value={status ?? ""} onChange={(event) => setStatus((event.target.value || undefined) as CourseHistoryFilters["status"])}>
+            <NativeSelectOption value="">全部状态</NativeSelectOption>
+            <NativeSelectOption value="completed">已完成</NativeSelectOption>
+            <NativeSelectOption value="running">生成中</NativeSelectOption>
+            <NativeSelectOption value="failed">生成失败</NativeSelectOption>
+            <NativeSelectOption value="cancelled">已取消</NativeSelectOption>
+          </NativeSelect>
+          <NativeSelect className="w-36" value={source ?? ""} onChange={(event) => setSource((event.target.value || undefined) as CourseHistoryFilters["source"])}>
+            <NativeSelectOption value="">全部运行源</NativeSelectOption>
+            <NativeSelectOption value="langgraph">LangGraph</NativeSelectOption>
+            <NativeSelectOption value="workflow">Workflow</NativeSelectOption>
+          </NativeSelect>
+        </section>
 
-        {tabs.map((tab) => (
-          <TabsContent
-            aria-labelledby={`course-tab-${tab.id}`}
-            asChild
-            className="mt-[101px] text-center text-inherit outline-none"
-            id={`course-library-panel-${tab.id}`}
-            key={tab.id}
-            value={tab.id}
-          >
-            <section>
-              <h1 className="text-base font-semibold leading-6">
-                {hasQuery ? "没有找到相关作品" : "这里还空空的"}
-              </h1>
-              <p className="mt-2 text-sm leading-[21px] text-[#988e80]">
-                {hasQuery ? "试试其他关键词吧" : emptyCopy[tab.id]}
-              </p>
-            </section>
-          </TabsContent>
-        ))}
-      </Tabs>
+        {result?.unavailableCount ? (
+          <Alert className="mt-5 rounded-2xl border-[#edc4b9] bg-[#fff0eb] px-4 py-3 text-[#984735]">
+            <TriangleAlert aria-hidden="true" />
+            有 {result.unavailableCount} 条本地记录无法通过 Schema 校验，已安全跳过。
+          </Alert>
+        ) : null}
+
+        {error ? (
+          <section className="mt-20 text-center" role="alert">
+            <TriangleAlert aria-hidden="true" className="mx-auto size-8 text-[#b65e49]" />
+            <h2 className="mt-3 font-semibold">课程历史加载失败</h2>
+            <p className="mt-2 text-sm text-[#988e80]">{error}</p>
+            <Button className="mt-4 rounded-full" onClick={() => setReloadKey((value) => value + 1)} variant="outline">
+              <RefreshCw aria-hidden="true" /> 重试
+            </Button>
+          </section>
+        ) : !result ? (
+          <div aria-live="polite" className="mt-20 flex items-center justify-center gap-2 text-sm text-[#817568]">
+            <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> 正在读取课程历史…
+          </div>
+        ) : result.items.length === 0 ? (
+          <section className="mt-20 text-center">
+            <BookOpen aria-hidden="true" className="mx-auto size-9 text-[#77a863]" />
+            <h2 className="mt-3 font-semibold">没有找到课程</h2>
+            <p className="mt-2 text-sm text-[#988e80]">
+              {query || status || source ? "调整筛选条件后再试试。" : "完成一次课程生成后，记录会出现在这里。"}
+            </p>
+          </section>
+        ) : (
+          <section aria-label="课程记录" className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {result.items.map((course) => <CourseHistoryCard course={course} key={course.courseId} />)}
+          </section>
+        )}
+      </div>
     </main>
   );
+}
+
+function CourseHistoryCard({ course }: { course: CourseHistoryItem }) {
+  return (
+    <Link
+      className="group rounded-[24px] border border-[#e6ddd1] bg-[#fffdf8] p-5 shadow-[0_12px_34px_-30px_rgba(56,44,25,0.5)] outline-none transition hover:-translate-y-0.5 hover:border-[#cfe4c5] focus-visible:ring-2 focus-visible:ring-[#77cc57]"
+      href={`/course/${course.courseId}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <Badge className={`border-0 ${course.status === "completed" ? "bg-[#eff8e9] text-[#4f8938]" : course.status === "running" ? "bg-[#f4f1df] text-[#87752c]" : "bg-[#fff0eb] text-[#a44f3d]"}`}>
+          {statusCopy[course.status]}
+        </Badge>
+        {course.exportable ? <FileArchive aria-label="可导出" className="size-4 text-[#77a863]" /> : null}
+      </div>
+      <h2 className="mt-4 line-clamp-2 text-lg font-semibold group-hover:text-[#4f8938]">{course.title}</h2>
+      <p className="mt-2 line-clamp-2 text-sm leading-6 text-[#817568]">{course.prompt}</p>
+      <dl className="mt-5 grid grid-cols-2 gap-3 text-xs text-[#817568]">
+        <div><dt className="text-[#a09688]">页面</dt><dd className="mt-1 font-medium text-[#594a37]">{course.completedPages}/{course.totalPages}</dd></div>
+        <div><dt className="text-[#a09688]">运行</dt><dd className="mt-1 font-medium text-[#594a37]">{course.runCount} 次</dd></div>
+      </dl>
+      <p className="mt-5 flex items-center gap-1.5 border-t border-[#eee5da] pt-4 text-xs text-[#988e80]">
+        <Clock3 aria-hidden="true" className="size-3.5" /> {formatDate(course.updatedAt)}
+      </p>
+    </Link>
+  );
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }

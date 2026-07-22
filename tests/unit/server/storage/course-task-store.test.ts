@@ -134,4 +134,23 @@ describe("course task store", () => {
 
     await expect(store.load(second.taskId)).resolves.toEqual(second);
   });
+
+  it("lists valid task records and isolates an invalid record", async () => {
+    const rootDir = await temporaryRoot();
+    const store = createCourseTaskStore({ rootDir });
+    await store.save(taskRecord());
+    await store.save(
+      taskRecord({
+        taskId: "task-day-20",
+        updatedAt: "2026-07-15T03:00:02.000Z",
+      }),
+    );
+    await mkdir(path.join(rootDir, "task-broken"), { recursive: true });
+    await writeFile(path.join(rootDir, "task-broken", "task.json"), "{}", "utf8");
+
+    await expect(store.list()).resolves.toMatchObject({
+      items: [{ taskId: "task-day-20" }, { taskId: "task-day-19" }],
+      unavailableCount: 1,
+    });
+  });
 });

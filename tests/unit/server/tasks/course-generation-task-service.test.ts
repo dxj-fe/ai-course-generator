@@ -259,6 +259,7 @@ function createFixture(
   const tasks = new Map<string, CourseTaskRecord>();
   const courses = new Map<string, CourseGenerationState>();
   const taskStore: CourseTaskStore = {
+    list: async () => ({ items: [...tasks.values()], unavailableCount: 0 }),
     async load(id) {
       return tasks.get(id);
     },
@@ -267,6 +268,7 @@ function createFixture(
     },
   };
   const courseStore: CourseStore = {
+    list: async () => ({ items: [...courses.values()], unavailableCount: 0 }),
     async load(id) {
       return courses.get(id);
     },

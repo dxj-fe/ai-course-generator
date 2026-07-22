@@ -4,6 +4,29 @@ import { describe, expect, it, vi } from "vitest";
 import { ChatComposer } from "../../../src/features/seaca/chat-composer";
 
 describe("ChatComposer", () => {
+  it("renders the existing task parameters without moving planning rules into UI", () => {
+    const markup = renderToStaticMarkup(
+      <ChatComposer
+        draft="生成课程"
+        onDraftChange={vi.fn()}
+        onSubmit={vi.fn()}
+        onTaskOptionsChange={vi.fn()}
+        showSuggestions={false}
+        taskOptions={{
+          pageCount: 4,
+          executionMode: "parallel",
+          concurrency: 2,
+        }}
+      />,
+    );
+
+    expect(markup).toContain("生成参数");
+    expect(markup).toContain("课程页数");
+    expect(markup).toContain("执行方式");
+    expect(markup).toContain("最大并发");
+    expect(markup).toContain("4 页");
+  });
+
   it("exposes an enabled cancel action while a course task is running", () => {
     const markup = renderToStaticMarkup(
       <ChatComposer

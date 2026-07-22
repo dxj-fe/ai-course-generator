@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   mkdir,
   readFile,
+  readdir,
   rename,
   unlink,
   writeFile,
@@ -25,7 +26,13 @@ export const StoredCourseTaskIdSchema = CourseTaskIdSchema;
 
 export type CourseTaskStore = {
   load(taskId: string): Promise<CourseTaskRecord | undefined>;
+  list(): Promise<CourseTaskStoreListResult>;
   save(record: CourseTaskRecord): Promise<void>;
+};
+
+export type CourseTaskStoreListResult = {
+  items: CourseTaskRecord[];
+  unavailableCount: number;
 };
 
 type CourseTaskStoreOptions = {
@@ -44,23 +51,30 @@ export function createCourseTaskStore(
   return {
     async load(taskId) {
       const safeTaskId = StoredCourseTaskIdSchema.parse(taskId);
-      const filePath = taskFilePath(rootDir, safeTaskId);
-      let source: string;
+      return readStoredTask(rootDir, safeTaskId);
+    },
 
-      try {
-        source = await readFile(filePath, "utf8");
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-          return undefined;
+    async list() {
+      const entries = await readDirectories(rootDir);
+      const items: CourseTaskRecord[] = [];
+      let unavailableCount = 0;
+
+      for (const entry of entries) {
+        const parsedId = StoredCourseTaskIdSchema.safeParse(entry.name);
+        if (!entry.isDirectory() || !parsedId.success) {
+          unavailableCount += 1;
+          continue;
         }
-        throw error;
+        try {
+          const record = await readStoredTask(rootDir, parsedId.data);
+          if (record) items.push(record);
+        } catch {
+          unavailableCount += 1;
+        }
       }
 
-      const record = CourseTaskRecordSchema.parse(JSON.parse(source));
-      if (record.taskId !== safeTaskId) {
-        throw new Error("课程任务 ID 与存储目录不一致");
-      }
-      return record;
+      items.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+      return { items, unavailableCount };
     },
 
     async save(record) {
@@ -74,6 +88,33 @@ export function createCourseTaskStore(
       return operation;
     },
   };
+}
+
+async function readStoredTask(rootDir: string, taskId: string) {
+  const filePath = taskFilePath(rootDir, taskId);
+  let source: string;
+
+  try {
+    source = await readFile(filePath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+
+  const record = CourseTaskRecordSchema.parse(JSON.parse(source));
+  if (record.taskId !== taskId) {
+    throw new Error("课程任务 ID 与存储目录不一致");
+  }
+  return record;
+}
+
+async function readDirectories(rootDir: string) {
+  try {
+    return await readdir(rootDir, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
 }
 
 function taskFilePath(rootDir: string, taskId: string) {

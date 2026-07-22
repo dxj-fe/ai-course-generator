@@ -22,6 +22,10 @@ import {
   writeCoursePage,
 } from "@/features/course-planner/lib/course-planner-api";
 import { courseGenerationToSeacaRun } from "@/features/course-planner/lib/course-generation-adapter";
+import {
+  downloadCourseArchive,
+  getCourseHistoryDetail,
+} from "@/features/course-planner/lib/course-library-api";
 import { parseReferenceFile } from "@/features/course-planner/lib/reference-api";
 import {
   cancelCourseTask,
@@ -29,6 +33,7 @@ import {
 } from "@/features/course-planner/lib/course-task-api";
 import {
   ChatComposer,
+  type CourseCreationOptions,
   type ReferenceAttachment,
 } from "@/features/seaca/chat-composer";
 import { ChatSidebar } from "@/features/seaca/chat-sidebar";
@@ -114,6 +119,7 @@ function getServerWorkspaceOverlaySnapshot() {
 
 interface ChatAppProps {
   initialConversationId?: string;
+  initialCourseId?: string;
   initialPrompt?: string;
 }
 
@@ -157,20 +163,28 @@ function mapStreamedCourseRun(
 
 export function ChatApp({
   initialConversationId,
+  initialCourseId,
   initialPrompt = "",
 }: ChatAppProps) {
   const [conversations, setConversations] = useState<SeacaConversation[]>(
     cloneConversations,
   );
-  const [selectedId, setSelectedId] = useState<string | null>(() =>
-    initialConversations.some(({ id }) => id === initialConversationId)
+  const [selectedId, setSelectedId] = useState<string | null>(() => {
+    if (initialCourseId) return `history-${initialCourseId}`;
+    return initialConversations.some(({ id }) => id === initialConversationId)
       ? (initialConversationId ?? null)
-      : null,
-  );
+      : null;
+  });
   const [draft, setDraft] = useState(initialPrompt);
   const [referenceUploads, setReferenceUploads] = useState<
     ReferenceUploadState[]
   >([]);
+  const [courseCreationOptions, setCourseCreationOptions] =
+    useState<CourseCreationOptions>({
+      pageCount: "auto",
+      executionMode: "parallel",
+      concurrency: 2,
+    });
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
@@ -179,6 +193,8 @@ export function ChatApp({
   );
   const [activeCourseTask, setActiveCourseTask] =
     useState<ActiveCourseTask | null>(null);
+  const [exportingCourseId, setExportingCourseId] = useState<string | null>(null);
+  const [courseExportError, setCourseExportError] = useState<string>();
   const requestControllers = useRef(new Set<AbortController>());
   const selectedIdRef = useRef(selectedId);
   const workspaceRef = useRef<HTMLElement>(null);
@@ -274,6 +290,71 @@ export function ChatApp({
     },
     [],
   );
+
+  useEffect(() => {
+    if (!initialCourseId) return;
+    const controller = new AbortController();
+    void getCourseHistoryDetail(initialCourseId, controller.signal)
+      .then(({ course, runs }) => {
+        const conversationId = `history-${course.courseId}`;
+        const mappedRun = courseGenerationToSeacaRun(
+          { courseId: course.courseId, traceId: course.traceId, state: course },
+          {
+            id: `run-history-${course.courseId}`,
+            taskId: runs[0]?.taskId,
+            source: runs[0]?.source,
+            prompt: course.userPrompt,
+            startedAt: Date.parse(course.startedAt),
+          },
+        );
+        setConversations((current) => [
+          ...current.filter(({ id }) => id !== conversationId),
+          {
+            id: conversationId,
+            title: conversationTitle(course.intent?.topic ?? course.userPrompt),
+            messages: [
+              {
+                id: `history-user-${course.courseId}`,
+                role: "user",
+                content: course.userPrompt,
+                time: currentTime(),
+              },
+              {
+                id: `history-assistant-${course.courseId}`,
+                role: "assistant",
+                content:
+                  course.status === "completed"
+                    ? "已从课程历史加载完成产物。"
+                    : "已从课程历史加载检查点，可以继续未完成任务。",
+                time: currentTime(),
+              },
+            ],
+            courseRun: mappedRun,
+          },
+        ]);
+        selectConversation(conversationId);
+        setRightPanelOpen(true);
+      })
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setConversations((current) => [
+          ...current,
+          {
+            id: `history-${initialCourseId}`,
+            title: "课程加载失败",
+            messages: [
+              {
+                id: `history-error-${initialCourseId}`,
+                role: "assistant",
+                content: getErrorMessage(error, "持久化课程加载失败。"),
+                time: currentTime(),
+              },
+            ],
+          },
+        ]);
+      });
+    return () => controller.abort();
+  }, [initialCourseId]);
 
   useEffect(() => {
     const shouldRestoreToggleFocus =
@@ -481,6 +562,14 @@ export function ChatApp({
           userPrompt: text,
           source: "langgraph",
           referencePacks,
+          ...(courseCreationOptions.pageCount === "auto"
+            ? {}
+            : { pageCount: courseCreationOptions.pageCount }),
+          executionMode: courseCreationOptions.executionMode,
+          concurrency:
+            courseCreationOptions.executionMode === "parallel"
+              ? courseCreationOptions.concurrency
+              : 1,
         },
         { signal: controller.signal, traceId },
       );
@@ -1239,6 +1328,20 @@ export function ChatApp({
     );
   };
 
+  const handleExportCourse = async () => {
+    const courseId = selectedRun?.courseId;
+    if (!courseId || exportingCourseId) return;
+    setCourseExportError(undefined);
+    setExportingCourseId(courseId);
+    try {
+      await downloadCourseArchive(courseId);
+    } catch (error) {
+      setCourseExportError(getErrorMessage(error, "课程导出失败。"));
+    } finally {
+      setExportingCourseId(null);
+    }
+  };
+
   const parseUpload = (upload: ReferenceUploadState) => {
     const controller = createController();
     setReferenceUploads((current) =>
@@ -1369,7 +1472,9 @@ export function ChatApp({
             onRetryAttachment={handleRetryReference}
             onSelectSuggestion={handleSuggestion}
             onSubmit={handleSubmit}
+            onTaskOptionsChange={setCourseCreationOptions}
             showSuggestions={selectedConversation === null}
+            taskOptions={courseCreationOptions}
           />
         </div>
 
@@ -1401,6 +1506,9 @@ export function ChatApp({
           <div className="scrollbar-hide h-full w-[390px] max-w-full overflow-y-auto max-md:w-screen">
             <CourseWorkspacePanel
               busy={busy}
+              exportError={courseExportError}
+              exporting={exportingCourseId === selectedRun?.courseId}
+              onExportCourse={handleExportCourse}
               onGenerateDesign={handleGenerateDesign}
               onGenerateAssets={handleGenerateAssets}
               onGenerateHtml={handleGenerateHtml}
