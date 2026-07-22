@@ -36,7 +36,7 @@
 ### 1. Planner
 
 - **状态**：已实现，对应 `CoursePlannerAgent`。
-- **输入**：已校验的 `CourseIntent` 与 `AgentRuntimeContext`。
+- **输入**：已校验的 `CourseIntent`、功能模板 ID/pageType allowlist、检索得到的相关 Template Cards/Reference Hits 与 `AgentRuntimeContext`；完整模板和原始 chunks 保持在服务端。
 - **输出**：`CoursePlannerAgentState.outline` 中的 `CoursePlan`。
 - **校验边界**：`CoursePlanSchema`、页数与 `CourseIntent.courseLength` 一致性、功能/样式模板 Registry 引用、规划阶段不得夹带素材或 HTML。
 - **禁止职责**：不写页面正文，不生成专业教学/故事/视觉 brief，不生成素材或 HTML，不决定运行时重试。
@@ -129,7 +129,7 @@
 
 ### Supervisor
 
-- **状态**：**已实现**。`SupervisorDecisionSchema` 约束 `run / retry / complete / stop`，`SupervisorAgent` 只消费压缩状态、确定性可用节点、最近失败和持久化 attempts。
+- **状态**：**已实现**。`SupervisorDecisionSchema` 约束 `run / retry / complete / stop`，`SupervisorAgent` 只消费压缩状态、带有限 SkillCard 摘要的确定性可用节点、最近失败和持久化 attempts。
 - **职责**：基于已校验课程状态、可用节点、失败位置和有限预算提出下一节点、重试或停止，并只发布可解释的公开决策摘要；运行层再次校验节点白名单、输入合同、每目标最多 3 次执行、无进展、取消和全局决策上限。
 - **兼容降级**：OpenAI-compatible Provider 只返回 JSON object、但 union 结构校验失败时，只有在运行层已把合法动作压缩为唯一节点或唯一 complete 时才使用确定性决策；存在多个候选时仍抛出 Schema 错误，不猜测路由。
 - **禁止职责**：不写课程正文，不生成 HTML 或图片，不替 Specialist 修补输出，不泄露内部推理。LangGraph 可以承载调度图，但不是 Supervisor 思想本身；Day 29 固定图没有把 Supervisor 模型决策伪装成固定边。
@@ -149,6 +149,14 @@
 - **输入/输出**：`pageId + altText + AssetRequest` → `AssetGenerationResult`；输入必须来自 ImagePrompt/素材 Workflow。
 - **边界**：Skill 负责 Provider 调用、文件校验与内部存储；失败转换为显式 fallback。它不规划页面、不写 Prompt、不生成整页 UI 图片。
 - **源码**：[generate-image-skill.ts](../tools/generate-image-skill.ts)、[image-asset-workflow.ts](../workflows/image-asset-workflow.ts)。
+
+### Agent Retrieval Skills
+
+- **状态**：已实现的服务端 Skill / Tool，不是新的 Agent 或产品页面。
+- `retrieveSkillDocsSkill` 按 Agent 与任务查询 SkillCard；`retrieveTemplateCardsSkill` 按页面目标查询有限功能/样式 Template Cards；`retrieveReferenceSkill` 只查询当前任务闭包中的 Reference Packs。
+- Reference Hit 只携带摘要、关键事实和稳定 pack/chunk ID，原始 chunks 仍由 Page Writer 按 Planner 授权在服务端解析。
+- SkillCard 只帮助 Supervisor 理解能力和限制，不能增加合法节点、放宽前置输入、重置重试预算或改变条件边。
+- **源码**：[retrieval-skills.ts](../tools/retrieval-skills.ts)、[retrieval-card-registry.ts](../tools/retrieval-card-registry.ts)、[agent-retrieval-tools.ts](../tools/agent-retrieval-tools.ts)。
 
 ### Validator、checkpoint 与 SSE
 

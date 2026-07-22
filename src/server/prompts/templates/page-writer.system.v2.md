@@ -31,7 +31,7 @@ usedReferences 只能引用 Reference Context 中真实存在且本页实际使�
 - Story beat 只用于保持承接，不添加新的核心知识。
 - Visual guidance 只帮助选择内容焦点，不输出视觉实现。
 - 严格遵守 FunctionalTemplate 的槽位数量和约束。
-- choice 的各题字段数量必须一致；选项按题目顺序平铺，正确位置从 0 开始。
+- choice 的 items 必须是空数组；各题字段数量必须一致；choiceOptions 必须是按题目顺序平铺的一维字符串数组，不能把单个选项再包成数组；正确位置从 0 开始。
 - reveal、explore、sort 的 items 至少 2 项；input 的 evaluationCriteria 至少 1 项。
 - navigate 的 destination 只能是 next、previous、course-home。
 - contentDensity 只能是 sparse、balanced、dense；visualPriority 和 groupingStrategy 必须简洁可执行。

@@ -11,13 +11,19 @@ import {
   validateReferenceUsages,
   type CourseIntent,
   type CoursePlan,
+  type ReferenceHit,
   type ReferencePack,
+  type TemplateCard,
 } from "@/shared/course-schema";
 import {
   getFunctionalTemplate,
   listFunctionalTemplates,
 } from "@/shared/templates/functional";
 import { searchStyleTemplates } from "@/shared/templates/style";
+import {
+  retrieveReferenceHits,
+  retrieveTemplateCards,
+} from "@/server/tools/retrieval-skills";
 
 import { createMinimalAgent } from "./core/minimal-agent";
 import type {
@@ -38,6 +44,13 @@ export type CoursePlannerAgentDependencies = {
     referencePacks: ReferencePack[];
     traceId: string;
   }): Promise<unknown>;
+};
+
+export type CoursePlannerRetrievalContext = {
+  allowedFunctionalTemplates: Array<{ id: string; pageType: string }>;
+  templateCards: TemplateCard[];
+  styleTemplateCard: TemplateCard;
+  referenceHits: ReferenceHit[];
 };
 
 const defaultDependencies: CoursePlannerAgentDependencies = {
@@ -228,21 +241,13 @@ async function generateOutline(input: {
     throw new AiSchemaValidationError("没有找到可用的样式模板。");
   }
 
-  const functionalTemplates = listFunctionalTemplates().map((template) => ({
-    id: template.id,
-    name: template.name,
-    pageType: template.pageType,
-    goal: template.goal,
-  }));
+  const retrievalContext = buildCoursePlannerRetrievalContext(
+    input.intent,
+    input.referencePacks,
+  );
   const prompts = await buildCoursePlannerPrompts({
     courseIntent: input.intent,
-    functionalTemplates,
-    styleTemplate: {
-      id: styleTemplate.id,
-      name: styleTemplate.name,
-      goal: styleTemplate.goal,
-    },
-    referencePacks: input.referencePacks,
+    ...retrievalContext,
   });
 
   const draft = await generateStructuredObjectSafe({
@@ -265,6 +270,46 @@ async function generateOutline(input: {
     input.intent,
     input.referencePacks,
   );
+}
+
+/**
+ * Planner 只接收短 Card 和可引用 ID；完整模板与原始 chunks 留在服务端，
+ * 供 materialize、业务校验和 Page Writer 的按 ID 解析使用。
+ */
+export function buildCoursePlannerRetrievalContext(
+  intent: CourseIntent,
+  referencePacks: readonly ReferencePack[],
+): CoursePlannerRetrievalContext {
+  const audience = intent.audienceAgeRange.label;
+  const query = [
+    intent.topic,
+    audience,
+    intent.visualStyle,
+    ...intent.mustInclude,
+  ].join(" ");
+  const templates = retrieveTemplateCards({
+    pageGoal: query,
+    audience,
+    visualStyle: intent.visualStyle,
+    limit: 3,
+  });
+  const styleTemplateCard = templates.style[0]?.card;
+
+  if (!styleTemplateCard) {
+    throw new AiSchemaValidationError("没有检索到可用的样式模板 Card。");
+  }
+
+  return {
+    allowedFunctionalTemplates: listFunctionalTemplates().map(
+      ({ id, pageType }) => ({ id, pageType }),
+    ),
+    templateCards: templates.functional.map(({ card }) => card),
+    styleTemplateCard,
+    referenceHits: retrieveReferenceHits(
+      { query, limit: 3 },
+      referencePacks,
+    ).hits,
+  };
 }
 
 /**

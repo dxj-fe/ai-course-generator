@@ -14,6 +14,7 @@ import {
   materializeInteractionItems,
   normalizePageContentDensity,
   normalizePageNavigationDestination,
+  normalizePageWriterModelOutput,
   validatePageWriterOutput,
 } from "../../../../src/server/agents/page-writer-agent";
 import type {
@@ -152,6 +153,33 @@ describe("PageWriterAgent", () => {
     expect(normalizePageContentDensity("regular", "story_intro")).toBe(
       "balanced",
     );
+  });
+
+  it("flattens nested choice options and resets the unused choice items field", () => {
+    expect(
+      normalizePageWriterModelOutput({
+        narration: [],
+        interaction: {
+          type: "choice",
+          items: 5,
+          choiceOptions: [["选项一"], ["选项二", "选项三"]],
+        },
+      }),
+    ).toMatchObject({
+      interaction: {
+        items: [],
+        choiceOptions: ["选项一", "选项二", "选项三"],
+      },
+    });
+  });
+
+  it("does not coerce mixed choice option values", () => {
+    const choiceOptions = [["选项一"], { label: "选项二" }];
+    const normalized = normalizePageWriterModelOutput({
+      interaction: { type: "choice", items: [], choiceOptions },
+    }) as { interaction: { choiceOptions: unknown } };
+
+    expect(normalized.interaction.choiceOptions).toBe(choiceOptions);
   });
 
   it("uses concise interaction content as the learner-facing item label", () => {

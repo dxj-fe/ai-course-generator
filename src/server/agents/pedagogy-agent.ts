@@ -126,6 +126,8 @@ async function generatePlan(input: {
   const draft = await generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
     maxTokens: 4_000,
+    normalizeOutput: (output) =>
+      normalizePedagogyModelOutput(output, input.outline),
     prompt: prompts.userPrompt,
     promptVersion: prompts.version,
     schema: PedagogyModelOutputSchema,
@@ -168,4 +170,41 @@ async function generatePlan(input: {
       pageId: input.outline.pages[index].id,
     })),
   });
+}
+
+/**
+ * 部分 JSON object mode Provider 会把完整课程递进压成一句话。仅当模型
+ * 已提供一条合法策略时，才用可信 CoursePlan 的首尾页面补成第二条；空数组、
+ * 非字符串和其他非法字段继续由模型 Schema 严格拒绝。
+ */
+export function normalizePedagogyModelOutput(
+  output: unknown,
+  outline: CoursePlan,
+): unknown {
+  if (!isRecord(output) || !Array.isArray(output.learningProgression)) {
+    return output;
+  }
+  const progression = output.learningProgression;
+  if (
+    progression.length !== 1 ||
+    !z.string().trim().min(5).max(300).safeParse(progression[0]).success
+  ) {
+    return output;
+  }
+
+  const firstTitle = outline.pages[0]?.title.slice(0, 80);
+  const lastTitle = outline.pages.at(-1)?.title.slice(0, 80);
+  if (!firstTitle || !lastTitle) return output;
+
+  return {
+    ...output,
+    learningProgression: [
+      progression[0],
+      `按页面顺序从“${firstTitle}”推进到“${lastTitle}”，完成由导入、理解到总结的学习闭环。`,
+    ],
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

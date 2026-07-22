@@ -10,11 +10,13 @@ import {
 import {
   createPedagogyAgent,
   createPedagogyAgentState,
+  normalizePedagogyModelOutput,
 } from "../../../../src/server/agents/pedagogy-agent";
 import {
   createStoryAgent,
   createStoryAgentState,
   normalizeStoryCharacters,
+  normalizeStoryModelOutput,
 } from "../../../../src/server/agents/story-agent";
 import {
   createVisualDirectorAgent,
@@ -37,6 +39,31 @@ describe("Day 11 professional agents", () => {
       "model_call",
       "finish",
     ]);
+  });
+
+  it("completes one valid learning progression from the trusted course order", () => {
+    const normalized = normalizePedagogyModelOutput(
+      { learningProgression: ["先理解太阳系的基本组成。"] },
+      courseDesignOutline,
+    );
+
+    expect(normalized).toMatchObject({
+      learningProgression: [
+        "先理解太阳系的基本组成。",
+        expect.stringContaining("太阳系探索启程"),
+      ],
+    });
+    expect(
+      (normalized as { learningProgression: string[] }).learningProgression[1],
+    ).toContain("太阳系探索总结");
+  });
+
+  it("keeps an empty learning progression invalid", () => {
+    const output = { learningProgression: [] };
+
+    expect(normalizePedagogyModelOutput(output, courseDesignOutline)).toBe(
+      output,
+    );
   });
 
   it("passes validated pedagogy into StoryAgent", async () => {
@@ -63,6 +90,33 @@ describe("Day 11 professional agents", () => {
         { name: "虚构导师", role: "推动故事情节" },
       ]),
     ).toEqual([]);
+  });
+
+  it("completes a missing story mission from the trusted course order", () => {
+    const normalized = normalizeStoryModelOutput(
+      {
+        premise: "学习者通过连续观察任务理解太阳系。",
+        learnerRole: "观察者",
+      },
+      courseDesignOutline,
+    );
+
+    expect(normalized).toMatchObject({
+      mission: expect.stringContaining("太阳系探索启程"),
+    });
+    expect((normalized as { mission: string }).mission).toContain(
+      "太阳系探索总结",
+    );
+  });
+
+  it("keeps an explicitly empty story mission invalid", () => {
+    const output = {
+      premise: "学习者通过连续观察任务理解太阳系。",
+      learnerRole: "观察者",
+      mission: "",
+    };
+
+    expect(normalizeStoryModelOutput(output, courseDesignOutline)).toBe(output);
   });
 
   it("produces a VisualBrief that references a StyleTemplate", async () => {

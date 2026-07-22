@@ -9,16 +9,17 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     moduleFile: "course-planner.ts",
     templateVariables: [
       "courseIntentJson",
-      "functionalTemplatesJson",
-      "styleTemplateJson",
-      "referencePacksJson",
+      "allowedFunctionalTemplatesJson",
+      "templateCardsJson",
+      "styleTemplateCardJson",
+      "referenceHitsJson",
     ],
     system: {
       name: "course-planner-system",
-      version: "2.1.0",
+      version: "2.2.0",
       role: "system",
       inputContract: [
-        "已校验的 CourseIntent、功能模板清单和唯一 StyleTemplate。",
+        "已校验的 CourseIntent、功能模板 ID allowlist、相关 Template Cards 和 Reference Hits。",
       ],
       outputContract: [
         "只返回 CoursePlan 内容草稿；稳定技术字段由确定性代码补齐。",
@@ -27,9 +28,9 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     },
     user: {
       name: "course-planner-user",
-      version: "2.1.0",
+      version: "2.2.0",
       role: "user",
-      inputContract: ["三个模板变量都必须是序列化 JSON 值。"],
+      inputContract: ["五个模板变量都必须是序列化 JSON 值。"],
       outputContract: ["返回 CoursePlan 内容草稿 JSON object 本身。"],
       fileName: "course-planner.user.v2.md",
     },
@@ -43,7 +44,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     templateVariables: ["courseIntentJson", "coursePlanJson"],
     system: {
       name: "pedagogy-system",
-      version: "2.0.0",
+      version: "2.0.1",
       role: "system",
       inputContract: ["已校验的 CourseIntent 和 CoursePlan。"],
       outputContract: ["只返回 PedagogyPlan 内容草稿 JSON。"],
@@ -71,7 +72,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     ],
     system: {
       name: "story-system",
-      version: "2.0.0",
+      version: "2.0.1",
       role: "system",
       inputContract: ["已校验的 CourseIntent、CoursePlan 和 PedagogyPlan。"],
       outputContract: ["只返回 StoryArc 内容草稿 JSON。"],
@@ -136,7 +137,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     ],
     system: {
       name: "page-writer-system",
-      version: "2.1.0",
+      version: "2.1.1",
       role: "system",
       inputContract: [
         "已校验的 CourseIntent、单页 PagePlan、同页 PageWorkerBrief 和唯一 FunctionalTemplate。",
@@ -201,7 +202,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     ],
     system: {
       name: "html-engineer-system",
-      version: "2.1.0",
+      version: "2.1.1",
       role: "system",
       inputContract: [
         "只接收 DSL、服务端模板、视觉指导和已校验素材；不接收原始用户 Prompt。",

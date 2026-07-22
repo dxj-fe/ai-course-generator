@@ -11,6 +11,7 @@ import type {
   SequentialWorkflowResult,
   WorkflowNodeError,
 } from "@/server/workflows/sequential-workflow";
+import { retrieveSkillCards } from "@/server/tools/retrieval-skills";
 import {
   targetKey,
   type CourseGenerationState,
@@ -294,7 +295,7 @@ export async function runSupervisedWorkflow({
   }
 }
 
-function buildSupervisorInput(
+export function buildSupervisorInput(
   state: CourseGenerationState,
   availableNodes: CourseGenerationNode[],
   readyToComplete: boolean,
@@ -341,6 +342,16 @@ function buildSupervisorInput(
       agent: node.agent,
       requiredInputs: node.requiredInputs.map(({ name }) => name),
       produces: node.produces.map(({ name }) => name),
+      skills: retrieveSkillCards({
+        agentName: node.agent,
+        task: [
+          node.name,
+          node.stage,
+          ...node.requiredInputs.map(({ name }) => name),
+          ...node.produces.map(({ name }) => name),
+        ].join(" "),
+        limit: 2,
+      }).matches.map(({ card }) => card),
     })),
     attempts: state.supervisor?.attempts ?? [],
     recentFailure: failure,

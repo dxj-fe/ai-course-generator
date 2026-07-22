@@ -3,7 +3,7 @@ import type { PromptTemplateDefinition } from "./types";
 
 const supervisorSystemPromptDefinition: PromptTemplateDefinition = {
   name: "course-supervisor-system",
-  version: "1.0.0",
+  version: "1.1.0",
   role: "system",
   inputContract: [
     "接收压缩后的课程状态、可用节点、最近失败和持久化执行预算。",
@@ -17,7 +17,7 @@ const supervisorSystemPromptDefinition: PromptTemplateDefinition = {
 
 const supervisorUserPromptDefinition: PromptTemplateDefinition = {
   name: "course-supervisor-user",
-  version: "1.0.0",
+  version: "1.1.0",
   role: "user",
   inputContract: ["supervisorInputJson 必须是经过压缩和清洗的 JSON string。"],
   outputContract: ["返回 SupervisorDecision JSON object 本身。"],

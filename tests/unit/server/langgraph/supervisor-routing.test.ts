@@ -65,6 +65,24 @@ describe("LangGraph Supervisor routing", () => {
     });
   });
 
+  it("adds a retrieved capability summary without changing route legality", () => {
+    const decision = decideCourseGraphSupervisor({
+      ...pageRoutingState({ repairRounds: 0 }),
+      intent: undefined,
+      outline: undefined,
+      briefs: undefined,
+      pageWorkerBriefs: undefined,
+      pages: [],
+      currentStage: "intent",
+    } as CourseGenerationState);
+
+    expect(decision).toMatchObject({
+      action: "run",
+      nextNode: { nodeName: "intent" },
+    });
+    expect(decision.reasonSummary).toContain("可用能力：课程意图解析");
+  });
+
   it("retries a retryable page failure only while its stage budget remains", () => {
     const retryable = failedPageRoutingState({ attempts: 1 });
     expect(decideCourseGraphSupervisor(retryable)).toMatchObject({
@@ -88,6 +106,24 @@ describe("LangGraph Supervisor routing", () => {
       action: "retry",
       nextNode: { nodeName: "page-worker", pageId: "page-01" },
     });
+  });
+
+  it("bounds a terminal page error before creating the Supervisor decision", () => {
+    const message = `Page Writer 输出失败：${"字段错误；".repeat(100)}`;
+    const decision = decideCourseGraphSupervisor(
+      failedPageRoutingState({
+        attempts: 3,
+        code: "PAGE_WRITER_FAILED",
+        message,
+      }),
+    );
+
+    expect(decision.action).toBe("stop");
+    expect(decision.reasonSummary.length).toBeLessThanOrEqual(300);
+    if (decision.action === "stop") {
+      expect(decision.stopReason.message.length).toBeLessThanOrEqual(500);
+      expect(decision.stopReason.message).toContain("Page Writer 输出失败");
+    }
   });
 });
 

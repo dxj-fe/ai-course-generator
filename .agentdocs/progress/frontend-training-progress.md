@@ -4,9 +4,9 @@ source_doc: `.agentdocs/prd/AI_Agent_Frontend_Training_Handbook_V5.docx`
 timezone: `Asia/Shanghai`
 daily_run_time: `09:30`
 start_date: `2026-07-09`
-last_delivered_day: `32`
+last_delivered_day: `33`
 last_delivered_date: `2026-07-22`
-next_training_day: `33`
+next_training_day: `34`
 
 ## Notes
 
@@ -74,3 +74,5 @@ next_training_day: `33`
 - 2026-07-22: Fixed the post-Day 32 Reference Pack summary failure by normalizing the observed localized top-level JSON keys before strict validation, explicitly requiring canonical field names in the prompt, and preserving rejection of conflicts and unknown fields.
 - 2026-07-22: Fixed the post-Day 32 PDF upload worker failure with an explicit embedded PDF.js worker and Next server package externalization, verified through the production upload route without changing the OCR boundary.
 - 2026-07-22: Improved the Day 32 pre-submit attachment UX with grounded summary previews, expandable key facts, explicit next-step guidance, state-aware composer copy, accessible status announcements, and responsive verification.
+- 2026-07-22: Delivered Day 33 plan for structured Skill/Template/Reference cards, bounded registry retrieval, compact Agent context, Supervisor/Planner integration, documentation drift checks, and focused tests.
+- 2026-07-22: Implemented Day 33 with strict Tool/Skill/Template/Reference cards, three bounded retrieval Skills and scoped AI SDK tools, compact Planner template/reference context, Supervisor capability summaries, synchronized registry documentation, and full automated verification.

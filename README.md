@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话或一份不超过 5 MB 的 txt/md/pdf 参考资料生成一门由多页关联 HTML 组成的课程。当前 Day 32 版本把资料解析为可追踪 Reference Pack，再由 LangGraph 中规则优先的受限 Supervisor 通过条件边调度全局 Specialist、依赖感知 Page Worker、有限页面重试和最多两轮定向 Repair/re-QA；默认并发度为 2。严格公开事件、SSE 和持久化 checkpoint 向 Seaca 学习工作区实时交付任务、Agent、页面进度、资料引用、统一预览和可定位恢复能力。
+一句话或一份不超过 5 MB 的 txt/md/pdf 参考资料生成一门由多页关联 HTML 组成的课程。当前 Day 33 版本把 Skill、模板和任务内 Reference Packs 转换为可查询的有限结构化 Cards/Hits，再由 LangGraph 中规则优先的受限 Supervisor 通过条件边调度全局 Specialist、依赖感知 Page Worker、有限页面重试和最多两轮定向 Repair/re-QA；默认并发度为 2。严格公开事件、SSE 和持久化 checkpoint 向 Seaca 学习工作区实时交付任务、Agent、页面进度、资料引用、统一预览和可定位恢复能力。
 
 ## Day 01 交付
 
@@ -241,6 +241,15 @@
 - Reference Pack 随 task/checkpoint 持久化；Planner 输出逐页 `usedReferences`，Page Writer 只接收并记录 PagePlan 授权的 chunk 子集，workflow 与 LangGraph 复用同一合同。
 - 右侧 learning workspace 的 Reference Panel 展示资料摘要、关键事实、截断提示和引用页面；公开 Timeline 不包含原文 chunks、文件路径、Prompt 或私有推理。
 - 当天不引入 OCR、embedding、pgvector、Day 33 检索或新产品路由。实现说明和面试复盘见 `notes/day-32.md`。
+
+## Day 33 交付
+
+- 新增严格的 ToolCard、SkillCard、TemplateCard、ReferenceHit 及限量检索结果 Schema。
+- 实现 `retrieveSkillDocsSkill`、`retrieveTemplateCardsSkill`、任务范围内的 `retrieveReferenceSkill`，并提供 AI SDK Tool 适配器。
+- Planner 只接收功能模板 allowlist、相关模板 Cards 和资料 Hits；原始 chunks 留在服务端，Page Writer 继续按授权 ID 解析。
+- 手写 Supervisor 的合法节点携带 Skill 摘要；规则优先的 LangGraph Supervisor 仅将匹配能力用于公开解释，不改变节点、预算和终止规则。
+- Registry JSON/Markdown 由运行时定义驱动并受同步测试保护；`/chat`、`/templates`、SSE、Controller 和 Seaca 视觉系统保持不变。
+- 实现边界与结构化检索/向量检索取舍见 `notes/day-33.md`，能力目录见 `docs/agent-retrieval-registry.md`。
 
 ## 启动
 

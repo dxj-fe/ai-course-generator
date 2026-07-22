@@ -7,6 +7,7 @@ import {
   formatZodIssues,
   targetKey,
   type CourseGenerationStage,
+  type SkillCard,
   type SupervisorAttempt,
   type SupervisorDecision,
   type SupervisorNodeTarget,
@@ -18,6 +19,7 @@ export type SupervisorAvailableNode = {
   agent: string;
   requiredInputs: readonly string[];
   produces: readonly string[];
+  skills: SkillCard[];
 };
 
 export type SupervisorRecentFailure = {

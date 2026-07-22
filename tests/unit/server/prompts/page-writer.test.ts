@@ -32,9 +32,10 @@ describe("Page Writer prompts", () => {
       functionalTemplate,
     });
 
-    expect(prompts.version).toBe("2.1.0/2.1.0");
+    expect(prompts.version).toBe("2.1.1/2.1.0");
     expect(prompts.systemPrompt).toContain(
       "contentDensity 只能是 sparse、balanced、dense",
     );
+    expect(prompts.systemPrompt).toContain("choiceOptions 必须是按题目顺序平铺的一维字符串数组");
   });
 });

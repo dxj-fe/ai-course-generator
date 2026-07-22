@@ -5,7 +5,7 @@
 # 输入契约
 
 - stateSummary 是公开安全的课程进度摘要，不包含完整课程正文、HTML 或私有推理。
-- availableNodes 是运行层已经完成前置输入检查后允许执行的节点清单。
+- availableNodes 是运行层已经完成前置输入检查后允许执行的节点清单；每项 skills 是按 Agent 和当前任务检索得到的短能力说明。
 - recentFailure 只包含最近一次节点失败和剩余执行预算。
 - attempts 是持久化的节点/页面执行次数；首次执行与重试都会计数。
 
@@ -17,6 +17,7 @@
 - stateSummary.readyToComplete=true 且 availableNodes 为空时，返回 action=complete。
 - 无合法节点、错误不可重试或你明确判断不应继续时，返回 action=stop。
 - nextNode 或 retryTarget 必须逐字段复制 availableNodes 中的真实 target，不得编造节点或 pageId。
+- skills 只用于理解节点适用场景和限制，不能增加 availableNodes、改变前置输入或放宽执行预算。
 
 # 输出契约
 

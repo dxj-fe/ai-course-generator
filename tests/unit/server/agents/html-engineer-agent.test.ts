@@ -9,6 +9,8 @@ import {
   createHtmlEngineerAgent,
   createHtmlEngineerAgentState,
   normalizeNativeInteractionMarker,
+  normalizeRevealCardInteraction,
+  normalizeTrustedDslMarkup,
   resolveHtmlEngineerInput,
   validateHtmlEngineerOutput,
 } from "../../../../src/server/agents/html-engineer-agent";
@@ -228,6 +230,28 @@ describe("HtmlEngineerAgent", () => {
     ]);
   });
 
+  it("rejects a page without a unique main content region", () => {
+    const html = buildValidGeneratedHtml(pageContentDsl)
+      .replace(`<main data-page-id="${pageContentDsl.pageId}">`, "")
+      .replace("</main>", "");
+
+    expect(() => validateHtmlEngineerOutput(html, input)).toThrow(
+      "页面必须包含且只能包含一个 main 主内容区域",
+    );
+  });
+
+  it("rejects disabled choice controls before Page QA", () => {
+    const content = getChoiceContent();
+    const html = buildValidGeneratedHtml(content).replace(
+      `<section data-interaction-type="choice">`,
+      `<section data-interaction-type="choice"><input type="radio" name="question-1" disabled>`,
+    );
+
+    expect(() =>
+      validateHtmlEngineerOutput(html, { ...input, content }),
+    ).toThrow("choice 互动的单选或复选控件不得包含 disabled 属性");
+  });
+
   it("rejects output that drops a stable DSL block marker", () => {
     const html = buildValidGeneratedHtml(pageContentDsl).replace(
       ' data-block-id="block-02"',
@@ -282,6 +306,48 @@ describe("HtmlEngineerAgent", () => {
 
     expect(normalized).toContain('<details data-interaction-type="reveal">');
     expect(() => validateHtmlEngineerOutput(normalized, input)).not.toThrow();
+  });
+
+  it("escapes trusted mathematical text and restores omitted reveal content visibly", () => {
+    const mathematicalBody =
+      "不等式是用不等号（>、<、≥、≤等）连接两个表达式所形成的式子，表示两个量之间的大小关系";
+    const content = {
+      ...pageContentDsl,
+      title: "高一数学核心概念拆解",
+      blocks: pageContentDsl.blocks.map((block, index) =>
+        index === 1 ? { ...block, body: mathematicalBody } : block,
+      ),
+      interaction: {
+        ...pageContentDsl.interaction,
+        prompt: "点击对应卡片查看详细内容",
+      },
+    };
+    const html = buildValidGeneratedHtml(content)
+      .replaceAll(content.title, "数学概念课程")
+      .replaceAll(content.interaction.prompt, "")
+      .replaceAll(mathematicalBody, "模型遗漏的公式说明")
+      .replace(' data-interaction-type="reveal"', "");
+
+    let normalized = normalizeTrustedDslMarkup(html, {
+      content,
+      visualBrief,
+    });
+    normalized = normalizeNativeInteractionMarker(normalized, {
+      content,
+      visualBrief,
+    });
+    normalized = normalizeRevealCardInteraction(normalized, {
+      content,
+      visualBrief,
+    });
+
+    expect(normalized).toContain("高一数学核心概念拆解");
+    expect(normalized).toContain("点击对应卡片查看详细内容");
+    expect(normalized).toContain("&gt;、&lt;、≥、≤");
+    expect(normalized).toContain('data-interaction-type="reveal"');
+    expect(() =>
+      validateHtmlEngineerOutput(normalized, { content, visualBrief }),
+    ).not.toThrow();
   });
 
   it("does not invent a reveal marker for an incomplete native interaction", () => {

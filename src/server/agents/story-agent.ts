@@ -133,6 +133,8 @@ async function generateArc(input: {
   const draft = await generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
     maxTokens: 3_500,
+    normalizeOutput: (output) =>
+      normalizeStoryModelOutput(output, input.outline),
     prompt: prompts.userPrompt,
     promptVersion: prompts.version,
     schema: StoryModelOutputSchema,
@@ -161,6 +163,38 @@ async function generateArc(input: {
       pageId: input.outline.pages[index].id,
     })),
   });
+}
+
+/**
+ * mission 与 premise/learnerRole 是同一叙事草稿的交接字段。只在后两者均
+ * 已有效且 mission 确实缺失时，用可信 CoursePlan 首尾页生成最小任务线；
+ * 显式空值或其他损坏输出不会被掩盖。
+ */
+export function normalizeStoryModelOutput(
+  output: unknown,
+  outline: CoursePlan,
+): unknown {
+  if (
+    !isRecord(output) ||
+    output.mission !== undefined ||
+    !z.string().trim().min(5).max(400).safeParse(output.premise).success ||
+    !z.string().trim().min(2).max(200).safeParse(output.learnerRole).success
+  ) {
+    return output;
+  }
+
+  const firstTitle = outline.pages[0]?.title.slice(0, 80);
+  const lastTitle = outline.pages.at(-1)?.title.slice(0, 80);
+  if (!firstTitle || !lastTitle) return output;
+
+  return {
+    ...output,
+    mission: `完成从“${firstTitle}”到“${lastTitle}”的连续学习任务，并达成课程既定目标。`,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 /**

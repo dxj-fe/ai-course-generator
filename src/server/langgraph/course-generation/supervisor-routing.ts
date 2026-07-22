@@ -10,6 +10,7 @@ import {
   isPageWorkerRetryableError,
   PAGE_WORKER_MAX_STAGE_ATTEMPTS,
 } from "@/server/workflows/page-worker";
+import { retrieveSkillCards } from "@/server/tools/retrieval-skills";
 
 export const COURSE_GRAPH_ROUTES = [
   "intent-node",
@@ -226,15 +227,33 @@ function run(
   pageId: string | undefined,
   reasonSummary: string,
 ) {
+  const capability = retrieveSkillCards({
+    agentName: supervisorAgentName(nodeName),
+    task: reasonSummary,
+    limit: 1,
+  }).matches[0]?.card;
   return SupervisorDecisionSchema.parse({
     action: "run",
     nextNode: { nodeName, pageId },
-    reasonSummary,
+    reasonSummary: summarizeSupervisorReason(
+      capability
+        ? `${reasonSummary} 可用能力：${capability.name}。`
+        : reasonSummary,
+    ),
   });
 }
 
+function supervisorAgentName(
+  nodeName: "intent" | "planner" | "course-design" | "page-worker" | "repair",
+) {
+  return nodeName;
+}
+
 function complete(reasonSummary: string) {
-  return SupervisorDecisionSchema.parse({ action: "complete", reasonSummary });
+  return SupervisorDecisionSchema.parse({
+    action: "complete",
+    reasonSummary: summarizeSupervisorReason(reasonSummary),
+  });
 }
 
 function stop(
@@ -249,7 +268,22 @@ function stop(
 ) {
   return SupervisorDecisionSchema.parse({
     action: "stop",
-    reasonSummary: message,
-    stopReason: { code, message, recoverable },
+    reasonSummary: summarizeSupervisorReason(message),
+    stopReason: {
+      code,
+      message: truncateWithEllipsis(message, 500),
+      recoverable,
+    },
   });
+}
+
+function summarizeSupervisorReason(message: string) {
+  return truncateWithEllipsis(message, 300);
+}
+
+function truncateWithEllipsis(message: string, maximum: number) {
+  const normalized = message.trim() || "课程生成无法继续。";
+  return normalized.length <= maximum
+    ? normalized
+    : `${normalized.slice(0, maximum - 1).trimEnd()}…`;
 }

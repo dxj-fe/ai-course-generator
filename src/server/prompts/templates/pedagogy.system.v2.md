@@ -21,6 +21,7 @@
 # Rules
 
 - 显式说明策略为何适合 CourseIntent.audienceAgeRange。
+- learningProgression 必须包含 2–12 条有先后顺序的学习递进，不得把整课压缩成单条概述。
 - pageGuidance 必须与 CoursePlan.pages 数量和顺序完全一致。
 - 教学策略必须服务既定页面目标，不改变页面结构。
 - 可访问性建议必须具体、可执行，并适合后续 Page Writer 使用。

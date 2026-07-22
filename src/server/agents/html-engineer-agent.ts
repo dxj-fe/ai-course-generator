@@ -99,8 +99,11 @@ export function createHtmlEngineerAgent(
         },
       });
 
-      const normalized = normalizeReadyCssBackgroundAccessibility(
-        normalizeNativeInteractionMarker(generated, state.task),
+      let normalized = normalizeTrustedDslMarkup(generated, state.task);
+      normalized = normalizeNativeInteractionMarker(normalized, state.task);
+      normalized = normalizeRevealCardInteraction(normalized, state.task);
+      normalized = normalizeReadyCssBackgroundAccessibility(
+        normalized,
         state.task,
       );
       const { html, validation } = validateHtmlEngineerOutput(
@@ -213,6 +216,17 @@ export function validateHtmlEngineerOutput(
     ...contract.issues.map(({ message }) => message),
     ...safety.issues.map(({ message }) => message),
   ];
+  const mainOpenTags = html.match(/<main\b[^>]*>/gi) ?? [];
+  const mainCloseTags = html.match(/<\/main\s*>/gi) ?? [];
+  if (mainOpenTags.length !== 1 || mainCloseTags.length !== 1) {
+    issues.push("页面必须包含且只能包含一个 main 主内容区域。");
+  }
+  if (
+    input.content.interaction.type === "choice" &&
+    hasDisabledChoiceControl(html)
+  ) {
+    issues.push("choice 互动的单选或复选控件不得包含 disabled 属性。");
+  }
   const requiredMarkers: Array<readonly [string, string]> = [
     ["data-page-id", input.content.pageId],
     ...input.content.blocks.map(
@@ -253,6 +267,173 @@ export function validateHtmlEngineerOutput(
   }
 
   return { html, validation: { contract, safety } };
+}
+
+function hasDisabledChoiceControl(html: string) {
+  return [...html.matchAll(/<input\b[^>]*>/gi)].some(({ 0: tag }) => {
+    const type = tag.match(/\btype\s*=\s*["']?(radio|checkbox)\b/i)?.[1];
+    const disabled =
+      /\sdisabled(?:\s*=\s*(?:["'][^"']*["']|[^\s>]+))?(?=\s|\/?>)/i;
+    return Boolean(type && disabled.test(tag));
+  });
+}
+
+/**
+ * 模型负责布局，但 DSL 正文是服务端事实。只在已有 main 和唯一 block marker
+ * 内恢复被模型遗漏的可信文字，并先转义原样输出的数学比较符；插入内容保持
+ * 可见且最终仍须通过完整 HTML、安全、素材和稳定标记合同。
+ */
+export function normalizeTrustedDslMarkup(
+  output: unknown,
+  input: HtmlEngineerInput,
+) {
+  if (typeof output !== "string") return output;
+
+  let html = output;
+  const requiredText = collectRequiredStaticContentText(input.content);
+  for (const text of requiredText) {
+    if (/[&<>]/.test(text) && html.includes(text)) {
+      html = html.replaceAll(text, escapeHtmlText(text));
+    }
+  }
+
+  for (const block of input.content.blocks) {
+    const markers = findTagMatchesWithAttributes(html, {
+      "data-block-id": block.id,
+    });
+    if (markers.length !== 1) continue;
+    const marker = markers[0]!;
+    const element = getElementHtml(html, marker);
+    if (!element) continue;
+
+    const visible = normalizeVisibleText(element);
+    const missingHeading = !visible.includes(normalizeText(block.heading));
+    const missingBody = !visible.includes(normalizeText(block.body));
+    const missingPoints = block.supportingPoints.filter(
+      (point) => !visible.includes(normalizeText(point)),
+    );
+    if (!missingHeading && !missingBody && missingPoints.length === 0) {
+      continue;
+    }
+
+    const restored = [
+      missingHeading ? `<h2>${escapeHtmlText(block.heading)}</h2>` : "",
+      missingBody ? `<p>${escapeHtmlText(block.body)}</p>` : "",
+      missingPoints.length > 0
+        ? `<ul>${missingPoints.map((point) => `<li>${escapeHtmlText(point)}</li>`).join("")}</ul>`
+        : "",
+    ].join("");
+    html = insertBeforeElementClose(
+      html,
+      marker,
+      `<div data-course-contract-restored="block">${restored}</div>`,
+    );
+  }
+
+  const mainMatches = [...html.matchAll(/<main\b[^>]*>/gi)].map((match) => ({
+    index: match.index,
+    tag: match[0],
+  }));
+  if (mainMatches.length !== 1) return html;
+
+  const pageVisible = normalizeVisibleText(html);
+  const pageText = [input.content.title, ...input.content.narration];
+  if (
+    input.content.interaction.type === "reveal" ||
+    input.content.interaction.type === "explore"
+  ) {
+    pageText.push(input.content.interaction.prompt);
+  }
+  const missingPageText = pageText.filter(
+    (text) => !pageVisible.includes(normalizeText(text)),
+  );
+  if (missingPageText.length === 0) return html;
+
+  const restored = missingPageText
+    .map((text, index) =>
+      text === input.content.title && index === 0
+        ? `<h1>${escapeHtmlText(text)}</h1>`
+        : `<p>${escapeHtmlText(text)}</p>`,
+    )
+    .join("");
+  return insertBeforeElementClose(
+    html,
+    mainMatches[0]!,
+    `<div data-course-contract-restored="page">${restored}</div>`,
+  );
+}
+
+/**
+ * reveal 页面若已有完整 details 结构，仍由严格 marker 规范化处理；若模型只
+ * 生成了普通卡片，则在所有唯一、互不嵌套的 block 根节点外包原生 details，
+ * 保留模型内容与样式，并提供无脚本可操作的确定性降级。
+ */
+export function normalizeRevealCardInteraction(
+  output: unknown,
+  input: HtmlEngineerInput,
+) {
+  if (
+    typeof output !== "string" ||
+    input.content.interaction.type !== "reveal" ||
+    hasDataAttribute(output, "data-interaction-type", "reveal") ||
+    /<details\b/i.test(output)
+  ) {
+    return output;
+  }
+
+  const blocks = input.content.blocks.map((block, index) => {
+    const markers = findTagMatchesWithAttributes(output, {
+      "data-block-id": block.id,
+    });
+    if (markers.length !== 1) return undefined;
+    const marker = markers[0]!;
+    const element = getElementHtml(output, marker);
+    return element
+      ? { block, element, index, start: marker.index, end: marker.index + element.length }
+      : undefined;
+  });
+  if (blocks.some((block) => !block)) return output;
+
+  const ranges = blocks
+    .filter((block): block is NonNullable<typeof block> => Boolean(block))
+    .sort((left, right) => left.start - right.start);
+  if (ranges.some((block, index) => index > 0 && ranges[index - 1]!.end > block.start)) {
+    return output;
+  }
+
+  let html = output;
+  for (const { block, element, index, start } of [...ranges].reverse()) {
+    const interactionMarker =
+      index === 0 ? ' data-interaction-type="reveal"' : "";
+    const summary = escapeHtmlText(block.label ?? block.heading);
+    const details = `<details${interactionMarker}><summary>${summary}</summary>${element}</details>`;
+    html = `${html.slice(0, start)}${details}${html.slice(start + element.length)}`;
+  }
+  return html;
+}
+
+function insertBeforeElementClose(
+  html: string,
+  marker: OpeningTagMatch,
+  markup: string,
+) {
+  const element = getElementHtml(html, marker);
+  const tagName = marker.tag.match(/^<\s*([a-z][\w:-]*)/i)?.[1];
+  if (!element || !tagName) return html;
+
+  const escapedTagName = tagName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const closing = new RegExp(`</${escapedTagName}\\s*>\\s*$`, "i").exec(element);
+  if (!closing?.index) return html;
+
+  const insertionIndex = marker.index + closing.index;
+  return `${html.slice(0, insertionIndex)}${markup}${html.slice(insertionIndex)}`;
+}
+
+function escapeHtmlText(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
 
 /**

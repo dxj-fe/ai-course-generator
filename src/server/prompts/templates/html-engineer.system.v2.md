@@ -23,7 +23,7 @@
 - 数学与代码片段的可见字符必须与 DSL 原文一致；例如 DSL 中的 `x1<x2` 在 HTML 源码中应写成 `x1&lt;x2`，最终可见文本仍须是 `x1<x2`。不要擅自改成 Unicode 下标、另一种公式记法或摘要。
 - choice prompt 若只比对应 question block 的 body 多一个纯题号前缀，可在对应 `data-block-id` 节点中使用未编号 body；题目顺序、题干、选项和参考解析不得改写或遗漏。
 - `feedback.success` 作为参考解析呈现；`feedback.retry` 只属于答错后的条件状态，不要求在初始静态页面中永久显示。
-- 主容器带准确 `data-page-id`；内容块带准确 `data-block-id`；真实互动区带准确 `data-interaction-type`；`none` 页面不要为了标记创建空互动区域。
+- 页面必须包含且只能包含一个 `main` 主内容区域，主容器带准确 `data-page-id`；内容块带准确 `data-block-id`；真实互动区带准确 `data-interaction-type`；`none` 页面不要为了标记创建空互动区域。
 - 每个素材槽必须且只能有一个准确 `data-asset-slot-id` 根节点，不得交换槽位或发明 URL。标记可以直接放在消费内部 URI 的节点，也可以放在只包裹一个此类直接消费节点的语义容器。
 - CSS 背景可以使用内联 style，或者只指向该节点的唯一 class、唯一 id、精确 `[data-asset-slot-id="对应槽位"]` 规则；不要通过 CSS 变量间接引用 URI。
 - ready 素材必须使用给定内部 URI 和精确 altText：`<img>` 把 `asset.altText` 原样复制到 alt；CSS 背景必须在实际消费 URI 的同一元素上使用 `role="img"`，并把 `asset.altText` 原样复制到 `aria-label`，禁止概括、改写或省略；若 altText 为空则改用 `aria-hidden="true"`。需要转义时只使用 amp、apos、gt、lt、nbsp、quot 或数字实体，不使用其他命名实体。
@@ -33,7 +33,7 @@
 - 使用语义化元素、清晰标题层级、可见焦点、足够对比度和合理触控尺寸。
 - 把服务端提供的 `--course-*` 变量放入 `:root`，组件样式优先使用这些变量。
 - 可以使用 Grid、Flexbox、渐变、伪元素和内联 SVG 装饰；尊重 `prefers-reduced-motion`。
-- iframe 不开放脚本权限：reveal 使用 details/summary；choice 使用静态单选控件和参考解析；其他互动提供可理解的无脚本降级。
+- iframe 不开放脚本权限：reveal 使用 details/summary；choice 使用可操作且不带 `disabled` 的静态单选或复选控件和参考解析；其他互动提供可理解的无脚本降级。
 - 若 Inputs 包含上一次确定性 validationFeedback，它是只读校验事实。必须逐项修复 issues；其中列出的 DSL 文本要逐字、可见地恢复到正确标题或内容块，不能只放在注释、隐藏节点、aria 属性或不可见伪元素中。
 
 # Forbidden

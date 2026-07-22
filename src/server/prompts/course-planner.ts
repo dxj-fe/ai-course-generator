@@ -7,9 +7,10 @@ const coursePlannerUserPromptDefinition = plannerPromptDefinition.user;
 
 export type BuildCoursePlannerPromptsInput = {
   courseIntent: unknown;
-  functionalTemplates: unknown;
-  styleTemplate: unknown;
-  referencePacks?: unknown;
+  allowedFunctionalTemplates: unknown;
+  templateCards: unknown;
+  styleTemplateCard: unknown;
+  referenceHits?: unknown;
 };
 
 /** 加载并渲染 CoursePlannerAgent 的版本化 Prompt。 */
@@ -26,9 +27,12 @@ export async function buildCoursePlannerPrompts(
     systemPrompt: renderPromptTemplate(systemTemplate, {}),
     userPrompt: renderPromptTemplate(userTemplate, {
       courseIntentJson: JSON.stringify(input.courseIntent),
-      functionalTemplatesJson: JSON.stringify(input.functionalTemplates),
-      styleTemplateJson: JSON.stringify(input.styleTemplate),
-      referencePacksJson: JSON.stringify(input.referencePacks ?? []),
+      allowedFunctionalTemplatesJson: JSON.stringify(
+        input.allowedFunctionalTemplates,
+      ),
+      templateCardsJson: JSON.stringify(input.templateCards),
+      styleTemplateCardJson: JSON.stringify(input.styleTemplateCard),
+      referenceHitsJson: JSON.stringify(input.referenceHits ?? []),
     }),
   };
 }

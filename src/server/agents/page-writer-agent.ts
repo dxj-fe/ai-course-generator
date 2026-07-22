@@ -270,6 +270,7 @@ async function generateContent(
   const draft = await generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
     maxTokens: 4_000,
+    normalizeOutput: normalizePageWriterModelOutput,
     prompt: prompts.userPrompt,
     promptVersion: prompts.version,
     schema: PageWriterModelOutputSchema,
@@ -318,6 +319,47 @@ async function generateContent(
     },
     input,
   );
+}
+
+/**
+ * 只收敛 JSON object mode 常见的多余数组层级和 choice 占位字段。
+ * 未知对象、混合类型和真实业务字段仍交给严格 Schema 拒绝。
+ */
+export function normalizePageWriterModelOutput(output: unknown): unknown {
+  if (!isRecord(output) || !isRecord(output.interaction)) return output;
+
+  const interaction = output.interaction;
+  if (interaction.type !== "choice") return output;
+
+  return {
+    ...output,
+    interaction: {
+      ...interaction,
+      // choice 不使用 items；部分 Provider 会把空数组错误压缩成 0。
+      items: [],
+      choiceOptions: flattenNestedStringArray(interaction.choiceOptions),
+    },
+  };
+}
+
+function flattenNestedStringArray(value: unknown): unknown {
+  if (
+    !Array.isArray(value) ||
+    !value.some(Array.isArray) ||
+    !value.every(
+      (item) =>
+        typeof item === "string" ||
+        (Array.isArray(item) && item.every((part) => typeof part === "string")),
+    )
+  ) {
+    return value;
+  }
+
+  return value.flatMap((item) => (Array.isArray(item) ? item : [item]));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 const contentDensityAliases: Readonly<

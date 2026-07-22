@@ -20,6 +20,7 @@ narrativeMode 只能是 none、light、full。每个 pageBeats item 只能包含
 # Rules
 
 - pageBeats 必须与 CoursePlan.pages 数量和顺序完全一致。
+- mission 是必填的连续学习任务；即使 narrativeMode 为 none 也不得省略。
 - 严肃主题可以使用 none 或 light，不能强行儿童冒险化。
 - narrativeMode 为 none 时 characters 必须为空数组；其他字段使用非虚构学习路径描述。
 - 叙事只能连接既定目标，不添加与课程事实冲突的新知识。

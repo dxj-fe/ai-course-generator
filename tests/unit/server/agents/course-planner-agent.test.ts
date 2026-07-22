@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createCoursePlannerAgent,
   createCoursePlannerAgentState,
+  buildCoursePlannerRetrievalContext,
   normalizeCoursePlannerModelOutput,
   validateCoursePlannerOutput,
 } from "../../../../src/server/agents/course-planner-agent";
@@ -159,6 +160,35 @@ describe("CoursePlannerAgent", () => {
     expect(() =>
       validateCoursePlannerOutput(outline, intent, [referencePack]),
     ).toThrow("不包含 chunk-02");
+  });
+
+  it("builds compact Planner context without raw Reference chunks", () => {
+    const intent = {
+      ...createIntent(plannerCases[0]),
+      topic: "太阳风",
+    };
+    const pack = {
+      ...referencePack,
+      chunks: [
+        {
+          id: "chunk-01" as const,
+          index: 1,
+          text: "太阳风包含带电粒子。RAW_REFERENCE_SENTINEL",
+        },
+      ],
+    };
+    const context = buildCoursePlannerRetrievalContext(intent, [pack]);
+
+    expect(context.allowedFunctionalTemplates[0]).toEqual({
+      id: "course-cover",
+      pageType: "cover",
+    });
+    expect(context.templateCards.length).toBeLessThanOrEqual(3);
+    expect(context.referenceHits[0]).toMatchObject({
+      referencePackId: referencePack.id,
+      chunkIds: ["chunk-01"],
+    });
+    expect(JSON.stringify(context)).not.toContain("RAW_REFERENCE_SENTINEL");
   });
 
   it("rejects a course without an active interaction", () => {

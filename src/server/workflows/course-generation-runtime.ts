@@ -26,6 +26,7 @@ import {
 } from "@/server/workflows/sequential-workflow";
 import {
   CourseGenerationStateSchema,
+  PageGenerationStateSchema,
   PageWorkerConfigSchema,
   type CourseGenerationError,
   type CourseGenerationPublicEvent,
@@ -118,16 +119,31 @@ export function initializeCourseGenerationState(
         attempts: [],
       },
       workerConfig,
-      pages: existing.pages.map((page) =>
-        page.status === "failed"
+      pages: existing.pages.map((page) => {
+        const recovered = recoverLegacyDisabledChoiceRepairFailure(page);
+        if (
+          recovered.status === "failed" &&
+          recovered.currentStage !== "repair" &&
+          (recovered.error?.code === "PAGE_WORKER_RETRY_EXHAUSTED" ||
+            isLegacySupervisorReasonSummaryFailure(recovered.error))
+        ) {
+          return {
+            ...recovered,
+            status: "running" as const,
+            attempts: recovered.attempts?.filter(
+              ({ stage }) => stage !== recovered.currentStage,
+            ),
+          };
+        }
+        return recovered.status === "failed"
           ? {
-              ...page,
-              attempts: page.attempts?.filter(
-                ({ stage }) => stage !== page.currentStage,
+              ...recovered,
+              attempts: recovered.attempts?.filter(
+                ({ stage }) => stage !== recovered.currentStage,
               ),
             }
-          : page,
-      ),
+          : recovered;
+      }),
       updatedAt: now(),
     });
   }
@@ -148,6 +164,57 @@ export function initializeCourseGenerationState(
     workerConfig: resolveWorkerConfig(input),
     startedAt: timestamp,
     updatedAt: timestamp,
+  });
+}
+
+/** Supervisor 曾把完整页面错误复制到 300 字符摘要，导致错误处理本身失败。 */
+function isLegacySupervisorReasonSummaryFailure(
+  error: PageGenerationState["error"],
+) {
+  return (
+    error?.code === "COURSE_TASK_EXECUTION_ERROR" &&
+    error.message.includes('"path": [\n      "reasonSummary"') &&
+    error.message.includes("expected string to have <=300 characters")
+  );
+}
+
+/**
+ * HTML Engineer 2.1.0 曾允许 disabled choice 控件进入 QA，而旧 Repair
+ * 又只能唯一替换 search，导致重复 disabled 属性白白耗尽两轮预算。
+ * 只迁移这一种已知基础设施失败：废弃无效候选历史并重新生成该页 HTML。
+ */
+function recoverLegacyDisabledChoiceRepairFailure(
+  page: PageGenerationState,
+): PageGenerationState {
+  const history = page.repairHistory ?? [];
+  const isKnownFailure =
+    page.status === "failed" &&
+    page.currentStage === "repair" &&
+    page.error?.code === "REPAIR_FAILED" &&
+    page.error.message.includes("search 必须在当前文档中唯一匹配") &&
+    page.error.message.includes("INTERACTIVE_OPTIONS_DISABLED") &&
+    history.length === 2 &&
+    history.every(
+      (attempt) =>
+        attempt.status === "failed" &&
+        attempt.failureClass === "agent_failed" &&
+        attempt.issueCodes.includes("INTERACTIVE_OPTIONS_DISABLED"),
+    );
+
+  if (!isKnownFailure) return page;
+
+  return PageGenerationStateSchema.parse({
+    ...page,
+    status: "running",
+    currentStage: "html",
+    htmlOutput: undefined,
+    qualityReport: undefined,
+    repairHistory: [],
+    error: {
+      code: "HTML_ENGINEER_FAILED",
+      message:
+        "生成 HTML 校验失败：页面必须包含且只能包含一个 main 主内容区域；choice 互动的单选或复选控件不得包含 disabled 属性。",
+    },
   });
 }
 
