@@ -7,11 +7,14 @@ import {
   PageContentBlockKindSchema,
   PageContentDSLSchema,
   PageInteractionTypeSchema,
+  ReferenceUsageSchema,
+  validateReferenceUsages,
   type CourseIntent,
   type PageContentDSL,
   type PageContentInteraction,
   type PagePlan,
   type PageWorkerBrief,
+  type ReferencePack,
 } from "@/shared/course-schema";
 import {
   getFunctionalTemplate,
@@ -60,12 +63,14 @@ const PageWriterModelOutputSchema = z.object({
   contentDensity: z.string().trim().min(1).max(40),
   visualPriority: z.string().min(2).max(240),
   groupingStrategy: z.string().min(2).max(240),
+  usedReferences: z.array(ReferenceUsageSchema).max(12).default([]),
 });
 
-type PageWriterInput = {
+export type PageWriterInput = {
   intent: CourseIntent;
   page: PagePlan;
   brief: PageWorkerBrief;
+  referencePacks?: ReferencePack[];
 };
 
 export type PageWriterAgentState = AgentStateBase & {
@@ -188,6 +193,28 @@ export function validatePageWriterOutput(
     );
   }
 
+  issues.push(
+    ...validateReferenceUsages(
+      dsl.usedReferences ?? [],
+      input.referencePacks ?? [],
+    ),
+  );
+  const plannedByPack = new Map(
+    (input.page.usedReferences ?? []).map((usage) => [
+      usage.referencePackId,
+      new Set(usage.chunkIds),
+    ]),
+  );
+  for (const usage of dsl.usedReferences ?? []) {
+    const allowedChunks = plannedByPack.get(usage.referencePackId);
+    if (
+      !allowedChunks ||
+      usage.chunkIds.some((chunkId) => !allowedChunks.has(chunkId))
+    ) {
+      issues.push("Page Writer 的资料引用必须是 PagePlan 引用的子集");
+    }
+  }
+
   if (dsl.assetSlots.length !== input.page.assetNeeds.length) {
     issues.push("DSL assetSlots 必须逐项对应 PagePlan.assetNeeds");
   } else {
@@ -238,6 +265,7 @@ async function generateContent(
     pagePlan: input.page,
     pageWorkerBrief: input.brief,
     functionalTemplate: template,
+    referenceContext: selectPageReferenceContext(input),
   });
   const draft = await generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
@@ -269,6 +297,7 @@ async function generateContent(
       narration: draft.narration,
       blocks,
       interaction: materializeInteraction(draft.interaction),
+      usedReferences: draft.usedReferences,
       assetSlots: input.page.assetNeeds.map((need, index) => ({
         id: `asset-slot-${String(index + 1).padStart(2, "0")}`,
         ...need,
@@ -567,4 +596,27 @@ function usable(value: string, fallback: string) {
   const normalized = value.trim();
 
   return !normalized || normalized === "未使用" ? fallback : normalized;
+}
+
+function selectPageReferenceContext(input: PageWriterInput) {
+  const packsById = new Map(
+    (input.referencePacks ?? []).map((pack) => [pack.id, pack]),
+  );
+
+  return (input.page.usedReferences ?? []).flatMap((usage) => {
+    const pack = packsById.get(usage.referencePackId);
+    if (!pack) return [];
+    const allowedChunkIds = new Set(usage.chunkIds);
+    return [
+      {
+        id: pack.id,
+        sourceName: pack.sourceName,
+        summary: pack.summary,
+        keyFacts: pack.keyFacts.filter((fact) =>
+          fact.chunkIds.some((chunkId) => allowedChunkIds.has(chunkId)),
+        ),
+        chunks: pack.chunks.filter(({ id }) => allowedChunkIds.has(id)),
+      },
+    ];
+  });
 }

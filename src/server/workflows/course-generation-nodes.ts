@@ -179,6 +179,7 @@ export function createPlannerNode(): CourseGenerationNode {
       const plannerState = await context.dependencies.runPlanner(
         requireValue(state.intent, "intent"),
         context.runtime,
+        state.referencePacks ?? [],
       );
       const events = projectAgentEvents(plannerState.events);
 
@@ -304,6 +305,7 @@ export function createPageWriterNode(pageId: string): CourseGenerationNode {
           intent: requireValue(state.intent, "intent"),
           page,
           brief: requirePageBrief(state, pageId),
+          referencePacks: state.referencePacks ?? [],
         },
         context.runtime,
       );

@@ -33,11 +33,13 @@ import {
   type CourseGenerationState,
   type PageGenerationState,
   type PageWorkerMode,
+  type ReferencePack,
 } from "@/shared/course-schema";
 
 export type CourseGenerationWorkflowInput = {
   courseId: string;
   userPrompt: string;
+  referencePacks?: ReferencePack[];
   pageCount?: CourseMvpPageCount;
   executionMode?: PageWorkerMode;
   concurrency?: number;
@@ -94,6 +96,13 @@ export function initializeCourseGenerationState(
     ) {
       throw new Error("恢复输入必须与持久化课程的 courseId 和 userPrompt 一致。");
     }
+    if (
+      input.referencePacks &&
+      JSON.stringify(input.referencePacks) !==
+        JSON.stringify(existing.referencePacks ?? [])
+    ) {
+      throw new Error("恢复输入不能更换持久化课程的 Reference Pack。");
+    }
     if (existing.status === "completed") return existing;
 
     const workerConfig = resolveWorkerConfig(input, existing.workerConfig);
@@ -129,6 +138,7 @@ export function initializeCourseGenerationState(
     courseId: input.courseId,
     traceId: context.traceId,
     userPrompt: input.userPrompt,
+    referencePacks: input.referencePacks,
     status: "running",
     currentStage: "intent",
     pages: [],

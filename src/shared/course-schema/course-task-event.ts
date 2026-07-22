@@ -6,6 +6,10 @@ import {
   CourseIdSchema,
   PageWorkerModeSchema,
 } from "./course-generation-state";
+import {
+  REFERENCE_MAX_PACKS,
+  ReferencePackSchema,
+} from "./reference";
 
 /** 可安全用作任务存储目录名及 SSE 订阅键的稳定 ID。 */
 export const CourseTaskIdSchema = z
@@ -49,6 +53,7 @@ export const CourseTaskRecordSchema = z
     courseId: CourseIdSchema,
     traceId: z.string().min(1).max(120),
     userPrompt: z.string().min(2).max(4_000),
+    referencePacks: z.array(ReferencePackSchema).max(REFERENCE_MAX_PACKS).optional(),
     pageCount: CourseTaskPageCountSchema.optional(),
     executionMode: PageWorkerModeSchema.optional(),
     concurrency: z.number().int().min(1).max(5).optional(),

@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话生成一门由多页关联 HTML 组成的课程。当前 Day 31 版本由 LangGraph 中规则优先的受限 Supervisor 通过条件边调度全局 Specialist、依赖感知 Page Worker、有限页面重试和最多两轮定向 Repair/re-QA；默认并发度为 2。严格公开事件、SSE 和持久化 checkpoint 向 Seaca 学习工作区实时交付任务、Agent、页面进度、统一预览和可定位恢复能力。
+一句话或一份不超过 5 MB 的 txt/md/pdf 参考资料生成一门由多页关联 HTML 组成的课程。当前 Day 32 版本把资料解析为可追踪 Reference Pack，再由 LangGraph 中规则优先的受限 Supervisor 通过条件边调度全局 Specialist、依赖感知 Page Worker、有限页面重试和最多两轮定向 Repair/re-QA；默认并发度为 2。严格公开事件、SSE 和持久化 checkpoint 向 Seaca 学习工作区实时交付任务、Agent、页面进度、资料引用、统一预览和可定位恢复能力。
 
 ## Day 01 交付
 
@@ -232,6 +232,15 @@
 - Page Worker 可在初次 QA 后交还控制权；每个 Repair 节点只授权一轮既有 Repair/re-QA，失败页每次只重试一个页面，三次阶段预算或两轮 Repair 预算耗尽后确定性停止。
 - 手写兼容入口与 LangGraph 共享 Supervisor attempts、checkpoint 和公开 decision 事件；Day 30 SSE mapper、Controller 与现有 Seaca UI 不变。
 - 实现说明、路由表和面试复盘见 `notes/day-31.md` 与 `docs/multi-agent-design.md`。
+
+## Day 32 交付
+
+- `/chat` composer 的既有上传按钮支持 txt、md、pdf，提供解析中、成功、失败、重试和移除状态；展示组件只发出文件事件，HTTP 与状态归 Controller 所有。
+- `POST /api/references/parse` 在 Node runtime 中执行 5 MB、扩展名/MIME/PDF 文件头、UTF-8 和空文本检查；扫描 PDF 明确提示暂不支持 OCR。
+- `parseUploadedFileSkill` 使用 `pdf-parse` 2.x 提取 PDF 文本，由代码生成最多 24 个稳定 chunks；模型只生成带真实 chunk 证据的摘要和关键事实。
+- Reference Pack 随 task/checkpoint 持久化；Planner 输出逐页 `usedReferences`，Page Writer 只接收并记录 PagePlan 授权的 chunk 子集，workflow 与 LangGraph 复用同一合同。
+- 右侧 learning workspace 的 Reference Panel 展示资料摘要、关键事实、截断提示和引用页面；公开 Timeline 不包含原文 chunks、文件路径、Prompt 或私有推理。
+- 当天不引入 OCR、embedding、pgvector、Day 33 检索或新产品路由。实现说明和面试复盘见 `notes/day-32.md`。
 
 ## 启动
 

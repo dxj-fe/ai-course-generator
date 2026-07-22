@@ -1,4 +1,20 @@
 export {
+  REFERENCE_FILE_MAX_BYTES,
+  REFERENCE_MAX_CHUNKS,
+  REFERENCE_MAX_PACKS,
+  ReferenceChunkSchema,
+  ReferenceKeyFactSchema,
+  ReferencePackSchema,
+  ReferenceSourceTypeSchema,
+  ReferenceUsageSchema,
+  validateReferenceUsages,
+  type ReferenceChunk,
+  type ReferenceKeyFact,
+  type ReferencePack,
+  type ReferenceSourceType,
+  type ReferenceUsage,
+} from "./reference";
+export {
   AudienceAgeRangeSchema,
   CourseDifficultySchema,
   CourseIntentSchema,

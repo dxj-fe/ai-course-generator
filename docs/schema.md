@@ -15,6 +15,9 @@ flowchart LR
   Report -->|target| Course
   Report -->|target| Page
   Page -->|dependsOnPageIds| Page
+  CourseState[CourseGenerationState] --> ReferencePack
+  Page -->|usedReferences| ReferencePack
+  ReferencePack --> Chunk[ReferenceChunk]
 ```
 
 `Course` 是一门课程的聚合根；`CourseOutline` 定义共享学习路径；`PagePlan` 是每个页面的生成任务；`Theme` 提供跨页视觉约束；`Asset` 是可复用视觉素材；`QualityReport` 把评估结果送回生成闭环。
@@ -59,6 +62,12 @@ Outline 校验页面 ID 唯一、`order` 从 1 连续递增，并要求页面依
 
 Day 06 的 `PagePlanDraftSchema` 继续作为 SinglePageAgent 的中间输出。它允许 Agent 先形成轻量草稿；Day 07 的 `PagePlanSchema` 则是进入多页课程流水线后的完整对象，两者不混用。
 
+## ReferencePackSchema
+
+Day 32 将单份 txt、md 或文本型 PDF 转换为 `ReferencePack`。`id` 是文件内容 SHA-256 的稳定短标识；`sourceName`、`sourceType` 和 `byteSize` 保存安全元数据；`chunks` 是代码确定性生成的原文片段；`summary` 和 `keyFacts` 是结构化模型输出，但每条关键事实必须引用真实 chunk ID。`truncated` 明确表示原资料超过了当前 24 × 1500 字符上下文上限。
+
+`ReferenceUsage` 只包含 `referencePackId` 和 `chunkIds`。Planner 在 `PagePlan.usedReferences` 中选择页面所需证据，Page Writer 在 `PageContentDSL.usedReferences` 中记录实际使用证据，并被限制为 Planner 集合的子集。Reference Packs 随任务和课程 checkpoint 持久化；旧 checkpoint 可以没有该字段。
+
 ## AssetSchema
 
 | 字段 | 为什么存在 |
@@ -99,6 +108,7 @@ Day 26 增加内容错误优先的服务端稳定排序，并允许报告携带�
 - 页面引用的素材必须存在；素材引用的页面也必须存在。
 - `ready` 页面必须有 HTML；`ready` 素材必须有 URI 和 `altText`，非装饰素材的 `altText` 不能为空。
 - 质量报告只能指向当前课程或当前课程中的页面。
+- 资料关键事实只能引用同一 Reference Pack 中的 chunk；页面引用必须指向课程 checkpoint 中真实存在的 pack/chunk；Page Writer 不得扩大 Planner 授权范围。
 
 这些规则约束的是数据完整性和 Agent 交接，不是 UI 细节。
 

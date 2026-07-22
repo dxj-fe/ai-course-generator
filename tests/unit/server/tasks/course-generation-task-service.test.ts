@@ -18,6 +18,42 @@ const courseId = "course-day-19-service";
 const traceId = "trace-day-19-service";
 
 describe("course generation task service", () => {
+  it("persists Reference Packs and forwards them to the selected runtime", async () => {
+    const terminal = courseState("failed", 2);
+    const runGraph = vi.fn(async () => terminal) as typeof streamCourseGenerationGraphWorkflow;
+    const fixture = createFixture({ runGraph });
+    const referencePacks = [
+      {
+        version: 1 as const,
+        id: "ref-1234567890abcdef12345678",
+        sourceName: "solar.txt",
+        sourceType: "txt" as const,
+        byteSize: 80,
+        summary: "太阳风资料。",
+        keyFacts: [],
+        chunks: [
+          { id: "chunk-01", index: 1, text: "太阳风包含带电粒子。" },
+        ],
+        truncated: false,
+      },
+    ];
+
+    await fixture.service.create({
+      userPrompt: "生成三页太阳风课程",
+      source: "langgraph",
+      referencePacks,
+    });
+    await fixture.service.run(taskId);
+
+    expect(fixture.tasks.get(taskId)?.referencePacks).toEqual(referencePacks);
+    expect(runGraph).toHaveBeenCalledWith(
+      expect.objectContaining({ referencePacks }),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
   it("persists the Page Worker execution mode and concurrency", async () => {
     const fixture = createFixture();
 

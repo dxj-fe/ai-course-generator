@@ -16,7 +16,10 @@ import {
   normalizePageNavigationDestination,
   validatePageWriterOutput,
 } from "../../../../src/server/agents/page-writer-agent";
-import type { PageWorkerBrief } from "../../../../src/shared/course-schema";
+import type {
+  PageWorkerBrief,
+  ReferencePack,
+} from "../../../../src/shared/course-schema";
 
 const page = courseDesignOutline.pages[1];
 const brief: PageWorkerBrief = {
@@ -27,6 +30,17 @@ const brief: PageWorkerBrief = {
   visual: visualBrief.pageGuidance[1],
 };
 const input = { intent: courseDesignIntent, page, brief };
+const referencePack: ReferencePack = {
+  version: 1,
+  id: "ref-1234567890abcdef12345678",
+  sourceName: "solar.txt",
+  sourceType: "txt",
+  byteSize: 80,
+  summary: "太阳风资料。",
+  keyFacts: [{ text: "太阳风包含带电粒子。", chunkIds: ["chunk-01"] }],
+  chunks: [{ id: "chunk-01", index: 1, text: "太阳风包含带电粒子。" }],
+  truncated: false,
+};
 
 describe("PageWriterAgent", () => {
   it("generates one PageContentDSL in one bounded step", async () => {
@@ -80,6 +94,41 @@ describe("PageWriterAgent", () => {
         },
       }),
     ).toThrow("PageWorkerBrief 必须完整引用当前 pageId");
+  });
+
+  it("accepts only PagePlan-authorized Reference chunks", () => {
+    const referencedPage = {
+      ...page,
+      usedReferences: [
+        { referencePackId: referencePack.id, chunkIds: ["chunk-01"] },
+      ],
+    };
+    const referencedInput = {
+      ...input,
+      page: referencedPage,
+      referencePacks: [referencePack],
+    };
+
+    expect(() =>
+      validatePageWriterOutput(
+        {
+          ...pageContentDsl,
+          usedReferences: referencedPage.usedReferences,
+        },
+        referencedInput,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      validatePageWriterOutput(
+        {
+          ...pageContentDsl,
+          usedReferences: [
+            { referencePackId: referencePack.id, chunkIds: ["chunk-02"] },
+          ],
+        },
+        referencedInput,
+      ),
+    ).toThrow("Page Writer 的资料引用必须是 PagePlan 引用的子集");
   });
 
   it.each([

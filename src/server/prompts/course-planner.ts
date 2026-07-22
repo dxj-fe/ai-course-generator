@@ -9,6 +9,7 @@ export type BuildCoursePlannerPromptsInput = {
   courseIntent: unknown;
   functionalTemplates: unknown;
   styleTemplate: unknown;
+  referencePacks?: unknown;
 };
 
 /** 加载并渲染 CoursePlannerAgent 的版本化 Prompt。 */
@@ -27,6 +28,7 @@ export async function buildCoursePlannerPrompts(
       courseIntentJson: JSON.stringify(input.courseIntent),
       functionalTemplatesJson: JSON.stringify(input.functionalTemplates),
       styleTemplateJson: JSON.stringify(input.styleTemplate),
+      referencePacksJson: JSON.stringify(input.referencePacks ?? []),
     }),
   };
 }

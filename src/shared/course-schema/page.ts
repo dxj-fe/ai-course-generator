@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { AssetRoleSchema, AssetTypeSchema } from "./asset";
+import { ReferenceUsageSchema } from "./reference";
 
 /**
  * 定义 Planner 和模板系统共同理解的页面教学类型。
@@ -75,6 +76,7 @@ export const PagePlanSchema = z
     styleTemplateId: z.string().min(1).max(80),
     assetIds: z.array(z.string().min(1).max(80)).max(20),
     dependsOnPageIds: z.array(z.string().min(1).max(80)).max(20),
+    usedReferences: z.array(ReferenceUsageSchema).max(12).optional(),
     status: PageStatusSchema,
     htmlOutput: HtmlOutputSchema.optional(),
   })

@@ -7,8 +7,11 @@ import {
   CoursePlanSchema,
   PageInteractionTypeSchema,
   PageTypeSchema,
+  ReferenceUsageSchema,
+  validateReferenceUsages,
   type CourseIntent,
   type CoursePlan,
+  type ReferencePack,
 } from "@/shared/course-schema";
 import {
   getFunctionalTemplate,
@@ -24,7 +27,7 @@ import type {
 } from "./core/types";
 
 export type CoursePlannerAgentState = AgentStateBase & {
-  task: { intent: CourseIntent };
+  task: { intent: CourseIntent; referencePacks?: ReferencePack[] };
   outline?: CoursePlan;
 };
 
@@ -32,6 +35,7 @@ export type CoursePlannerAgentDependencies = {
   generateOutline(input: {
     abortSignal?: AbortSignal;
     intent: CourseIntent;
+    referencePacks: ReferencePack[];
     traceId: string;
   }): Promise<unknown>;
 };
@@ -54,6 +58,7 @@ const CoursePlannerModelPageSchema = z.object({
       }),
     )
     .max(12),
+  usedReferences: z.array(ReferenceUsageSchema).max(12).default([]),
 });
 
 const CoursePlannerModelOutputSchema = z.object({
@@ -87,9 +92,11 @@ export function createCoursePlannerAgent(
         await dependencies.generateOutline({
           abortSignal: context.abortSignal,
           intent: state.task.intent,
+          referencePacks: state.task.referencePacks ?? [],
           traceId: context.traceId,
         }),
         state.task.intent,
+        state.task.referencePacks ?? [],
       );
 
       emit({
@@ -109,13 +116,14 @@ export function createCoursePlannerAgent(
 /** 为 CoursePlannerAgent 创建可序列化的初始状态。 */
 export function createCoursePlannerAgentState(
   intent: CourseIntent,
+  referencePacks: ReferencePack[] = [],
 ): CoursePlannerAgentState {
   return {
     status: "idle",
     step: 0,
     maxSteps: 1,
     events: [],
-    task: { intent },
+    task: { intent, referencePacks },
   };
 }
 
@@ -123,9 +131,10 @@ export function createCoursePlannerAgentState(
 export function runCoursePlannerAgent(
   intent: CourseIntent,
   context: AgentRuntimeContext,
+  referencePacks: ReferencePack[] = [],
 ) {
   return createCoursePlannerAgent().run(
-    createCoursePlannerAgentState(intent),
+    createCoursePlannerAgentState(intent, referencePacks),
     context,
   );
 }
@@ -137,6 +146,7 @@ export function runCoursePlannerAgent(
 export function validateCoursePlannerOutput(
   output: unknown,
   intent: CourseIntent,
+  referencePacks: ReferencePack[] = [],
 ): CoursePlan {
   const parsed = CoursePlanSchema.safeParse(output);
 
@@ -162,6 +172,12 @@ export function validateCoursePlannerOutput(
   }
 
   for (const page of outline.pages) {
+    issues.push(
+      ...validateReferenceUsages(
+        page.usedReferences ?? [],
+        referencePacks,
+      ).map((message) => `页面 ${page.id} ${message}`),
+    );
     const functionalTemplate = getFunctionalTemplate(
       page.functionalTemplateId,
     );
@@ -200,6 +216,7 @@ export function validateCoursePlannerOutput(
 async function generateOutline(input: {
   abortSignal?: AbortSignal;
   intent: CourseIntent;
+  referencePacks: ReferencePack[];
   traceId: string;
 }) {
   const styleTemplate = searchStyleTemplates({
@@ -225,6 +242,7 @@ async function generateOutline(input: {
       name: styleTemplate.name,
       goal: styleTemplate.goal,
     },
+    referencePacks: input.referencePacks,
   });
 
   const draft = await generateStructuredObjectSafe({
@@ -242,7 +260,11 @@ async function generateOutline(input: {
     traceId: input.traceId,
   });
 
-  return materializeCoursePlan(draft, input.intent, styleTemplate.id);
+  return validateCoursePlannerOutput(
+    materializeCoursePlan(draft, input.intent, styleTemplate.id),
+    input.intent,
+    input.referencePacks,
+  );
 }
 
 /**

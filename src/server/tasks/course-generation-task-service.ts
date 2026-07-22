@@ -25,6 +25,8 @@ import {
   CourseTaskRecordSchema,
   CourseTaskRuntimeSourceSchema,
   CourseGenerationStateSchema,
+  REFERENCE_MAX_PACKS,
+  ReferencePackSchema,
   type CourseGenerationState,
   type CourseTaskCreateResponse,
   type CourseTaskRecord,
@@ -34,6 +36,7 @@ const CourseTaskCreateInputSchema = z
   .object({
     courseId: CourseIdSchema.optional(),
     userPrompt: z.string().trim().min(2).max(4_000).optional(),
+    referencePacks: z.array(ReferencePackSchema).max(REFERENCE_MAX_PACKS).optional(),
     pageCount: z.union([z.literal(3), z.literal(4), z.literal(5)]).optional(),
     executionMode: z.enum(["serial", "parallel"]).optional(),
     concurrency: z.number().int().min(1).max(5).optional(),
@@ -124,6 +127,14 @@ export function createCourseGenerationTaskService(
         throw new AiRequestError("恢复课程时不能更换原始 userPrompt。");
       }
       if (
+        existingState &&
+        parsed.data.referencePacks &&
+        JSON.stringify(parsed.data.referencePacks) !==
+          JSON.stringify(existingState.referencePacks ?? [])
+      ) {
+        throw new AiRequestError("恢复课程时不能更换原始 Reference Pack。");
+      }
+      if (
         existingState?.intent &&
         !isMvpPageCount(existingState.intent.courseLength)
       ) {
@@ -153,12 +164,15 @@ export function createCourseGenerationTaskService(
       const pageCount = existingState?.intent
         ? (existingState.intent.courseLength as CourseMvpPageCount)
         : parsed.data.pageCount;
+      const referencePacks =
+        existingState?.referencePacks ?? parsed.data.referencePacks;
       const record = CourseTaskRecordSchema.parse({
         version: 1,
         taskId,
         courseId,
         traceId,
         userPrompt,
+        referencePacks,
         pageCount,
         executionMode:
           existingState?.workerConfig?.mode ?? parsed.data.executionMode,
@@ -326,6 +340,7 @@ async function executeTask(
     const workflowInput = {
       courseId: running.courseId,
       userPrompt: running.userPrompt,
+      referencePacks: running.referencePacks,
       pageCount: running.pageCount,
       executionMode: running.executionMode,
       concurrency: running.concurrency,

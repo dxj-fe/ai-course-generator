@@ -32,7 +32,7 @@ describe("Page Writer prompts", () => {
       functionalTemplate,
     });
 
-    expect(prompts.version).toBe("2.0.0/2.0.0");
+    expect(prompts.version).toBe("2.1.0/2.1.0");
     expect(prompts.systemPrompt).toContain(
       "contentDensity 只能是 sparse、balanced、dense",
     );

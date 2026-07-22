@@ -11,6 +11,7 @@ import {
   type CourseIntent,
   type CoursePlan,
   type PageType,
+  type ReferencePack,
   type VisualStyle,
 } from "../../../../src/shared/course-schema";
 
@@ -59,6 +60,18 @@ const plannerCases: PlannerCase[] = [
     styleTemplateId: "blackboard",
   },
 ];
+
+const referencePack: ReferencePack = {
+  version: 1,
+  id: "ref-1234567890abcdef12345678",
+  sourceName: "solar.txt",
+  sourceType: "txt",
+  byteSize: 80,
+  summary: "太阳风资料。",
+  keyFacts: [{ text: "太阳风包含带电粒子。", chunkIds: ["chunk-01"] }],
+  chunks: [{ id: "chunk-01", index: 1, text: "太阳风包含带电粒子。" }],
+  truncated: false,
+};
 
 describe("CoursePlannerAgent", () => {
   it.each(plannerCases)(
@@ -121,6 +134,31 @@ describe("CoursePlannerAgent", () => {
     expect(() => validateCoursePlannerOutput(outline, intent)).toThrow(
       "未知功能模板",
     );
+  });
+
+  it("passes Reference Packs to Planner and rejects invented chunk usages", async () => {
+    const intent = createIntent(plannerCases[0]);
+    const outline = structuredClone(createOutline(plannerCases[0]));
+    outline.pages[1].usedReferences = [
+      { referencePackId: referencePack.id, chunkIds: ["chunk-01"] },
+    ];
+    const generateOutline = vi.fn().mockResolvedValue(outline);
+    const result = await createCoursePlannerAgent({ generateOutline }).run(
+      createCoursePlannerAgentState(intent, [referencePack]),
+      { traceId: "planner-reference" },
+    );
+
+    expect(result.status).toBe("completed");
+    expect(generateOutline).toHaveBeenCalledWith(
+      expect.objectContaining({ referencePacks: [referencePack] }),
+    );
+
+    outline.pages[1].usedReferences = [
+      { referencePackId: referencePack.id, chunkIds: ["chunk-02"] },
+    ];
+    expect(() =>
+      validateCoursePlannerOutput(outline, intent, [referencePack]),
+    ).toThrow("不包含 chunk-02");
   });
 
   it("rejects a course without an active interaction", () => {

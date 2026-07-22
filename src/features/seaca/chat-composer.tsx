@@ -9,13 +9,19 @@ import {
 import {
   ArrowUp as ArrowUpIcon,
   BookOpen,
+  ChevronDown,
+  CircleCheck,
   Languages,
   Lightbulb,
+  LoaderCircle,
   Mic as MicIcon,
   Plus as PlusIcon,
   Presentation,
+  RefreshCw,
   Sparkles,
   Square,
+  TriangleAlert,
+  X,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -23,16 +29,29 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
 interface ChatComposerProps {
+  attachments?: ReferenceAttachment[];
   draft: string;
   busy?: boolean;
   compact?: boolean;
   contextLabel?: string;
   onDraftChange(value: string): void;
   onCancel?(): void;
+  onFilesSelected?(files: File[]): void;
+  onRemoveAttachment?(id: string): void;
+  onRetryAttachment?(id: string): void;
   onSubmit(value: string): void;
   onSelectSuggestion?(value: string): void;
   showSuggestions: boolean;
 }
+
+export type ReferenceAttachment = {
+  id: string;
+  name: string;
+  status: "uploading" | "ready" | "error";
+  error?: string;
+  summary?: string;
+  keyFacts?: string[];
+};
 
 const suggestions = [
   {
@@ -59,18 +78,33 @@ function resizeTextarea(textarea: HTMLTextAreaElement) {
 }
 
 export function ChatComposer({
+  attachments = [],
   draft,
   busy = false,
   compact = false,
   contextLabel,
   onDraftChange,
   onCancel,
+  onFilesSelected,
+  onRemoveAttachment,
+  onRetryAttachment,
   onSelectSuggestion,
   onSubmit,
   showSuggestions,
 }: ChatComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const canSubmit = draft.trim().length > 0 && !busy;
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachmentsBlocked = attachments.some(({ status }) => status !== "ready");
+  const hasReadyAttachments = attachments.some(({ status }) => status === "ready");
+  const hasAttachmentError = attachments.some(({ status }) => status === "error");
+  const canSubmit = draft.trim().length > 0 && !busy && !attachmentsBlocked;
+  const placeholder = hasAttachmentError
+    ? "请先重试或移除解析失败的资料..."
+    : attachmentsBlocked
+      ? "可以先描述任务，资料解析完成后即可发送..."
+      : hasReadyAttachments
+        ? "描述要基于资料生成的课程，例如：生成 5 页太阳风入门课..."
+        : "想学点什么？慢慢找也可以...";
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -80,7 +114,7 @@ export function ChatComposer({
 
   const submitDraft = () => {
     const value = draft.trim();
-    if (value && !busy) {
+    if (value && !busy && !attachmentsBlocked) {
       onSubmit(value);
     }
   };
@@ -116,6 +150,122 @@ export function ChatComposer({
         className="relative mx-auto w-full max-w-[750px]"
         onSubmit={handleSubmit}
       >
+        {attachments.length > 0 ? (
+          <ul
+            aria-label="已选参考资料"
+            aria-live="polite"
+            className="mb-2 grid gap-2"
+          >
+            {attachments.map((attachment) => (
+              <li
+                className="min-w-0 rounded-2xl border border-[#e7ddd1] bg-[#fffdf7] px-3 py-2.5 text-xs text-[#6f6355] shadow-sm"
+                key={attachment.id}
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  {attachment.status === "uploading" ? (
+                    <LoaderCircle
+                      aria-hidden="true"
+                      className="size-4 shrink-0 animate-spin text-[#77b95e]"
+                    />
+                  ) : attachment.status === "error" ? (
+                    <TriangleAlert
+                      aria-hidden="true"
+                      className="size-4 shrink-0 text-[#b65e49]"
+                    />
+                  ) : (
+                    <CircleCheck
+                      aria-hidden="true"
+                      className="size-4 shrink-0 text-[#67a84e]"
+                    />
+                  )}
+                  <span className="min-w-0 flex-1 truncate font-medium text-[#5b4c3b]">
+                    {attachment.name}
+                  </span>
+                  <Badge
+                    className={`h-auto shrink-0 overflow-visible rounded-full border-0 px-2 py-0.5 text-[10px] leading-normal ${
+                      attachment.status === "error"
+                        ? "bg-[#fff0ec] text-[#a54f3d]"
+                        : attachment.status === "uploading"
+                          ? "bg-[#f3ece3] text-[#786d5f]"
+                          : "bg-[#eef7e9] text-[#5d9845]"
+                    }`}
+                  >
+                    {attachment.status === "uploading"
+                      ? "正在解析"
+                      : attachment.status === "error"
+                        ? "解析失败"
+                        : "解析完成"}
+                  </Badge>
+                  {attachment.status === "error" && onRetryAttachment ? (
+                    <Button
+                      aria-label={`重试解析 ${attachment.name}`}
+                      className="size-7 rounded-full text-[#988e80] hover:bg-[#f3ece3] hover:text-[#5b4c3b]"
+                      disabled={busy}
+                      onClick={() => onRetryAttachment(attachment.id)}
+                      size="icon-xs"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <RefreshCw aria-hidden="true" className="size-3.5" />
+                    </Button>
+                  ) : null}
+                  {onRemoveAttachment ? (
+                    <Button
+                      aria-label={`移除资料 ${attachment.name}`}
+                      className="size-7 rounded-full text-[#988e80] hover:bg-[#f3ece3] hover:text-[#5b4c3b]"
+                      disabled={busy}
+                      onClick={() => onRemoveAttachment(attachment.id)}
+                      size="icon-xs"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <X aria-hidden="true" className="size-3.5" />
+                    </Button>
+                  ) : null}
+                </div>
+
+                {attachment.status === "uploading" ? (
+                  <p className="mt-2 pl-6 leading-5 text-[#988e80]">
+                    正在提取正文并生成可引用摘要…
+                  </p>
+                ) : attachment.status === "error" ? (
+                  <p className="mt-2 pl-6 leading-5 text-[#a54f3d]">
+                    {attachment.error ?? "资料解析失败，请重试或移除。"}
+                  </p>
+                ) : (
+                  <div className="mt-2 pl-6">
+                    {attachment.summary ? (
+                      <p className="line-clamp-2 leading-5 text-[#817568]">
+                        {attachment.summary}
+                      </p>
+                    ) : null}
+                    {attachment.keyFacts?.length ? (
+                      <details className="group mt-1.5">
+                        <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded text-[#6c9e58] outline-none hover:text-[#4f873a] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#77cc57] [&::-webkit-details-marker]:hidden">
+                          查看关键事实（{attachment.keyFacts.length}）
+                          <ChevronDown
+                            aria-hidden="true"
+                            className="size-3.5 transition-transform group-open:rotate-180"
+                          />
+                        </summary>
+                        <ul className="mt-2 grid gap-1 border-l border-[#dcebd5] pl-3 leading-5 text-[#817568]">
+                          {attachment.keyFacts.slice(0, 4).map((fact) => (
+                            <li key={fact}>• {fact}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    ) : null}
+                    <p className="mt-2 flex items-center gap-1.5 font-medium leading-5 text-[#5d9845]">
+                      <CircleCheck aria-hidden="true" className="size-3.5 shrink-0" />
+                      资料已解析，请在下方填写学习目标并发送
+                    </p>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
         {showSuggestions ? (
           <div
             className={`mb-3 flex flex-wrap justify-center gap-2 ${
@@ -151,6 +301,8 @@ export function ChatComposer({
           <Button
             aria-label="上传文件"
             className="flex size-6 shrink-0 items-center justify-center rounded-full border-0 p-0 text-[#988e80] transition-transform hover:scale-[1.08] hover:bg-transparent hover:text-[#5b4c3b] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#77cc57]"
+            disabled={busy || attachments.length >= 3 || !onFilesSelected}
+            onClick={() => fileInputRef.current?.click()}
             size="icon-xs"
             type="button"
             variant="ghost"
@@ -162,6 +314,19 @@ export function ChatComposer({
               strokeWidth={1.7}
             />
           </Button>
+          <input
+            accept=".txt,.md,.pdf,text/plain,text/markdown,application/pdf"
+            className="sr-only"
+            multiple
+            onChange={(event) => {
+              const files = Array.from(event.currentTarget.files ?? []);
+              if (files.length > 0) onFilesSelected?.(files);
+              event.currentTarget.value = "";
+            }}
+            ref={fileInputRef}
+            tabIndex={-1}
+            type="file"
+          />
 
           {contextLabel ? (
             <Badge
@@ -186,7 +351,7 @@ export function ChatComposer({
               onDraftChange(event.currentTarget.value);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="想学点什么？慢慢找也可以..."
+            placeholder={placeholder}
             ref={textareaRef}
             rows={1}
             value={draft}

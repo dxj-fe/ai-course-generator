@@ -7,6 +7,11 @@ import { CourseIntentSchema } from "./intent";
 import { HtmlOutputSchema } from "./page";
 import { PageContentDSLSchema } from "./page-content-dsl";
 import { QualityReportSchema } from "./quality";
+import {
+  REFERENCE_MAX_PACKS,
+  ReferencePackSchema,
+  validateReferenceUsages,
+} from "./reference";
 import { RepairAttemptRecordSchema } from "./repair";
 import { SupervisorRuntimeStateSchema } from "./supervisor";
 
@@ -279,6 +284,7 @@ export const CourseGenerationStateSchema = z
     courseId: CourseIdSchema,
     traceId: z.string().min(1).max(120),
     userPrompt: z.string().min(2).max(4_000),
+    referencePacks: z.array(ReferencePackSchema).max(REFERENCE_MAX_PACKS).optional(),
     status: CourseGenerationStatusSchema,
     currentStage: CourseGenerationStageSchema,
     currentPageId: z.string().min(1).max(80).optional(),
@@ -298,6 +304,17 @@ export const CourseGenerationStateSchema = z
   })
   .strict()
   .superRefine((state, context) => {
+    const referencePacks = state.referencePacks ?? [];
+    const referencePackIds = referencePacks.map(({ id }) => id);
+
+    if (new Set(referencePackIds).size !== referencePackIds.length) {
+      context.addIssue({
+        code: "custom",
+        message: "课程不能包含重复的 Reference Pack",
+        path: ["referencePacks"],
+      });
+    }
+
     const pageIds = state.pages.map(({ pageId }) => pageId);
 
     if (new Set(pageIds).size !== pageIds.length) {
@@ -355,6 +372,18 @@ export const CourseGenerationStateSchema = z
     });
 
     if (state.outline) {
+      state.outline.pages.forEach((page, pageIndex) => {
+        validateReferenceUsages(page.usedReferences ?? [], referencePacks).forEach(
+          (message) => {
+            context.addIssue({
+              code: "custom",
+              message,
+              path: ["outline", "pages", pageIndex, "usedReferences"],
+            });
+          },
+        );
+      });
+
       const outlinePageIds = state.outline.pages.map(({ id }) => id);
 
       if (
@@ -417,6 +446,44 @@ export const CourseGenerationStateSchema = z
         });
       }
     }
+
+    state.pages.forEach((page, pageIndex) => {
+      if (!page.content) return;
+
+      validateReferenceUsages(
+        page.content.usedReferences ?? [],
+        referencePacks,
+      ).forEach((message) => {
+        context.addIssue({
+          code: "custom",
+          message,
+          path: ["pages", pageIndex, "content", "usedReferences"],
+        });
+      });
+
+      const plannedUsages =
+        state.outline?.pages.find(({ id }) => id === page.pageId)
+          ?.usedReferences ?? [];
+      const plannedByPack = new Map(
+        plannedUsages.map((usage) => [
+          usage.referencePackId,
+          new Set(usage.chunkIds),
+        ]),
+      );
+      for (const usage of page.content.usedReferences ?? []) {
+        const allowedChunks = plannedByPack.get(usage.referencePackId);
+        if (
+          !allowedChunks ||
+          usage.chunkIds.some((chunkId) => !allowedChunks.has(chunkId))
+        ) {
+          context.addIssue({
+            code: "custom",
+            message: "Page Writer 的资料引用必须是 PagePlan 引用的子集",
+            path: ["pages", pageIndex, "content", "usedReferences"],
+          });
+        }
+      }
+    });
 
     if (state.status === "completed") {
       if (state.currentStage !== "complete") {

@@ -11,6 +11,7 @@ import { CoursePreviewGrid } from "@/features/seaca/course-preview-grid";
 import { PageProgressPanel } from "@/features/seaca/page-progress-panel";
 import { PageQualityPanel } from "@/features/seaca/page-quality-panel";
 import { RepairLogPanel } from "@/features/seaca/repair-log-panel";
+import { ReferencePanel } from "@/features/seaca/reference-panel";
 import type { PageContentDSL, PagePlan } from "@/shared/course-schema";
 import type {
   CourseRunStageStatus,
@@ -125,6 +126,13 @@ export function CourseWorkspacePanel({
 
       <div className="grid gap-7 px-4 py-5 sm:px-6 sm:py-6">
         <PlannerOutput run={run} />
+
+        {run?.generation?.referencePacks?.length ? (
+          <ReferencePanel
+            packs={run.generation.referencePacks}
+            pages={outline?.pages ?? []}
+          />
+        ) : null}
 
         <section aria-labelledby="professional-design-title">
           <div className="flex flex-wrap items-center justify-between gap-3">

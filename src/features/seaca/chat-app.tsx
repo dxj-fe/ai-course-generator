@@ -22,11 +22,15 @@ import {
   writeCoursePage,
 } from "@/features/course-planner/lib/course-planner-api";
 import { courseGenerationToSeacaRun } from "@/features/course-planner/lib/course-generation-adapter";
+import { parseReferenceFile } from "@/features/course-planner/lib/reference-api";
 import {
   cancelCourseTask,
   createCourseTask,
 } from "@/features/course-planner/lib/course-task-api";
-import { ChatComposer } from "@/features/seaca/chat-composer";
+import {
+  ChatComposer,
+  type ReferenceAttachment,
+} from "@/features/seaca/chat-composer";
 import { ChatSidebar } from "@/features/seaca/chat-sidebar";
 import { ChatThread } from "@/features/seaca/chat-thread";
 import { CourseWorkspacePanel } from "@/features/seaca/course-workspace-panel";
@@ -35,6 +39,7 @@ import { saveGeneratedHtmlPreview } from "@/shared/html-preview";
 import type {
   CourseGenerationState,
   CourseTaskRuntimeSource,
+  ReferencePack,
 } from "@/shared/course-schema";
 import type {
   SeacaChatMessage,
@@ -125,6 +130,11 @@ type ActiveCourseTask = {
   source: CourseTaskRuntimeSource;
 };
 
+type ReferenceUploadState = ReferenceAttachment & {
+  file: File;
+  pack?: ReferencePack;
+};
+
 function mapStreamedCourseRun(
   state: CourseGenerationState,
   task: ActiveCourseTask,
@@ -158,6 +168,9 @@ export function ChatApp({
       : null,
   );
   const [draft, setDraft] = useState(initialPrompt);
+  const [referenceUploads, setReferenceUploads] = useState<
+    ReferenceUploadState[]
+  >([]);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
@@ -357,11 +370,13 @@ export function ChatApp({
   const handleNewConversation = () => {
     selectConversation(null);
     setDraft("");
+    setReferenceUploads([]);
     setRightPanelOpen(false);
   };
 
   const handleSelectConversation = (conversationId: string) => {
     selectConversation(conversationId);
+    setReferenceUploads([]);
     setRightPanelOpen(
       Boolean(
         conversations.find(({ id }) => id === conversationId)?.courseRun,
@@ -381,7 +396,17 @@ export function ChatApp({
 
   const handleSubmit = async (value: string) => {
     const text = value.trim();
-    if (!text || busy) return;
+    if (
+      !text ||
+      busy ||
+      referenceUploads.some(({ status }) => status !== "ready")
+    ) {
+      return;
+    }
+
+    const referencePacks = referenceUploads.flatMap(({ pack }) =>
+      pack ? [pack] : [],
+    );
 
     const startedAt = Date.now();
     const conversationId = selectedId ?? `local-${startedAt}`;
@@ -451,7 +476,12 @@ export function ChatApp({
 
     try {
       const task = await createCourseTask(
-        { courseId, userPrompt: text, source: "langgraph" },
+        {
+          courseId,
+          userPrompt: text,
+          source: "langgraph",
+          referencePacks,
+        },
         { signal: controller.signal, traceId },
       );
       setConversations((current) =>
@@ -480,6 +510,7 @@ export function ChatApp({
         mode: "create",
         source: task.source,
       });
+      setReferenceUploads([]);
       if (selectedIdRef.current === conversationId) {
         setRightPanelOpen(true);
       }
@@ -740,7 +771,12 @@ export function ChatApp({
 
     try {
       const result = await writeCoursePage(
-        { intent: planner.intent, page, brief },
+        {
+          intent: planner.intent,
+          page,
+          brief,
+          referencePacks: run.generation?.referencePacks ?? [],
+        },
         { signal: controller.signal, traceId: run.traceId },
       );
       const completed =
@@ -1203,6 +1239,66 @@ export function ChatApp({
     );
   };
 
+  const parseUpload = (upload: ReferenceUploadState) => {
+    const controller = createController();
+    setReferenceUploads((current) =>
+      current.map((item) =>
+        item.id === upload.id
+          ? { ...item, status: "uploading", error: undefined, pack: undefined }
+          : item,
+      ),
+    );
+
+    void parseReferenceFile(upload.file, {
+      signal: controller.signal,
+      traceId: crypto.randomUUID(),
+    })
+      .then((pack) => {
+        setReferenceUploads((current) =>
+          current.map((item) =>
+            item.id === upload.id
+              ? { ...item, status: "ready", pack, error: undefined }
+              : item,
+          ),
+        );
+      })
+      .catch((error) => {
+        setReferenceUploads((current) =>
+          current.map((item) =>
+            item.id === upload.id
+              ? {
+                  ...item,
+                  status: "error",
+                  error: getErrorMessage(error, "资料解析失败。"),
+                  pack: undefined,
+                }
+              : item,
+          ),
+        );
+      })
+      .finally(() => releaseController(controller));
+  };
+
+  const handleFilesSelected = (files: File[]) => {
+    if (busy) return;
+    const remaining = Math.max(0, 3 - referenceUploads.length);
+    const uploads = files.slice(0, remaining).map((file) => ({
+      id: `reference-${crypto.randomUUID()}`,
+      name: file.name,
+      status: "uploading" as const,
+      file,
+    }));
+    if (uploads.length === 0) return;
+
+    setReferenceUploads((current) => [...current, ...uploads]);
+    uploads.forEach(parseUpload);
+  };
+
+  const handleRetryReference = (id: string) => {
+    const upload = referenceUploads.find((item) => item.id === id);
+    if (upload && !busy) parseUpload(upload);
+  };
+
   return (
     <main className="fixed inset-0 flex overflow-hidden bg-[#fcf9f2] text-[#382c19]">
       <ChatSidebar
@@ -1246,6 +1342,16 @@ export function ChatApp({
             taskStatus={selectedTaskTelemetry?.taskStatus}
           />
           <ChatComposer
+            attachments={referenceUploads.map(
+              ({ error, id, name, pack, status }) => ({
+                error,
+                id,
+                keyFacts: pack?.keyFacts.map(({ text }) => text),
+                name,
+                status,
+                summary: pack?.summary,
+              }),
+            )}
             busy={busy}
             compact={rightPanelOpen}
             contextLabel={
@@ -1254,6 +1360,13 @@ export function ChatApp({
             draft={draft}
             onCancel={handleCancel}
             onDraftChange={setDraft}
+            onFilesSelected={handleFilesSelected}
+            onRemoveAttachment={(id) =>
+              setReferenceUploads((current) =>
+                current.filter((item) => item.id !== id),
+              )
+            }
+            onRetryAttachment={handleRetryReference}
             onSelectSuggestion={handleSuggestion}
             onSubmit={handleSubmit}
             showSuggestions={selectedConversation === null}

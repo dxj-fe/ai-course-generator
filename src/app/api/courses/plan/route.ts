@@ -7,7 +7,11 @@ import {
   createAiErrorResponse,
   createTraceId,
 } from "@/server/ai/error";
-import { CourseIntentSchema } from "@/shared/course-schema";
+import {
+  CourseIntentSchema,
+  REFERENCE_MAX_PACKS,
+  ReferencePackSchema,
+} from "@/shared/course-schema";
 
 export const runtime = "nodejs";
 
@@ -15,6 +19,7 @@ const CoursePlanRequestSchema = z
   .object({
     userPrompt: z.string().trim().min(2).max(500).optional(),
     intent: CourseIntentSchema.optional(),
+    referencePacks: z.array(ReferencePackSchema).max(REFERENCE_MAX_PACKS).optional(),
     traceId: z.string().trim().min(1).optional(),
   })
   .refine((value) => Boolean(value.userPrompt || value.intent), {
@@ -43,10 +48,11 @@ export async function POST(req: Request) {
         traceId,
         userPrompt: parsed.data.userPrompt!,
       }));
-    const state = await runCoursePlannerAgent(intent, {
-      abortSignal: req.signal,
-      traceId,
-    });
+    const state = await runCoursePlannerAgent(
+      intent,
+      { abortSignal: req.signal, traceId },
+      parsed.data.referencePacks ?? [],
+    );
 
     return Response.json({ intent, state, traceId });
   } catch (error) {

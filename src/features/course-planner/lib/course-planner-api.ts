@@ -11,6 +11,7 @@ import type {
   PagePlan,
   PageWorkerBrief,
   QualityReport,
+  ReferencePack,
 } from "@/shared/course-schema";
 import {
   CourseGenerationStateSchema,
@@ -166,7 +167,11 @@ export async function generateCourseMvp(
 
 /** 调用现有课程规划接口；响应仍在请求完成后一次性返回。 */
 export function planCourse(
-  input: { userPrompt?: string; intent?: CourseIntent },
+  input: {
+    userPrompt?: string;
+    intent?: CourseIntent;
+    referencePacks?: ReferencePack[];
+  },
   options?: RequestOptions,
 ) {
   return postPlannerRequest<CoursePlannerResponse>(
@@ -194,6 +199,7 @@ export function writeCoursePage(
     intent: CourseIntent;
     page: PagePlan;
     brief: PageWorkerBrief;
+    referencePacks?: ReferencePack[];
   },
   options?: RequestOptions,
 ) {

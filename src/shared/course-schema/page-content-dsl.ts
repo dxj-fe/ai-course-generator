@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { AssetRoleSchema, AssetTypeSchema } from "./asset";
+import { ReferenceUsageSchema } from "./reference";
 
 /** 语义内容块的职责，而不是前端组件或布局名称。 */
 export const PageContentBlockKindSchema = z.enum([
@@ -200,6 +201,7 @@ export const PageContentDSLSchema = z
     narration: z.array(z.string().min(2).max(500)).max(3),
     blocks: z.array(PageContentBlockSchema).max(12),
     interaction: PageContentInteractionSchema,
+    usedReferences: z.array(ReferenceUsageSchema).max(12).optional(),
     assetSlots: z.array(PageContentAssetSlotSchema).max(12),
     layoutHints: PageLayoutHintsSchema,
   })

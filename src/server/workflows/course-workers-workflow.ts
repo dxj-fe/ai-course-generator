@@ -195,6 +195,7 @@ function workerBriefs(
   const pageIndex = outline.pages.findIndex(({ id }) => id === page.id);
   return {
     intent: requireValue(state.intent, "course intent"),
+    referencePacks: state.referencePacks ?? [],
     brief: requireValue(
       state.pageWorkerBriefs?.find(({ pageId }) => pageId === page.id),
       "page worker brief",

@@ -17,6 +17,7 @@ import {
   PagePlanSchema,
   PageWorkerBriefSchema,
   PageWorkerResultSchema,
+  ReferencePackSchema,
   VisualBriefSchema,
   type CourseIntent,
   type PageGenerationError,
@@ -28,6 +29,7 @@ import {
   type PageWorkerResult,
   type RepairAttemptRecord,
   type RepairFailureClass,
+  type ReferencePack,
   type VisualBrief,
 } from "@/shared/course-schema";
 
@@ -45,6 +47,7 @@ export type PageWorkerDependencies = {
 
 export type PageWorkerGlobalBriefs = {
   intent: CourseIntent;
+  referencePacks?: ReferencePack[];
   brief: PageWorkerBrief;
   visualBrief: VisualBrief;
   courseContext: PageQACourseContext;
@@ -99,6 +102,9 @@ export async function generatePageWorker(
   const page = PagePlanSchema.parse(pageInput);
   const briefs: PageWorkerGlobalBriefs = {
     intent: CourseIntentSchema.parse(briefsInput.intent),
+    referencePacks: (briefsInput.referencePacks ?? []).map((pack) =>
+      ReferencePackSchema.parse(pack),
+    ),
     brief: PageWorkerBriefSchema.parse(briefsInput.brief),
     visualBrief: VisualBriefSchema.parse(briefsInput.visualBrief),
     courseContext: briefsInput.courseContext,
@@ -145,7 +151,12 @@ export async function generatePageWorker(
       `第 ${page.order} 页 PageContentDSL 已生成。`,
       async () => {
         const writerState = await dependencies.runPageWriter(
-          { intent: briefs.intent, page, brief: briefs.brief },
+          {
+            intent: briefs.intent,
+            page,
+            brief: briefs.brief,
+            referencePacks: briefs.referencePacks,
+          },
           context.runtime,
         );
         return writerState.status === "completed" && writerState.content

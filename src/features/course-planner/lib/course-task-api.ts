@@ -3,6 +3,7 @@ import {
   CourseTaskCreateResponseSchema,
   type CourseTaskCreateResponse,
   type CourseTaskRuntimeSource,
+  type ReferencePack,
 } from "@/shared/course-schema";
 
 export type CourseTaskPageCount = 3 | 4 | 5;
@@ -10,6 +11,7 @@ type CourseTaskWorkerOptions = {
   executionMode?: "serial" | "parallel";
   concurrency?: number;
   source?: CourseTaskRuntimeSource;
+  referencePacks?: ReferencePack[];
 };
 
 export type CreateCourseTaskInput =

@@ -10,6 +10,8 @@ import {
   CourseIntentSchema,
   PagePlanSchema,
   PageWorkerBriefSchema,
+  REFERENCE_MAX_PACKS,
+  ReferencePackSchema,
 } from "@/shared/course-schema";
 
 export const runtime = "nodejs";
@@ -18,6 +20,7 @@ const PageWriterRequestSchema = z.object({
   intent: CourseIntentSchema,
   page: PagePlanSchema,
   brief: PageWorkerBriefSchema,
+  referencePacks: z.array(ReferencePackSchema).max(REFERENCE_MAX_PACKS).optional(),
   traceId: z.string().trim().min(1).optional(),
 });
 
@@ -42,6 +45,7 @@ export async function POST(req: Request) {
         intent: parsed.data.intent,
         page: parsed.data.page,
         brief: parsed.data.brief,
+        referencePacks: parsed.data.referencePacks ?? [],
       },
       { abortSignal: req.signal, traceId },
     );

@@ -11,10 +11,11 @@ export const SPECIALIST_PROMPT_LIBRARY = [
       "courseIntentJson",
       "functionalTemplatesJson",
       "styleTemplateJson",
+      "referencePacksJson",
     ],
     system: {
       name: "course-planner-system",
-      version: "2.0.1",
+      version: "2.1.0",
       role: "system",
       inputContract: [
         "已校验的 CourseIntent、功能模板清单和唯一 StyleTemplate。",
@@ -26,7 +27,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     },
     user: {
       name: "course-planner-user",
-      version: "2.0.0",
+      version: "2.1.0",
       role: "user",
       inputContract: ["三个模板变量都必须是序列化 JSON 值。"],
       outputContract: ["返回 CoursePlan 内容草稿 JSON object 本身。"],
@@ -131,10 +132,11 @@ export const SPECIALIST_PROMPT_LIBRARY = [
       "pagePlanJson",
       "pageWorkerBriefJson",
       "functionalTemplateJson",
+      "referenceContextJson",
     ],
     system: {
       name: "page-writer-system",
-      version: "2.0.0",
+      version: "2.1.0",
       role: "system",
       inputContract: [
         "已校验的 CourseIntent、单页 PagePlan、同页 PageWorkerBrief 和唯一 FunctionalTemplate。",
@@ -146,7 +148,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     },
     user: {
       name: "page-writer-user",
-      version: "2.0.0",
+      version: "2.1.0",
       role: "user",
       inputContract: ["四项单页输入的序列化 JSON。"],
       outputContract: ["返回 PageContentDSL 内容草稿 JSON object 本身。"],
