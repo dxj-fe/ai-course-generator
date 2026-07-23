@@ -16,6 +16,10 @@ import {
 } from "@/shared/course-schema";
 import { searchFunctionalTemplates } from "@/shared/templates/functional";
 import { searchStyleTemplates } from "@/shared/templates/style";
+import {
+  aiResultCache,
+  createAiResultCacheKey,
+} from "@/server/ai/result-cache";
 
 import { listSkillCards } from "./retrieval-card-registry";
 import type { Skill } from "./types";
@@ -147,6 +151,16 @@ export function retrieveSkillCards(
 export function retrieveTemplateCards(
   input: RetrieveTemplateCardsInput,
 ): TemplateCardSearchResult {
+  const cacheKey = createAiResultCacheKey({
+    namespace: "template-card-search",
+    promptVersion: "template-registry@1",
+    model: "deterministic-registry",
+    schemaVersion: "template-card-search-result@1",
+    input,
+  });
+  const cached = aiResultCache.lookup(cacheKey, TemplateCardSearchResultSchema);
+  if (cached.status === "hit") return cached.value;
+
   const functional = searchFunctionalTemplates({
     query: input.pageGoal,
     audience: input.audience,
@@ -194,7 +208,9 @@ export function retrieveTemplateCards(
     reason,
   }));
 
-  return TemplateCardSearchResultSchema.parse({ functional, style });
+  const result = TemplateCardSearchResultSchema.parse({ functional, style });
+  aiResultCache.store(cacheKey, result, TemplateCardSearchResultSchema);
+  return result;
 }
 
 export function retrieveReferenceHits(

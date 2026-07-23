@@ -80,6 +80,26 @@ describe("generateImageSkill", () => {
     });
   });
 
+  it("propagates cancellation instead of converting it into a fallback", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const skill = createGenerateImageSkill({
+      generate: vi.fn().mockRejectedValue(new DOMException("aborted", "AbortError")),
+      store: vi.fn(),
+    });
+
+    await expect(
+      skill.execute(
+        {
+          pageId: "page-02-knowledge",
+          altText: "星空背景",
+          request: backgroundRequest,
+        },
+        { abortSignal: controller.signal, traceId: "image-skill-aborted" },
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
   it("keeps a usable Seedream JPEG and reports its missing transparency", async () => {
     const stickerRequest: AssetRequest = {
       ...backgroundRequest,

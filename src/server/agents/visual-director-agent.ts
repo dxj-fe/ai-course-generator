@@ -214,6 +214,7 @@ async function generateBrief(input: {
   });
   const draft = await generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
+    capability: "visual",
     maxTokens: 4_000,
     prompt: prompts.userPrompt,
     promptVersion: prompts.version,

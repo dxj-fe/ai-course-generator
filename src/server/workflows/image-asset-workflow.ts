@@ -59,6 +59,7 @@ export async function runImageAssetWorkflow(
   context: AgentRuntimeContext,
   dependencies: ImageAssetWorkflowDependencies = defaultDependencies,
 ): Promise<ImageAssetWorkflowState> {
+  throwIfAborted(context.abortSignal);
   const cacheSummary = {
     requestSetHitCount: 0,
     requestSetMissCount: 0,
@@ -79,6 +80,7 @@ export async function runImageAssetWorkflow(
   let events: AgentEvent[] = [];
 
   try {
+    throwIfAborted(context.abortSignal);
     const cachedRequests =
       await dependencies.cache.lookupRequestSet(requestSetCacheInput);
     if (cachedRequests.status === "hit") {
@@ -110,7 +112,9 @@ export async function runImageAssetWorkflow(
   }
 
   if (!requests) {
+    throwIfAborted(context.abortSignal);
     const promptState = await dependencies.runImagePrompt(input, context);
+    throwIfAborted(context.abortSignal);
     events = [...promptState.events];
 
     if (promptState.status !== "completed" || !promptState.requests) {
@@ -144,6 +148,7 @@ export async function runImageAssetWorkflow(
   const identity = dependencies.getImageModelIdentity();
 
   for (const request of requests) {
+    throwIfAborted(context.abortSignal);
     const slot = input.content.assetSlots.find(
       ({ id }) => id === request.assetSlotId,
     );
@@ -173,7 +178,9 @@ export async function runImageAssetWorkflow(
     if (cacheInput) {
       const lookupStartedAt = Date.now();
       try {
+        throwIfAborted(context.abortSignal);
         const lookup = await dependencies.cache.lookup(cacheInput);
+        throwIfAborted(context.abortSignal);
         if (lookup.status === "hit") {
           try {
             result = AssetGenerationResultSchema.parse({
@@ -210,6 +217,7 @@ export async function runImageAssetWorkflow(
     }
 
     if (!result) {
+      throwIfAborted(context.abortSignal);
       cacheSummary.generatedCount += 1;
       result = await registry.execute<AssetGenerationResult>(
         dependencies.imageSkill.name,
@@ -220,6 +228,7 @@ export async function runImageAssetWorkflow(
         },
         context,
       );
+      throwIfAborted(context.abortSignal);
 
       if (result.status === "fallback") {
         resolutionSource = "fallback";
@@ -292,6 +301,12 @@ export async function runImageAssetWorkflow(
     requests,
     results,
   };
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    throw signal.reason ?? new DOMException("aborted", "AbortError");
+  }
 }
 
 function getConfiguredImageModelIdentity(): ImageModelIdentity | undefined {

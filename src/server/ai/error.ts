@@ -1,4 +1,5 @@
 export type AiErrorCode =
+  | "CANCELLED_ERROR"
   | "CONFIG_ERROR"
   | "MODEL_ERROR"
   | "REQUEST_ERROR"
@@ -95,6 +96,14 @@ function classifyAiError(error: unknown): ClassifiedAiError {
       };
     }
 
+    if (isAbortError(error)) {
+      return {
+        code: "CANCELLED_ERROR",
+        message: "模型调用已取消。",
+        status: 499,
+      };
+    }
+
     if (isTimeoutError(error)) {
       return {
         code: "TIMEOUT_ERROR",
@@ -126,9 +135,12 @@ function isTimeoutError(error: Error) {
   const normalizedMessage = error.message.toLowerCase();
 
   return (
-    normalizedName.includes("abort") ||
     normalizedName.includes("timeout") ||
     normalizedMessage.includes("timeout") ||
     normalizedMessage.includes("timed out")
   );
+}
+
+function isAbortError(error: Error) {
+  return error.name === "AbortError" || error.message.toLowerCase() === "aborted";
 }

@@ -132,6 +132,7 @@ async function generateCandidate(
   const prompts = await buildRepairPrompts(input);
   return generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
+    capability: "repair",
     maxTokens: 8_000,
     normalizeOutput: normalizeRepairModelOutput,
     prompt: prompts.userPrompt,

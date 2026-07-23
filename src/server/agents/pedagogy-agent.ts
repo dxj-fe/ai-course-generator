@@ -125,6 +125,7 @@ async function generatePlan(input: {
   });
   const draft = await generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
+    capability: "pedagogy",
     maxTokens: 4_000,
     normalizeOutput: (output) =>
       normalizePedagogyModelOutput(output, input.outline),

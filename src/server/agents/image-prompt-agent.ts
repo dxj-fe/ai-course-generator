@@ -276,6 +276,7 @@ async function generateDirections(
 
   return generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
+    capability: "image-prompt",
     maxTokens: 2_500,
     prompt: prompts.userPrompt,
     promptVersion: prompts.version,

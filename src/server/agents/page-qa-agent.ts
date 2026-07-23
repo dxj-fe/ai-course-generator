@@ -474,6 +474,7 @@ async function evaluate(
 
   return generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
+    capability: "page-qa",
     maxTokens: 4_000,
     normalizeOutput: normalizePageQAModelOutput,
     prompt: prompts.userPrompt,

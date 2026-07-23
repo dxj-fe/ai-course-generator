@@ -21,6 +21,12 @@ export async function generateCourseIntent({
   const prompts = await buildIntentPrompts(userPrompt);
   const output = await generateStructuredObjectSafe({
     abortSignal,
+    cache: {
+      input: { userPrompt },
+      namespace: "course-intent",
+      schemaVersion: "course-intent@1",
+    },
+    capability: "intent",
     maxTokens: 900,
     prompt: prompts.userPrompt,
     promptVersion: prompts.version,

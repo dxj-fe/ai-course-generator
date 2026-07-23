@@ -18,7 +18,7 @@ export async function selectPageTemplate({
   const tools = createCourseTemplateTools(traceId);
   const result = await generateText({
     abortSignal,
-    model: getLanguageModel(),
+    model: getLanguageModel("cheap"),
     instructions: [
       "你是 AI Course Generator 的模板选择助手。",
       "必须根据用户描述选择并调用一个最合适的工具。",
@@ -30,6 +30,7 @@ export async function selectPageTemplate({
     toolChoice: "required",
     temperature: 0.1,
     maxOutputTokens: 500,
+    timeout: 30_000,
   });
 
   return {

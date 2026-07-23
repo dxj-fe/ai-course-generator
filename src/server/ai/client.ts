@@ -8,26 +8,48 @@ import {
 } from "ai";
 import type { z } from "zod";
 
-import { getLanguageModel } from "./model-provider";
 import { AiSchemaValidationError, toAiErrorPayload } from "./error";
+import {
+  getLanguageModel,
+  getLanguageModelIdentity,
+} from "./model-provider";
+import {
+  isRetryableModelError,
+  resolveModelRoute,
+  type AiCapability,
+  type ModelTier,
+} from "./model-router";
+import {
+  aiResultCache,
+  createAiResultCacheKey,
+} from "./result-cache";
 
 const DEFAULT_TEXT_TIMEOUT_MS = 30_000;
 const DEFAULT_STRUCTURED_TIMEOUT_MS = 60_000;
 
+type AiCacheRequest = {
+  input: unknown;
+  namespace: string;
+  schemaVersion: string;
+};
+
 export type AiClientRequest = {
-  messages: UIMessage[];
-  systemPrompt?: string;
-  promptVersion?: string;
-  temperature?: number;
+  abortSignal?: AbortSignal;
+  capability?: AiCapability;
   maxTokens?: number;
+  messages: UIMessage[];
+  model?: LanguageModel;
+  promptVersion?: string;
+  systemPrompt?: string;
+  temperature?: number;
   timeoutMs?: number;
   traceId: string;
-  model?: LanguageModel;
-  abortSignal?: AbortSignal;
 };
 
 export type StructuredAiClientRequest<T> = {
   abortSignal?: AbortSignal;
+  cache?: AiCacheRequest;
+  capability?: AiCapability;
   maxTokens?: number;
   model?: LanguageModel;
   normalizeOutput?: (output: unknown) => unknown;
@@ -42,24 +64,39 @@ export type StructuredAiClientRequest<T> = {
   traceId: string;
 };
 
+type ModelCandidate = {
+  identity: string;
+  model: LanguageModel;
+  tier: ModelTier | "custom";
+};
+
 export async function generateTextSafe(request: AiClientRequest) {
   const { traceId } = request;
   const startedAt = Date.now();
 
   try {
     logAiEvent("generate:start", request);
+    throwIfAborted(request.abortSignal);
+    const messages = await convertToModelMessages(request.messages);
+    const { result, selected } = await executeWithFallback(
+      request,
+      (model) =>
+        generateText({
+          model,
+          messages,
+          instructions: request.systemPrompt,
+          temperature: request.temperature,
+          maxOutputTokens: request.maxTokens,
+          timeout: request.timeoutMs ?? DEFAULT_TEXT_TIMEOUT_MS,
+          abortSignal: request.abortSignal,
+        }),
+    );
 
-    const result = await generateText({
-      model: request.model ?? getLanguageModel(),
-      messages: await convertToModelMessages(request.messages),
-      instructions: request.systemPrompt,
-      temperature: request.temperature,
-      maxOutputTokens: request.maxTokens,
-      timeout: request.timeoutMs ?? DEFAULT_TEXT_TIMEOUT_MS,
-      abortSignal: request.abortSignal,
+    logAiFinish("generate:finish", traceId, startedAt, {
+      model: selected.identity,
+      modelTier: selected.tier,
+      usage: result.usage,
     });
-
-    logAiFinish("generate:finish", traceId, startedAt);
     return result;
   } catch (error) {
     logAiError("generate:error", error, traceId, startedAt);
@@ -73,17 +110,25 @@ export async function streamTextSafe(request: AiClientRequest) {
 
   try {
     logAiEvent("stream:start", request);
+    throwIfAborted(request.abortSignal);
+    const selected = resolveModelCandidates(request)[0]!;
 
     return streamText({
-      model: request.model ?? getLanguageModel(),
+      model: selected.model,
       messages: await convertToModelMessages(request.messages),
       instructions: request.systemPrompt,
       temperature: request.temperature,
       maxOutputTokens: request.maxTokens,
       timeout: request.timeoutMs ?? DEFAULT_TEXT_TIMEOUT_MS,
       abortSignal: request.abortSignal,
-      onError: ({ error }) => logAiError("stream:error", error, traceId, startedAt),
-      onFinish: () => logAiFinish("stream:finish", traceId, startedAt),
+      onError: ({ error }) =>
+        logAiError("stream:error", error, traceId, startedAt),
+      onFinish: ({ usage }) =>
+        logAiFinish("stream:finish", traceId, startedAt, {
+          model: selected.identity,
+          modelTier: selected.tier,
+          usage,
+        }),
     });
   } catch (error) {
     logAiError("stream:error", error, traceId, startedAt);
@@ -99,21 +144,41 @@ export async function generateStructuredObjectSafe<T>(
 
   try {
     logStructuredAiEvent("generate-object:start", request);
+    throwIfAborted(request.abortSignal);
+    const candidates = resolveModelCandidates(request);
+    const cacheKey = createRequestCacheKey(request, candidates[0]);
+    if (cacheKey) {
+      const cached = aiResultCache.lookup(cacheKey, request.schema);
+      if (cached.status === "hit") {
+        throwIfAborted(request.abortSignal);
+        logAiFinish("generate-object:finish", traceId, startedAt, {
+          cacheStatus: "hit",
+          model: candidates[0]!.identity,
+          modelTier: candidates[0]!.tier,
+        });
+        return cached.value;
+      }
+    }
 
-    const result = await generateText({
-      model: request.model ?? getLanguageModel(),
-      instructions: request.systemPrompt,
-      prompt: request.prompt,
-      output: Output.json({
-        name: request.schemaName,
-        description: request.schemaDescription,
-      }),
-      temperature: request.temperature,
-      maxOutputTokens: request.maxTokens,
-      // 课程规划类结构化响应比普通文本更长，30 秒会在模型仍正常输出时误杀请求。
-      timeout: request.timeoutMs ?? DEFAULT_STRUCTURED_TIMEOUT_MS,
-      abortSignal: request.abortSignal,
-    });
+    const { result, selected } = await executeWithFallback(
+      request,
+      (model) =>
+        generateText({
+          model,
+          instructions: request.systemPrompt,
+          prompt: request.prompt,
+          output: Output.json({
+            name: request.schemaName,
+            description: request.schemaDescription,
+          }),
+          temperature: request.temperature,
+          maxOutputTokens: request.maxTokens,
+          // 课程规划类结构化响应比普通文本更长，30 秒会在模型仍正常输出时误杀请求。
+          timeout: request.timeoutMs ?? DEFAULT_STRUCTURED_TIMEOUT_MS,
+          abortSignal: request.abortSignal,
+        }),
+      candidates,
+    );
     const normalizedOutput = request.normalizeOutput
       ? request.normalizeOutput(result.output)
       : result.output;
@@ -125,7 +190,17 @@ export async function generateStructuredObjectSafe<T>(
       );
     }
 
-    logAiFinish("generate-object:finish", traceId, startedAt);
+    throwIfAborted(request.abortSignal);
+    const storedCacheKey = createRequestCacheKey(request, selected);
+    const cacheStored = storedCacheKey
+      ? aiResultCache.store(storedCacheKey, parsed.data, request.schema)
+      : false;
+    logAiFinish("generate-object:finish", traceId, startedAt, {
+      cacheStatus: cacheStored ? "stored" : request.cache ? "skipped" : "bypassed",
+      model: selected.identity,
+      modelTier: selected.tier,
+      usage: result.usage,
+    });
     return parsed.data;
   } catch (error) {
     logAiError("generate-object:error", error, traceId, startedAt);
@@ -133,11 +208,101 @@ export async function generateStructuredObjectSafe<T>(
   }
 }
 
+async function executeWithFallback<T>(
+  request: Pick<AiClientRequest, "abortSignal" | "capability" | "model" | "traceId">,
+  execute: (model: LanguageModel) => Promise<T>,
+  resolvedCandidates?: ModelCandidate[],
+) {
+  const candidates = resolvedCandidates ?? resolveModelCandidates(request);
+  let latestError: unknown;
+
+  for (const [index, candidate] of candidates.entries()) {
+    if (request.abortSignal?.aborted) {
+      throw request.abortSignal.reason ?? new DOMException("aborted", "AbortError");
+    }
+    try {
+      const result = await execute(candidate.model);
+      throwIfAborted(request.abortSignal);
+      return { result, selected: candidate };
+    } catch (error) {
+      latestError = error;
+      const fallback = candidates[index + 1];
+      if (
+        !fallback ||
+        request.abortSignal?.aborted ||
+        !isRetryableModelError(error)
+      ) {
+        throw error;
+      }
+      console.warn("[ai]", {
+        event: "model:fallback",
+        traceId: request.traceId,
+        fromModel: candidate.identity,
+        fromTier: candidate.tier,
+        toModel: fallback.identity,
+        toTier: fallback.tier,
+        reason: toAiErrorPayload(error, request.traceId).code,
+      });
+    }
+  }
+
+  throw latestError;
+}
+
+function resolveModelCandidates(
+  request: Pick<AiClientRequest, "capability" | "model">,
+): ModelCandidate[] {
+  if (request.model) {
+    return [{ identity: "custom-model", model: request.model, tier: "custom" }];
+  }
+
+  const route = resolveModelRoute(request.capability ?? "general");
+  const tiers = route.fallback
+    ? [route.primary, route.fallback]
+    : [route.primary];
+  const candidates = tiers.map((tier) => ({
+    identity: getLanguageModelIdentity(tier),
+    model: getLanguageModel(tier),
+    tier,
+  }));
+
+  return candidates.filter(
+    ({ identity }, index) =>
+      candidates.findIndex((candidate) => candidate.identity === identity) ===
+      index,
+  );
+}
+
+function createRequestCacheKey<T>(
+  request: StructuredAiClientRequest<T>,
+  candidate: ModelCandidate | undefined,
+) {
+  if (!request.cache || !request.promptVersion || !candidate) return undefined;
+  if (candidate.tier === "custom") return undefined;
+
+  try {
+    return createAiResultCacheKey({
+      input: request.cache.input,
+      model: candidate.identity,
+      namespace: request.cache.namespace,
+      promptVersion: request.promptVersion,
+      schemaVersion: request.cache.schemaVersion,
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    throw signal.reason ?? new DOMException("aborted", "AbortError");
+  }
+}
+
 function formatZodIssues(error: z.ZodError) {
   return error.issues
     .map((issue) => {
       const field = issue.path.length ? issue.path.join(".") : "root";
-
       return `${field}: ${issue.message}`;
     })
     .join("; ");
@@ -147,12 +312,13 @@ function logAiEvent(event: string, request: AiClientRequest) {
   console.info("[ai]", {
     event,
     traceId: request.traceId,
+    capability: request.capability ?? "general",
     messageCount: request.messages.length,
     hasSystemPrompt: Boolean(request.systemPrompt),
     temperature: request.temperature,
-      maxTokens: request.maxTokens,
-      promptVersion: request.promptVersion,
-      timeoutMs: request.timeoutMs ?? DEFAULT_TEXT_TIMEOUT_MS,
+    maxTokens: request.maxTokens,
+    promptVersion: request.promptVersion,
+    timeoutMs: request.timeoutMs ?? DEFAULT_TEXT_TIMEOUT_MS,
   });
 }
 
@@ -163,6 +329,7 @@ function logStructuredAiEvent<T>(
   console.info("[ai]", {
     event,
     traceId: request.traceId,
+    capability: request.capability ?? "general",
     promptLength: request.prompt.length,
     promptVersion: request.promptVersion,
     schemaName: request.schemaName,
@@ -173,11 +340,22 @@ function logStructuredAiEvent<T>(
   });
 }
 
-function logAiFinish(event: string, traceId: string, startedAt: number) {
+function logAiFinish(
+  event: string,
+  traceId: string,
+  startedAt: number,
+  telemetry: {
+    cacheStatus?: "bypassed" | "hit" | "skipped" | "stored";
+    model?: string;
+    modelTier?: ModelTier | "custom";
+    usage?: unknown;
+  } = {},
+) {
   console.info("[ai]", {
     event,
     traceId,
     durationMs: Date.now() - startedAt,
+    ...telemetry,
   });
 }
 

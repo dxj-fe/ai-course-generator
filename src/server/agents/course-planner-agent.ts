@@ -252,6 +252,12 @@ async function generateOutline(input: {
 
   const draft = await generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
+    cache: {
+      input: { intent: input.intent, retrievalContext },
+      namespace: "course-planner",
+      schemaVersion: "course-plan-content@1",
+    },
+    capability: "planner",
     maxTokens: 6_000,
     normalizeOutput: normalizeCoursePlannerModelOutput,
     prompt: prompts.userPrompt,

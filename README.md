@@ -1,6 +1,6 @@
 # AI Course Generator
 
-一句话或一份不超过 5 MB 的 txt/md/pdf 参考资料生成一门由多页关联 HTML 组成的课程。当前 Day 34 版本在 Day 33 结构化检索与 LangGraph 受限 Supervisor 之上补齐可配置创建、持久化课程/运行历史、可恢复详情、多页 sandbox 预览和 ZIP 导出。严格公开事件、SSE 和 checkpoint 仍是任务、Agent、页面进度与错误的唯一前端数据边界。
+一句话或一份不超过 5 MB 的 txt/md/pdf 参考资料生成一门由多页关联 HTML 组成的课程。当前 Day 35 版本在产品化课程链路之上补齐严格取消传播、有限超时、结构化结果缓存、模型路由、一次瞬时降级和安全成本 telemetry。严格公开事件、SSE 和 checkpoint 仍是任务、Agent、页面进度与错误的唯一前端数据边界。
 
 ## Day 01 交付
 
@@ -260,6 +260,14 @@
 - `GET /api/courses/[courseId]/export` 为完成课程流式生成 ZIP，包含 `course.json`、`pages/*.html` 和 `assets/manifest.json`。
 - 产品化边界、演示路径和面试复盘见 `notes/day-34.md`。
 
+## Day 35 交付
+
+- 任务 AbortSignal 贯穿 Workflow、Agent、Tool、语言模型与图片 Provider；取消后不会继续下一素材、HTML 或 QA。
+- AI Client 按 capability 使用 `cheap`、`balanced`、`strong`，只对 429、有限 5xx 和明确 timeout 执行一次降级。
+- Intent、Planner 与当前 Template Card 查询使用 128 项、15 分钟 TTL 的 Schema 校验缓存；键包含输入、Prompt/Registry、模型和 Schema 版本。
+- 完成日志记录 tier/model、usage、duration、cache 和 fallback 分类，不公开 Prompt、资料原文或私有推理。
+- 稳定性合同见 `docs/reliability-cost.md`，实现说明与面试复盘见 `notes/day-35.md`。
+
 ## 启动
 
 ```bash
@@ -287,6 +295,10 @@ cp .env.local.example .env.local
 ARK_API_KEY=your_volcengine_ark_api_key
 ARK_MODEL_ID=your_doubao_model_id
 ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+# 可选；未设置的档位继续使用 ARK_MODEL_ID
+ARK_MODEL_ID_CHEAP=your_low_cost_model_id
+ARK_MODEL_ID_BALANCED=your_default_model_id
+ARK_MODEL_ID_STRONG=your_high_quality_model_id
 ```
 
 如果没有设置 `ARK_API_KEY`，才会回退到通用 OpenAI-compatible 配置：
@@ -295,6 +307,20 @@ ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 MODEL_API_KEY=your_api_key
 MODEL_BASE_URL=https://your-openai-compatible-endpoint/v1
 MODEL_NAME=your_model_name
+# 可选；未设置的档位继续使用 MODEL_NAME
+MODEL_NAME_CHEAP=your_low_cost_model_name
+MODEL_NAME_BALANCED=your_default_model_name
+MODEL_NAME_STRONG=your_high_quality_model_name
+```
+
+Day 35 的服务端 `ModelRouter` 按 Agent 能力选择 `cheap`、`balanced` 或
+`strong`；前端和模型都不能修改路由。完整的超时、取消、缓存、重试、降级及
+成本日志契约见 [`docs/reliability-cost.md`](./docs/reliability-cost.md)。
+HTML Engineer 因为需要返回完整文档，默认使用独立的 120 秒有限预算。本地
+模型仍无法在该时间内完成时，可在 30–300 秒范围内覆盖并重启开发服务：
+
+```env
+AI_HTML_TIMEOUT_MS=180000
 ```
 
 真实图片生成默认复用现有 `ARK_API_KEY` 与 `ARK_BASE_URL`，使用 Seedream 4.5。只需在需要切换方舟图片模型时增加：

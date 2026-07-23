@@ -1,10 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   pageContentDsl,
   visualBrief,
 } from "../../../fixtures/course-design";
 import { buildValidGeneratedHtml } from "../../../fixtures/generated-html";
+import { generateTextSafe } from "../../../../src/server/ai/client";
 import {
   createHtmlEngineerAgent,
   createHtmlEngineerAgentState,
@@ -17,7 +18,16 @@ import {
 import type { AssetGenerationResult } from "../../../../src/shared/course-schema";
 import { getFunctionalTemplateDslExample } from "../../../../src/shared/templates/functional/dsl-examples";
 
+vi.mock("../../../../src/server/ai/client", () => ({
+  generateTextSafe: vi.fn(),
+}));
+
 const input = { content: pageContentDsl, visualBrief };
+
+afterEach(() => {
+  vi.clearAllMocks();
+  vi.unstubAllEnvs();
+});
 
 const assetRichContent = {
   ...pageContentDsl,
@@ -146,6 +156,26 @@ function getChoiceContent() {
 }
 
 describe("HtmlEngineerAgent", () => {
+  it("uses the bounded HTML-specific timeout for the default model call", async () => {
+    vi.stubEnv("AI_HTML_TIMEOUT_MS", "180000");
+    vi.mocked(generateTextSafe).mockResolvedValueOnce({
+      text: buildValidGeneratedHtml(pageContentDsl),
+    } as Awaited<ReturnType<typeof generateTextSafe>>);
+
+    const result = await createHtmlEngineerAgent().run(
+      createHtmlEngineerAgentState(input),
+      { traceId: "html-engineer-timeout-test" },
+    );
+
+    expect(result.status).toBe("completed");
+    expect(generateTextSafe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        capability: "html",
+        timeoutMs: 180_000,
+      }),
+    );
+  });
+
   it("generates and validates one HTML document in one bounded step", async () => {
     const generateHtml = vi
       .fn()

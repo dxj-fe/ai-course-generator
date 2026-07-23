@@ -132,6 +132,7 @@ async function generateArc(input: {
   });
   const draft = await generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
+    capability: "story",
     maxTokens: 3_500,
     normalizeOutput: (output) =>
       normalizeStoryModelOutput(output, input.outline),

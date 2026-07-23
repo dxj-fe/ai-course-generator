@@ -1,5 +1,6 @@
 import type { UIMessage } from "ai";
 
+import { getHtmlEngineerTimeoutMs } from "@/config/env";
 import { generateTextSafe } from "@/server/ai/client";
 import { AiSchemaValidationError } from "@/server/ai/error";
 import { buildHtmlEngineerPrompts } from "@/server/prompts/html-engineer";
@@ -570,12 +571,13 @@ async function generateHtml(
   ] satisfies UIMessage[];
   const result = await generateTextSafe({
     abortSignal: input.abortSignal,
+    capability: "html",
     maxTokens: 8_000,
     messages,
     promptVersion: prompts.version,
     systemPrompt: prompts.systemPrompt,
     temperature: 0.2,
-    timeoutMs: 60_000,
+    timeoutMs: getHtmlEngineerTimeoutMs(),
     traceId: input.traceId,
   });
 

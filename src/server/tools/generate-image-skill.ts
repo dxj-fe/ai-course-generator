@@ -60,6 +60,7 @@ export function createGenerateImageSkill(
 
       try {
         const generated = await dependencies.generate(input, context.abortSignal);
+        throwIfAborted(context.abortSignal);
         const info = inspectRasterImage(generated.bytes, generated.mediaType);
 
         const warnings =
@@ -68,7 +69,9 @@ export function createGenerateImageSkill(
             ? (["TRANSPARENCY_UNAVAILABLE"] as const)
             : undefined;
 
+        throwIfAborted(context.abortSignal);
         const stored = await dependencies.store(generated.bytes, info.mediaType);
+        throwIfAborted(context.abortSignal);
         const asset: Asset = {
           id: stored.id,
           type: domainAssetType(input.request.assetType),
@@ -96,6 +99,9 @@ export function createGenerateImageSkill(
           warnings,
         });
       } catch (error) {
+        if (context.abortSignal?.aborted) {
+          throw error;
+        }
         return AssetGenerationResultSchema.parse({
           request: input.request,
           status: "fallback",
@@ -115,6 +121,10 @@ async function generateWithConfiguredModel(
   abortSignal?: AbortSignal,
 ) {
   const config = getImageModelConfig();
+  const timeoutSignal = AbortSignal.timeout(60_000);
+  const signal = abortSignal
+    ? AbortSignal.any([abortSignal, timeoutSignal])
+    : timeoutSignal;
   const result = await generateImage({
     model: getImageModel(),
     prompt: input.request.prompt,
@@ -129,7 +139,7 @@ async function generateWithConfiguredModel(
             },
           }
         : undefined,
-    abortSignal,
+    abortSignal: signal,
   });
 
   return {
@@ -205,4 +215,10 @@ function classifyImageError(error: unknown) {
   if (/transparent|透明/i.test(message)) return "TRANSPARENCY_UNAVAILABLE";
   if (/MIME|格式|签名/i.test(message)) return "INVALID_IMAGE_OUTPUT";
   return "IMAGE_GENERATION_FAILED";
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    throw signal.reason ?? new DOMException("aborted", "AbortError");
+  }
 }

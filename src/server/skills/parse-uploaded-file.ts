@@ -212,6 +212,7 @@ async function summarizeReference(input: {
 }) {
   return generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
+    capability: "reference-summary",
     maxTokens: 1_800,
     normalizeOutput: normalizeReferenceSummaryOutput,
     prompt: [

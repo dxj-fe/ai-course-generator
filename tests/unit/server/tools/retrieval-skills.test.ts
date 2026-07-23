@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { aiResultCache } from "../../../../src/server/ai/result-cache";
 import type { ReferencePack } from "../../../../src/shared/course-schema";
 import { createAgentRetrievalTools } from "../../../../src/server/tools/agent-retrieval-tools";
 import { SkillRegistry } from "../../../../src/server/tools/skill-registry";
@@ -79,6 +80,25 @@ describe("Day 33 retrieval skills", () => {
     expect(result.style[0]?.card.visualStyle).toBe("kids-playful");
     expect(result.functional[0]?.card).not.toHaveProperty("slots");
     expect(result.style[0]?.card).not.toHaveProperty("colorTokens");
+  });
+
+  it("reuses a validated Template Card search result", () => {
+    aiResultCache.clear();
+    const lookup = vi.spyOn(aiResultCache, "lookup");
+    const input = {
+      pageGoal: "用时间线比较月相变化",
+      audience: "初中生",
+      visualStyle: "minimal" as const,
+      limit: 2,
+    };
+
+    const first = retrieveTemplateCards(input);
+    const second = retrieveTemplateCards(input);
+
+    expect(second).toEqual(first);
+    expect(lookup.mock.results[0]?.value).toEqual({ status: "miss" });
+    expect(lookup.mock.results[1]?.value).toMatchObject({ status: "hit" });
+    lookup.mockRestore();
   });
 
   it("returns traceable Reference Hits without raw chunk text", async () => {

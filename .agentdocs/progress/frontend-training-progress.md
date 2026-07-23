@@ -4,9 +4,9 @@ source_doc: `.agentdocs/prd/AI_Agent_Frontend_Training_Handbook_V5.docx`
 timezone: `Asia/Shanghai`
 daily_run_time: `09:30`
 start_date: `2026-07-09`
-last_delivered_day: `34`
-last_delivered_date: `2026-07-22`
-next_training_day: `35`
+last_delivered_day: `36`
+last_delivered_date: `2026-07-23`
+next_training_day: `37`
 
 ## Notes
 
@@ -78,3 +78,8 @@ next_training_day: `35`
 - 2026-07-22: Implemented Day 33 with strict Tool/Skill/Template/Reference cards, three bounded retrieval Skills and scoped AI SDK tools, compact Planner template/reference context, Supervisor capability summaries, synchronized registry documentation, and full automated verification.
 - 2026-07-22: Delivered Day 34 plan for productizing the existing Seaca prompt/reference composer, durable course and run history, persisted course preview, ZIP export, complete UI states, and a five-minute demo path.
 - 2026-07-22: Implemented Day 34 with typed creation parameters, schema-validated course/run history, durable course details, checkpoint return, single-iframe persisted previews, ZIP export, product UI states, documentation, and automated verification.
+- 2026-07-22: Delivered Day 35 plan for timeout and abort propagation, task cancellation, bounded caching, model routing, cost visibility, and degradation.
+- 2026-07-22: Implemented Day 35 with strict cancellation propagation, finite image timeouts, deterministic cheap/balanced/strong model routing, one-step transient fallback, versioned structured-result caching, safe usage telemetry, reliability documentation, and full automated verification.
+- 2026-07-23: Added the missing Day 35 implementation notes with architecture, reliability boundaries, acceptance evidence, and interview review answers.
+- 2026-07-23: Delivered Day 36 plan for fixed Demo prompts, expected-outline baselines, one-command local runs, course contract checks, quality scoring, export verification, and curated evidence.
+- 2026-07-23: Fixed the local HTML Engineer timeout exhaustion with a bounded 120-second default, a validated 30–300-second environment override, regression coverage, and unchanged checkpoint recovery.

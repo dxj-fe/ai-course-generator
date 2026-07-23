@@ -5,6 +5,15 @@ const { generateTextMock } = vi.hoisted(() => ({
   generateTextMock: vi.fn(),
 }));
 
+const { getLanguageModelMock, getLanguageModelIdentityMock } = vi.hoisted(
+  () => ({
+    getLanguageModelMock: vi.fn((tier: string) => ({ tier })),
+    getLanguageModelIdentityMock: vi.fn(
+      (tier: string) => `test-provider/${tier}-model`,
+    ),
+  }),
+);
+
 vi.mock("ai", () => ({
   convertToModelMessages: vi.fn(),
   generateText: generateTextMock,
@@ -12,14 +21,78 @@ vi.mock("ai", () => ({
   streamText: vi.fn(),
 }));
 
+vi.mock("../../../../src/server/ai/model-provider", () => ({
+  getLanguageModel: getLanguageModelMock,
+  getLanguageModelIdentity: getLanguageModelIdentityMock,
+}));
+
 import {
   generateStructuredObjectSafe,
   generateTextSafe,
 } from "../../../../src/server/ai/client";
+import { aiResultCache } from "../../../../src/server/ai/result-cache";
 
 describe("AI client", () => {
   beforeEach(() => {
     generateTextMock.mockReset();
+    aiResultCache.clear();
+  });
+
+  it("falls back once for a transient strong-model failure", async () => {
+    generateTextMock
+      .mockRejectedValueOnce({ statusCode: 503 })
+      .mockResolvedValueOnce({ output: { value: "ok" }, usage: {} });
+
+    await expect(
+      generateStructuredObjectSafe({
+        capability: "planner",
+        prompt: "Generate a course plan",
+        schema: z.object({ value: z.string() }),
+        schemaName: "course_plan",
+        traceId: "model-fallback-test",
+      }),
+    ).resolves.toEqual({ value: "ok" });
+
+    expect(generateTextMock).toHaveBeenCalledTimes(2);
+    expect(generateTextMock.mock.calls.map(([input]) => input.model)).toEqual([
+      { tier: "strong" },
+      { tier: "balanced" },
+    ]);
+  });
+
+  it("reuses a schema-valid cached result without another model call", async () => {
+    generateTextMock.mockResolvedValue({
+      output: { value: "cached" },
+      usage: {},
+    });
+    const request = {
+      cache: {
+        input: { topic: "solar wind" },
+        namespace: "test-intent",
+        schemaVersion: "test-schema@1",
+      },
+      capability: "intent" as const,
+      prompt: "Generate an intent",
+      promptVersion: "test-prompt@1",
+      schema: z.object({ value: z.string() }),
+      schemaName: "test_intent",
+      traceId: "result-cache-test",
+    };
+
+    await expect(generateStructuredObjectSafe(request)).resolves.toEqual({
+      value: "cached",
+    });
+    await expect(generateStructuredObjectSafe(request)).resolves.toEqual({
+      value: "cached",
+    });
+    expect(generateTextMock).toHaveBeenCalledOnce();
+
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      generateStructuredObjectSafe({ ...request, abortSignal: controller.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(generateTextMock).toHaveBeenCalledOnce();
   });
 
   it("allows long structured course responses to run for 60 seconds", async () => {

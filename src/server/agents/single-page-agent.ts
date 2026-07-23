@@ -177,6 +177,7 @@ async function generatePagePlanDraft(input: {
 
   return generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
+    capability: "single-page",
     maxTokens: 1_200,
     prompt: prompts.userPrompt,
     promptVersion: prompts.version,

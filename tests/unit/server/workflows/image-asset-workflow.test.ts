@@ -106,6 +106,35 @@ afterEach(async () => {
 });
 
 describe("image asset workflow", () => {
+  it("does not start another image or cache write after cancellation", async () => {
+    const controller = new AbortController();
+    const cache: AssetCache = {
+      lookup: vi.fn().mockResolvedValue({ status: "miss" }),
+      store: vi.fn(),
+      lookupRequestSet: vi.fn().mockResolvedValue({ status: "miss" }),
+      storeRequestSet: vi.fn().mockResolvedValue({ status: "stored" }),
+    };
+    const generate = vi.fn().mockImplementation(async () => {
+      controller.abort();
+      throw new DOMException("aborted", "AbortError");
+    });
+    const dependencies = createDependencies({
+      cache,
+      generate,
+      store: vi.fn(),
+    });
+
+    await expect(
+      runImageAssetWorkflow(
+        { content, visualBrief },
+        { abortSignal: controller.signal, traceId: "asset-cancelled" },
+        dependencies,
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(generate).toHaveBeenCalledOnce();
+    expect(cache.store).not.toHaveBeenCalled();
+  });
+
   it("reuses same-page requests and cross-page ready assets without another image call", async () => {
     const cache = await temporaryCache();
     const generate = vi.fn().mockResolvedValue({

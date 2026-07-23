@@ -269,6 +269,7 @@ async function generateContent(
   });
   const draft = await generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
+    capability: "page-writer",
     maxTokens: 4_000,
     normalizeOutput: normalizePageWriterModelOutput,
     prompt: prompts.userPrompt,

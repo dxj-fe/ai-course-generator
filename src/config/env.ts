@@ -1,6 +1,11 @@
+import type { ModelTier } from "@/server/ai/model-router";
+
 const DEFAULT_MODEL_NAME = "xai/grok-build-0.1";
 const DEFAULT_ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
 const DEFAULT_ARK_IMAGE_MODEL_ID = "doubao-seedream-4-5-251128";
+const DEFAULT_HTML_ENGINEER_TIMEOUT_MS = 120_000;
+const MIN_HTML_ENGINEER_TIMEOUT_MS = 30_000;
+const MAX_HTML_ENGINEER_TIMEOUT_MS = 300_000;
 
 function optionalEnv(name: string) {
   return process.env[name]?.trim() || undefined;
@@ -16,14 +21,16 @@ function requireEnv(name: string) {
   return value;
 }
 
-export function getModelConfig() {
+export function getModelConfig(tier?: ModelTier) {
   const arkApiKey = optionalEnv("ARK_API_KEY");
+  const suffix = tier ? `_${tier.toUpperCase()}` : "";
 
   if (arkApiKey) {
     return {
       apiKey: arkApiKey,
       baseURL: optionalEnv("ARK_BASE_URL") || DEFAULT_ARK_BASE_URL,
-      modelName: requireEnv("ARK_MODEL_ID"),
+      modelName:
+        optionalEnv(`ARK_MODEL_ID${suffix}`) || requireEnv("ARK_MODEL_ID"),
       providerName: "volcengine-ark",
     };
   }
@@ -31,9 +38,34 @@ export function getModelConfig() {
   return {
     apiKey: requireEnv("MODEL_API_KEY"),
     baseURL: requireEnv("MODEL_BASE_URL"),
-    modelName: optionalEnv("MODEL_NAME") || DEFAULT_MODEL_NAME,
+    modelName:
+      optionalEnv(`MODEL_NAME${suffix}`) ||
+      optionalEnv("MODEL_NAME") ||
+      DEFAULT_MODEL_NAME,
     providerName: "model-provider",
   };
+}
+
+/**
+ * HTML Engineer 返回完整文档，输出量显著高于普通文本调用。
+ * 保持有限默认值，同时允许本地慢模型在明确边界内覆盖。
+ */
+export function getHtmlEngineerTimeoutMs() {
+  const raw = optionalEnv("AI_HTML_TIMEOUT_MS");
+  if (!raw) return DEFAULT_HTML_ENGINEER_TIMEOUT_MS;
+
+  const timeoutMs = Number(raw);
+  if (
+    !Number.isInteger(timeoutMs) ||
+    timeoutMs < MIN_HTML_ENGINEER_TIMEOUT_MS ||
+    timeoutMs > MAX_HTML_ENGINEER_TIMEOUT_MS
+  ) {
+    throw new Error(
+      `AI_HTML_TIMEOUT_MS must be an integer between ${MIN_HTML_ENGINEER_TIMEOUT_MS} and ${MAX_HTML_ENGINEER_TIMEOUT_MS}.`,
+    );
+  }
+
+  return timeoutMs;
 }
 
 /** 默认复用方舟鉴权调用 Seedream；独立图片供应商仍可用 IMAGE_* 覆盖。 */

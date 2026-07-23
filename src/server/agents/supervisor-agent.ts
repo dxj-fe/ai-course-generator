@@ -164,6 +164,7 @@ async function generateDecision(input: {
 
   return generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
+    capability: "supervisor",
     maxTokens: 800,
     prompt: prompts.userPrompt,
     promptVersion: prompts.version,
