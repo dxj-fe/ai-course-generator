@@ -268,6 +268,14 @@
 - 完成日志记录 tier/model、usage、duration、cache 和 fallback 分类，不公开 Prompt、资料原文或私有推理。
 - 稳定性合同见 `docs/reliability-cost.md`，实现说明与面试复盘见 `notes/day-35.md`。
 
+## Day 36 交付
+
+- 固定火星探险、太阳系和 AI 素养三个五页 Demo，以语义大纲而非逐字符模型文本作为稳定基线。
+- `pnpm demo:run` 启动独立本地 Next.js 服务，通过正式 Task API/SSE 依次生成课程并保存 checkpoint、ZIP 和产品截图。
+- `pnpm demo:check` 复用 Course Schema、HTML Engineer 合同和 QA 报告，检查页面职责、知识覆盖、素材引用、质量分数及导出目录。
+- 自动测试只使用确定性 fixture；真实模型、图片与 Playwright 验收通过显式 Demo 命令执行。
+- Demo Prompt、阈值、人工六维评分和结果留存规则见 `docs/demo/prompts.md`，实现复盘见 `notes/day-36.md`。
+
 ## 启动
 
 ```bash

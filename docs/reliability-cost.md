@@ -40,6 +40,12 @@ reuses the legacy `ARK_MODEL_ID` or `MODEL_NAME`, so existing deployments keep
 working. When primary and fallback resolve to the same provider/model identity,
 the duplicate fallback call is removed.
 
+Five-page Pedagogy, Story, and Visual briefs use a finite 120-second request
+budget. Their structured payloads are materially larger than Intent and simple
+classification results; the Day 36 fixed Demo proved the generic 60-second
+budget could terminate otherwise healthy runs at the first Pedagogy call. All
+other structured requests retain the 60-second default.
+
 The router is deterministic. Prompts, model output and frontend state cannot
 change the tier.
 

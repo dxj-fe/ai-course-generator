@@ -20,6 +20,8 @@ import type {
   AgentStateBase,
 } from "./core/types";
 
+const PROFESSIONAL_BRIEF_TIMEOUT_MS = 120_000;
+
 const StoryModelOutputSchema = z.object({
   narrativeMode: NarrativeModeSchema,
   premise: z.string().min(5).max(400),
@@ -144,6 +146,7 @@ async function generateArc(input: {
     schemaName: "story_arc_content",
     systemPrompt: prompts.systemPrompt,
     temperature: 0.3,
+    timeoutMs: PROFESSIONAL_BRIEF_TIMEOUT_MS,
     traceId: input.traceId,
   });
 

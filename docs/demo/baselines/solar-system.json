@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "id": "solar-system",
+  "name": "太阳系入门",
+  "prompt": "为 8–10 岁学生生成一门 5 页太阳系入门课程，依次介绍探索目标、解释太阳与行星的区别、梳理八大行星的顺序或轨道、完成一道选择题并总结。必须讲到太阳是恒星、行星围绕太阳运行，使用中文和清晰活泼的视觉风格。",
+  "pageCount": 5,
+  "expectedOutline": [
+    {
+      "order": 1,
+      "purpose": "建立太阳系探索目标",
+      "allowedPageTypes": ["cover", "story_intro"],
+      "allowedInteractionTypes": ["navigate"]
+    },
+    {
+      "order": 2,
+      "purpose": "解释恒星与行星",
+      "allowedPageTypes": ["knowledge_card", "comparison"],
+      "allowedInteractionTypes": ["reveal", "explore"]
+    },
+    {
+      "order": 3,
+      "purpose": "梳理行星顺序或轨道",
+      "allowedPageTypes": ["timeline", "comparison", "knowledge_card"],
+      "allowedInteractionTypes": ["sort", "explore", "reveal"]
+    },
+    {
+      "order": 4,
+      "purpose": "检查太阳系知识",
+      "allowedPageTypes": ["quiz", "achievement"],
+      "allowedInteractionTypes": ["choice", "sort", "input"]
+    },
+    {
+      "order": 5,
+      "purpose": "总结太阳系核心知识",
+      "allowedPageTypes": ["summary"],
+      "allowedInteractionTypes": ["navigate", "input"]
+    }
+  ],
+  "requiredConcepts": [
+    { "label": "太阳系主题", "anyOf": ["太阳系"] },
+    { "label": "太阳是恒星", "anyOf": ["太阳是恒星", "恒星与行星", "恒星"] },
+    { "label": "八大行星", "anyOf": ["八大行星", "行星顺序", "行星"] },
+    { "label": "绕太阳运行", "anyOf": ["围绕太阳", "绕太阳", "轨道"] }
+  ],
+  "quality": {
+    "minOverallScore": 85,
+    "minDimensionScore": 80,
+    "requireScreenshotEvidence": true
+  },
+  "manualReview": {
+    "minimumTotal": 24,
+    "minimumDimension": 3
+  }
+}

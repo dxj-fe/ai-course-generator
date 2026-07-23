@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "id": "mars-exploration",
+  "name": "火星探险任务",
+  "prompt": "为 10–12 岁学生生成一门 5 页《火星探险任务》课程，依次建立探险情境、解释火星环境、分析生存挑战、完成一道选择题并总结探险方案。必须讲到稀薄大气、低温、水或氧气等生存资源，使用中文和轻松但科学准确的科幻风格。",
+  "pageCount": 5,
+  "expectedOutline": [
+    {
+      "order": 1,
+      "purpose": "建立火星探险任务",
+      "allowedPageTypes": ["cover", "story_intro"],
+      "allowedInteractionTypes": ["navigate"]
+    },
+    {
+      "order": 2,
+      "purpose": "解释火星环境",
+      "allowedPageTypes": ["knowledge_card", "timeline"],
+      "allowedInteractionTypes": ["reveal", "explore"]
+    },
+    {
+      "order": 3,
+      "purpose": "分析生存挑战和资源",
+      "allowedPageTypes": ["comparison", "knowledge_card", "achievement"],
+      "allowedInteractionTypes": ["explore", "sort", "input", "reveal"]
+    },
+    {
+      "order": 4,
+      "purpose": "检查理解并作出选择",
+      "allowedPageTypes": ["quiz", "achievement"],
+      "allowedInteractionTypes": ["choice", "sort", "input"]
+    },
+    {
+      "order": 5,
+      "purpose": "总结探险方案",
+      "allowedPageTypes": ["summary"],
+      "allowedInteractionTypes": ["navigate", "input"]
+    }
+  ],
+  "requiredConcepts": [
+    { "label": "火星主题", "anyOf": ["火星", "mars"] },
+    { "label": "稀薄大气", "anyOf": ["稀薄大气", "大气稀薄", "二氧化碳"] },
+    { "label": "低温环境", "anyOf": ["低温", "寒冷", "温度"] },
+    { "label": "生存资源", "anyOf": ["水", "氧气", "食物", "生存资源"] }
+  ],
+  "quality": {
+    "minOverallScore": 85,
+    "minDimensionScore": 80,
+    "requireScreenshotEvidence": true
+  },
+  "manualReview": {
+    "minimumTotal": 24,
+    "minimumDimension": 3
+  }
+}

@@ -21,6 +21,8 @@ import type {
   AgentStateBase,
 } from "./core/types";
 
+const PROFESSIONAL_BRIEF_TIMEOUT_MS = 120_000;
+
 const PedagogyModelPageSchema = z.object({
   cognitiveLevel: CognitiveLevelSchema,
   scaffolding: z.array(z.string().min(2).max(200)).min(1).max(6),
@@ -137,6 +139,7 @@ async function generatePlan(input: {
     schemaName: "pedagogy_plan_content",
     systemPrompt: prompts.systemPrompt,
     temperature: 0.2,
+    timeoutMs: PROFESSIONAL_BRIEF_TIMEOUT_MS,
     traceId: input.traceId,
   });
 

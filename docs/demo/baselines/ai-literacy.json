@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "id": "ai-literacy",
+  "name": "初中生 AI 素养",
+  "prompt": "为初中生生成一门 5 页 AI 素养课程，依次说明 AI 能做什么与不能做什么、解释幻觉和事实核验、讨论隐私与偏见风险、完成一个安全使用判断任务并总结负责任使用原则。使用中文和专业简洁的视觉风格，不把 AI 描述成永远正确的人类。",
+  "pageCount": 5,
+  "expectedOutline": [
+    {
+      "order": 1,
+      "purpose": "建立 AI 素养学习目标",
+      "allowedPageTypes": ["cover", "story_intro"],
+      "allowedInteractionTypes": ["navigate"]
+    },
+    {
+      "order": 2,
+      "purpose": "解释 AI 能力边界与幻觉",
+      "allowedPageTypes": ["knowledge_card", "comparison"],
+      "allowedInteractionTypes": ["reveal", "explore"]
+    },
+    {
+      "order": 3,
+      "purpose": "分析隐私和偏见风险",
+      "allowedPageTypes": ["comparison", "knowledge_card", "timeline"],
+      "allowedInteractionTypes": ["explore", "sort", "reveal"]
+    },
+    {
+      "order": 4,
+      "purpose": "完成安全使用判断",
+      "allowedPageTypes": ["quiz", "achievement"],
+      "allowedInteractionTypes": ["choice", "sort", "input"]
+    },
+    {
+      "order": 5,
+      "purpose": "总结负责任使用原则",
+      "allowedPageTypes": ["summary"],
+      "allowedInteractionTypes": ["navigate", "input"]
+    }
+  ],
+  "requiredConcepts": [
+    { "label": "AI 能力边界", "anyOf": ["能力边界", "能做什么", "不能做什么", "人工智能"] },
+    { "label": "幻觉与核验", "anyOf": ["幻觉", "事实核验", "验证信息", "核验"] },
+    { "label": "隐私风险", "anyOf": ["隐私", "个人信息"] },
+    { "label": "偏见风险", "anyOf": ["偏见", "公平", "歧视"] },
+    { "label": "安全负责使用", "anyOf": ["安全使用", "负责任", "负责使用"] }
+  ],
+  "quality": {
+    "minOverallScore": 85,
+    "minDimensionScore": 80,
+    "requireScreenshotEvidence": true
+  },
+  "manualReview": {
+    "minimumTotal": 24,
+    "minimumDimension": 3
+  }
+}

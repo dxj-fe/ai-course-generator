@@ -22,6 +22,8 @@ import type {
   AgentStateBase,
 } from "./core/types";
 
+const PROFESSIONAL_BRIEF_TIMEOUT_MS = 120_000;
+
 const VisualModelOutputSchema = z.object({
   visualConcept: z.string().min(5).max(400),
   layoutPrinciples: z
@@ -224,6 +226,7 @@ async function generateBrief(input: {
     schemaName: "visual_brief_content",
     systemPrompt: prompts.systemPrompt,
     temperature: 0.2,
+    timeoutMs: PROFESSIONAL_BRIEF_TIMEOUT_MS,
     traceId: input.traceId,
   });
 
