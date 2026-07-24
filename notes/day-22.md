@@ -25,7 +25,7 @@ Day 22 把课程生成从“一个顶层函数直接承载各阶段执行细节�
 | 失败定位 | 主要依赖阶段分支和错误映射 | `WorkflowNodeError` 始终携带 `nodeName`，课程 facade 再映射原有 stage/page/agent/code/message |
 | Agent 事件 | 顶层流程逐段聚合 | 节点返回安全投影后的事件，运行层在 checkpoint 前统一追加；原生私有 `data` 不进入公开状态 |
 | 恢复 | 根据 checkpoint 中已有产物跳过阶段 | 语义不变；facade 只装配缺失全局产物和失败页尚未完成的节点 |
-| UI/传输 | Task API → SSE → Controller → Seaca UI | 完全不变；前端不知道服务端从大函数改成节点运行器 |
+| UI/传输 | Task API → SSE → Controller → Keya UI | 完全不变；前端不知道服务端从大函数改成节点运行器 |
 | 动态能力 | 无 Supervisor、无自动重试/循环、无页面并发 | 仍然没有；显式节点不是动态多 Agent 调度 |
 
 重构没有把所有业务逻辑塞进一个“万能 Node”。领域规则仍由原来的 Agent、Schema、Registry 与子流程负责：
@@ -131,7 +131,7 @@ Day 22 没有新增 UI 落点。完整流向仍是：
   → CourseStore checkpoint + task EventBus
   → GET /api/courses/tasks/[taskId]/events
   → useSSETask
-  → courseGenerationToSeacaRun / ChatApp controller
+  → courseGenerationToKeyaRun / ChatApp controller
   → chat Timeline + right learning workspace
 ```
 
@@ -144,7 +144,7 @@ Day 22 没有新增 UI 落点。完整流向仍是：
 - System Prompt、模型原始消息、私有 event data 和 chain-of-thought 不进入 checkpoint 或 UI；
 - Route Handler 与服务端 workflow 继续是业务规则事实来源。
 
-因此 Day 22 不需要修改 [`use-sse-task.ts`](../src/features/course-planner/hooks/use-sse-task.ts)、[`ChatApp`](../src/features/seaca/chat-app.tsx) 或 Seaca 产品路由。
+因此 Day 22 不需要修改 [`use-sse-task.ts`](../src/features/course-planner/hooks/use-sse-task.ts)、[`ChatApp`](../src/features/keya/chat-app.tsx) 或 Keya 产品路由。
 
 ## Checkpoint、取消与恢复为何不变
 

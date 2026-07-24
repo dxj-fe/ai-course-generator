@@ -8,7 +8,7 @@ import {
 
 import { StyleTemplateGallery } from "./style-template-gallery";
 
-/** 展示共享 Registry 中的全部功能模板和 PagePlan mock。 */
+/** 展示共享 Registry 中的全部功能模板和 PagePlan 示例。 */
 export function TemplateGallery() {
   const templates = listFunctionalTemplates();
 
@@ -157,7 +157,7 @@ function TemplateCard({ template }: { template: FunctionalTemplate }) {
         {example ? (
           <details className="rounded-lg border border-[#d8dee8] bg-[#f8fafc] p-4">
             <summary className="cursor-pointer text-sm font-semibold text-[#344054]">
-              查看 PagePlan mock
+              查看 PagePlan 示例
             </summary>
             <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-md bg-[#eef2f7] p-3 font-mono text-xs leading-5 text-[#172033]">
               {JSON.stringify(example, null, 2)}

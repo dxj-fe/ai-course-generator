@@ -1,7 +1,7 @@
 # WorkGallery Specification
 
 ## Overview
-- **Target file:** `src/features/seaca/work-gallery.tsx`
+- **Target file:** `src/features/keya/work-gallery.tsx`
 - **References:** `docs/design-references/home-desktop-1440.png`, `docs/design-references/home-mobile-390.png`
 - **Interaction model:** click-driven sort/search/card/author/like/bookmark controls; no scroll-triggered state.
 - **Evidence note:** desktop styles and rects were recorded during signed-in browser inspection; card copy is transcribed from the full-resolution screenshots.
@@ -30,22 +30,22 @@
 - like/bookmark controls: aria `点赞`/`收藏`; height 32px, gap 4px, padding 0 8px, rounded 9999px, transparent; hover `rgb(245,239,231)`; 150ms color transition. Counts are 12px-sized visually; use outline thumb/bookmark icons.
 
 ## Verbatim Card Data
-1. `论语职场闯关` — `论语职场闯关之：30分钟用孔子智慧解决职场难题` — `#论语 #职场 #国学` — 学而时习獭 — 1/1 — `/seaca/images/8312d23f-0795-440b-ba89-5b4067bc8a3c.webp`.
-2. `《遥远的她》改编爱情故事` — `改编版遥远的她，我最爱的中文歌曲，故事呈现` — `#张学友 #陈奕迅` — 羽生獭落 — 3/2 — `/seaca/images/6fe9c26d-4a77-4648-82ae-01ee70c717cd.webp`.
-3. `猴王出世` — `一块仙石，孕育了一个王——美猴王！来一起看一下猴王出世这篇课文吧。` — `#四大名著 #西游记 #小学` — Ray — 1/1 — `/seaca/images/29d00308-8054-4003-8377-8ef366d515ac.webp`.
-4. `芭比娃娃发展历史全解析` — `10分钟搞定芭比娃娃的发展简史，10分钟搞定芭比娃娃的发展简史` — no tags — 赖獭赖獺 — 2/1 — `/seaca/images/53d9b6b0-a745-436b-a1d0-899fe9081f45.webp`.
-5. `道林格雷的画像动画故事` — `我的英文名字来源，希望大家喜欢这个故事！` — `#奥斯卡王尔德` — 羽生獭落 — 2/2 — `/seaca/images/5e860d20-7fff-41a2-aadc-6f9c87f15c55.webp`.
+1. `论语职场闯关` — `论语职场闯关之：30分钟用孔子智慧解决职场难题` — `#论语 #职场 #国学` — 学而时习獭 — 1/1 — `/keya/images/8312d23f-0795-440b-ba89-5b4067bc8a3c.webp`.
+2. `《遥远的她》改编爱情故事` — `改编版遥远的她，我最爱的中文歌曲，故事呈现` — `#张学友 #陈奕迅` — 羽生獭落 — 3/2 — `/keya/images/6fe9c26d-4a77-4648-82ae-01ee70c717cd.webp`.
+3. `猴王出世` — `一块仙石，孕育了一个王——美猴王！来一起看一下猴王出世这篇课文吧。` — `#四大名著 #西游记 #小学` — Ray — 1/1 — `/keya/images/29d00308-8054-4003-8377-8ef366d515ac.webp`.
+4. `芭比娃娃发展历史全解析` — `10分钟搞定芭比娃娃的发展简史，10分钟搞定芭比娃娃的发展简史` — no tags — 赖獭赖獺 — 2/1 — `/keya/images/53d9b6b0-a745-436b-a1d0-899fe9081f45.webp`.
+5. `道林格雷的画像动画故事` — `我的英文名字来源，希望大家喜欢这个故事！` — `#奥斯卡王尔德` — 羽生獭落 — 2/2 — `/keya/images/5e860d20-7fff-41a2-aadc-6f9c87f15c55.webp`.
 6. `毕加索生平与作品赏析` — `你也喜欢搞抽象？先来看看艺术大师的境界吧` — `#艺术 #毕加索` — wanglei — 3/2 — remote HTML cover (not downloaded; recreate/fallback).
 7. `入门级日常英文对话练习` — `是测试是测试是测试` — `#测试测试` — zero7room — 2/2 — remote HTML cover (same design family as hero card 1).
 8. `印钞过程与核心技术详解` — no description/tags — 战斗獭獭 — 1/0 — remote HTML cover.
-9. `旅行英语互动课程` — no description — `#旅行` — 羽生獭落 — 1/1 — `/seaca/images/e69af016-1269-4dba-a889-1eb831b5350d.webp`.
-10. `伦敦腔英语高级表达进阶` — `你好哇 今天教学地道伦敦英语 让你成为地道英国人` — `#伦敦 #英语` — 羽生獭落 — 1/1 — `/seaca/images/81117d05-2aa0-46b4-b73f-c7c8a787ab67.webp`.
+9. `旅行英语互动课程` — no description — `#旅行` — 羽生獭落 — 1/1 — `/keya/images/e69af016-1269-4dba-a889-1eb831b5350d.webp`.
+10. `伦敦腔英语高级表达进阶` — `你好哇 今天教学地道伦敦英语 让你成为地道英国人` — `#伦敦 #英语` — 羽生獭落 — 1/1 — `/keya/images/81117d05-2aa0-46b4-b73f-c7c8a787ab67.webp`.
 11. `零基础《资本论》入门` — no description — `#学术 #经济学` — zero7room — 0/0 — remote HTML cover.
 12. `《念奴娇·赤壁怀古》赏析` — `苏轼《念奴娇·赤壁怀古》经典赏析，读懂豪放词的家国情怀` — no tags — 战斗獭獭 — 0/0 — remote HTML cover.
 
 ## Avatar Assets
-- 学而时习獭 `/seaca/images/c45fc431-de9c-4b20-bb62-ee675be81f20.png`; 羽生獭落 `/seaca/images/53b5df35-2383-42c6-844f-1246374b8b9f.png`; Ray `/seaca/images/seaca8.png`.
-- 赖獭赖獺 `/seaca/images/709828ac-ffe2-4afb-8db8-e4a47b7ff8a6.png`; wanglei `/seaca/images/8d2567ef-fbfc-42ba-8d92-5fbea6f6f554.png`; zero7room `/seaca/images/df24dc8b-24bc-4c4f-a3de-7c8f11a7b939.png`; 战斗獭獭 `/seaca/images/seaca10.png`.
+- 学而时习獭 `/keya/images/c45fc431-de9c-4b20-bb62-ee675be81f20.png`; 羽生獭落 `/keya/images/53b5df35-2383-42c6-844f-1246374b8b9f.png`; Ray `/keya/images/keya8.png`.
+- 赖獭赖獺 `/keya/images/709828ac-ffe2-4afb-8db8-e4a47b7ff8a6.png`; wanglei `/keya/images/8d2567ef-fbfc-42ba-8d92-5fbea6f6f554.png`; zero7room `/keya/images/df24dc8b-24bc-4c4f-a3de-7c8f11a7b939.png`; 战斗獭獭 `/keya/images/keya10.png`.
 
 ## States and Behaviors
 - Selecting a sort pill moves active colors/weight to that pill and updates mock order; 150ms transition. Initial state is `综合热门`.

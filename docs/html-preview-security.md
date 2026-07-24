@@ -47,7 +47,7 @@ The function returns structured issues and never silently rewrites the document.
 | Capability | Day 13 policy | Reason |
 | --- | --- | --- |
 | Scripts | blocked | Day 14 uses native static interaction patterns; executable interaction needs a later explicit policy decision. |
-| Same-origin identity | blocked | The preview receives an opaque origin instead of sharing the Seaca application origin. |
+| Same-origin identity | blocked | The preview receives an opaque origin instead of sharing the 课芽 application origin. |
 | Forms | blocked | Generated content must not submit learner data. |
 | Popups and downloads | blocked | Preview content must not create new browsing or download flows. |
 | Top navigation | blocked | Generated HTML cannot replace or redirect the product shell. |
@@ -64,5 +64,5 @@ The iframe `sandbox` attribute is applied by the embedding product and is the pr
 - Remote image asset allowlisting is deferred until the real asset pipeline is introduced.
 - The preview does not yet use `postMessage`; any future message must validate origin, type, and payload shape.
 - Day 14 caps a generated document at 200,000 characters; a future QA stage should add parsed DOM-complexity limits.
-- `/preview/[previewId]` uses temporary browser storage because course-run persistence is not implemented yet. The record is untrusted and is validated again on read and render.
-- Browser storage is not durable course history. Once persistence exists, `/course` should own the artifact and preview URLs should resolve through authorized backend records.
+- `/preview/[previewId]` uses a 24-hour SQLite record. The record remains untrusted and is validated again on database read and render.
+- Temporary preview records are not durable course history. `/course` owns durable artifacts; random preview IDs only resolve expiring backend records.

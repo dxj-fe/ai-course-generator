@@ -1,4 +1,4 @@
-# Seaca interaction inventory
+# Keya interaction inventory
 
 Evidence was captured from the authenticated Chrome session on 2026-07-13. Items marked `mock` are deliberately local-only in this clone.
 

@@ -6,7 +6,7 @@ import {
 const definitions = [
   {
     version: 1,
-    pageId: "mock-cover",
+    pageId: "example-cover",
     functionalTemplateId: "course-cover",
     title: "太阳系探险启程",
     narration: ["准备好从太阳出发，认识太阳系中的重要成员。"],
@@ -35,7 +35,7 @@ const definitions = [
   },
   {
     version: 1,
-    pageId: "mock-story-intro",
+    pageId: "example-story-intro",
     functionalTemplateId: "story-intro",
     title: "来自火星的求救信号",
     narration: ["火星基地需要你判断下一步应先调查什么。"],
@@ -95,7 +95,7 @@ const definitions = [
   },
   {
     version: 1,
-    pageId: "mock-knowledge-card",
+    pageId: "example-knowledge-card",
     functionalTemplateId: "knowledge-card-grid",
     title: "认识八颗行星",
     narration: ["逐项查看行星卡，找出每颗行星最容易辨认的特点。"],
@@ -150,7 +150,7 @@ const definitions = [
   },
   {
     version: 1,
-    pageId: "mock-comparison",
+    pageId: "example-comparison",
     functionalTemplateId: "comparison-board",
     title: "地球和火星有什么不同",
     narration: ["使用温度、大气和水三个共同维度进行比较。"],
@@ -189,7 +189,7 @@ const definitions = [
   },
   {
     version: 1,
-    pageId: "mock-timeline",
+    pageId: "example-timeline",
     functionalTemplateId: "learning-timeline",
     title: "人类探索太空的里程碑",
     narration: ["按年份观察每次探索如何为下一阶段积累经验。"],
@@ -238,7 +238,7 @@ const definitions = [
   },
   {
     version: 1,
-    pageId: "mock-quiz",
+    pageId: "example-quiz",
     functionalTemplateId: "interactive-quiz",
     title: "行星挑战赛",
     narration: ["选择答案后阅读反馈，确认自己理解了原因。"],
@@ -311,7 +311,7 @@ const definitions = [
   },
   {
     version: 1,
-    pageId: "mock-achievement",
+    pageId: "example-achievement",
     functionalTemplateId: "achievement-task",
     title: "制作我的行星档案",
     narration: ["选择一颗行星，用三项事实完成档案。"],
@@ -358,7 +358,7 @@ const definitions = [
   },
   {
     version: 1,
-    pageId: "mock-summary",
+    pageId: "example-summary",
     functionalTemplateId: "recap-summary",
     title: "太阳系知识地图",
     narration: ["用三个关键结论回顾本次太阳系探索。"],

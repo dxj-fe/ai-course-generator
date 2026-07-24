@@ -27,7 +27,7 @@ describe("Functional Template Registry", () => {
     }
   });
 
-  it("provides one valid PagePlan mock for every template", () => {
+  it("provides one valid PagePlan example for every template", () => {
     expect(functionalTemplateExamples).toHaveLength(8);
 
     for (const example of functionalTemplateExamples) {

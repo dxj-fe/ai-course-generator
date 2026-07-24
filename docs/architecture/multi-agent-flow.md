@@ -231,10 +231,10 @@ flowchart LR
   Adapter --> Shared["CourseGenerationState<br/>CourseGenerationPublicEvent"]
   Shared --> SSE["SSE"]
   SSE --> Controller["Task Controller"]
-  Controller --> UI["Seaca /chat UI"]
+  Controller --> UI["Keya /chat UI"]
 ```
 
-因此从手写 workflow 迁移到 LangGraph 时，只替换服务端执行和状态更新方式；[`useSSETask`](../../src/features/course-planner/hooks/use-sse-task.ts)、[`ChatApp`](../../src/features/seaca/chat-app.tsx)、Timeline 和 learning workspace 不应重新设计，也不应依赖 LangGraph。
+因此从手写 workflow 迁移到 LangGraph 时，只替换服务端执行和状态更新方式；[`useSSETask`](../../src/features/course-planner/hooks/use-sse-task.ts)、[`ChatApp`](../../src/features/keya/chat-app.tsx)、Timeline 和 learning workspace 不应重新设计，也不应依赖 LangGraph。
 
 ## Day 21 之后的实施顺序
 

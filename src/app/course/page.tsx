@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 import { SiteHeader } from "@/components/site-header";
-import { CourseLibrary } from "@/features/seaca/course-library";
+import { CourseLibrary } from "@/features/keya/course-library";
 
 export const metadata: Metadata = {
   title: "我的课程",

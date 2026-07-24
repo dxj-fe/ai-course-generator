@@ -2,7 +2,7 @@
 
 ## 今日产出
 
-- 新增纯 `buildCourseRunTimelineModel`，将 `SeacaCourseRun` 和可选 SSE 遥测投影为任务摘要、全局 Agent 与逐页阶段。
+- 新增纯 `buildCourseRunTimelineModel`，将 `KeyaCourseRun` 和可选 SSE 遥测投影为任务摘要、全局 Agent 与逐页阶段。
 - 增强现有 `CourseRunTimeline`，展示任务状态、连接状态、页面进度、当前 Agent/页面、耗时、恢复尝试和精确失败位置。
 - 新增 `PageProgressPanel`，在 learning workspace 集中展示每页 Page DSL、图片素材、HTML 和可选 QA。
 - 新增 `GenerationLogDrawer`，使用原生 `details/summary` 展示经过共享 Schema 校验的公开事件。

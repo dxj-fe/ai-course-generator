@@ -1,15 +1,8 @@
-import { createHash, randomUUID } from "node:crypto";
-import {
-  mkdir,
-  readFile,
-  rename,
-  unlink,
-  writeFile,
-} from "node:fs/promises";
-import path from "node:path";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import { hasGeneratedAsset } from "@/server/assets/generated-asset-store";
+import { getAppDatabase } from "@/server/storage/database";
 import {
   AssetGenerationResultSchema,
   AssetGenerationWarningSchema,
@@ -25,11 +18,8 @@ import {
 } from "@/shared/course-schema";
 
 const ASSET_CACHE_VERSION = 1;
-const ASSET_CACHE_PATH = path.join(process.cwd(), ".data", "asset-cache.json");
 const ASSET_ID_PATTERN =
   /^asset-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const CACHE_KEY_PATTERN = /^[0-9a-f]{64}$/;
-
 const AssetCacheKeyInputSchema = z
   .object({
     request: AssetRequestSchema,
@@ -85,19 +75,6 @@ const CachedGeneratedAssetSchema = z
       });
     }
   });
-
-const AssetCacheFileSchema = z
-  .object({
-    version: z.literal(ASSET_CACHE_VERSION),
-    entries: z.record(
-      z.string().regex(CACHE_KEY_PATTERN),
-      CachedGeneratedAssetSchema,
-    ),
-    requestSets: z
-      .record(z.string().regex(CACHE_KEY_PATTERN), CachedAssetRequestSetSchema)
-      .default({}),
-  })
-  .strict();
 
 export type AssetCacheKeyInput = {
   request: AssetRequest;
@@ -166,15 +143,11 @@ export type AssetCache = {
 };
 
 type AssetCacheOptions = {
+  databasePath?: string;
+  /** 兼容旧调用方；该路径现在是 SQLite 数据库文件。 */
   filePath?: string;
   assetExists?: (id: string) => Promise<boolean>;
 };
-
-type CacheFileReadResult =
-  | { status: "ready"; value: z.infer<typeof AssetCacheFileSchema> }
-  | { status: "missing" }
-  | { status: "invalid" }
-  | { status: "failed" };
 
 /** 只使用会影响像素结果的稳定输入生成内容寻址键。 */
 export function createAssetCacheKey(input: AssetCacheKeyInput) {
@@ -221,9 +194,28 @@ export function createAssetRequestSetCacheKey(
 export function createAssetCache(
   options: AssetCacheOptions = {},
 ): AssetCache {
-  const filePath = options.filePath ?? ASSET_CACHE_PATH;
+  const database = getAppDatabase(options.databasePath ?? options.filePath);
   const assetExists = options.assetExists ?? hasGeneratedAsset;
-  let writeQueue: Promise<void> = Promise.resolve();
+  const loadEntry = database.prepare(
+    "SELECT payload FROM asset_cache_entries WHERE cache_key = ?",
+  );
+  const saveEntry = database.prepare(`
+    INSERT INTO asset_cache_entries (cache_key, payload, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(cache_key) DO UPDATE SET
+      payload = excluded.payload,
+      updated_at = excluded.updated_at
+  `);
+  const loadRequestSet = database.prepare(
+    "SELECT payload FROM asset_request_sets WHERE cache_key = ?",
+  );
+  const saveRequestSet = database.prepare(`
+    INSERT INTO asset_request_sets (cache_key, payload, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(cache_key) DO UPDATE SET
+      payload = excluded.payload,
+      updated_at = excluded.updated_at
+  `);
 
   return {
     async lookup(input) {
@@ -234,17 +226,19 @@ export function createAssetCache(
         return { status: "unavailable", reason: "invalid-input" };
       }
 
-      const cached = await readCacheFile(filePath);
-      if (cached.status === "missing") return { status: "miss" };
-      if (cached.status === "invalid") {
-        return { status: "unavailable", reason: "invalid-cache" };
-      }
-      if (cached.status === "failed") {
+      let row: { payload: string } | undefined;
+      try {
+        row = loadEntry.get(key) as { payload: string } | undefined;
+      } catch {
         return { status: "unavailable", reason: "read-failed" };
       }
-
-      const value = cached.value.entries[key];
-      if (!value) return { status: "miss" };
+      if (!row) return { status: "miss" };
+      let value: CachedGeneratedAsset;
+      try {
+        value = CachedGeneratedAssetSchema.parse(JSON.parse(row.payload));
+      } catch {
+        return { status: "unavailable", reason: "invalid-cache" };
+      }
 
       try {
         return (await assetExists(value.asset.id))
@@ -266,34 +260,12 @@ export function createAssetCache(
       const record = createCacheRecord(input, result, key);
       if (record.status === "skipped") return record;
 
-      const operation = writeQueue.then(async (): Promise<AssetCacheStoreResult> => {
-        const cached = await readCacheFile(filePath);
-        if (cached.status === "failed") {
-          return { status: "unavailable", reason: "read-failed" };
-        }
-
-        const entries =
-          cached.status === "ready" ? { ...cached.value.entries } : {};
-        entries[key] = record.value;
-
-        try {
-          await writeCacheFileAtomically(filePath, {
-            version: ASSET_CACHE_VERSION,
-            entries,
-            requestSets:
-              cached.status === "ready" ? cached.value.requestSets : {},
-          });
-          return { status: "stored" };
-        } catch {
-          return { status: "unavailable", reason: "write-failed" };
-        }
-      });
-
-      writeQueue = operation.then(
-        () => undefined,
-        () => undefined,
-      );
-      return operation;
+      try {
+        saveEntry.run(key, JSON.stringify(record.value), new Date().toISOString());
+        return { status: "stored" };
+      } catch {
+        return { status: "unavailable", reason: "write-failed" };
+      }
     },
 
     async lookupRequestSet(input) {
@@ -304,17 +276,19 @@ export function createAssetCache(
         return { status: "unavailable", reason: "invalid-input" };
       }
 
-      const cached = await readCacheFile(filePath);
-      if (cached.status === "missing") return { status: "miss" };
-      if (cached.status === "invalid") {
-        return { status: "unavailable", reason: "invalid-cache" };
-      }
-      if (cached.status === "failed") {
+      let row: { payload: string } | undefined;
+      try {
+        row = loadRequestSet.get(key) as { payload: string } | undefined;
+      } catch {
         return { status: "unavailable", reason: "read-failed" };
       }
-
-      const requests = cached.value.requestSets[key];
-      if (!requests) return { status: "miss" };
+      if (!row) return { status: "miss" };
+      let requests: AssetRequest[];
+      try {
+        requests = CachedAssetRequestSetSchema.parse(JSON.parse(row.payload));
+      } catch {
+        return { status: "unavailable", reason: "invalid-cache" };
+      }
       return requestSetMatchesContent(requests, input.content)
         ? { status: "hit", value: requests }
         : { status: "unavailable", reason: "invalid-cache" };
@@ -336,35 +310,16 @@ export function createAssetCache(
         return { status: "skipped", reason: "invalid-requests" };
       }
 
-      const operation = writeQueue.then(
-        async (): Promise<AssetRequestSetCacheStoreResult> => {
-          const cached = await readCacheFile(filePath);
-          if (cached.status === "failed") {
-            return { status: "unavailable", reason: "read-failed" };
-          }
-
-          const requestSets =
-            cached.status === "ready" ? { ...cached.value.requestSets } : {};
-          requestSets[key] = parsed.data;
-
-          try {
-            await writeCacheFileAtomically(filePath, {
-              version: ASSET_CACHE_VERSION,
-              entries: cached.status === "ready" ? cached.value.entries : {},
-              requestSets,
-            });
-            return { status: "stored" };
-          } catch {
-            return { status: "unavailable", reason: "write-failed" };
-          }
-        },
-      );
-
-      writeQueue = operation.then(
-        () => undefined,
-        () => undefined,
-      );
-      return operation;
+      try {
+        saveRequestSet.run(
+          key,
+          JSON.stringify(parsed.data),
+          new Date().toISOString(),
+        );
+        return { status: "stored" };
+      } catch {
+        return { status: "unavailable", reason: "write-failed" };
+      }
     },
   };
 }
@@ -447,51 +402,4 @@ function requestSetMatchesContent(
     new Set(requestIds).size === requestIds.length &&
     requestIds.every((id) => slotIds.includes(id))
   );
-}
-
-async function readCacheFile(filePath: string): Promise<CacheFileReadResult> {
-  let source: string;
-  try {
-    source = await readFile(filePath, "utf8");
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "ENOENT"
-      ? { status: "missing" }
-      : { status: "failed" };
-  }
-
-  try {
-    const parsed = AssetCacheFileSchema.safeParse(JSON.parse(source));
-    return parsed.success
-      ? { status: "ready", value: parsed.data }
-      : { status: "invalid" };
-  } catch {
-    return { status: "invalid" };
-  }
-}
-
-async function writeCacheFileAtomically(
-  filePath: string,
-  value: z.infer<typeof AssetCacheFileSchema>,
-) {
-  const directory = path.dirname(filePath);
-  const temporaryPath = path.join(
-    directory,
-    `.${path.basename(filePath)}.${process.pid}-${randomUUID()}.tmp`,
-  );
-
-  await mkdir(directory, { recursive: true });
-  try {
-    await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, {
-      encoding: "utf8",
-      flag: "wx",
-    });
-    await rename(temporaryPath, filePath);
-  } catch (error) {
-    try {
-      await unlink(temporaryPath);
-    } catch {
-      // 临时文件可能尚未创建或已被 rename；保留原始写入错误。
-    }
-    throw error;
-  }
 }

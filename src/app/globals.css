@@ -12,37 +12,38 @@
     BlinkMacSystemFont, "Segoe UI", sans-serif;
   --app-font-mono: var(--font-geist-mono), "SFMono-Regular", Consolas,
     "Liberation Mono", monospace;
-  --seaca-almost-black: #382c19;
-  --seaca-almost-white: #fdfbf8;
-  --seaca-paper: #fffdf7;
-  --seaca-brown: #988e80;
-  --seaca-brown-strong: #5b4c3b;
-  --seaca-brown-soft: #ad9688;
-  --seaca-line: #ebe1d6;
-  --seaca-pill: #f8f2ea;
-  --seaca-green: #77cc57;
-  --seaca-green-dark: #5ba83e;
-  --seaca-user-bubble: #f5f1ea;
-  --seaca-card-shadow: 0 1px 0 rgb(56 44 25 / 5%),
-    0 4px 16px -8px rgb(56 44 25 / 8%);
-  --background: var(--seaca-almost-white);
-  --foreground: var(--seaca-almost-black);
-  --card: var(--seaca-paper);
-  --card-foreground: var(--seaca-almost-black);
-  --popover: var(--seaca-paper);
-  --popover-foreground: var(--seaca-almost-black);
-  --primary: var(--seaca-green);
-  --primary-foreground: var(--seaca-almost-black);
-  --secondary: var(--seaca-pill);
-  --secondary-foreground: var(--seaca-almost-black);
-  --muted: var(--seaca-pill);
-  --muted-foreground: var(--seaca-brown);
-  --accent: #f5efe7;
-  --accent-foreground: var(--seaca-almost-black);
+  --keya-ink: #2d332b;
+  --keya-canvas: #fff9ee;
+  --keya-paper: #fffcf5;
+  --keya-muted: #7a7468;
+  --keya-ink-soft: #3f4a40;
+  --keya-muted-soft: #9a8e7c;
+  --keya-line: #e8dfd0;
+  --keya-pill: #f6eedc;
+  --keya-sprout: #397a52;
+  --keya-sprout-dark: #2f6845;
+  --keya-mango: #f2b84b;
+  --keya-user-bubble: #f3ebd9;
+  --keya-card-shadow: 0 1px 0 rgb(45 51 43 / 5%),
+    0 4px 16px -8px rgb(45 51 43 / 10%);
+  --background: var(--keya-canvas);
+  --foreground: var(--keya-ink);
+  --card: var(--keya-paper);
+  --card-foreground: var(--keya-ink);
+  --popover: var(--keya-paper);
+  --popover-foreground: var(--keya-ink);
+  --primary: var(--keya-sprout);
+  --primary-foreground: #ffffff;
+  --secondary: var(--keya-pill);
+  --secondary-foreground: var(--keya-ink);
+  --muted: var(--keya-pill);
+  --muted-foreground: var(--keya-muted);
+  --accent: #fce6b6;
+  --accent-foreground: var(--keya-ink);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: var(--seaca-line);
-  --input: var(--seaca-line);
-  --ring: var(--seaca-green);
+  --border: var(--keya-line);
+  --input: var(--keya-line);
+  --ring: var(--keya-sprout);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -110,7 +111,7 @@
 
 html {
   min-width: 320px;
-  background: var(--seaca-almost-white);
+  background: var(--keya-canvas);
 }
 
 body {
@@ -120,7 +121,7 @@ body {
 }
 
 ::selection {
-  background: rgb(119 204 87 / 24%);
+  background: rgb(242 184 75 / 32%);
 }
 
 .font-interface {
@@ -135,7 +136,7 @@ body {
   display: none;
 }
 
-@keyframes seaca-fade-up {
+@keyframes keya-fade-up {
   from {
     opacity: 0;
     transform: translateY(6px);
@@ -146,7 +147,7 @@ body {
   }
 }
 
-@keyframes seaca-soft-pulse {
+@keyframes keya-soft-pulse {
   0%,
   100% {
     opacity: 0.55;
@@ -156,8 +157,8 @@ body {
   }
 }
 
-.seaca-fade-up {
-  animation: seaca-fade-up 200ms ease-out both;
+.keya-fade-up {
+  animation: keya-fade-up 200ms ease-out both;
 }
 
 .dark {

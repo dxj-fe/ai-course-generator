@@ -2,7 +2,7 @@
 
 ## 当天结论
 
-项目现在把超时、取消、缓存、模型档位和有限降级收敛到服务端运行时。Seaca 前端仍只负责发出创建/取消意图，并通过现有 SSE、Task Controller 和公开事件展示状态；它不选择模型、不读取缓存，也不复制 Agent 业务规则。
+项目现在把超时、取消、缓存、模型档位和有限降级收敛到服务端运行时。Keya 前端仍只负责发出创建/取消意图，并通过现有 SSE、Task Controller 和公开事件展示状态；它不选择模型、不读取缓存，也不复制 Agent 业务规则。
 
 Day 35 没有新增产品路由、模型选择面板、缓存控制台或成本仪表盘。完整运行策略见 [`docs/reliability-cost.md`](../docs/reliability-cost.md)。
 
@@ -18,7 +18,7 @@ Day 35 没有新增产品路由、模型选择面板、缓存控制台或成本�
       → bounded structured-result cache
       → OpenAI-compatible provider
   → checkpoint + public events
-  → SSE API client → Task Controller → existing Seaca UI
+  → SSE API client → Task Controller → existing Keya UI
 ```
 
 事实来源保持不变：

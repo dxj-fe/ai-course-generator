@@ -1,15 +1,15 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { PageProgressPanel } from "../../../src/features/seaca/page-progress-panel";
+import { PageProgressPanel } from "../../../src/features/keya/page-progress-panel";
 import { CourseGenerationStateSchema } from "../../../src/shared/course-schema";
-import type { SeacaCourseRun } from "../../../src/types/seaca";
+import type { KeyaCourseRun } from "../../../src/types/keya";
 import {
   courseDesignIntent,
   courseDesignOutline,
 } from "../../fixtures/course-design";
 
-function createRun(): SeacaCourseRun {
+function createRun(): KeyaCourseRun {
   return {
     id: "run-day-20",
     prompt: "生成太阳系课程",

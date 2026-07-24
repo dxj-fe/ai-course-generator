@@ -1,10 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
-import { Geist } from "next/font/google";
-import { cn } from "@/lib/utils";
-
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 const geistSans = localFont({
   src: "./fonts/geist-sans.woff2",
@@ -22,13 +18,10 @@ const geistMono = localFont({
 
 export const metadata: Metadata = {
   title: {
-    default: "Seaca",
-    template: "%s | Seaca",
+    default: "课芽",
+    template: "%s | 课芽",
   },
-  description: "Seaca",
-  icons: {
-    icon: "/seaca/images/logo-mark.webp",
-  },
+  description: "一句话生成可交互的个性化课程。",
 };
 
 export default function RootLayout({
@@ -37,7 +30,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN" className={cn("h-full antialiased", "font-sans", geist.variable)}>
+    <html className="h-full font-sans antialiased" lang="zh-CN">
       <body
         className={`${geistSans.variable} ${geistMono.variable} min-h-full`}
       >

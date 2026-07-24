@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { courseGenerationToSeacaRun } from "../../../src/features/course-planner/lib/course-generation-adapter";
+import { courseGenerationToKeyaRun } from "../../../src/features/course-planner/lib/course-generation-adapter";
 import type { CourseGenerationResponse } from "../../../src/features/course-planner/lib/course-planner-api";
 import { CourseGenerationStateSchema } from "../../../src/shared/course-schema";
 import {
@@ -12,7 +12,7 @@ import {
 } from "../../fixtures/course-design";
 
 describe("course generation adapter", () => {
-  it("maps the current batch attempt into existing Seaca stages", () => {
+  it("maps the current batch attempt into existing Keya stages", () => {
     const state = CourseGenerationStateSchema.parse({
       version: 1,
       courseId: "course-123e4567-e89b-42d3-a456-426614174000",
@@ -76,7 +76,7 @@ describe("course generation adapter", () => {
       state,
     };
 
-    const run = courseGenerationToSeacaRun(response, {
+    const run = courseGenerationToKeyaRun(response, {
       id: "run-1",
       prompt: state.userPrompt,
       startedAt: Date.parse(state.startedAt),
@@ -96,7 +96,7 @@ describe("course generation adapter", () => {
     expect(run.generation).toBe(state);
   });
 
-  it("maps the persisted current stage to a live Seaca running stage", () => {
+  it("maps the persisted current stage to a live Keya running stage", () => {
     const state = CourseGenerationStateSchema.parse({
       version: 1,
       courseId: "course-123e4567-e89b-42d3-a456-426614174001",
@@ -154,7 +154,7 @@ describe("course generation adapter", () => {
       state,
     };
 
-    const run = courseGenerationToSeacaRun(response, {
+    const run = courseGenerationToKeyaRun(response, {
       id: "run-stream",
       taskId: "task-stream",
       prompt: state.userPrompt,
@@ -182,7 +182,7 @@ describe("course generation adapter", () => {
         },
       ],
     });
-    const doneRun = courseGenerationToSeacaRun(
+    const doneRun = courseGenerationToKeyaRun(
       {
         courseId: doneState.courseId,
         traceId: doneState.traceId,
@@ -213,7 +213,7 @@ describe("course generation adapter", () => {
         },
       ],
     });
-    const errorRun = courseGenerationToSeacaRun(
+    const errorRun = courseGenerationToKeyaRun(
       {
         courseId: errorState.courseId,
         traceId: errorState.traceId,
@@ -297,7 +297,7 @@ describe("course generation adapter", () => {
       updatedAt: "2026-07-16T08:00:01.000Z",
     });
 
-    const run = courseGenerationToSeacaRun(
+    const run = courseGenerationToKeyaRun(
       { courseId: state.courseId, traceId: state.traceId, state },
       {
         id: "run-workers",

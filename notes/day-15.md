@@ -7,7 +7,7 @@
 - `basicLayoutHeuristics` 用确定性代码检查文档合同、安全、文本密度、固定宽度、裁切风险、对比度与素材。
 - 一步 `PageQAAgent` 同时消费 PagePlan、PageContentDSL、HTML、VisualBrief 和可选相邻页面上下文。
 - `POST /api/pages/qa` 只返回公开事件与报告，不返回修复后的 HTML。
-- Seaca 学习工作区显示总分、六维分数、问题位置和修复建议；QA 状态进入聊天 Timeline。
+- Keya 学习工作区显示总分、六维分数、问题位置和修复建议；QA 状态进入聊天 Timeline。
 - 独立预览只接收控制器写入的、重新通过 Schema 校验的可选报告。
 - 十类稳定失败分类用于回归：内容偏离、难度不匹配、DSL 缺失、课程断裂、文本过载、布局裁切、对比度、风格漂移、HTML 失败、素材不可用。
 

@@ -9,7 +9,7 @@
 - 缓存损坏、读取失败或写入失败都按 best-effort 降级处理；真实素材已经生成时，缓存故障不会反向让页面失败。
 - Image Assets Workflow 通过现有公开 Agent 事件汇总请求集与图片 hit、miss、stale 和 fallback，不把生产 Prompt、缓存摘要或磁盘路径写入公开事件和界面。
 - HTML Engineer 继续消费 PageContentDSL、VisualBrief 和当前页素材结果，把背景、角色贴纸与任务卡文字合成为自包含静态 HTML；每个 ready URI 和精确 altText 必须绑定到对应槽位节点，交换槽位会被拒绝。
-- Seaca 沿用 `/chat` Timeline、右侧学习工作区与 AssetGallery；缓存是服务端解析细节，不新增路由或平行控制台。
+- Keya 沿用 `/chat` Timeline、右侧学习工作区与 AssetGallery；缓存是服务端解析细节，不新增路由或平行控制台。
 
 ## 实现边界
 
@@ -54,7 +54,7 @@ PageContentDSL.assetSlots
   -> pageAssets controller state
   -> HtmlEngineerAgent
   -> HTML contract + safety + asset reference validation
-  -> Seaca learning workspace / sandbox preview
+  -> Keya learning workspace / sandbox preview
 ```
 
 缓存没有进入展示组件。API 客户端仍把批量 JSON 转成类型化的页面素材阶段，Task Controller 仍持有 `pageAssets`、`pageHtml` 和 `pageQa`。Timeline 只读取公开 `summary`；AssetGallery 只区分可用图片和显式 fallback。请求集命中只说明服务端复用了已校验的编译结果，不会把生产 Prompt 展示给学习者。以后把 JSON 传输替换为 SSE 时，只需增量追加同一类事件，不需要重新设计页面。

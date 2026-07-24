@@ -5,7 +5,7 @@
 - 共享 `GeneratedHtmlContract` 校验器。
 - 返回结构化拒绝原因的 `sanitizeHtmlLite` 安全预检。
 - 从 `PageContentDSL` 生成自包含静态 demo HTML。
-- Seaca `/chat` 右侧课程工作区中的 `HtmlPreviewFrame`。
+- Keya `/chat` 右侧课程工作区中的 `HtmlPreviewFrame`。
 - 合规与恶意 HTML 单元测试，以及安全边界文档。
 
 Day 13 没有实现 HtmlEngineerAgent。今天的确定性 demo 只负责证明“合同校验—安全预检—隔离预览”链路，模型生成高质量 HTML 留到 Day 14。
@@ -14,7 +14,7 @@ Day 13 没有实现 HtmlEngineerAgent。今天的确定性 demo 只负责证明�
 
 ### 1. 为什么不能把 AI 生成 HTML 直接传给 `dangerouslySetInnerHTML`？
 
-`dangerouslySetInnerHTML` 会把标记插入 Seaca 主应用 DOM。预览内容将与产品共享样式环境、页面交互边界和源上下文，可能通过事件属性、危险 URL、表单、SVG/CSS 或浏览器解析差异影响宿主页面。某类 `<script>` 通过 `innerHTML` 插入时不执行，并不代表整体输入安全。
+`dangerouslySetInnerHTML` 会把标记插入 Keya 主应用 DOM。预览内容将与产品共享样式环境、页面交互边界和源上下文，可能通过事件属性、危险 URL、表单、SVG/CSS 或浏览器解析差异影响宿主页面。某类 `<script>` 通过 `innerHTML` 插入时不执行，并不代表整体输入安全。
 
 iframe 创建独立浏览上下文，`sandbox` 再从该上下文移除脚本、同源、表单、弹窗、下载和顶层导航等能力。因此它提供的是浏览器级隔离，而不是依赖字符串看起来“像安全 HTML”。
 

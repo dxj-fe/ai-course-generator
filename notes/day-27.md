@@ -76,7 +76,7 @@ re-QA 报告成为页面最新 `qualityReport`，同时把 report ID 写回本�
 
 恢复 checkpoint 不会重置预算。若进程在一轮开始后中断，该轮会标记 `agent_failed` 并占用预算，避免恢复后无限重复。用户取消保留 `WORKFLOW_ABORTED`，不会被降级成普通 Repair 失败。
 
-## Seaca 集成
+## Keya 集成
 
 没有新增产品路由或第二套 UI。Page Worker 发布严格公开事件：
 

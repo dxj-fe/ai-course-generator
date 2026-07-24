@@ -132,7 +132,7 @@
 - 明确最小输入和下游 Schema，输入字段中的指令性文字统一视为数据。
 - 将职责越界、技术字段生成、原始 Prompt 传播、私有推理和工具调用写入明确禁止项。
 - 为输入缺失、合同冲突和结构化输出失败增加一致的 Failure Handling。
-- 保留现有 Agent builder、Schema、Workflow 和 Seaca UI 接口。
+- 保留现有 Agent builder、Schema、Workflow 和 Keya UI 接口。
 - Image Prompt 组合版本变化会使已有请求集缓存键自然失效；旧缓存文件无需迁移。
 
 回滚方式：恢复对应 Prompt 正文与 `specialist-library.ts` 中上一组合版本。不得只回滚正文而保留新版本号，也不得只回滚版本号而保留新合同。

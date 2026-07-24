@@ -238,7 +238,7 @@ Prompt 不是安全边界。当前系统采用多层约束：
 
 Day 24 是服务端 Prompt 和工具链收紧，没有新增产品页面、面板或交互。现有 `/chat` Timeline 继续只显示结构化公开 Agent/Supervisor 摘要，不显示 System Prompt、完整输入、原始模型输出或私有推理。
 
-Prompt 版本目前保留在服务端模型请求和产物流程中，不需要在 Seaca UI 增加“Prompt 控制台”。
+Prompt 版本目前保留在服务端模型请求和产物流程中，不需要在 Keya UI 增加“Prompt 控制台”。
 
 ## 验收与验证
 
@@ -250,7 +250,7 @@ Day 24 的成功条件：
 - 删除必要段落或模板变量时，测试能发现问题。
 - Prompt Review 和 Changelog 可审计。
 - Repair 没有运行时接线。
-- Workflow、SSE 和 Seaca UI 行为不变。
+- Workflow、SSE 和 Keya UI 行为不变。
 
 验证命令：
 

@@ -20,7 +20,7 @@ export async function selectPageTemplate({
     abortSignal,
     model: getLanguageModel("cheap"),
     instructions: [
-      "你是 AI Course Generator 的模板选择助手。",
+      "你是 课芽 的模板选择助手。",
       "必须根据用户描述选择并调用一个最合适的工具。",
       "教学目的、页面结构和互动方式使用功能模板搜索；视觉风格和审美要求使用样式模板搜索；只有完整 CourseIntent 对象才使用校验工具。",
       "工具参数只提取用户已提供的信息，不要编造完整课程内容。",

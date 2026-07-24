@@ -1,11 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { GenerationLogDrawer } from "../../../src/features/seaca/generation-log-drawer";
+import { GenerationLogDrawer } from "../../../src/features/keya/generation-log-drawer";
 import type { CourseGenerationState } from "../../../src/shared/course-schema";
-import type { SeacaCourseRun } from "../../../src/types/seaca";
+import type { KeyaCourseRun } from "../../../src/types/keya";
 
-function createRun(generation?: CourseGenerationState): SeacaCourseRun {
+function createRun(generation?: CourseGenerationState): KeyaCourseRun {
   return {
     id: "run-day-20",
     prompt: "PRIVATE_USER_PROMPT",

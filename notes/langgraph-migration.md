@@ -50,4 +50,4 @@ Graph Node 不直接保存 CourseStore，也不直接发布 SSE。Task Service �
 - 任务服务默认运行时切换；
 - 任何 React、Controller、API 请求字段或产品路由。
 
-这些边界使 Day 30 可以只替换运行时流映射，而不重新设计 SSE 或 Seaca UI。
+这些边界使 Day 30 可以只替换运行时流映射，而不重新设计 SSE 或 Keya UI。

@@ -6,7 +6,8 @@ export {
   type HtmlValidationIssue,
 } from "./validation";
 export {
-  loadGeneratedHtmlPreview,
-  saveGeneratedHtmlPreview,
+  createGeneratedHtmlPreviewRecord,
+  parseGeneratedHtmlPreviewRecord,
+  type GeneratedHtmlPreviewInput,
   type GeneratedHtmlPreviewRecord,
-} from "./preview-cache";
+} from "./preview-record";

@@ -1,27 +1,14 @@
-import { randomUUID } from "node:crypto";
-import {
-  mkdir,
-  readFile,
-  readdir,
-  rename,
-  unlink,
-  writeFile,
-} from "node:fs/promises";
-import path from "node:path";
-
 import {
   CourseTaskIdSchema,
   CourseTaskRecordSchema,
   type CourseTaskRecord,
 } from "@/shared/course-schema";
+import {
+  databasePathForRoot,
+  getAppDatabase,
+} from "@/server/storage/database";
 
-const DEFAULT_COURSE_TASK_ROOT = path.join(
-  process.cwd(),
-  ".data",
-  "course-tasks",
-);
-
-/** 任务目录名只允许受控 slug，禁止绝对路径和目录穿越。 */
+/** 任务 ID 仍使用共享 Schema 约束，避免无效订阅键进入数据库。 */
 export const StoredCourseTaskIdSchema = CourseTaskIdSchema;
 
 export type CourseTaskStore = {
@@ -36,115 +23,73 @@ export type CourseTaskStoreListResult = {
 };
 
 type CourseTaskStoreOptions = {
+  databasePath?: string;
+  /** 保留测试和调用方兼容性；数据会写入该目录内的 SQLite。 */
   rootDir?: string;
 };
 
-/** 创建按任务隔离、可原子覆盖任务记录的 JSON 存储。 */
 export function createCourseTaskStore(
   options: CourseTaskStoreOptions = {},
 ): CourseTaskStore {
-  const rootDir = path.resolve(
-    /*turbopackIgnore: true*/ options.rootDir ?? DEFAULT_COURSE_TASK_ROOT,
+  const database = getAppDatabase(
+    options.databasePath ??
+      (options.rootDir ? databasePathForRoot(options.rootDir) : undefined),
   );
-  let writeQueue: Promise<void> = Promise.resolve();
+  const loadStatement = database.prepare(
+    "SELECT payload FROM course_tasks WHERE id = ?",
+  );
+  const listStatement = database.prepare(
+    "SELECT payload FROM course_tasks ORDER BY updated_at DESC",
+  );
+  const saveStatement = database.prepare(`
+    INSERT INTO course_tasks (id, course_id, payload, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      course_id = excluded.course_id,
+      payload = excluded.payload,
+      created_at = excluded.created_at,
+      updated_at = excluded.updated_at
+  `);
 
   return {
     async load(taskId) {
       const safeTaskId = StoredCourseTaskIdSchema.parse(taskId);
-      return readStoredTask(rootDir, safeTaskId);
+      const row = loadStatement.get(safeTaskId) as
+        | { payload: string }
+        | undefined;
+      if (!row) return undefined;
+      const record = CourseTaskRecordSchema.parse(JSON.parse(row.payload));
+      if (record.taskId !== safeTaskId) {
+        throw new Error("课程任务 ID 与数据库主键不一致");
+      }
+      return record;
     },
 
     async list() {
-      const entries = await readDirectories(rootDir);
+      const rows = listStatement.all() as Array<{ payload: string }>;
       const items: CourseTaskRecord[] = [];
       let unavailableCount = 0;
 
-      for (const entry of entries) {
-        const parsedId = StoredCourseTaskIdSchema.safeParse(entry.name);
-        if (!entry.isDirectory() || !parsedId.success) {
-          unavailableCount += 1;
-          continue;
-        }
+      for (const row of rows) {
         try {
-          const record = await readStoredTask(rootDir, parsedId.data);
-          if (record) items.push(record);
+          items.push(CourseTaskRecordSchema.parse(JSON.parse(row.payload)));
         } catch {
           unavailableCount += 1;
         }
       }
 
-      items.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
       return { items, unavailableCount };
     },
 
     async save(record) {
       const parsed = CourseTaskRecordSchema.parse(record);
-      const filePath = taskFilePath(rootDir, parsed.taskId);
-      const operation = writeQueue.then(() =>
-        writeTaskFileAtomically(filePath, parsed),
+      saveStatement.run(
+        parsed.taskId,
+        parsed.courseId,
+        JSON.stringify(parsed),
+        parsed.createdAt,
+        parsed.updatedAt,
       );
-
-      writeQueue = operation.catch(() => undefined);
-      return operation;
     },
   };
-}
-
-async function readStoredTask(rootDir: string, taskId: string) {
-  const filePath = taskFilePath(rootDir, taskId);
-  let source: string;
-
-  try {
-    source = await readFile(filePath, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw error;
-  }
-
-  const record = CourseTaskRecordSchema.parse(JSON.parse(source));
-  if (record.taskId !== taskId) {
-    throw new Error("课程任务 ID 与存储目录不一致");
-  }
-  return record;
-}
-
-async function readDirectories(rootDir: string) {
-  try {
-    return await readdir(rootDir, { withFileTypes: true });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
-}
-
-function taskFilePath(rootDir: string, taskId: string) {
-  const safeId = StoredCourseTaskIdSchema.parse(taskId);
-  return path.join(rootDir, safeId, "task.json");
-}
-
-async function writeTaskFileAtomically(
-  filePath: string,
-  record: CourseTaskRecord,
-) {
-  const directory = path.dirname(filePath);
-  const temporaryPath = path.join(
-    directory,
-    `.task.json.${process.pid}-${randomUUID()}.tmp`,
-  );
-
-  await mkdir(directory, { recursive: true });
-  try {
-    await writeFile(temporaryPath, `${JSON.stringify(record, null, 2)}\n`, {
-      encoding: "utf8",
-      flag: "wx",
-    });
-    await rename(temporaryPath, filePath);
-  } catch (error) {
-    try {
-      await unlink(temporaryPath);
-    } catch {
-      // 临时文件可能尚未创建或已完成 rename；保留原始写入错误。
-    }
-    throw error;
-  }
 }

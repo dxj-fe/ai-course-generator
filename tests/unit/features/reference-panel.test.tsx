@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { ReferencePanel } from "../../../src/features/seaca/reference-panel";
+import { ReferencePanel } from "../../../src/features/keya/reference-panel";
 import pagePlan from "../../../src/shared/course-schema/examples/page-plan.example.json";
 
 describe("ReferencePanel", () => {

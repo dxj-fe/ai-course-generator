@@ -2,7 +2,7 @@
 
 ## 目标
 
-Day 30 将 Day 29 的生产 `StateGraph` 从仅返回 `invoke` 终态扩展为可实时消费的 `updates/custom` 流，同时保持 Day 19 已建立的任务、checkpoint、SSE、Controller 和 Seaca Timeline 合同。
+Day 30 将 Day 29 的生产 `StateGraph` 从仅返回 `invoke` 终态扩展为可实时消费的 `updates/custom` 流，同时保持 Day 19 已建立的任务、checkpoint、SSE、Controller 和 Keya Timeline 合同。
 
 ## 两层 streaming
 
@@ -20,7 +20,7 @@ graph.stream([updates, custom])
   -> CourseTaskEventBus
   -> existing task SSE route
   -> useSSETask
-  -> Seaca Timeline / learning workspace
+  -> Keya Timeline / learning workspace
 ```
 
 `custom` envelope 只在服务端内部存在。它必须是一个严格的 checkpoint 对象；mapper 会校验完整课程状态、当前 trace、连续 sequence 和已知节点名，并且只提取既有 `CourseGenerationPublicEvent`。`debug`、`messages`、未知 mode、未知节点和任意私有字段都会被拒绝。

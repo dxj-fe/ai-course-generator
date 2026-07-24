@@ -9,7 +9,7 @@
 - 新增 `POST /api/courses/tasks` 创建后台课程任务、`GET /api/courses/tasks/[taskId]/events` 订阅 SSE、`DELETE /api/courses/tasks/[taskId]` 显式取消任务。
 - SSE 支持初次快照、`id` 游标、`Last-Event-ID` 增量重放、15 秒心跳、连接清理和终态主动关闭。
 - 新增类型化 API Client 与 `useSSETask`。原生 `MessageEvent` 在 Hook 边界完成 JSON 解析、Zod 校验、顺序检查和去重，不进入展示组件。
-- Seaca `/chat` 继续使用现有 Composer、Agent Timeline 和右侧 learning workspace；Day 19 只替换整课生成的传输与增量状态更新，没有新增页面、平行控制台或第二套视觉系统。
+- Keya `/chat` 继续使用现有 Composer、Agent Timeline 和右侧 learning workspace；Day 19 只替换整课生成的传输与增量状态更新，没有新增页面、平行控制台或第二套视觉系统。
 
 ## 真实数据流
 
@@ -26,7 +26,7 @@
   -> GET /api/courses/tasks/{taskId}/events
   -> snapshot / event / terminal SSE frames
   -> useSSETask parse + validate + deduplicate
-  -> Seaca Task Controller adapter
+  -> Keya Task Controller adapter
   -> existing chat Timeline + right learning workspace
 ```
 
@@ -127,9 +127,9 @@ Route 在“订阅 EventBus”与“加载磁盘检查点”之间使用缓冲�
 
 增量事件必须建立在 snapshot 上。若先收到 event、sequence 出现缺口、消息引用了其他任务/课程，或数据无法合并为合法 `CourseGenerationState`，Hook 会把它当作协议错误，而不是用不完整状态继续渲染。
 
-类型化 API Client 只负责 POST 和 DELETE 的 HTTP/JSON 边界；`useSSETask` 负责 SSE 边界；`ChatApp` Controller 把最新课程状态交给既有 `courseGenerationToSeacaRun` adapter。`CourseRunTimeline` 和 learning workspace 不直接调用业务 API，也不读取原生 EventSource。
+类型化 API Client 只负责 POST 和 DELETE 的 HTTP/JSON 边界；`useSSETask` 负责 SSE 边界；`ChatApp` Controller 把最新课程状态交给既有 `courseGenerationToKeyaRun` adapter。`CourseRunTimeline` 和 learning workspace 不直接调用业务 API，也不读取原生 EventSource。
 
-## Seaca 产品边界
+## Keya 产品边界
 
 Day 19 没有重新设计产品界面：
 
@@ -137,7 +137,7 @@ Day 19 没有重新设计产品界面：
 - `/chat` thread 的现有 Agent Timeline 随 snapshot/event 增量更新公开摘要；
 - `/chat` 右侧 learning workspace 在检查点到达后更新课程规划、页面、素材和 HTML 预览；
 - `/`、`/course`、`/templates` 不新增 Day 19 产品表面；
-- Day 18 的 `POST /api/courses/generate` 可以保留为批量兼容入口，但 Seaca 整课 Controller 使用任务 API 与 SSE；
+- Day 18 的 `POST /api/courses/generate` 可以保留为批量兼容入口，但 Keya 整课 Controller 使用任务 API 与 SSE；
 - 没有把旧 `AiPlayground` 或 course-planner 面板挂回产品路由。
 
 Adapter 现在同时参考持久化阶段与 `agent_start`、`agent_done`、`page_done`，因此未完成的 Planner、Design、Page Writer、Assets 和 HTML 会显示 running，而不是等待最终批量响应后一次性变绿。
@@ -238,7 +238,7 @@ Hook 可以处于 reconnecting，同时最新课程仍是 running；只有经过
 
 核心结论：它不能跨实例广播、不能在进程重启后恢复订阅，也不能提供耐久任务执行保证。
 
-当前实现适合验证协议、SSE 路由和 Seaca 数据边界。生产演进时应将 task record 放入数据库，将工作提交到持久队列，并把公开事件通过 outbox 加 Pub/Sub 分发；worker 使用幂等 taskId、租约和 checkpoint 防止重复执行。
+当前实现适合验证协议、SSE 路由和 Keya 数据边界。生产演进时应将 task record 放入数据库，将工作提交到持久队列，并把公开事件通过 outbox 加 Pub/Sub 分发；worker 使用幂等 taskId、租约和 checkpoint 防止重复执行。
 
 共享的 Zod 协议、CourseGenerationState、SSE 编码和前端 reducer 仍可保留。权衡是外部基础设施增加运维和一致性复杂度，因此应在确有多实例与耐久执行需求时引入，而不是在 Day 19 提前搭建。
 

@@ -19,7 +19,7 @@ import { JsonInspector } from "./json-inspector";
 
 const defaultPrompt = "用三句话介绍什么是 AI Agent。";
 const defaultSystemPrompt =
-  "你是 AI Course Generator 的课程助手。回答要清晰、准确、适合前端工程学习。";
+  "你是 课芽 的课程助手。回答要清晰、准确、适合前端工程学习。";
 
 const temperatureOptions = [
   { label: "稳定 0.2", value: 0.2 },
@@ -181,7 +181,7 @@ export function AiPlayground() {
               Day 12
             </p>
             <h1 className="text-3xl font-semibold text-[#101827]">
-              AI Course Generator
+              课芽
             </h1>
             <p className="text-sm text-[#64748b]">
               Day 01–12 工程训练台

@@ -1,13 +1,7 @@
-import {
-  mkdtemp,
-  mkdir,
-  readFile,
-  readdir,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createCourseTaskStore } from "../../../../src/server/storage/course-task-store";
@@ -36,7 +30,7 @@ function taskRecord(
 async function temporaryRoot() {
   const directory = await mkdtemp(path.join(tmpdir(), "task-store-test-"));
   directories.push(directory);
-  return path.join(directory, "tasks");
+  return path.join(directory, "storage");
 }
 
 afterEach(async () => {
@@ -48,82 +42,92 @@ afterEach(async () => {
 });
 
 describe("course task store", () => {
-  it("atomically saves and validates a task record", async () => {
-    const rootDir = await temporaryRoot();
-    const store = createCourseTaskStore({ rootDir });
+  it("saves and validates a task record in SQLite", async () => {
+    const store = createCourseTaskStore({ rootDir: await temporaryRoot() });
     const record = taskRecord();
-
     await store.save(record);
-
-    const filePath = path.join(rootDir, record.taskId, "task.json");
-    expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual(record);
     await expect(store.load(record.taskId)).resolves.toEqual(record);
-    await expect(readdir(path.dirname(filePath))).resolves.toEqual([
-      "task.json",
-    ]);
   });
 
   it("returns undefined for a missing task", async () => {
     const store = createCourseTaskStore({ rootDir: await temporaryRoot() });
-
     await expect(store.load("task-missing")).resolves.toBeUndefined();
   });
 
   it.each(["../outside", "task/other", "/tmp/task-other", "TASK-DAY-19"])(
-    "rejects unsafe task id %s before reading the filesystem",
+    "rejects unsafe task id %s before querying",
     async (taskId) => {
       const store = createCourseTaskStore({ rootDir: await temporaryRoot() });
-
       await expect(store.load(taskId)).rejects.toThrow();
     },
   );
 
-  it("rejects persisted JSON that does not match the task schema", async () => {
+  it("isolates an invalid database payload", async () => {
     const rootDir = await temporaryRoot();
-    const taskDirectory = path.join(rootDir, "task-day-19");
-    await mkdir(taskDirectory, { recursive: true });
-    await writeFile(
-      path.join(taskDirectory, "task.json"),
-      JSON.stringify({ version: 1, taskId: "task-day-19" }),
-      "utf8",
-    );
     const store = createCourseTaskStore({ rootDir });
+    const database = new DatabaseSync(path.join(rootDir, "keya.sqlite"));
+    database
+      .prepare(
+        `INSERT INTO course_tasks
+          (id, course_id, payload, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        "task-broken",
+        "course-day-19",
+        "{}",
+        "2026-07-15T03:00:00.000Z",
+        "2026-07-15T03:00:00.000Z",
+      );
+    database.close();
 
-    await expect(store.load("task-day-19")).rejects.toThrow();
+    await expect(store.load("task-broken")).rejects.toThrow();
+    await expect(store.list()).resolves.toMatchObject({
+      items: [],
+      unavailableCount: 1,
+    });
   });
 
-  it("rejects a valid record stored under a different task id", async () => {
+  it("rejects a payload whose ID differs from its database key", async () => {
     const rootDir = await temporaryRoot();
-    const taskDirectory = path.join(rootDir, "task-day-19");
-    await mkdir(taskDirectory, { recursive: true });
-    await writeFile(
-      path.join(taskDirectory, "task.json"),
-      JSON.stringify(taskRecord({ taskId: "task-different" })),
-      "utf8",
-    );
     const store = createCourseTaskStore({ rootDir });
+    const database = new DatabaseSync(path.join(rootDir, "keya.sqlite"));
+    database
+      .prepare(
+        `INSERT INTO course_tasks
+          (id, course_id, payload, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        "task-day-19",
+        "course-day-19",
+        JSON.stringify(taskRecord({ taskId: "task-different" })),
+        "2026-07-15T03:00:00.000Z",
+        "2026-07-15T03:00:00.000Z",
+      );
+    database.close();
 
     await expect(store.load("task-day-19")).rejects.toThrow(
-      "课程任务 ID 与存储目录不一致",
+      "课程任务 ID 与数据库主键不一致",
     );
   });
 
   it("rejects an invalid record before writing it", async () => {
-    const rootDir = await temporaryRoot();
-    const store = createCourseTaskStore({ rootDir });
-
+    const store = createCourseTaskStore({ rootDir: await temporaryRoot() });
     await expect(
       store.save({
         ...taskRecord(),
         pageCount: 6,
       } as unknown as CourseTaskRecord),
     ).rejects.toThrow();
-    await expect(readdir(rootDir)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(store.list()).resolves.toEqual({
+      items: [],
+      unavailableCount: 0,
+    });
   });
 
-  it("serializes concurrent records in invocation order", async () => {
-    const rootDir = await temporaryRoot();
-    const store = createCourseTaskStore({ rootDir });
+  it("serializes record upserts in invocation order", async () => {
+    const store = createCourseTaskStore({ rootDir: await temporaryRoot() });
     const first = taskRecord();
     const second = taskRecord({
       status: "running",
@@ -131,13 +135,11 @@ describe("course task store", () => {
     });
 
     await Promise.all([store.save(first), store.save(second)]);
-
     await expect(store.load(second.taskId)).resolves.toEqual(second);
   });
 
-  it("lists valid task records and isolates an invalid record", async () => {
-    const rootDir = await temporaryRoot();
-    const store = createCourseTaskStore({ rootDir });
+  it("lists valid task records by update time", async () => {
+    const store = createCourseTaskStore({ rootDir: await temporaryRoot() });
     await store.save(taskRecord());
     await store.save(
       taskRecord({
@@ -145,12 +147,10 @@ describe("course task store", () => {
         updatedAt: "2026-07-15T03:00:02.000Z",
       }),
     );
-    await mkdir(path.join(rootDir, "task-broken"), { recursive: true });
-    await writeFile(path.join(rootDir, "task-broken", "task.json"), "{}", "utf8");
 
     await expect(store.list()).resolves.toMatchObject({
       items: [{ taskId: "task-day-20" }, { taskId: "task-day-19" }],
-      unavailableCount: 1,
+      unavailableCount: 0,
     });
   });
 });

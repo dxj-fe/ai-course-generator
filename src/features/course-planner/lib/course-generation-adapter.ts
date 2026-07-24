@@ -19,8 +19,8 @@ import type {
 import type {
   CourseRunStage,
   CourseRunStageStatus,
-  SeacaCourseRun,
-} from "@/types/seaca";
+  KeyaCourseRun,
+} from "@/types/keya";
 
 type RunSeed = {
   id: string;
@@ -35,13 +35,13 @@ type AgentCompatibleGenerationEvent = CourseGenerationPublicEvent & {
 };
 
 /**
- * 把服务端持久化工作流状态投影到现有 Seaca Controller 结构。
+ * 把服务端持久化工作流状态投影到现有 课芽 Controller 结构。
  * 这里只做协议映射，不在浏览器复制课程编排规则。
  */
-export function courseGenerationToSeacaRun(
+export function courseGenerationToKeyaRun(
   response: CourseGenerationResponse,
   seed: RunSeed,
-): SeacaCourseRun {
+): KeyaCourseRun {
   const { state } = response;
   const plannerError = findStageError(state, ["intent", "planner"]);
   const designError = findStageError(state, ["design"]);
@@ -105,10 +105,10 @@ export function courseGenerationToSeacaRun(
       } satisfies CourseDesignResponse)
     : undefined;
 
-  const pageWrites: SeacaCourseRun["pageWrites"] = {};
-  const pageAssets: SeacaCourseRun["pageAssets"] = {};
-  const pageHtml: SeacaCourseRun["pageHtml"] = {};
-  const pageQa: SeacaCourseRun["pageQa"] = {};
+  const pageWrites: KeyaCourseRun["pageWrites"] = {};
+  const pageAssets: KeyaCourseRun["pageAssets"] = {};
+  const pageHtml: KeyaCourseRun["pageHtml"] = {};
+  const pageQa: KeyaCourseRun["pageQa"] = {};
 
   for (const page of state.pages) {
     pageWrites[page.pageId] = buildPageWriterStage(state, page);

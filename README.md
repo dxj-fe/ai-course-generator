@@ -1,6 +1,6 @@
-# AI Course Generator
+# 课芽
 
-一句话或一份不超过 5 MB 的 txt/md/pdf 参考资料生成一门由多页关联 HTML 组成的课程。当前 Day 35 版本在产品化课程链路之上补齐严格取消传播、有限超时、结构化结果缓存、模型路由、一次瞬时降级和安全成本 telemetry。严格公开事件、SSE 和 checkpoint 仍是任务、Agent、页面进度与错误的唯一前端数据边界。
+课芽是一款 AI 个性化课程生成产品：用一句话或一份不超过 5 MB 的 txt/md/pdf 参考资料，生成一门由多页关联 HTML 组成的课程。当前 Day 35 版本在产品化课程链路之上补齐严格取消传播、有限超时、结构化结果缓存、模型路由、一次瞬时降级和安全成本 telemetry。严格公开事件、SSE 和 checkpoint 仍是任务、Agent、页面进度与错误的唯一前端数据边界。
 
 ## Day 01 交付
 
@@ -115,7 +115,7 @@
 - 新增完整文档 `GeneratedHtmlContract`，校验 doctype、html/head/body、viewport 和内联 style。
 - 新增 `sanitizeHtmlLite`，拒绝外链脚本、外链 iframe、事件属性、危险 URL、跳转和主动嵌入内容。
 - 新增确定性 Day 13 demo builder，从已校验的 PageContentDSL 生成自包含静态 HTML，不提前实现 HtmlEngineerAgent。
-- Seaca `/chat` 右侧学习工作区使用 `srcDoc` 和空权限 `sandbox` 展示页面，生成 HTML 不进入主应用 DOM。
+- 课芽 `/chat` 右侧学习工作区使用 `srcDoc` 和空权限 `sandbox` 展示页面，生成 HTML 不进入主应用 DOM。
 - 安全策略见 `docs/html-preview-security.md`，实现说明和详细面试题见 `notes/day-13.md`。
 
 ## Day 14 交付
@@ -123,7 +123,7 @@
 - 新增一步 `HtmlEngineerAgent` 和版本化 Prompt，只消费 PageContentDSL、服务端 Registry 模板与 VisualBrief，不读取原始用户 Prompt。
 - 新增 `POST /api/pages/generate-html`，返回完整 `HtmlOutput` 与公开 Agent 事件。
 - 模型 HTML 在服务端立即执行完整文档合同、无脚本安全预检和 DSL 稳定标记检查。
-- Seaca `/chat` 支持逐页生成、失败重试、上游失效和空权限 iframe 快速预览。
+- 课芽 `/chat` 支持逐页生成、失败重试、上游失效和空权限 iframe 快速预览。
 - 新增 `/preview/[previewId]` 独立预览路由；HTML 通过随机 ID 存入重新校验的浏览器临时缓存，不进入 URL。
 - 同一 DSL 的 sci-fi、kids-playful、minimal 三风格用例和详细面试复盘见 `notes/day-14.md`。
 
@@ -133,7 +133,7 @@
 - 新增 `basicLayoutHeuristics`，检查 HTML 合同、安全、文本过载、固定宽度、裁切风险、低对比度和素材可用性。
 - 新增只读 `PageQAAgent`、版本化 Prompt 和 `POST /api/pages/qa`，语义模型不会修改 HTML。
 - 总分采用 30/22/17/13/10/8 权重，error 和关键低分通过程序硬门槛触发修复。
-- Seaca `/chat` 增加逐页 QA 状态、公开事件、六维评分和可执行问题列表；重新生成上游产物时旧报告自动失效。
+- 课芽 `/chat` 增加逐页 QA 状态、公开事件、六维评分和可执行问题列表；重新生成上游产物时旧报告自动失效。
 - 独立预览缓存可携带经过 Schema 校验且指向当前页面的质量报告，并在顶部显示评分状态。
 - 十类固定失败分类、实现边界和详细面试复盘见 `notes/day-15.md`。
 
@@ -145,7 +145,7 @@
 - 方舟模式默认复用现有 `ARK_API_KEY` 调用 `doubao-seedream-4-5-251128`；Seedream 返回 JPEG 时会保留图片并显式标注透明通道警告。
 - 图片服务未配置、调用失败、格式伪造或透明背景不满足时返回 CSS/SVG/占位降级，不阻塞 HTML Engineer。
 - HTML Engineer 只能消费当前页面批准的内部素材 URI；Page QA 会报告素材缺失、未引用和 fallback。
-- Seaca `/chat` 学习工作区增加逐页图片素材状态、公开事件与 AssetGallery，重新生图会失效旧 HTML 与 QA。
+- 课芽 `/chat` 学习工作区增加逐页图片素材状态、公开事件与 AssetGallery，重新生图会失效旧 HTML 与 QA。
 - 素材边界、四类用例和详细面试复盘见 `notes/day-16.md`。
 
 ## Day 17 交付
@@ -156,14 +156,14 @@
 - 缓存读写是 best-effort 辅助能力，损坏索引或写入失败只产生公开警告，不会让已生成素材或 HTML 流程失败。
 - Image Assets Timeline 使用现有公开事件展示请求集、图片 hit/miss、stale 和 fallback 汇总，不把生产 Prompt、缓存键或服务端路径写入公开事件和界面。
 - HTML Engineer 继续把背景、角色贴纸与课程任务卡合成为语义 HTML；URI 和精确 altText 必须绑定到对应素材槽节点，文字和互动不会被烘焙进图片。
-- Seaca 学习工作区保持原有 AssetGallery 和两阶段生成流程，仅把重复操作表述为“重新解析素材”，不增加平行缓存控制台。
+- 课芽 学习工作区保持原有 AssetGallery 和两阶段生成流程，仅把重复操作表述为“重新解析素材”，不增加平行缓存控制台。
 - 缓存失效、素材合成边界和详细面试复盘见 `notes/day-17.md`。
 
 ## Day 18 交付
 
 - 新增共享 `CourseGenerationStateSchema`，统一保存整课阶段、逐页产物、公开事件、结构化错误和运行时间，持久化前后都执行 Zod 校验。
 - 新增服务端串行 Course Generation Workflow：Intent → Planner → 专业设计 → 每页 Page Writer → Assets → HTML；页面严格按依赖顺序执行，不在浏览器复制编排规则。
-- 新增 `.data/courses/{courseId}/course.json` 原子检查点；每个阶段和页面完成后保存，失败保留此前 HTML，恢复时跳过已完成页面并从失败阶段继续。
+- 课程检查点、任务记录、会话和消息统一保存到 `.data/keya.sqlite`；每个阶段和页面完成后保存，失败保留此前 HTML，恢复时跳过已完成页面并从失败阶段继续。旧 `.data/courses` 与 `.data/course-tasks` 的有效 JSON 会在首次启动时导入一次。
 - 新增 `POST /api/courses/generate` 批量入口。默认尊重 Intent 并收敛到 3–5 页，也可显式指定页数；传已有 `courseId` 可恢复运行。
 - `/chat` composer 现在用一个提示启动整课任务并提供取消按钮；Timeline 只消费结构化公开摘要，不保存 Agent event data。
 - 右侧 learning workspace 增加统一多页预览与断点恢复入口；页面选择使用可访问 Tab 语义，并且始终只挂载当前页面的沙箱 iframe。
@@ -177,7 +177,7 @@
 - 新增 `POST /api/courses/tasks`、`GET /api/courses/tasks/[taskId]/events` 与 `DELETE /api/courses/tasks/[taskId]`，分别负责创建、SSE 订阅和显式取消。
 - SSE 使用公开事件 sequence 作为 `id`，支持 `Last-Event-ID` 增量重放、初始快照、订阅竞态缓冲、心跳和终态关闭。
 - 新增 `useSSETask`，在 Controller 数据层完成 EventSource 生命周期、Schema 校验、顺序检查、重连去重和终态归并。
-- Seaca `/chat` 继续使用现有 Composer、Agent Timeline 和 learning workspace；整课生成从批量 JSON 切换为实时任务流，没有重做 UI 或增加平行控制台。
+- 课芽 `/chat` 继续使用现有 Composer、Agent Timeline 和 learning workspace；整课生成从批量 JSON 切换为实时任务流，没有重做 UI 或增加平行控制台。
 - 协议、取消语义、单进程限制、验证策略和八道详细面试题见 `notes/day-19.md`。
 
 ## Day 20 交付
@@ -196,7 +196,7 @@
 - 新增当前 MVP 与目标 Supervisor + Specialist 两张架构图，区分已实现能力、目标角色、Page Worker 执行范围、Generate Image Skill 和确定性基础设施。
 - 为 Planner、Pedagogy、Story、Visual、Page Writer、Image Prompt、HTML Engineer、QA 与未来 Repair 建立输入、输出、校验和禁止职责契约。
 - 记录单一超级 Agent 的具体失败模式、当前固定工作流的局限、Supervisor 与 LangGraph 的关系，以及什么时候不应该使用多 Agent。
-- Day 21 只交付架构文档和面试讲解，不修改现有业务工作流、共享 Schema、SSE 协议或 Seaca 产品 UI。
+- Day 21 只交付架构文档和面试讲解，不修改现有业务工作流、共享 Schema、SSE 协议或 课芽 产品 UI。
 - 总设计见 `docs/multi-agent-design.md`，当前/目标流程见 `docs/architecture/mvp-flow.md` 与 `docs/architecture/multi-agent-flow.md`，角色索引见 `src/server/agents/README.md`，复盘见 `notes/day-21.md`。
 
 ## Day 22 交付
@@ -204,7 +204,7 @@
 - 保留 `runCourseGenerationWorkflow` 作为兼容 facade，任务服务、Route Handler 与既有调用方不需要改入口。
 - 新增声明式串行运行层：`WorkflowNode` 通过 `requiredInputs` 与 `produces` 描述 handoff，`runSequentialWorkflow` 按节点列表执行、集中合并并把失败定位为带 `nodeName` 的 `WorkflowNodeError`。
 - 新增课程节点装配：Intent、Planner、Course Design，以及每页 Writer、Assets、HTML 都被包装为聚焦节点；现有 Agent、素材子流程和专业设计子流程继续复用。
-- API、SSE、公开事件 Schema、`CourseGenerationState`、checkpoint 时机、取消与断点恢复语义、Seaca `/chat` Timeline 和 learning workspace 均保持不变。
+- API、SSE、公开事件 Schema、`CourseGenerationState`、checkpoint 时机、取消与断点恢复语义、课芽 `/chat` Timeline 和 learning workspace 均保持不变。
 - 本日没有实现 Supervisor、Repair、自动 QA、独立 Page Worker、页面并发或 LangGraph；固定顺序仍由服务端 TypeScript 节点列表决定。
 - 重构前后对比、节点合同、失败语义和详细面试复盘见 `notes/day-22.md`；当前/目标图与角色边界见 `docs/architecture/mvp-flow.md`、`docs/architecture/multi-agent-flow.md`、`docs/multi-agent-design.md` 和 `src/server/agents/README.md`。
 
@@ -223,14 +223,14 @@
 - 新增复用 `CourseGenerationStateSchema.shape` 的生产 LangGraph State，以及独立 Intent、Planner、Briefs、Page Workers、Finalize 节点。
 - 固定拓扑为 `START → intent-node → planner-node → briefs-node → page-workers-node → finalize-node → END`；Page Worker 内部依赖、并发、QA/Repair 不重复实现。
 - 新增 `runCourseGenerationGraphWorkflow`，它与手写入口共享输入、依赖和最终状态合同；调用方显式选择运行时，Graph 失败不会自动双跑 fallback。
-- 产品任务 API、SSE、Controller 与 Seaca UI 未改变，Graph streaming 映射留到 Day 30；迁移说明与面试复盘见 `notes/langgraph-migration.md` 和 `notes/day-29.md`。
+- 产品任务 API、SSE、Controller 与 课芽 UI 未改变，Graph streaming 映射留到 Day 30；迁移说明与面试复盘见 `notes/langgraph-migration.md` 和 `notes/day-29.md`。
 
 ## Day 31 交付
 
 - 生产 Graph 改为 `START → Supervisor`，由类型化条件边在 Intent、Planner、Course Design、Page Worker、Retry、Repair、Finalize 和失败终态之间路由。
 - Supervisor 使用验证后的状态事实与持久化预算做规则优先决策；条件边只读取 `SupervisorDecisionSchema`，不解析事件摘要或调用模型重复判断唯一分支。
 - Page Worker 可在初次 QA 后交还控制权；每个 Repair 节点只授权一轮既有 Repair/re-QA，失败页每次只重试一个页面，三次阶段预算或两轮 Repair 预算耗尽后确定性停止。
-- 手写兼容入口与 LangGraph 共享 Supervisor attempts、checkpoint 和公开 decision 事件；Day 30 SSE mapper、Controller 与现有 Seaca UI 不变。
+- 手写兼容入口与 LangGraph 共享 Supervisor attempts、checkpoint 和公开 decision 事件；Day 30 SSE mapper、Controller 与现有 课芽 UI 不变。
 - 实现说明、路由表和面试复盘见 `notes/day-31.md` 与 `docs/multi-agent-design.md`。
 
 ## Day 32 交付
@@ -248,7 +248,7 @@
 - 实现 `retrieveSkillDocsSkill`、`retrieveTemplateCardsSkill`、任务范围内的 `retrieveReferenceSkill`，并提供 AI SDK Tool 适配器。
 - Planner 只接收功能模板 allowlist、相关模板 Cards 和资料 Hits；原始 chunks 留在服务端，Page Writer 继续按授权 ID 解析。
 - 手写 Supervisor 的合法节点携带 Skill 摘要；规则优先的 LangGraph Supervisor 仅将匹配能力用于公开解释，不改变节点、预算和终止规则。
-- Registry JSON/Markdown 由运行时定义驱动并受同步测试保护；`/chat`、`/templates`、SSE、Controller 和 Seaca 视觉系统保持不变。
+- Registry JSON/Markdown 由运行时定义驱动并受同步测试保护；`/chat`、`/templates`、SSE、Controller 和 课芽 视觉系统保持不变。
 - 实现边界与结构化检索/向量检索取舍见 `notes/day-33.md`，能力目录见 `docs/agent-retrieval-registry.md`。
 
 ## Day 34 交付

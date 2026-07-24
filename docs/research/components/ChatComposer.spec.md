@@ -1,7 +1,7 @@
 # ChatComposer Specification
 
 ## Overview
-- **Target:** `src/features/seaca/chat-composer.tsx`
+- **Target:** `src/features/keya/chat-composer.tsx`
 - **References:** `chat-desktop-1440.png`, `chat-conversation-desktop-1440.png`
 - **Evidence:** measurements recorded during signed-in browser inspection and cross-checked against the reference screenshots.
 - **Interaction model:** click suggestions, type, submit; upload/voice may remain no-op mock controls.
@@ -22,11 +22,11 @@
 - Each icon is `14 × 14px`.
 
 ### Textarea and controls
-- Textarea `(789,873)`, `610 × 24px`: min-height `24px`, max-height `120px`, overflow-y auto, resize none, transparent, no border, padding `0 4px 0 0`, `14px/24px`, color `rgb(56,44,25)`, placeholder `var(--seaca-brown)`.
+- Textarea `(789,873)`, `610 × 24px`: min-height `24px`, max-height `120px`, overflow-y auto, resize none, transparent, no border, padding `0 4px 0 0`, `14px/24px`, color `rgb(56,44,25)`, placeholder `var(--keya-brown)`.
 - Upload `(753,873)`, `24 × 24px`: transparent, radius `9999px`, color `rgb(152,142,128)`, transition `.15s cubic-bezier(.4,0,.2,1)`; hover scale `1.08`, color `#382c19`.
 - Mic `(1411,873)`, `24 × 24px`: same captured base; hover scale `1.06`, background `rgba(119,204,87,.14)`, color `#77cc57`.
 - Send `(1439,869)`, `32 × 32px`: flex, radius `9999px`, `14px/20px`, weight `500`, white icon. Empty/disabled computed state: background `rgba(91,76,59,.18)`, cursor `not-allowed`.
-- Enabled send class uses `var(--seaca-green)` (`#77cc57`); its enabled computed state was not captured.
+- Enabled send class uses `var(--keya-green)` (`#77cc57`); its enabled computed state was not captured.
 - Rounded outer shell is visibly warm-white with a light border/shadow and about `750px` max width, but its exact computed padding, border, radius, shadow, and width were not saved.
 
 ### Home shortcut

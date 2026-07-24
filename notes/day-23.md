@@ -330,13 +330,13 @@ HTML 生成遇到暂时错误，预算允许再次执行。（第 2 次执行）
 
 SSE 外层仍是 `snapshot / event / terminal` 三类消息。Day 23 只是为严格公开事件 union 增加一种 event type，没有让前端消费 AI SDK 或未来 LangGraph 的原生 stream chunk。
 
-## Seaca Timeline 落点
+## Keya Timeline 落点
 
 Day 23 继续使用现有 `/chat` 产品壳：
 
-- [`course-run-timeline-model.ts`](../src/features/seaca/course-run-timeline-model.ts) 从 checkpoint 事件中投影 `supervisorDecisions`；
-- [`course-run-timeline.tsx`](../src/features/seaca/course-run-timeline.tsx) 在任务摘要与 Agent 进度之间展示最近三条公开调度摘要；
-- [`generation-log-drawer.tsx`](../src/features/seaca/generation-log-drawer.tsx) 保留全部 `supervisor_decision` 结构化日志；
+- [`course-run-timeline-model.ts`](../src/features/keya/course-run-timeline-model.ts) 从 checkpoint 事件中投影 `supervisorDecisions`；
+- [`course-run-timeline.tsx`](../src/features/keya/course-run-timeline.tsx) 在任务摘要与 Agent 进度之间展示最近三条公开调度摘要；
+- [`generation-log-drawer.tsx`](../src/features/keya/generation-log-drawer.tsx) 保留全部 `supervisor_decision` 结构化日志；
 - learning workspace 继续只展示课程规划、DSL、素材、HTML、预览和 QA 产物。
 
 没有新增 `/supervisor`、`/workflow` 或 `/generate` 页面，也没有把旧 `AiPlayground` 挂回产品路由。
@@ -529,7 +529,7 @@ Timeline 测试验证公开 Supervisor 事件的投影和现有 UI 展示；SSE 
 
 **原理或设计原因：** 框架能提供图运行、Reducer、checkpoint 和 streaming，但不会自动定义领域状态、重试边界、公开事件安全或 Specialist 权限。合同不稳定时引入框架只会增加调试层次。
 
-**在 ai-course-generator 中的实际落地：** 项目已有 Zod State、WorkflowNode、集中 merge、CourseStore checkpoint、SSE 和 Seaca Controller。Day 23 只补 Supervisor 和有限循环，所有外部合同保持兼容。
+**在 ai-course-generator 中的实际落地：** 项目已有 Zod State、WorkflowNode、集中 merge、CourseStore checkpoint、SSE 和 Keya Controller。Day 23 只补 Supervisor 和有限循环，所有外部合同保持兼容。
 
 **主要权衡或常见追问：** 手写运行器需要自行维护 guard 和测试；当 QA/Repair、条件边和页面并发复杂度明显增加后，可以评估 LangGraph，但迁移应保持共享 State 和公开协议不变。
 

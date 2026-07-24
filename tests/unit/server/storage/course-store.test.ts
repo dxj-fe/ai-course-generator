@@ -1,13 +1,7 @@
-import {
-  mkdtemp,
-  mkdir,
-  readFile,
-  readdir,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createCourseStore } from "../../../../src/server/storage/course-store";
@@ -37,7 +31,7 @@ function runningState(
 async function temporaryRoot() {
   const directory = await mkdtemp(path.join(tmpdir(), "course-store-test-"));
   directories.push(directory);
-  return path.join(directory, "courses");
+  return path.join(directory, "storage");
 }
 
 afterEach(async () => {
@@ -49,83 +43,79 @@ afterEach(async () => {
 });
 
 describe("course store", () => {
-  it("atomically saves and validates a course checkpoint", async () => {
-    const rootDir = await temporaryRoot();
-    const store = createCourseStore({ rootDir });
+  it("saves and validates a course checkpoint in SQLite", async () => {
+    const store = createCourseStore({ rootDir: await temporaryRoot() });
     const state = runningState();
 
     await store.save(state);
 
-    const filePath = path.join(rootDir, state.courseId, "course.json");
-    expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual(state);
     await expect(store.load(state.courseId)).resolves.toEqual(state);
-    await expect(readdir(path.dirname(filePath))).resolves.toEqual([
-      "course.json",
-    ]);
   });
 
   it("returns undefined for a missing course", async () => {
     const store = createCourseStore({ rootDir: await temporaryRoot() });
-
     await expect(store.load("course-missing")).resolves.toBeUndefined();
   });
 
   it.each(["../outside", "course/other", "/tmp/course-other", "COURSE-123"])(
-    "rejects unsafe course id %s before reading the filesystem",
+    "rejects unsafe course id %s before querying",
     async (courseId) => {
       const store = createCourseStore({ rootDir: await temporaryRoot() });
-
       await expect(store.load(courseId)).rejects.toThrow();
     },
   );
 
-  it("rejects persisted JSON that does not match the generation schema", async () => {
+  it("isolates an invalid database payload", async () => {
     const rootDir = await temporaryRoot();
-    const courseDirectory = path.join(rootDir, "course-123");
-    await mkdir(courseDirectory, { recursive: true });
-    await writeFile(
-      path.join(courseDirectory, "course.json"),
-      JSON.stringify({ version: 1, courseId: "course-123" }),
-      "utf8",
-    );
     const store = createCourseStore({ rootDir });
+    const database = new DatabaseSync(path.join(rootDir, "keya.sqlite"));
+    database
+      .prepare(
+        "INSERT INTO courses (id, payload, updated_at) VALUES (?, ?, ?)",
+      )
+      .run("course-broken", "{}", "2026-07-15T01:00:00.000Z");
+    database.close();
 
-    await expect(store.load("course-123")).rejects.toThrow();
+    await expect(store.load("course-broken")).rejects.toThrow();
+    await expect(store.list()).resolves.toMatchObject({
+      items: [],
+      unavailableCount: 1,
+    });
   });
 
-  it("rejects a valid checkpoint stored under a different course id", async () => {
+  it("rejects a payload whose ID differs from its database key", async () => {
     const rootDir = await temporaryRoot();
-    const courseDirectory = path.join(rootDir, "course-123");
-    await mkdir(courseDirectory, { recursive: true });
-    await writeFile(
-      path.join(courseDirectory, "course.json"),
-      JSON.stringify(runningState({ courseId: "course-other" })),
-      "utf8",
-    );
     const store = createCourseStore({ rootDir });
+    const database = new DatabaseSync(path.join(rootDir, "keya.sqlite"));
+    database
+      .prepare(
+        "INSERT INTO courses (id, payload, updated_at) VALUES (?, ?, ?)",
+      )
+      .run(
+        "course-123",
+        JSON.stringify(runningState({ courseId: "course-other" })),
+        "2026-07-15T01:00:00.000Z",
+      );
+    database.close();
 
     await expect(store.load("course-123")).rejects.toThrow(
-      "课程检查点 ID 与存储目录不一致",
+      "课程检查点 ID 与数据库主键不一致",
     );
   });
 
   it("rejects an invalid checkpoint before writing it", async () => {
-    const rootDir = await temporaryRoot();
-    const store = createCourseStore({ rootDir });
-    const invalidState: unknown = {
-      ...runningState(),
-      version: 2,
-    };
-
+    const store = createCourseStore({ rootDir: await temporaryRoot() });
     await expect(
-      store.save(invalidState as CourseGenerationState),
+      store.save({ ...runningState(), version: 2 } as CourseGenerationState),
     ).rejects.toThrow();
-    await expect(readdir(rootDir)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(store.list()).resolves.toEqual({
+      items: [],
+      unavailableCount: 0,
+    });
   });
 
-  it("serializes concurrent checkpoints in invocation order", async () => {
-    const rootDir = await temporaryRoot();
-    const store = createCourseStore({ rootDir });
+  it("serializes checkpoint upserts in invocation order", async () => {
+    const store = createCourseStore({ rootDir: await temporaryRoot() });
     const first = runningState();
     const second = runningState({
       userPrompt: "生成一门三页的太阳系互动课程",
@@ -133,16 +123,11 @@ describe("course store", () => {
     });
 
     await Promise.all([store.save(first), store.save(second)]);
-
     await expect(store.load(second.courseId)).resolves.toEqual(second);
-    await expect(
-      readdir(path.join(rootDir, second.courseId)),
-    ).resolves.toEqual(["course.json"]);
   });
 
-  it("lists valid checkpoints by update time and counts unavailable records", async () => {
-    const rootDir = await temporaryRoot();
-    const store = createCourseStore({ rootDir });
+  it("lists valid checkpoints by update time", async () => {
+    const store = createCourseStore({ rootDir: await temporaryRoot() });
     await store.save(runningState());
     await store.save(
       runningState({
@@ -150,12 +135,10 @@ describe("course store", () => {
         updatedAt: "2026-07-15T01:00:02.000Z",
       }),
     );
-    await mkdir(path.join(rootDir, "course-broken"), { recursive: true });
-    await writeFile(path.join(rootDir, "course-broken", "course.json"), "{}", "utf8");
 
     await expect(store.list()).resolves.toMatchObject({
       items: [{ courseId: "course-456" }, { courseId: "course-123" }],
-      unavailableCount: 1,
+      unavailableCount: 0,
     });
   });
 });

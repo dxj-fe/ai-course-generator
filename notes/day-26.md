@@ -57,7 +57,7 @@ Page QA Prompt 升级为 `2.1.0/2.1.0`。输入包含课程概览、全局学习
 - 每个问题必须有真实位置与可执行 `repairHint`；
 - 只返回报告草稿，不修改 HTML，不调用 Repair，也不自行宣布通过。
 
-## Seaca 展示
+## Keya 展示
 
 现有 `/chat` learning workspace 的 `PageQualityPanel` 继续承担 QA 展示，没有新增路由或视觉系统。面板按六个手册维度分组展示分数、摘要、服务端排序后的问题和去重修订建议，并显示截图状态与非敏感几何指标。前端不重新排序问题，也不读取截图服务器路径。
 
@@ -70,7 +70,7 @@ Page QA Prompt 升级为 `2.1.0/2.1.0`。输入包含课程概览、全局学习
 - 截图成功、超时、Chromium 不可用和不安全 HTML 跳过；
 - 截图失败不阻断 Page QA；
 - QA Prompt 版本和浏览器证据合同；
-- Seaca 六维分组、截图指标及服务器 artifact 隐藏。
+- Keya 六维分组、截图指标及服务器 artifact 隐藏。
 
 最终结果：58 个测试文件、327 项测试全部通过；ESLint、Prompt lint 和联网生产构建通过。首次沙箱构建只因 Google Fonts 网络访问受限失败，联网复验后编译、TypeScript、静态页面生成和全部路由构建均成功。
 

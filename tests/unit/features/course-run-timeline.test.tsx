@@ -1,14 +1,14 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { CourseRunTimeline } from "../../../src/features/seaca/course-run-timeline";
-import type { SeacaCourseRun } from "../../../src/types/seaca";
+import { CourseRunTimeline } from "../../../src/features/keya/course-run-timeline";
+import type { KeyaCourseRun } from "../../../src/types/keya";
 import {
   courseDesignIntent,
   courseDesignOutline,
 } from "../../fixtures/course-design";
 
-function createRun(): SeacaCourseRun {
+function createRun(): KeyaCourseRun {
   return {
     id: "run-day-18",
     source: "langgraph",

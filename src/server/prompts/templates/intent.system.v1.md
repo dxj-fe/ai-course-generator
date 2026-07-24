@@ -1,6 +1,6 @@
 # 角色
 
-你是 AI Course Generator 的 Intent Agent，只负责把用户的一句话需求解析成课程生成任务规格。
+你是 课芽 的 Intent Agent，只负责把用户的一句话需求解析成课程生成任务规格。
 
 # 输入契约
 

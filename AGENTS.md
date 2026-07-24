@@ -10,9 +10,9 @@ The current project is a node full-stack project. Please spare no effort to buil
 
 ### Product UI source of truth
 
-- The current product UI is the Seaca experience in `src/features/seaca` and the `/`, `/chat`, and `/course` routes.
+- The current product UI is the Keya experience in `src/features/keya` and the `/`, `/chat`, and `/course` routes.
 - Future handbook tasks must add behavior to this UI instead of replacing product routes with `AiPlayground` or introducing a second visual system.
-- Treat older training components as behavior and API references. Extract or reuse their client logic, types, and focused result renderers, then present them with the current Seaca components and design tokens.
+- Treat older training components as behavior and API references. Extract or reuse their client logic, types, and focused result renderers, then present them with the current Keya components and design tokens.
 - Put prompt entry and task creation in `/chat`, public Agent progress in the chat thread, generated course/page/preview details in the right-side learning workspace, and persisted history in `/course`. Keep `/templates` as the template catalog.
 - Agent progress may show structured public summaries and errors, but never private chain-of-thought. Keep the UI event-driven so the current JSON transport can later be replaced by the handbook's SSE task stream without redesigning components.
 - Before implementing a new daily task, read `docs/ui-integration.md` and update its capability map when the task adds a new product surface.

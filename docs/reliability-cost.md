@@ -1,6 +1,6 @@
 # Reliability and cost controls
 
-Day 35 keeps reliability rules in the server runtime. The Seaca UI emits task
+Day 35 keeps reliability rules in the server runtime. The Keya UI emits task
 intent and renders typed public state; it never selects models, reads caches, or
 controls provider retries.
 

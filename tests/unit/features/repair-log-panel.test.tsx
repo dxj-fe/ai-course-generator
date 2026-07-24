@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { RepairLogPanel } from "../../../src/features/seaca/repair-log-panel";
+import { RepairLogPanel } from "../../../src/features/keya/repair-log-panel";
 import { qualityReportWithIssue } from "../../fixtures/quality-report";
 
 describe("RepairLogPanel", () => {

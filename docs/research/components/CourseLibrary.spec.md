@@ -1,7 +1,7 @@
 # CourseLibrary Specification
 
 ## Overview
-- **Target:** `src/features/seaca/course-library.tsx`
+- **Target:** `src/features/keya/course-library.tsx`
 - **Reference:** `docs/design-references/course-desktop-1440.png`
 - **Evidence:** measurements recorded during signed-in browser inspection and the 1440 × 900 `/course` reference screenshot.
 - **Interaction model:** click-driven tabs and search; no scrolling or time-driven state was observed.

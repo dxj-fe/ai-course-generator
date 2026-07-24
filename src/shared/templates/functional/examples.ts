@@ -2,7 +2,7 @@ import { PagePlanSchema, type PagePlan } from "@/shared/course-schema";
 
 const definitions = [
   {
-    id: "mock-cover",
+    id: "example-cover",
     order: 1,
     pageType: "cover",
     title: "太阳系探险启程",
@@ -24,7 +24,7 @@ const definitions = [
     status: "planned",
   },
   {
-    id: "mock-story-intro",
+    id: "example-story-intro",
     order: 1,
     pageType: "story_intro",
     title: "来自火星的求救信号",
@@ -46,7 +46,7 @@ const definitions = [
     status: "planned",
   },
   {
-    id: "mock-knowledge-card",
+    id: "example-knowledge-card",
     order: 1,
     pageType: "knowledge_card",
     title: "认识八颗行星",
@@ -68,7 +68,7 @@ const definitions = [
     status: "planned",
   },
   {
-    id: "mock-comparison",
+    id: "example-comparison",
     order: 1,
     pageType: "comparison",
     title: "地球和火星有什么不同",
@@ -83,7 +83,7 @@ const definitions = [
     status: "planned",
   },
   {
-    id: "mock-timeline",
+    id: "example-timeline",
     order: 1,
     pageType: "timeline",
     title: "人类探索太空的里程碑",
@@ -98,7 +98,7 @@ const definitions = [
     status: "planned",
   },
   {
-    id: "mock-quiz",
+    id: "example-quiz",
     order: 1,
     pageType: "quiz",
     title: "行星挑战赛",
@@ -113,7 +113,7 @@ const definitions = [
     status: "planned",
   },
   {
-    id: "mock-achievement",
+    id: "example-achievement",
     order: 1,
     pageType: "achievement",
     title: "制作我的行星档案",
@@ -128,7 +128,7 @@ const definitions = [
     status: "planned",
   },
   {
-    id: "mock-summary",
+    id: "example-summary",
     order: 1,
     pageType: "summary",
     title: "太阳系知识地图",
@@ -156,7 +156,7 @@ const examplesByTemplateId = new Map(
   ]),
 );
 
-/** 按模板 ID 返回 Gallery 和测试使用的 PagePlan mock。 */
+/** 按模板 ID 返回 Gallery 和测试使用的 PagePlan 示例。 */
 export function getFunctionalTemplateExample(
   templateId: string,
 ): PagePlan | undefined {

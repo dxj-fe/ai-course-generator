@@ -120,7 +120,7 @@ worker update
 
 Day 25 只接入现有 Page QA，没有提前实现 Day 26 的截图或 QA 维度升级，也没有实现 Repair。
 
-新 Worker 自动保存 `qualityReport`。课程适配器把它投影到已有 `pageQa` stage，Seaca 继续复用：
+新 Worker 自动保存 `qualityReport`。课程适配器把它投影到已有 `pageQa` stage，Keya 继续复用：
 
 - `/chat` Agent Timeline；
 - 页面 Writer、Assets、HTML、QA 进度；
@@ -180,7 +180,7 @@ Day 25 只接入现有 Page QA，没有提前实现 Day 26 的截图或 QA 维�
 - 串行/并行配置与默认并发度 2；
 - 页面依赖解锁；
 - 一个独立页面失败时其他页面仍完成；
-- 并发页面状态与自动 QA 的 Seaca 投影；
+- 并发页面状态与自动 QA 的 Keya 投影；
 - checkpoint、SSE、任务服务和旧状态兼容。
 
 验证命令：

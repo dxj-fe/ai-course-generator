@@ -1,23 +1,14 @@
-import { randomUUID } from "node:crypto";
-import {
-  mkdir,
-  readFile,
-  readdir,
-  rename,
-  unlink,
-  writeFile,
-} from "node:fs/promises";
-import path from "node:path";
-
 import {
   CourseIdSchema,
   CourseGenerationStateSchema,
   type CourseGenerationState,
 } from "@/shared/course-schema";
+import {
+  databasePathForRoot,
+  getAppDatabase,
+} from "@/server/storage/database";
 
-const DEFAULT_COURSE_ROOT = path.join(process.cwd(), ".data", "courses");
-
-/** 课程目录名只允许受控 slug，禁止绝对路径和目录穿越。 */
+/** 课程 ID 仍使用共享 Schema 约束，避免无效主键进入数据库。 */
 export const StoredCourseIdSchema = CourseIdSchema;
 
 export type CourseStore = {
@@ -32,115 +23,71 @@ export type CourseStoreListResult = {
 };
 
 type CourseStoreOptions = {
+  databasePath?: string;
+  /** 保留测试和调用方兼容性；数据会写入该目录内的 SQLite。 */
   rootDir?: string;
 };
 
-/** 创建按课程隔离、可原子覆盖检查点的 JSON 存储。 */
 export function createCourseStore(
   options: CourseStoreOptions = {},
 ): CourseStore {
-  const rootDir = path.resolve(
-    /*turbopackIgnore: true*/ options.rootDir ?? DEFAULT_COURSE_ROOT,
+  const database = getAppDatabase(
+    options.databasePath ??
+      (options.rootDir ? databasePathForRoot(options.rootDir) : undefined),
   );
-  let writeQueue: Promise<void> = Promise.resolve();
+  const loadStatement = database.prepare(
+    "SELECT payload FROM courses WHERE id = ?",
+  );
+  const listStatement = database.prepare(
+    "SELECT payload FROM courses ORDER BY updated_at DESC",
+  );
+  const saveStatement = database.prepare(`
+    INSERT INTO courses (id, payload, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      payload = excluded.payload,
+      updated_at = excluded.updated_at
+  `);
 
   return {
     async load(courseId) {
       const safeCourseId = StoredCourseIdSchema.parse(courseId);
-      return readStoredCourse(rootDir, safeCourseId);
+      const row = loadStatement.get(safeCourseId) as
+        | { payload: string }
+        | undefined;
+      if (!row) return undefined;
+      const state = CourseGenerationStateSchema.parse(JSON.parse(row.payload));
+      if (state.courseId !== safeCourseId) {
+        throw new Error("课程检查点 ID 与数据库主键不一致");
+      }
+      return state;
     },
 
     async list() {
-      const entries = await readDirectories(rootDir);
+      const rows = listStatement.all() as Array<{ payload: string }>;
       const items: CourseGenerationState[] = [];
       let unavailableCount = 0;
 
-      for (const entry of entries) {
-        const parsedId = StoredCourseIdSchema.safeParse(entry.name);
-        if (!entry.isDirectory() || !parsedId.success) {
-          unavailableCount += 1;
-          continue;
-        }
+      for (const row of rows) {
         try {
-          const state = await readStoredCourse(rootDir, parsedId.data);
-          if (state) items.push(state);
+          items.push(
+            CourseGenerationStateSchema.parse(JSON.parse(row.payload)),
+          );
         } catch {
           unavailableCount += 1;
         }
       }
 
-      items.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
       return { items, unavailableCount };
     },
 
     async save(state) {
       const parsed = CourseGenerationStateSchema.parse(state);
-      const filePath = courseFilePath(rootDir, parsed.courseId);
-
-      const operation = writeQueue.then(() =>
-        writeCourseFileAtomically(filePath, parsed),
+      saveStatement.run(
+        parsed.courseId,
+        JSON.stringify(parsed),
+        parsed.updatedAt,
       );
-      writeQueue = operation.catch(() => undefined);
-      return operation;
     },
   };
-}
-
-async function readStoredCourse(rootDir: string, courseId: string) {
-  const filePath = courseFilePath(rootDir, courseId);
-  let source: string;
-
-  try {
-    source = await readFile(filePath, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw error;
-  }
-
-  const state = CourseGenerationStateSchema.parse(JSON.parse(source));
-  if (state.courseId !== courseId) {
-    throw new Error("课程检查点 ID 与存储目录不一致");
-  }
-  return state;
-}
-
-async function readDirectories(rootDir: string) {
-  try {
-    return await readdir(rootDir, { withFileTypes: true });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  }
-}
-
-function courseFilePath(rootDir: string, courseId: string) {
-  const safeId = StoredCourseIdSchema.parse(courseId);
-  return path.join(rootDir, safeId, "course.json");
-}
-
-async function writeCourseFileAtomically(
-  filePath: string,
-  state: CourseGenerationState,
-) {
-  const directory = path.dirname(filePath);
-  const temporaryPath = path.join(
-    directory,
-    `.course.json.${process.pid}-${randomUUID()}.tmp`,
-  );
-
-  await mkdir(directory, { recursive: true });
-  try {
-    await writeFile(temporaryPath, `${JSON.stringify(state, null, 2)}\n`, {
-      encoding: "utf8",
-      flag: "wx",
-    });
-    await rename(temporaryPath, filePath);
-  } catch (error) {
-    try {
-      await unlink(temporaryPath);
-    } catch {
-      // 临时文件可能尚未创建或已完成 rename；保留原始写入错误。
-    }
-    throw error;
-  }
 }

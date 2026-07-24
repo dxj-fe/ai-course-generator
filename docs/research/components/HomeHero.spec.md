@@ -1,7 +1,7 @@
 # HomeHero Specification
 
 ## Overview
-- **Target file:** `src/features/seaca/home-hero.tsx`
+- **Target file:** `src/features/keya/home-hero.tsx`
 - **References:** `docs/design-references/home-desktop-1440.png`, `docs/design-references/home-mobile-390.png`
 - **Interaction model:** click-to-open featured works and click/type composer controls; static background (no scroll/time animation).
 - **Evidence note:** desktop measurements were recorded during signed-in browser inspection; mobile layout is directly observed in the 390px screenshot.
@@ -13,22 +13,22 @@
 
 ### Section and visual layers
 - section rect `x:0; y:64; width:1440px; height:732px`; `position:relative; overflow:hidden`; background context `rgb(253,251,248)`.
-- base image `/seaca/images/bg.png`: absolute inset 0, rendered `1440×732px`.
+- base image `/keya/images/bg.png`: absolute inset 0, rendered `1440×732px`.
 - gradient layer: `linear-gradient(rgb(253,251,248) 0%, rgba(253,251,248,0) 46.154%, rgb(253,251,248) 100%)`.
-- texture layer: `url(/seaca/images/dots.png)`, absolute inset 0, opacity `.05`, `mix-blend-mode:multiply`.
+- texture layer: `url(/keya/images/dots.png)`, absolute inset 0, opacity `.05`, `mix-blend-mode:multiply`.
 
 ### Greeting
-- h1 text `Hi seaca_d931d5e4, 今天想解锁什么？`; rect `x:355.28125; y:136; width:729.4375px; height:40px`.
+- h1 text `Hi keya_d931d5e4, 今天想解锁什么？`; rect `x:355.28125; y:136; width:729.4375px; height:40px`.
 - h1 `40px/40px`, weight 600, color `rgb(56,44,25)`, same CJK font stack as body, no margin.
-- render only `解锁` in `rgb(119,204,87)`; underline/deco asset `/seaca/images/title-deco.svg` at `x:884.609375; y:178; width:78px; height:6px`.
+- render only `解锁` in `rgb(119,204,87)`; underline/deco asset `/keya/images/title-deco.svg` at `x:884.609375; y:178; width:78px; height:6px`.
 - subtitle, centered below: `告诉我们的想法，我们随时开始`; 16px regular, muted `rgb(152,142,128)` (reference placement around y=204).
 
 ### Featured works
 - grid bounds `x:120` to `1320`, top `324.25px`; 3 equal columns `384px`, gap `24px`; card height `216px`.
 - Cards clip their cover at approximately 12px radius; covers fill the cell (`object-fit:cover`) without text overlays from this app.
 - card 1 visible cover text: `开口说英语 从 4 个场景 开始`; this is a remote HTML-proxy cover and has no downloaded raster; reproduce as a simple static cover tile from the screenshot.
-- card 2 alt/title `《遥远的她》改编爱情故事`; asset `/seaca/images/6fe9c26d-4a77-4648-82ae-01ee70c717cd.webp`; computed `384×216px` at `x:528; y:324.25`.
-- card 3 alt/title `外国名著英文导读`; asset `/seaca/images/06942ebd-29b6-4e3a-9236-c46edc8235be.webp`; computed `384×216px` at `x:936; y:324.25`.
+- card 2 alt/title `《遥远的她》改编爱情故事`; asset `/keya/images/6fe9c26d-4a77-4648-82ae-01ee70c717cd.webp`; computed `384×216px` at `x:528; y:324.25`.
+- card 3 alt/title `外国名著英文导读`; asset `/keya/images/06942ebd-29b6-4e3a-9236-c46edc8235be.webp`; computed `384×216px` at `x:936; y:324.25`.
 - each `进入` button: absolute right 8px/bottom 8px, `40×40px`, border `4px solid rgb(253,251,248)`, radius `9999px`, fill `rgba(91,76,59,.9)`, white arrow; hover scale; `transition:transform .15s cubic-bezier(.4,0,.2,1)`.
 
 ### Prompt chips

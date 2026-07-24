@@ -1,7 +1,7 @@
 # ChatThread Specification
 
 ## Overview
-- **Target:** `src/features/seaca/chat-thread.tsx`
+- **Target:** `src/features/keya/chat-thread.tsx`
 - **References:** `chat-desktop-1440.png` (empty), `chat-conversation-desktop-1440.png` (selected conversation)
 - **Evidence:** measurements recorded during signed-in browser inspection and the empty/selected-conversation reference screenshots.
 - **Interaction model:** state-driven thread selection and vertical scrolling; no real-time/backend behavior is required.
@@ -61,7 +61,7 @@
 - Floating action: `回到最新`.
 
 ## Assets
-- `/seaca/images/title-deco.svg` (exact 78 × 6 heading underline).
+- `/keya/images/title-deco.svg` (exact 78 × 6 heading underline).
 - Completion checks and scroll arrow are inline icons from the shared icon set.
 
 ## Responsive Behavior

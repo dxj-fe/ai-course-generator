@@ -1,7 +1,7 @@
 # LangGraph 与当前课程工作流映射
 
 Day 28 的目标是建立概念映射和最小运行证明，不迁移生产流程。当前
-`runCourseGenerationWorkflow`、checkpoint、SSE、Controller 与 Seaca UI 均保持不变。
+`runCourseGenerationWorkflow`、checkpoint、SSE、Controller 与 Keya UI 均保持不变。
 
 ## 实现文件
 

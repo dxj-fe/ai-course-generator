@@ -18,10 +18,10 @@
 - Inner content aligns to the common `1200px` page width (`x:120` through `1320`) and vertically centers at 32px.
 
 ### Brand
-- link aria-label: `Seaca 首页`; href `/`; rect `x:120; y:18; width:80.796875px; height:28px`.
+- link aria-label: `Keya 首页`; href `/`; rect `x:120; y:18; width:80.796875px; height:28px`.
 - layout `display:flex; align-items:center; gap:4px`.
-- mark rect `x:120; y:21; width:20px; height:22px`; asset `/seaca/images/logo-mark.webp` (source is 25×28).
-- visible wordmark: `SEACA`; preserve uppercase and warm gray-brown appearance from the references.
+- mark rect `x:120; y:21; width:20px; height:22px`; asset `/keya/images/logo-mark.webp` (source is 25×28).
+- visible wordmark: `KEYA`; preserve uppercase and warm gray-brown appearance from the references.
 
 ### Route links
 - `探索`: href `/`; rect `x:633.4375; y:15.5; width:84.5625px; height:33px`.
@@ -31,10 +31,10 @@
 - Icons are an outlined compass for `探索` and outlined book/library for `我的`, approximately 16px.
 
 ### Account control
-- button aria-label: `seaca_d931d5e4 用户菜单`; rect `x:1142.3125; y:16; width:177.6875px; height:32px`.
+- button aria-label: `keya_d931d5e4 用户菜单`; rect `x:1142.3125; y:16; width:177.6875px; height:32px`.
 - `display:flex; align-items:center; gap:8px; padding:0 4px 0 0; border:0; border-radius:9999px; background:transparent`.
-- avatar rect `32×32px` at `x:1142.3125; y:16`; asset `/seaca/images/seaca6.png`; circular crop.
-- visible name: `seaca_d931d5e4`; trailing down chevron; keep both on one line.
+- avatar rect `32×32px` at `x:1142.3125; y:16`; asset `/keya/images/keya6.png`; circular crop.
+- visible name: `keya_d931d5e4`; trailing down chevron; keep both on one line.
 - hover: opacity `1 → .8`; `transition:opacity 0.15s cubic-bezier(.4,0,.2,1)`.
 - focus-visible: 2px ring with offset (class evidence).
 
@@ -51,6 +51,6 @@
 - Do not stack the header. Match the dense single-row screenshot; background and blur remain identical.
 
 ## Verbatim Content and Assets
-- Text: `SEACA`, `探索`, `我的`, `seaca_d931d5e4`.
-- `/seaca/images/logo-mark.webp`, `/seaca/images/seaca6.png`.
+- Text: `KEYA`, `探索`, `我的`, `keya_d931d5e4`.
+- `/keya/images/logo-mark.webp`, `/keya/images/keya6.png`.
 - Use semantic inline SVG/lucide equivalents for compass, book, and chevron if the extracted hash icons are not mapped.

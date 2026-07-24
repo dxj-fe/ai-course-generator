@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { pageContentDsl } from "../../fixtures/course-design";
 import { buildValidGeneratedHtml } from "../../fixtures/generated-html";
-import { HtmlPreviewFrame } from "../../../src/features/seaca/html-preview-frame";
+import { HtmlPreviewFrame } from "../../../src/features/keya/html-preview-frame";
 
 describe("HtmlPreviewFrame", () => {
   it("renders valid HTML only inside a no-permissions sandbox", () => {

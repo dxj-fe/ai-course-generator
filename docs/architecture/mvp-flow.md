@@ -138,10 +138,10 @@ SSE 合同由 [`course-task-event.ts`](../../src/shared/course-schema/course-tas
 
 ## 前端数据边界
 
-[`course-task-api.ts`](../../src/features/course-planner/lib/course-task-api.ts) 只负责创建和取消任务；[`use-sse-task.ts`](../../src/features/course-planner/hooks/use-sse-task.ts) 把 SSE 消息转换为共享的类型化任务状态。[`ChatApp`](../../src/features/seaca/chat-app.tsx) 充当当前产品的 Task Controller，再把状态传给：
+[`course-task-api.ts`](../../src/features/course-planner/lib/course-task-api.ts) 只负责创建和取消任务；[`use-sse-task.ts`](../../src/features/course-planner/hooks/use-sse-task.ts) 把 SSE 消息转换为共享的类型化任务状态。[`ChatApp`](../../src/features/keya/chat-app.tsx) 充当当前产品的 Task Controller，再把状态传给：
 
-- [`ChatThread`](../../src/features/seaca/chat-thread.tsx) 与 [`CourseRunTimeline`](../../src/features/seaca/course-run-timeline.tsx)：公开 Agent 进度、耗时、错误和恢复；
-- [`CourseWorkspacePanel`](../../src/features/seaca/course-workspace-panel.tsx)：规划、DSL、素材、HTML、安全预览和质量报告。
+- [`ChatThread`](../../src/features/keya/chat-thread.tsx) 与 [`CourseRunTimeline`](../../src/features/keya/course-run-timeline.tsx)：公开 Agent 进度、耗时、错误和恢复；
+- [`CourseWorkspacePanel`](../../src/features/keya/course-workspace-panel.tsx)：规划、DSL、素材、HTML、安全预览和质量报告。
 
 展示组件不直接调用生成业务 API，也不消费框架原生流事件。
 

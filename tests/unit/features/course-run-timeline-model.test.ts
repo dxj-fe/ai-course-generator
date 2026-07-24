@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { buildCourseRunTimelineModel } from "../../../src/features/seaca/course-run-timeline-model";
+import { buildCourseRunTimelineModel } from "../../../src/features/keya/course-run-timeline-model";
 import type {
   CourseGenerationPublicEvent,
   CourseGenerationState,
 } from "../../../src/shared/course-schema";
-import type { SeacaCourseRun } from "../../../src/types/seaca";
+import type { KeyaCourseRun } from "../../../src/types/keya";
 
 const pageId = "page-1";
 const startedAt = "2026-07-15T01:00:00.000Z";
@@ -53,7 +53,7 @@ function createGeneration(
   };
 }
 
-function createRun(generation: CourseGenerationState): SeacaCourseRun {
+function createRun(generation: CourseGenerationState): KeyaCourseRun {
   return {
     id: "run-day-20",
     taskId: "task-day-20",

@@ -1,7 +1,7 @@
 # ChatSidebar Specification
 
 ## Overview
-- **Target:** `src/features/seaca/chat-sidebar.tsx`
+- **Target:** `src/features/keya/chat-sidebar.tsx`
 - **References:** `chat-desktop-1440.png`, `chat-conversation-desktop-1440.png`
 - **Evidence:** measurements recorded during signed-in browser inspection, the reference screenshots, and an observed collapsed state.
 - **Interaction model:** click-driven navigation, search, disclosure rows, conversation selection, and sidebar collapse.

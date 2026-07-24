@@ -1,12 +1,11 @@
 import {
   mkdtemp,
-  readFile,
   readdir,
   rm,
-  writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -97,7 +96,7 @@ function readyResult(
 async function temporaryCacheFile() {
   const directory = await mkdtemp(path.join(tmpdir(), "asset-cache-test-"));
   directories.push(directory);
-  return path.join(directory, "asset-cache.json");
+  return path.join(directory, "asset-cache.sqlite");
 }
 
 afterEach(async () => {
@@ -214,7 +213,14 @@ describe("asset cache", () => {
     expect(assetExists).toHaveBeenCalledWith(
       "asset-123e4567-e89b-42d3-a456-426614174000",
     );
-    expect(await readFile(filePath, "utf8")).not.toContain(request.prompt);
+    const database = new DatabaseSync(filePath);
+    const rows = database
+      .prepare("SELECT payload FROM asset_cache_entries")
+      .all() as Array<{ payload: string }>;
+    database.close();
+    expect(rows.map(({ payload }) => payload).join("\n")).not.toContain(
+      request.prompt,
+    );
   });
 
   it("reports stale when the indexed internal asset file is missing", async () => {
@@ -233,7 +239,18 @@ describe("asset cache", () => {
       filePath,
       assetExists: vi.fn().mockResolvedValue(true),
     });
-    await writeFile(filePath, "{not valid json", "utf8");
+    const database = new DatabaseSync(filePath);
+    database
+      .prepare(
+        `INSERT INTO asset_cache_entries (cache_key, payload, updated_at)
+         VALUES (?, ?, ?)`,
+      )
+      .run(
+        createAssetCacheKey(input),
+        "{not valid json",
+        new Date().toISOString(),
+      );
+    database.close();
 
     await expect(cache.lookup(input)).resolves.toEqual({
       status: "unavailable",
@@ -252,13 +269,20 @@ describe("asset cache", () => {
       assetExists: vi.fn().mockResolvedValue(true),
     });
     await cache.store(input, readyResult());
-    const document = JSON.parse(await readFile(filePath, "utf8")) as {
-      entries: Record<string, { asset: { uri: string } }>;
-    };
-    const [entry] = Object.values(document.entries);
-    if (!entry) throw new Error("expected one cache entry");
+    const database = new DatabaseSync(filePath);
+    const key = createAssetCacheKey(input);
+    const row = database
+      .prepare("SELECT payload FROM asset_cache_entries WHERE cache_key = ?")
+      .get(key) as { payload: string } | undefined;
+    if (!row) throw new Error("expected one cache entry");
+    const entry = JSON.parse(row.payload) as { asset: { uri: string } };
     entry.asset.uri = "https://example.com/untrusted.png";
-    await writeFile(filePath, JSON.stringify(document), "utf8");
+    database
+      .prepare(
+        "UPDATE asset_cache_entries SET payload = ? WHERE cache_key = ?",
+      )
+      .run(JSON.stringify(entry), key);
+    database.close();
 
     await expect(cache.lookup(input)).resolves.toEqual({
       status: "unavailable",
@@ -343,6 +367,6 @@ describe("asset cache", () => {
       status: "hit",
     });
     const directoryEntries = await readdir(path.dirname(filePath));
-    expect(directoryEntries).toEqual(["asset-cache.json"]);
+    expect(directoryEntries).toContain("asset-cache.sqlite");
   });
 });

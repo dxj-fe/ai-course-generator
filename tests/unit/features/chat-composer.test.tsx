@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { ChatComposer } from "../../../src/features/seaca/chat-composer";
+import { ChatComposer } from "../../../src/features/keya/chat-composer";
 
 describe("ChatComposer", () => {
   it("renders the existing task parameters without moving planning rules into UI", () => {

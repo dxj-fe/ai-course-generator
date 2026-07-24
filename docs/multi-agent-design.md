@@ -21,7 +21,7 @@
 2. 让 Agent 交接具备最小、类型化、可独立校验的契约；
 3. 把失败限制在最小且值得恢复的 checkpoint；
 4. 让协调者只能从有限动作集合中选择下一步；
-5. 保持现有 API、任务 Controller、公开事件和 Seaca UI 边界稳定。
+5. 保持现有 API、任务 Controller、公开事件和 Keya UI 边界稳定。
 
 ## 2. 三种架构，而不是两种
 
@@ -284,7 +284,7 @@ flowchart TD
 - checkpoint 与恢复语义；
 - 公开事件安全边界；
 - API Client 与 Controller 边界；
-- Seaca 产品表面；
+- Keya 产品表面；
 - 确定性校验与停止规则。
 
 把同一套职责过载逻辑搬进 Graph Node，并不会改善架构。
@@ -320,7 +320,7 @@ flowchart TD
 - [x] `WorkflowNode` 以 `name / requiredInputs / produces / run` 描述协调合同，节点只返回 partial state 与事件。
 - [x] `runSequentialWorkflow` 统一检查输入与声明输出，并通过集中 merge 校验完整状态；节点失败携带稳定 `nodeName`。
 - [x] Day 22 当日把 Intent、Planner、Course Design 和逐页 Writer/Assets/HTML 包装为节点工厂；Day 25 已用隔离 Worker 取代页面主链，旧逐页工厂仅保留为兼容参考。
-- [x] 共享 Schema、checkpoint 时机、恢复跳过、取消、公开事件、任务 API、SSE 与 Seaca 产品表面保持原语义。
+- [x] 共享 Schema、checkpoint 时机、恢复跳过、取消、公开事件、任务 API、SSE 与 Keya 产品表面保持原语义。
 - [x] Day 22 当日 Repair、自动 QA、独立 Page Worker、并发和 LangGraph 均未实现；后续能力按各训练日独立交付。
 
 ## 16. Day 23 当前实现说明
@@ -329,7 +329,7 @@ flowchart TD
 - [x] Supervisor 只接收压缩状态、确定性候选节点、最近失败和持久化 attempts，不接收 HTML、完整 DSL 或私有推理。
 - [x] `runSupervisedWorkflow` 校验候选节点、同 node/page 最多 3 次执行、取消、无进展和全局决策上限。
 - [x] accepted decision 与确定性 stop 都先 checkpoint，再通过既有 SSE 公开 `supervisor_decision` 摘要。
-- [x] Seaca `/chat` Timeline 在原产品表面展示最近调度摘要，没有新增路由或平行控制台。
+- [x] Keya `/chat` Timeline 在原产品表面展示最近调度摘要，没有新增路由或平行控制台。
 
 ## 17. Day 25 当前实现说明
 
@@ -337,7 +337,7 @@ flowchart TD
 - [x] Worker 内固定执行 Writer → Assets → HTML → report-only QA，并保存页面局部 attempts、错误和事件。
 - [x] `runPromisePool` 默认并发度为 2，结果保持输入顺序，单项失败隔离，取消后不启动新任务。
 - [x] 课程运行层根据页面依赖和 serial/parallel 配置调度，并通过单一 merge/checkpoint 队列写入整课状态。
-- [x] Seaca Timeline 和质量面板复用现有产品表面展示并发页面状态与 QA 报告。
+- [x] Keya Timeline 和质量面板复用现有产品表面展示并发页面状态与 QA 报告。
 - [x] Day 25 当日 Repair/re-QA 和 LangGraph 尚未实现；它们已分别在 Day 27 与 Days 28–31 完成。
 
 ## 18. Day 31 当前实现说明

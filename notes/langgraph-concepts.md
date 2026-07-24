@@ -32,7 +32,7 @@ State 是一次 Graph 执行期间的共享状态快照。Node 不应原地修�
 - `events`：运行摘要，使用 Reducer 累计。
 
 State 不等于前端状态，也不应保存私有推理。未来仍需由 API 客户端和
-Task Controller 把服务端公开状态投影到 Seaca UI。
+Task Controller 把服务端公开状态投影到 Keya UI。
 
 ## 2. Node
 

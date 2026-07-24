@@ -43,7 +43,7 @@
 - Reference Pack 从任务创建经过 checkpoint 到 workflow/LangGraph，不因取消或恢复丢失。
 - Planner 只能引用真实 pack/chunk；Page Writer 只能引用 Planner 授权子集。
 - 无资料任务和旧 checkpoint 继续通过原流程。
-- Seaca composer 和 Reference Panel 覆盖上传、解析中、成功、错误、重试、移除、桌面及移动布局。
+- Keya composer 和 Reference Panel 覆盖上传、解析中、成功、错误、重试、移除、桌面及移动布局。
 
 ## 面试题与参考答案
 

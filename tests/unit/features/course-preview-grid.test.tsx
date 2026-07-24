@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { pageContentDsl } from "../../fixtures/course-design";
 import { buildValidGeneratedHtml } from "../../fixtures/generated-html";
-import { CoursePreviewGrid } from "../../../src/features/seaca/course-preview-grid";
+import { CoursePreviewGrid } from "../../../src/features/keya/course-preview-grid";
 
 const firstHtml = buildValidGeneratedHtml(pageContentDsl);
 const secondHtml = firstHtml.replace(

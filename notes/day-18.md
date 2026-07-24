@@ -26,7 +26,7 @@
        -> page 2: Page Writer -> Assets -> HTML Engineer -> checkpoint
        -> ...
   -> CourseGenerationState
-  -> Seaca Task Controller adapter
+  -> Keya Task Controller adapter
   -> chat public Timeline + right learning workspace
   -> selected HtmlPreviewFrame only
 ```

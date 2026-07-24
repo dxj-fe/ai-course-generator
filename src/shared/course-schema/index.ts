@@ -298,3 +298,17 @@ export {
   type CourseHistoryListResponse,
   type CourseRunSummary,
 } from "./course-history";
+export {
+  ConversationIdSchema,
+  ConversationListResponseSchema,
+  ConversationMessageIdSchema,
+  ConversationMessageSchema,
+  ConversationRecordSchema,
+  SaveConversationInputSchema,
+  UpdateConversationInputSchema,
+  type ConversationListResponse,
+  type ConversationMessage,
+  type ConversationRecord,
+  type SaveConversationInput,
+  type UpdateConversationInput,
+} from "./conversation";

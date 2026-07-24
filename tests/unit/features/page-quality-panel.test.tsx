@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { PageQualityPanel } from "../../../src/features/seaca/page-quality-panel";
+import { PageQualityPanel } from "../../../src/features/keya/page-quality-panel";
 import { buildPageQualityReport } from "../../../src/server/quality/page-quality";
 
 const dimensions = {

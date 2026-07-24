@@ -10,7 +10,7 @@
 - 每一次失败都变成 `css-gradient`、`css-texture`、`inline-svg` 或 `placeholder` fallback；单张图失败不会阻塞 HTML。
 - HTML Engineer 只能引用当前页批准的 URI，并必须把所有文字、互动和响应式布局保留为 HTML。
 - Page QA 检查素材结果覆盖、真实 URI 引用、可用视觉元素和 fallback 状态。
-- Seaca 学习工作区增加页面级 AssetGallery；重新生成 DSL 或素材时会失效下游 HTML 与 QA。
+- Keya 学习工作区增加页面级 AssetGallery；重新生成 DSL 或素材时会失效下游 HTML 与 QA。
 
 ## 关键边界
 

@@ -2,7 +2,7 @@
 
 ## Target
 
-- File: `src/features/seaca/chat-app.tsx`
+- File: `src/features/keya/chat-app.tsx`
 - Route consumer: `src/app/chat/page.tsx`
 - Desktop references: `docs/design-references/chat-desktop-1440.png`, `docs/design-references/chat-conversation-desktop-1440.png`
 
@@ -20,7 +20,7 @@
 
 ## State and data
 
-- Use `conversations` from `@/data/seaca`; make a local mutable copy so sent messages can be appended without persistence.
+- Use `conversations` from `@/data/keya`; make a local mutable copy so sent messages can be appended without persistence.
 - Initial state is empty/new conversation unless a known `conversation` query parameter is present.
 - Read an optional `prompt` query parameter into the composer draft. Do not send automatically.
 - Own: selected conversation id, local conversation list/messages, sidebar collapsed state, draft text, optional right-panel open state.
