@@ -13,7 +13,7 @@ The 课芽 interface is the product shell. Training-day features extend its beha
 | Browse generated/history items | `/course` | Persisted course/run queries and filters |
 | Inspect functional/style templates | `/templates` | Template registry and preview data |
 
-`AiPlayground` and the older course-planner panels remain implementation references. They must not replace `/` or become the visual foundation for new tasks.
+The removed `AiPlayground` and older course-planner panels are historical training artifacts only. Their reusable client logic remains behind the Keya surfaces; do not restore the panels or use them as the visual foundation for new tasks.
 
 ## Brand theme
 
