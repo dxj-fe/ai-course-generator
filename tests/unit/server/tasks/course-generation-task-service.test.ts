@@ -94,7 +94,7 @@ describe("course generation task service", () => {
         userPrompt: "生成同一门太阳系课程",
         source: "workflow",
       }),
-    ).rejects.toThrow("不能并发写入同一检查点");
+    ).rejects.toThrow("请先暂停或等待该任务完成");
 
     expect(fixture.tasks).toHaveLength(1);
     expect(fixture.tasks.get(first.taskId)?.status).toBe("queued");
