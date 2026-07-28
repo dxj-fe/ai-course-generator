@@ -581,6 +581,96 @@ describe("course generation task service", () => {
     });
   });
 
+  it("allows only one runner to claim a course when duplicate queued tasks race", async () => {
+    const firstTaskId = "task-same-course-run-one";
+    const secondTaskId = "task-same-course-run-two";
+    let markStarted: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const runWorkflow = vi.fn(
+      async (input, context, overrides) => {
+        await overrides.checkpoint?.(
+          runningCheckpoint(input.courseId, context.traceId, input.userPrompt),
+        );
+        markStarted();
+        return new Promise<CourseGenerationState>((_resolve, reject) => {
+          context.abortSignal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("paused", "AbortError")),
+            { once: true },
+          );
+        });
+      },
+    ) as typeof runCourseGenerationWorkflow;
+    const fixture = createFixture({ runWorkflow });
+    const taskBase = {
+      version: 1 as const,
+      courseId,
+      userPrompt: "生成同一门太阳系课程",
+      source: "workflow" as const,
+      status: "queued" as const,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    fixture.tasks.set(firstTaskId, {
+      ...taskBase,
+      taskId: firstTaskId,
+      traceId: "trace-same-course-run-one",
+    });
+    fixture.tasks.set(secondTaskId, {
+      ...taskBase,
+      taskId: secondTaskId,
+      traceId: "trace-same-course-run-two",
+    });
+
+    const firstRun = fixture.service.run(firstTaskId);
+    const secondRun = fixture.service.run(secondTaskId);
+
+    await started;
+    await expect(secondRun).rejects.toThrow(
+      "请先暂停或等待该任务完成",
+    );
+    expect(runWorkflow).toHaveBeenCalledOnce();
+    expect(fixture.tasks.get(firstTaskId)?.status).toBe("running");
+    expect(fixture.tasks.get(secondTaskId)?.status).toBe("queued");
+
+    await fixture.service.pause(firstTaskId);
+    await expect(firstRun).resolves.toMatchObject({ status: "running" });
+  });
+
+  it("rejects resuming a paused task while another task owns the same course", async () => {
+    const pausedTaskId = "task-same-course-paused";
+    const runningTaskId = "task-same-course-running";
+    const fixture = createFixture();
+    const taskBase = {
+      version: 1 as const,
+      courseId,
+      userPrompt: "生成同一门太阳系课程",
+      source: "workflow" as const,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    fixture.tasks.set(pausedTaskId, {
+      ...taskBase,
+      taskId: pausedTaskId,
+      traceId: "trace-same-course-paused",
+      status: "paused",
+    });
+    fixture.tasks.set(runningTaskId, {
+      ...taskBase,
+      taskId: runningTaskId,
+      traceId: "trace-same-course-running",
+      status: "running",
+    });
+
+    await expect(fixture.service.resume(pausedTaskId)).rejects.toThrow(
+      "不能并发写入同一检查点",
+    );
+    expect(fixture.tasks.get(pausedTaskId)?.status).toBe("paused");
+    expect(fixture.tasks.get(runningTaskId)?.status).toBe("running");
+  });
+
   it("isolates pause by taskId when two courses are running", async () => {
     const taskIds = ["task-course-one", "task-course-two"];
     const courseIds = ["course-course-one", "course-course-two"];
