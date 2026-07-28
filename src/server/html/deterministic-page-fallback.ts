@@ -13,7 +13,7 @@ export type DeterministicPageFallbackInput = {
   styleTemplate: StyleTemplate;
 };
 
-export const DETERMINISTIC_PAGE_RENDERER_VERSION = 2;
+export const DETERMINISTIC_PAGE_RENDERER_VERSION = 3;
 
 /**
  * 当模型 HTML 没有通过合同校验时，用已经通过 Schema 校验的服务端事实生成
@@ -167,6 +167,7 @@ ${styleTemplateToCssText(styleTemplate)}
       align-content: start;
       min-height: 0;
       height: auto;
+      overflow: visible;
       border-top: 4px solid var(--course-color-primary);
       background:
         linear-gradient(155deg, color-mix(in srgb, var(--course-color-surface) 98%, transparent), color-mix(in srgb, var(--course-color-surface-alt) 45%, var(--course-color-surface)));
@@ -195,12 +196,11 @@ ${styleTemplateToCssText(styleTemplate)}
     .course-block-summary h2 { margin: 0; }
     .course-block-body { min-height: 0; padding-top: .55rem; }
     .course-block-body > p:not(.lesson-label) {
-      display: -webkit-box;
-      overflow: hidden;
+      display: block;
+      overflow: visible;
       overflow-wrap: anywhere;
-      -webkit-box-orient: vertical;
-      -webkit-line-clamp: 7;
     }
+    .course-block-body > :last-child { margin-bottom: 0; }
     .lesson-label {
       margin: 0 0 .3em;
       color: var(--course-color-accent);
@@ -303,6 +303,7 @@ ${styleTemplateToCssText(styleTemplate)}
       align-self: end;
       max-height: calc(100% - 1.3rem);
       margin: .65rem;
+      overflow: visible;
       padding: clamp(10px, 1.35vmin, 17px);
       background: color-mix(in srgb, var(--course-color-surface) 88%, transparent);
       backdrop-filter: blur(18px) saturate(1.18);
@@ -314,6 +315,7 @@ ${styleTemplateToCssText(styleTemplate)}
     }
     .interaction-prompt { color: var(--course-color-primary); font-weight: 800; }
     .interaction-items { display: grid; gap: .55rem; }
+    .interaction-items > :last-child { margin-bottom: 0; }
     details,
     .explore-item,
     .sort-item,
@@ -554,6 +556,47 @@ ${styleTemplateToCssText(styleTemplate)}
       .course-header { grid-template-columns: minmax(0, .9fr) minmax(12rem, 1.1fr); }
       .course-stage { grid-template-columns: minmax(0, 1.25fr) minmax(13rem, .9fr); gap: 9px; }
     }
+    @media (max-width: 760px) {
+      main:not([data-template="story-intro"]):not([data-template="interactive-quiz"]):not([data-template="achievement-task"]) .course-content {
+        grid-template-columns: minmax(0, 1fr) !important;
+        grid-auto-rows: minmax(0, 1fr);
+        align-content: stretch;
+      }
+      main:not([data-template="story-intro"]):not([data-template="interactive-quiz"]):not([data-template="achievement-task"]) .lesson-card {
+        grid-template-columns: minmax(7rem, .34fr) minmax(0, 1fr);
+        align-content: center;
+        align-items: start;
+        gap: 6px;
+        padding: 7px 9px;
+        font-size: .86em;
+        line-height: 1.35;
+      }
+      main:not([data-template="story-intro"]):not([data-template="interactive-quiz"]):not([data-template="achievement-task"]) .course-block-summary {
+        min-height: 0;
+        padding-right: 0;
+      }
+      main:not([data-template="story-intro"]):not([data-template="interactive-quiz"]):not([data-template="achievement-task"]) .course-block-body {
+        padding-top: 0;
+      }
+      .interaction-panel { max-height: none; }
+      .interaction-items { gap: .35rem; }
+      .explore-item,
+      details,
+      .sort-item,
+      fieldset { padding: .5rem .6rem; }
+      main[data-template="interactive-quiz"] fieldset {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 4px 6px;
+      }
+      main[data-template="interactive-quiz"] fieldset > :not(.option) {
+        grid-column: 1 / -1;
+      }
+      main[data-template="interactive-quiz"] .option {
+        min-height: 44px;
+        padding: 3px 5px;
+      }
+    }
     @media (max-width: 560px) {
       main { padding: 9px; gap: 8px; }
       .course-header {
@@ -600,6 +643,52 @@ ${styleTemplateToCssText(styleTemplate)}
       main[data-template="interactive-quiz"] .course-stage,
       main[data-template="achievement-task"] .course-stage {
         grid-template-columns: minmax(7.5rem, .75fr) minmax(0, 1.25fr);
+      }
+      main:not([data-template="course-cover"]):not([data-template="story-intro"]):not([data-template="interactive-quiz"]):not([data-template="achievement-task"]) .course-stage:has(.asset-panel--background) {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) auto;
+      }
+      main:not([data-template="course-cover"]):not([data-template="story-intro"]):not([data-template="interactive-quiz"]):not([data-template="achievement-task"]) .course-stage:has(.asset-panel--background) .course-content {
+        grid-area: 1 / 1;
+        padding: 3px;
+      }
+      main:not([data-template="course-cover"]):not([data-template="story-intro"]):not([data-template="interactive-quiz"]):not([data-template="achievement-task"]) .course-stage:has(.asset-panel--background) .asset-panel {
+        grid-area: 1 / 1 / 3 / 2;
+      }
+      main:not([data-template="course-cover"]):not([data-template="story-intro"]):not([data-template="interactive-quiz"]):not([data-template="achievement-task"]) .course-stage:has(.asset-panel--background) .interaction-panel {
+        grid-area: 2 / 1;
+        align-self: end;
+        margin: 3px;
+        padding: 6px 7px;
+        font-size: .76em;
+        line-height: 1.25;
+      }
+      main:not([data-template="course-cover"]):not([data-template="story-intro"]):not([data-template="interactive-quiz"]):not([data-template="achievement-task"]) .interaction-panel .interaction-items {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 3px;
+      }
+      main:not([data-template="story-intro"]):not([data-template="interactive-quiz"]):not([data-template="achievement-task"]) .lesson-card {
+        grid-template-columns: minmax(6rem, .32fr) minmax(0, 1fr);
+        gap: 3px;
+        padding: 4px 6px;
+        font-size: .72em;
+        line-height: 1.2;
+      }
+      main:not([data-template="story-intro"]):not([data-template="interactive-quiz"]):not([data-template="achievement-task"]) .lesson-label {
+        display: none;
+      }
+      main[data-template="interactive-quiz"] .course-action .interaction-panel {
+        padding: 6px;
+        font-size: .78em;
+        line-height: 1.25;
+      }
+      main[data-template="interactive-quiz"] .interaction-items { gap: 3px; }
+      main[data-template="interactive-quiz"] fieldset { padding: 4px; }
+      main[data-template="interactive-quiz"] fieldset > p { margin-bottom: 2px; }
+      main[data-template="interactive-quiz"] .option { padding: 2px 3px; }
+      main[data-template="interactive-quiz"] .interaction-panel button {
+        min-height: 44px;
+        padding: 4px 6px;
       }
       main[data-template="story-intro"] .course-stage:has(.asset-panel--background) {
         grid-template-columns: minmax(0, 1fr);

@@ -143,6 +143,119 @@ function createSubstantialStoryContent(): PageContentDSL {
   };
 }
 
+function createFixedCanvasRegressionContents(): PageContentDSL[] {
+  const assetSlot = {
+    id: "asset-slot-01",
+    type: "illustration" as const,
+    role: "inline" as const,
+    purpose: "展示页面核心概念的视觉示意",
+    required: true,
+    altTextGuidance: "展示页面核心概念的视觉示意。",
+  };
+
+  const knowledge = structuredClone(getExample("knowledge-card-grid"));
+  knowledge.title = "毕加索核心创作时期划分";
+  knowledge.narration = [
+    "通过三张知识卡梳理核心创作时期，并建立时期与风格的明确关联。",
+  ];
+  knowledge.blocks = knowledge.blocks.map((block, index) => ({
+    ...block,
+    heading: ["蓝色时期（1901-1904）", "玫瑰时期（1904-1906）", "立体主义时期（1907-1917）"][
+      index
+    ]!,
+    body: [
+      "作品以冷蓝色调为主，多描绘贫困、孤独的底层人物，线条细腻且带有忧郁氛围。",
+      "作品转向暖粉和玫瑰色调，题材多为马戏团人物，线条流畅，情感更温暖。",
+      "作品打破传统透视，用几何块面分解物体并同时呈现多个视角。",
+    ][index]!,
+  }));
+  knowledge.assetSlots = [assetSlot];
+
+  const comparison = structuredClone(getExample("comparison-board"));
+  comparison.title = "不同时期作品风格对比";
+  comparison.narration = [
+    "对比三个核心创作时期的代表作品，重点观察色调、线条和造型差异。",
+  ];
+  comparison.blocks = [
+    {
+      ...comparison.blocks[0]!,
+      id: "block-blue",
+      heading: "蓝色时期（1901-1904）",
+      body: "作品以冷蓝色调为主，多描绘贫困、孤独的底层人物，线条柔和细腻，造型偏向写实。",
+      supportingPoints: [],
+    },
+    {
+      ...comparison.blocks[1]!,
+      id: "block-rose",
+      heading: "玫瑰时期（1904-1906）",
+      body: "作品转向暖粉和玫瑰色调，题材多为马戏团人物，线条流畅，氛围温暖明快。",
+      supportingPoints: [],
+    },
+    {
+      ...comparison.blocks[1]!,
+      id: "block-cubism",
+      heading: "立体主义时期（1907-1917）",
+      body: "作品用几何块面分解物体，造型抽象并强调多视角同时呈现，是最具实验性的阶段。",
+      supportingPoints: [],
+    },
+  ];
+  comparison.assetSlots = [assetSlot];
+
+  const quiz = structuredClone(getExample("interactive-quiz"));
+  if (quiz.interaction.type !== "choice") {
+    throw new Error("interactive-quiz 示例必须使用 choice interaction");
+  }
+  quiz.title = "毕加索风格知识小测验";
+  quiz.narration = [
+    "根据不同创作时期的风格特点，判断作品所属时期，作答后查看判断依据。",
+  ];
+  quiz.blocks = [
+    {
+      id: "block-question",
+      kind: "question",
+      heading: "作品时期判断",
+      body: "分析作品的风格特征，选择它所属的毕加索创作时期。",
+      supportingPoints: [
+        "蓝色时期偏冷色与忧郁主题；玫瑰时期偏暖色与柔和情感；立体主义强调几何分解与多视角。",
+      ],
+    },
+  ];
+  quiz.interaction = {
+    ...quiz.interaction,
+    questions: [
+      {
+        ...quiz.interaction.questions[0]!,
+        prompt: "观察作品的几何分解特征，判断其所属时期。",
+        options: [
+          { id: "option-blue", label: "蓝色时期" },
+          { id: "option-rose", label: "玫瑰时期" },
+          { id: "option-cubism", label: "立体主义时期" },
+          { id: "option-classical", label: "新古典主义时期" },
+        ],
+        correctOptionId: "option-cubism",
+      },
+    ],
+  };
+  quiz.assetSlots = [assetSlot];
+
+  const recap = structuredClone(getExample("recap-summary"));
+  recap.title = "毕加索生平与作品赏析总结";
+  recap.narration = ["回顾各时期风格，形成可迁移的作品赏析框架。"];
+  recap.blocks = [
+    ...recap.blocks,
+    {
+      id: "block-method",
+      kind: "concept",
+      heading: "毕加索作品赏析方法",
+      body: "先判断作品所属时期，再分析对应风格特征，并结合时代背景理解创作意图。",
+      supportingPoints: [],
+    },
+  ];
+  recap.assetSlots = [assetSlot];
+
+  return [knowledge, comparison, quiz, recap];
+}
+
 describe("renderDeterministicPageFallback advanced layout", () => {
   it("marks generated HTML with the current deterministic renderer version", () => {
     const html = renderDeterministicPageFallback({
@@ -344,5 +457,105 @@ describe("renderDeterministicPageFallback advanced layout", () => {
       }
     },
     15_000,
+  );
+
+  it(
+    "keeps dense card, comparison, quiz and recap pages readable across QA viewports",
+    async () => {
+      const browser = await chromium.launch({ headless: true });
+
+      try {
+        for (const content of createFixedCanvasRegressionContents()) {
+          const html = buildFittedLessonSrcDoc(
+            renderDeterministicPageFallback({
+              assets: [createReadyAsset(content, { assetType: "background" })],
+              content,
+              styleTemplate,
+            }),
+          );
+
+          for (const viewport of [
+            { width: 922, height: 460 },
+            { width: 712, height: 650 },
+            { width: 366, height: 500 },
+          ]) {
+            const page = await browser.newPage({ viewport });
+            await page.route("**/*", (route) => route.abort());
+            await page.setContent(html, { waitUntil: "domcontentloaded" });
+            await page.waitForFunction(
+              () =>
+                document.documentElement.dataset.keyaViewportFitScale !==
+                undefined,
+            );
+            await page.waitForTimeout(32);
+
+            const metrics = await page.evaluate(() => {
+              const root = document.documentElement;
+              const body = document.body;
+              const requiredCopy = Array.from(
+                document.querySelectorAll<HTMLElement>(
+                  "h1, .course-block-summary, .course-block-body, .interaction-panel",
+                ),
+              );
+              const clippedElementCount = [
+                root,
+                body,
+                ...body.querySelectorAll<HTMLElement>("*"),
+              ].filter((element) => {
+                if (
+                  element === root ||
+                  element === body ||
+                  element.dataset.keyaFitExpanded === "true"
+                ) {
+                  return false;
+                }
+                const style = getComputedStyle(element);
+                const clipsX = ["hidden", "clip"].includes(style.overflowX);
+                const clipsY = ["hidden", "clip"].includes(style.overflowY);
+                return (
+                  (clipsX && element.scrollWidth > element.clientWidth + 1) ||
+                  (clipsY && element.scrollHeight > element.clientHeight + 1)
+                );
+              }).length;
+
+              return {
+                scale: Number(root.dataset.keyaViewportFitScale ?? "0"),
+                clippedElementCount,
+                requiredCopyVisible: requiredCopy.every((element) => {
+                  const style = getComputedStyle(element);
+                  const rect = element.getBoundingClientRect();
+                  return (
+                    style.display !== "none" &&
+                    style.visibility !== "hidden" &&
+                    rect.width > 0 &&
+                    rect.height > 0 &&
+                    rect.left >= -1 &&
+                    rect.top >= -1 &&
+                    rect.right <= window.innerWidth + 1 &&
+                    rect.bottom <= window.innerHeight + 1
+                  );
+                }),
+              };
+            });
+
+            expect(
+              metrics,
+              `${content.functionalTemplateId} ${viewport.width}x${viewport.height}`,
+            ).toMatchObject({
+              clippedElementCount: 0,
+              requiredCopyVisible: true,
+            });
+            expect(
+              metrics.scale,
+              `${content.functionalTemplateId} ${viewport.width}x${viewport.height}`,
+            ).toBeGreaterThanOrEqual(0.9);
+            await page.close();
+          }
+        }
+      } finally {
+        await browser.close();
+      }
+    },
+    20_000,
   );
 });
