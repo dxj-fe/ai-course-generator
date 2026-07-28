@@ -139,6 +139,48 @@ export function createCourseGenerationTaskService(
 ): CourseGenerationTaskService {
   const dependencies = { ...defaultDependencies, ...overrides };
   const activeTasks = new Map<string, ActiveTask>();
+  const courseClaims = new Map<string, string>();
+
+  const releaseCourseClaim = (courseId: string, taskId: string) => {
+    if (courseClaims.get(courseId) === taskId) {
+      courseClaims.delete(courseId);
+    }
+  };
+
+  const assertCourseIsAvailable = async (
+    courseId: string,
+    taskId: string,
+    blockingStatuses: ReadonlySet<CourseTaskRecord["status"]>,
+  ) => {
+    const claimedTaskId = courseClaims.get(courseId);
+    if (claimedTaskId && claimedTaskId !== taskId) {
+      throw new AiRequestError(
+        `课程 ${courseId} 已由任务 ${claimedTaskId} 处理，请先暂停或等待该任务完成。`,
+      );
+    }
+
+    const { items } = await dependencies.taskStore.list();
+    const concurrentlyClaimedTaskId = courseClaims.get(courseId);
+    if (
+      concurrentlyClaimedTaskId &&
+      concurrentlyClaimedTaskId !== taskId
+    ) {
+      throw new AiRequestError(
+        `课程 ${courseId} 已由任务 ${concurrentlyClaimedTaskId} 处理，请先暂停或等待该任务完成。`,
+      );
+    }
+    const conflicting = items.find(
+      (record) =>
+        record.courseId === courseId &&
+        record.taskId !== taskId &&
+        blockingStatuses.has(record.status),
+    );
+    if (conflicting) {
+      throw new AiRequestError(
+        `课程 ${courseId} 已有任务 ${conflicting.taskId} 处于 ${conflicting.status} 状态，不能并发写入同一检查点。`,
+      );
+    }
+  };
 
   return {
     async create(input) {
@@ -220,7 +262,18 @@ export function createCourseGenerationTaskService(
         updatedAt: timestamp,
       });
 
-      await dependencies.taskStore.save(record);
+      await assertCourseIsAvailable(
+        courseId,
+        taskId,
+        new Set(["queued", "running", "paused"]),
+      );
+      courseClaims.set(courseId, taskId);
+      try {
+        await dependencies.taskStore.save(record);
+      } catch (error) {
+        releaseCourseClaim(courseId, taskId);
+        throw error;
+      }
       return CourseTaskCreateResponseSchema.parse({
         taskId,
         courseId,
@@ -240,12 +293,35 @@ export function createCourseGenerationTaskService(
         controller,
         promise: Promise.resolve(undefined),
       };
-      const promise = executeTask(
-        safeTaskId,
-        controller,
-        dependencies,
-        () => active.stopIntent,
-      ).finally(() => {
+      const promise = (async () => {
+        const record = await dependencies.taskStore.load(safeTaskId);
+        if (
+          !record ||
+          isTerminalStatus(record.status) ||
+          record.status === "paused"
+        ) {
+          return record
+            ? dependencies.courseStore.load(record.courseId)
+            : undefined;
+        }
+
+        await assertCourseIsAvailable(
+          record.courseId,
+          safeTaskId,
+          new Set(["running"]),
+        );
+        courseClaims.set(record.courseId, safeTaskId);
+        try {
+          return await executeTask(
+            safeTaskId,
+            controller,
+            dependencies,
+            () => active.stopIntent,
+          );
+        } finally {
+          releaseCourseClaim(record.courseId, safeTaskId);
+        }
+      })().finally(() => {
         if (activeTasks.get(safeTaskId)?.promise === promise) {
           activeTasks.delete(safeTaskId);
         }
@@ -264,6 +340,7 @@ export function createCourseGenerationTaskService(
         isTerminalStatus(record.status) ||
         record.status === "paused"
       ) {
+        if (record) releaseCourseClaim(record.courseId, record.taskId);
         return record;
       }
       const active = activeTasks.get(safeTaskId);
@@ -315,10 +392,14 @@ export function createCourseGenerationTaskService(
         });
         return terminal;
       }
-      if (settled.status === "paused") return settled;
+      if (settled.status === "paused") {
+        releaseCourseClaim(settled.courseId, settled.taskId);
+        return settled;
+      }
 
       // 覆盖 run() 刚读取 queued、随后才尝试写 running 的窄竞态。
       await dependencies.taskStore.save(paused);
+      releaseCourseClaim(paused.courseId, paused.taskId);
       return paused;
     },
 
@@ -332,6 +413,12 @@ export function createCourseGenerationTaskService(
       // runner 收敛；这里额外等待，覆盖服务内并发调用。
       await activeTasks.get(safeTaskId)?.promise;
 
+      await assertCourseIsAvailable(
+        record.courseId,
+        record.taskId,
+        new Set(["queued", "running"]),
+      );
+      courseClaims.set(record.courseId, record.taskId);
       const queued = CourseTaskRecordSchema.parse({
         ...record,
         traceId: dependencies.createTraceId(),
@@ -340,7 +427,12 @@ export function createCourseGenerationTaskService(
         completedAt: undefined,
         error: undefined,
       });
-      await dependencies.taskStore.save(queued);
+      try {
+        await dependencies.taskStore.save(queued);
+      } catch (error) {
+        releaseCourseClaim(record.courseId, record.taskId);
+        throw error;
+      }
 
       const state = await dependencies.courseStore.load(queued.courseId);
       if (state && !isCourseTerminalStatus(state.status)) {
@@ -377,6 +469,9 @@ export function createCourseGenerationTaskService(
       }
       await dependencies.taskStore.save(cancelled);
       active?.controller.abort();
+      if (!active) {
+        releaseCourseClaim(cancelled.courseId, cancelled.taskId);
+      }
       dependencies.eventBus.publish({
         type: "terminal",
         taskId: cancelled.taskId,

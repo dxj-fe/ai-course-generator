@@ -78,6 +78,28 @@ describe("course generation task service", () => {
     });
   });
 
+  it("rejects creating a second non-terminal task for the same course", async () => {
+    const taskIds = ["task-same-course-one", "task-same-course-two"];
+    const fixture = createFixture({
+      createTaskId: () => taskIds.shift()!,
+    });
+    const first = await fixture.service.create({
+      userPrompt: "生成同一门太阳系课程",
+      source: "workflow",
+    });
+
+    await expect(
+      fixture.service.create({
+        courseId: first.courseId,
+        userPrompt: "生成同一门太阳系课程",
+        source: "workflow",
+      }),
+    ).rejects.toThrow("不能并发写入同一检查点");
+
+    expect(fixture.tasks).toHaveLength(1);
+    expect(fixture.tasks.get(first.taskId)?.status).toBe("queued");
+  });
+
   it.each([1, 20, 120])(
     "persists the positive course length %i without a fixed maximum",
     async (pageCount) => {
