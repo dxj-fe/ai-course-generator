@@ -780,6 +780,51 @@ describe("initializeCourseGenerationState", () => {
     });
   });
 
+  it("clears a stale running Page Writer error and reopens its attempt budget", () => {
+    const base = legacyRepairFailure();
+    const page = base.pages[0]!;
+    const existing = CourseGenerationStateSchema.parse({
+      ...base,
+      status: "running",
+      currentStage: "page_writer",
+      completedAt: undefined,
+      pages: [
+        {
+          pageId: page.pageId,
+          order: page.order,
+          status: "running",
+          currentStage: "page_writer",
+          assets: [],
+          attempts: [{ stage: "page_writer", attempts: 3 }],
+          error: {
+            code: "PAGE_WORKER_RETRY_EXHAUSTED",
+            causeCode: "SCHEMA_ERROR",
+            message:
+              "interaction.feedbackSuccess 需要数组，但模型返回了字符串。",
+          },
+        },
+      ],
+      errors: [],
+    });
+
+    const resumed = initializeCourseGenerationState(
+      {
+        courseId: existing.courseId,
+        userPrompt: existing.userPrompt,
+        existingState: existing,
+      },
+      { traceId: "trace-resume-running-page-writer" },
+      () => timestamp,
+    );
+
+    expect(resumed.pages[0]).toMatchObject({
+      status: "running",
+      currentStage: "page_writer",
+      attempts: [],
+    });
+    expect(resumed.pages[0]?.error).toBeUndefined();
+  });
+
   it.each(["QUOTA_ERROR", "AUTH_ERROR", "CONFIG_ERROR"] as const)(
     "rearms a non-repair page after the user resolves %s",
     (code) => {
@@ -1002,8 +1047,9 @@ describe("initializeCourseGenerationState", () => {
     });
   });
 
-  it("keeps Repair safety-stop failures closed on explicit resume", () => {
+  it("restarts a QUALITY_STALLED page from a clean HTML checkpoint", () => {
     const existing = legacyRepairFailure();
+    const original = structuredClone(existing.pages[0]!);
     existing.pages[0]!.error = {
       code: "QUALITY_STALLED",
       message: "页面质量连续多轮没有改善。",
@@ -1020,9 +1066,474 @@ describe("initializeCourseGenerationState", () => {
     );
 
     expect(resumed.pages[0]).toMatchObject({
+      status: "running",
+      currentStage: "html",
+      repairHistory: [],
+    });
+    expect(resumed.pages[0]?.content).toEqual(original.content);
+    expect(resumed.pages[0]?.assets).toEqual(original.assets);
+    expect(resumed.pages[0]?.htmlOutput).toBeUndefined();
+    expect(resumed.pages[0]?.qualityReport).toBeUndefined();
+    expect(resumed.pages[0]?.error).toBeUndefined();
+  });
+
+  it("restarts an interrupted running Repair from a clean HTML checkpoint", () => {
+    const existing = legacyRepairFailure();
+    const page = existing.pages[0]!;
+    const original = structuredClone(page);
+    page.status = "running";
+    page.error = undefined;
+    page.attempts = [
+      { stage: "page_writer", attempts: 1 },
+      { stage: "assets", attempts: 1 },
+      { stage: "html", attempts: 1 },
+      { stage: "qa", attempts: 2 },
+    ];
+    page.repairHistory = [
+      ...page.repairHistory!,
+      {
+        ...page.repairHistory![0]!,
+        round: 3,
+        status: "running",
+        failureClass: undefined,
+        completedAt: undefined,
+      },
+    ];
+    existing.status = "running";
+    existing.completedAt = undefined;
+    existing.errors = [];
+
+    const resumed = initializeCourseGenerationState(
+      {
+        courseId: existing.courseId,
+        userPrompt: existing.userPrompt,
+        existingState: existing,
+      },
+      { traceId: "trace-resume-interrupted-repair" },
+      () => timestamp,
+    );
+
+    expect(resumed.pages[0]).toMatchObject({
+      status: "running",
+      currentStage: "html",
+      attempts: [
+        { stage: "page_writer", attempts: 1 },
+        { stage: "assets", attempts: 1 },
+      ],
+      repairHistory: [],
+    });
+    expect(resumed.pages[0]?.content).toEqual(original.content);
+    expect(resumed.pages[0]?.assets).toEqual(original.assets);
+    expect(resumed.pages[0]?.htmlOutput).toBeUndefined();
+    expect(resumed.pages[0]?.qualityReport).toBeUndefined();
+    expect(resumed.pages[0]?.error).toBeUndefined();
+  });
+
+  it("rebuilds an unverified Repair result after structurally invalid re-QA", () => {
+    const existing = legacyRepairFailure();
+    const page = existing.pages[0]!;
+    const original = structuredClone(page);
+    page.status = "failed";
+    page.currentStage = "qa";
+    page.qualityReport = undefined;
+    page.attempts = [
+      { stage: "page_writer", attempts: 1 },
+      { stage: "assets", attempts: 1 },
+      { stage: "html", attempts: 3 },
+      { stage: "qa", attempts: 1 },
+    ];
+    page.error = {
+      code: "PAGE_REQA_FAILED",
+      message:
+        '结构化输出校验失败：issues.2.location: Unrecognized key: "repairHint"',
+    };
+    existing.currentStage = "qa";
+    existing.errors = [
+      {
+        stage: "qa",
+        pageId: page.pageId,
+        code: page.error.code,
+        message: page.error.message,
+      },
+    ];
+
+    const resumed = initializeCourseGenerationState(
+      {
+        courseId: existing.courseId,
+        userPrompt: existing.userPrompt,
+        existingState: existing,
+      },
+      { traceId: "trace-resume-invalid-reqa-shape" },
+      () => timestamp,
+    );
+
+    expect(resumed.pages[0]).toMatchObject({
+      status: "running",
+      currentStage: "html",
+      attempts: [
+        { stage: "page_writer", attempts: 1 },
+        { stage: "assets", attempts: 1 },
+      ],
+      repairHistory: [],
+    });
+    expect(resumed.pages[0]?.content).toEqual(original.content);
+    expect(resumed.pages[0]?.assets).toEqual(original.assets);
+    expect(resumed.pages[0]?.htmlOutput).toBeUndefined();
+    expect(resumed.pages[0]?.qualityReport).toBeUndefined();
+    expect(resumed.pages[0]?.error).toBeUndefined();
+  });
+
+  it("rewrites an over-capacity achievement after structurally invalid re-QA", () => {
+    const achievement = getFunctionalTemplateDslExample("achievement-task");
+    if (!achievement || achievement.interaction.type !== "input") {
+      throw new Error("achievement-task fixture is required");
+    }
+    const existing = legacyRepairFailure();
+    const page = existing.pages[0]!;
+    const content = {
+      ...achievement,
+      pageId: page.pageId,
+      assetSlots: [
+        {
+          id: "asset-slot-01",
+          type: "illustration" as const,
+          role: "inline" as const,
+          purpose: "展示任务分析所需的核心作品。",
+          required: true,
+          altTextGuidance: "描述作品中可供观察和分析的关键视觉线索。",
+        },
+      ],
+    };
+    page.status = "failed";
+    page.currentStage = "qa";
+    page.content = content;
+    page.htmlOutput = {
+      html: buildValidGeneratedHtml(content),
+      generatedAt: timestamp,
+      version: 3,
+    };
+    page.qualityReport = undefined;
+    page.attempts = [
+      { stage: "page_writer", attempts: 1 },
+      { stage: "assets", attempts: 1 },
+      { stage: "html", attempts: 3 },
+      { stage: "qa", attempts: 1 },
+    ];
+    page.error = {
+      code: "PAGE_REQA_FAILED",
+      message:
+        '结构化输出校验失败：issues.2.location: Unrecognized key: "repairHint"',
+    };
+    existing.currentStage = "qa";
+
+    const resumed = initializeCourseGenerationState(
+      {
+        courseId: existing.courseId,
+        userPrompt: existing.userPrompt,
+        existingState: existing,
+      },
+      { traceId: "trace-resume-over-capacity-achievement-reqa" },
+      () => timestamp,
+    );
+
+    expect(resumed.pages[0]).toMatchObject({
+      status: "running",
+      currentStage: "page_writer",
+      assets: [],
+      attempts: [],
+      repairHistory: [],
+    });
+    expect(resumed.pages[0]?.content).toBeUndefined();
+    expect(resumed.pages[0]?.htmlOutput).toBeUndefined();
+    expect(resumed.pages[0]?.qualityReport).toBeUndefined();
+    expect(resumed.pages[0]?.error).toBeUndefined();
+  });
+
+  it("restarts a structurally invalid Repair result from clean HTML", () => {
+    const existing = legacyRepairFailure();
+    const original = structuredClone(existing.pages[0]!);
+    existing.pages[0]!.error = {
+      code: "REPAIR_EXECUTION_RETRY_EXHAUSTED",
+      causeCode: "SCHEMA_ERROR",
+      message:
+        'Repair 结构化输出校验失败：root: Unrecognized key: "patches"',
+    };
+
+    const resumed = initializeCourseGenerationState(
+      {
+        courseId: existing.courseId,
+        userPrompt: existing.userPrompt,
+        existingState: existing,
+      },
+      { traceId: "trace-resume-invalid-repair-shape" },
+      () => timestamp,
+    );
+
+    expect(resumed.pages[0]).toMatchObject({
+      status: "running",
+      currentStage: "html",
+      repairHistory: [],
+    });
+    expect(resumed.pages[0]?.content).toEqual(original.content);
+    expect(resumed.pages[0]?.assets).toEqual(original.assets);
+    expect(resumed.pages[0]?.htmlOutput).toBeUndefined();
+    expect(resumed.pages[0]?.qualityReport).toBeUndefined();
+    expect(resumed.pages[0]?.error).toBeUndefined();
+  });
+
+  it("clears saturated HTML and QA attempt budgets when rebuilding a corrupted Repair page", () => {
+    const existing = legacyRepairFailure();
+    existing.pages[0]!.attempts = [
+      { stage: "page_writer", attempts: 1 },
+      { stage: "assets", attempts: 1 },
+      { stage: "html", attempts: 3 },
+      { stage: "qa", attempts: 3 },
+    ];
+    existing.pages[0]!.error = {
+      code: "REPAIR_EXECUTION_RETRY_EXHAUSTED",
+      causeCode: "SCHEMA_ERROR",
+      message:
+        "Repair 结构化输出校验失败：patches.0.selector 不符合安全边界。",
+    };
+
+    const resumed = initializeCourseGenerationState(
+      {
+        courseId: existing.courseId,
+        userPrompt: existing.userPrompt,
+        existingState: existing,
+      },
+      { traceId: "trace-resume-saturated-html-qa" },
+      () => timestamp,
+    );
+
+    expect(resumed.pages[0]).toMatchObject({
+      status: "running",
+      currentStage: "html",
+      attempts: [
+        { stage: "page_writer", attempts: 1 },
+        { stage: "assets", attempts: 1 },
+      ],
+      repairHistory: [],
+    });
+    expect(resumed.pages[0]?.htmlOutput).toBeUndefined();
+    expect(resumed.pages[0]?.qualityReport).toBeUndefined();
+    expect(resumed.pages[0]?.error).toBeUndefined();
+  });
+
+  it.each([
+    "结构化输出校验失败：patches.0.selector: Invalid string: must match pattern /^[a-z][a-z0-9-]*$/i",
+    "结构化输出校验失败：patches.0.summary: Invalid input: expected string, received undefined",
+  ])(
+    "restarts the observed Repair provider-shape failure from a clean HTML checkpoint: %s",
+    (message) => {
+      const existing = legacyRepairFailure();
+      const original = structuredClone(existing.pages[0]!);
+      existing.pages[0]!.error = {
+        code: "REPAIR_EXECUTION_RETRY_EXHAUSTED",
+        causeCode: "SCHEMA_ERROR",
+        message,
+      };
+
+      const resumed = initializeCourseGenerationState(
+        {
+          courseId: existing.courseId,
+          userPrompt: existing.userPrompt,
+          existingState: existing,
+        },
+        { traceId: "trace-resume-observed-repair-shape" },
+        () => timestamp,
+      );
+
+      expect(resumed.pages[0]).toMatchObject({
+        status: "running",
+        currentStage: "html",
+        repairHistory: [],
+      });
+      expect(resumed.pages[0]?.content).toEqual(original.content);
+      expect(resumed.pages[0]?.assets).toEqual(original.assets);
+      expect(resumed.pages[0]?.htmlOutput).toBeUndefined();
+      expect(resumed.pages[0]?.qualityReport).toBeUndefined();
+      expect(resumed.pages[0]?.error).toBeUndefined();
+    },
+  );
+
+  it("rewrites a legacy multi-question quiz before regenerating its HTML", () => {
+    const existing = legacyRepairFailure();
+    const quiz = getFunctionalTemplateDslExample("interactive-quiz");
+    if (!quiz || quiz.interaction.type !== "choice") {
+      throw new Error("interactive-quiz fixture is required");
+    }
+    const page = existing.pages[0]!;
+    page.content = { ...quiz, pageId: page.pageId };
+    page.htmlOutput = {
+      html: buildValidGeneratedHtml(page.content),
+      generatedAt: timestamp,
+      version: 1,
+    };
+    page.error = {
+      code: "QUALITY_STALLED",
+      message: "多题页面在固定画布中连续修订仍无法完整呈现。",
+    };
+
+    const resumed = initializeCourseGenerationState(
+      {
+        courseId: existing.courseId,
+        userPrompt: existing.userPrompt,
+        existingState: existing,
+      },
+      { traceId: "trace-resume-overdense-quiz" },
+      () => timestamp,
+    );
+
+    expect(resumed.pages[0]).toMatchObject({
+      status: "running",
+      currentStage: "page_writer",
+      assets: [],
+      repairHistory: [],
+      attempts: [],
+    });
+    expect(resumed.pages[0]?.content).toBeUndefined();
+    expect(resumed.pages[0]?.htmlOutput).toBeUndefined();
+    expect(resumed.pages[0]?.qualityReport).toBeUndefined();
+    expect(resumed.pages[0]?.error).toBeUndefined();
+  });
+
+  it("keeps a compact two-block story intro at the clean HTML checkpoint", () => {
+    const existing = legacyRepairFailure();
+    const story = getFunctionalTemplateDslExample("story-intro");
+    if (!story || story.interaction.type !== "choice") {
+      throw new Error("story-intro fixture is required");
+    }
+    const page = existing.pages[0]!;
+    const content = { ...story, pageId: page.pageId };
+    page.content = content;
+    page.htmlOutput = {
+      html: buildValidGeneratedHtml(content),
+      generatedAt: timestamp,
+      version: 1,
+    };
+    page.error = {
+      code: "QUALITY_STALLED",
+      message: "页面质量连续多轮没有改善。",
+    };
+
+    const resumed = initializeCourseGenerationState(
+      {
+        courseId: existing.courseId,
+        userPrompt: existing.userPrompt,
+        existingState: existing,
+      },
+      { traceId: "trace-resume-compact-story" },
+      () => timestamp,
+    );
+
+    expect(resumed.pages[0]).toMatchObject({
+      status: "running",
+      currentStage: "html",
+      content,
+      assets: [],
+      repairHistory: [],
+    });
+    expect(resumed.pages[0]?.htmlOutput).toBeUndefined();
+    expect(resumed.pages[0]?.qualityReport).toBeUndefined();
+    expect(resumed.pages[0]?.error).toBeUndefined();
+  });
+
+  it("rewrites the observed over-capacity story intro before regenerating HTML", () => {
+    const existing = legacyRepairFailure();
+    const story = getFunctionalTemplateDslExample("story-intro");
+    if (!story || story.interaction.type !== "choice") {
+      throw new Error("story-intro fixture is required");
+    }
+    const page = existing.pages[0]!;
+    const content = {
+      ...story,
+      pageId: page.pageId,
+      blocks: [
+        ...story.blocks,
+        {
+          id: "block-extra-context",
+          kind: "fact" as const,
+          label: "补充线索",
+          heading: "环境变化还在持续",
+          body: "基地同时记录到更多环境变化，需要结合已有线索判断优先调查方向。",
+          supportingPoints: ["额外信息会继续占用固定画布。"],
+        },
+      ],
+      interaction: {
+        ...story.interaction,
+        questions: story.interaction.questions.map((question) => ({
+          ...question,
+          options: [
+            ...question.options,
+            { id: "option-01-03", label: "只记录天空的颜色" },
+            { id: "option-01-04", label: "先装饰基地入口" },
+          ],
+        })),
+      },
+      layoutHints: {
+        ...story.layoutHints,
+        readingOrder: [
+          ...story.layoutHints.readingOrder,
+          "block-extra-context",
+        ],
+      },
+    };
+    page.content = content;
+    page.htmlOutput = {
+      html: buildValidGeneratedHtml(content),
+      generatedAt: timestamp,
+      version: 1,
+    };
+    page.error = {
+      code: "QUALITY_STALLED",
+      message: "固定画布内的内容密度连续多轮没有改善。",
+    };
+
+    const resumed = initializeCourseGenerationState(
+      {
+        courseId: existing.courseId,
+        userPrompt: existing.userPrompt,
+        existingState: existing,
+      },
+      { traceId: "trace-resume-over-capacity-story" },
+      () => timestamp,
+    );
+
+    expect(resumed.pages[0]).toMatchObject({
+      status: "running",
+      currentStage: "page_writer",
+      assets: [],
+      repairHistory: [],
+      attempts: [],
+    });
+    expect(resumed.pages[0]?.content).toBeUndefined();
+    expect(resumed.pages[0]?.htmlOutput).toBeUndefined();
+    expect(resumed.pages[0]?.qualityReport).toBeUndefined();
+    expect(resumed.pages[0]?.error).toBeUndefined();
+  });
+
+  it("keeps the emergency Repair safety limit closed on explicit resume", () => {
+    const existing = legacyRepairFailure();
+    existing.pages[0]!.error = {
+      code: "REPAIR_SAFETY_LIMIT",
+      message: "页面 Repair 已触发紧急安全上限。",
+    };
+
+    const resumed = initializeCourseGenerationState(
+      {
+        courseId: existing.courseId,
+        userPrompt: existing.userPrompt,
+        existingState: existing,
+      },
+      { traceId: "trace-resume-repair-safety-limit" },
+      () => timestamp,
+    );
+
+    expect(resumed.pages[0]).toMatchObject({
       status: "failed",
       currentStage: "repair",
-      error: { code: "QUALITY_STALLED" },
+      error: { code: "REPAIR_SAFETY_LIMIT" },
     });
   });
 

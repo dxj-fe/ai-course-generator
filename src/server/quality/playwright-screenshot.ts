@@ -72,6 +72,27 @@ export function resolveDominantVisualMetrics(
   };
 }
 
+export function countAuthoredTouchTargets(
+  rects: Array<{ width: number; height: number }>,
+  viewportFitScale = 1,
+): Pick<
+  BrowserScreenshotMetrics,
+  "touchTargetUnder24Count" | "touchTargetUnder44Count"
+> {
+  const scale =
+    Number.isFinite(viewportFitScale) && viewportFitScale > 0
+      ? Math.min(1, viewportFitScale)
+      : 1;
+  return {
+    touchTargetUnder24Count: rects.filter(
+      (rect) => rect.width / scale < 24 || rect.height / scale < 24,
+    ).length,
+    touchTargetUnder44Count: rects.filter(
+      (rect) => rect.width / scale < 44 || rect.height / scale < 44,
+    ).length,
+  };
+}
+
 export type PageScreenshotResult = {
   evidence: QualityScreenshotEvidence;
   issues: QualityIssue[];
@@ -109,6 +130,8 @@ export async function capturePageScreenshot(
     html: string;
     content?: PageContentDSL;
     abortSignal?: AbortSignal;
+    traceId?: string;
+    attempt?: number;
   },
   options: CapturePageScreenshotOptions = {},
 ): Promise<PageScreenshotResult> {
@@ -148,12 +171,18 @@ export async function capturePageScreenshot(
         abortSignal: input.abortSignal,
         captureBrowser: options.captureBrowser,
         runtimeConfig,
+        pageId: input.pageId,
+        traceId: input.traceId,
+        attempt: input.attempt,
       })
     : await captureAllWithPlaywright({
         html: input.html,
         timeoutMs,
         abortSignal: input.abortSignal,
         runtimeConfig,
+        pageId: input.pageId,
+        traceId: input.traceId,
+        attempt: input.attempt,
       });
   throwIfAborted(input.abortSignal);
 
@@ -163,6 +192,14 @@ export async function capturePageScreenshot(
       await mkdir(rootDir, { recursive: true });
     } catch (error) {
       storageError = error;
+      logScreenshotError({
+        traceId: input.traceId,
+        pageId: input.pageId,
+        phase: "storage:mkdir",
+        attempt: input.attempt,
+        code: "SCREENSHOT_STORAGE_PREPARE_FAILED",
+        error,
+      });
     }
   }
 
@@ -192,6 +229,15 @@ export async function capturePageScreenshot(
       });
       serverPaths.set(outcome.name, serverPath);
     } catch (error) {
+      logScreenshotError({
+        traceId: input.traceId,
+        pageId: input.pageId,
+        phase: "storage:write",
+        attempt: input.attempt,
+        code: "SCREENSHOT_STORAGE_WRITE_FAILED",
+        viewport: outcome.viewport,
+        error,
+      });
       captures.push(failedCapture(outcome.viewport, error));
     }
   }
@@ -206,7 +252,7 @@ export async function capturePageScreenshot(
   return {
     evidence,
     issues: captures.flatMap((capture) =>
-      browserIssues(input.pageId, capture),
+      browserIssues(input.pageId, capture, input.content),
     ),
     serverPath: serverPaths.get("desktop"),
   };
@@ -217,6 +263,9 @@ async function captureWithInjectedBrowser(input: {
   timeoutMs: number;
   abortSignal?: AbortSignal;
   runtimeConfig?: TrustedLessonRuntimeConfig;
+  pageId: string;
+  traceId?: string;
+  attempt?: number;
   captureBrowser: NonNullable<CapturePageScreenshotOptions["captureBrowser"]>;
 }): Promise<CaptureOutcome[]> {
   return Promise.all(
@@ -235,6 +284,15 @@ async function captureWithInjectedBrowser(input: {
         return { name, viewport, snapshot };
       } catch (error) {
         if (isAbortError(error)) throw error;
+        logScreenshotError({
+          traceId: input.traceId,
+          pageId: input.pageId,
+          phase: "capture",
+          attempt: input.attempt,
+          code: "SCREENSHOT_CAPTURE_FAILED",
+          viewport,
+          error,
+        });
         return { name, viewport, error };
       }
     }),
@@ -246,6 +304,9 @@ async function captureAllWithPlaywright(input: {
   timeoutMs: number;
   abortSignal?: AbortSignal;
   runtimeConfig?: TrustedLessonRuntimeConfig;
+  pageId: string;
+  traceId?: string;
+  attempt?: number;
 }): Promise<CaptureOutcome[]> {
   let browser: Browser;
   try {
@@ -256,6 +317,14 @@ async function captureAllWithPlaywright(input: {
     );
   } catch (error) {
     if (isAbortError(error)) throw error;
+    logScreenshotError({
+      traceId: input.traceId,
+      pageId: input.pageId,
+      phase: "browser:launch",
+      attempt: input.attempt,
+      code: "SCREENSHOT_BROWSER_LAUNCH_FAILED",
+      error,
+    });
     return QA_VIEWPORTS.map(({ name, viewport }) => ({
       name,
       viewport,
@@ -273,6 +342,9 @@ async function captureAllWithPlaywright(input: {
               timeoutMs: input.timeoutMs,
               viewport,
               runtimeConfig: input.runtimeConfig,
+              pageId: input.pageId,
+              traceId: input.traceId,
+              attempt: input.attempt,
             }),
             input.timeoutMs,
             input.abortSignal,
@@ -280,6 +352,15 @@ async function captureAllWithPlaywright(input: {
           return { name, viewport, snapshot };
         } catch (error) {
           if (isAbortError(error)) throw error;
+          logScreenshotError({
+            traceId: input.traceId,
+            pageId: input.pageId,
+            phase: "capture",
+            attempt: input.attempt,
+            code: "SCREENSHOT_CAPTURE_FAILED",
+            viewport,
+            error,
+          });
           return { name, viewport, error };
         }
       }),
@@ -296,6 +377,9 @@ async function captureViewport(
     timeoutMs: number;
     viewport: BrowserViewport;
     runtimeConfig?: TrustedLessonRuntimeConfig;
+    pageId: string;
+    traceId?: string;
+    attempt?: number;
   },
 ): Promise<BrowserScreenshotSnapshot> {
   const context = await browser.newContext({
@@ -350,6 +434,15 @@ async function captureViewport(
       const root = document.documentElement;
       const body = document.body;
       const viewportFitApplied = root.dataset.keyaViewportFit === "ready";
+      const rawViewportFitScale = Number.parseFloat(
+        root.dataset.keyaViewportFitScale ?? "1",
+      );
+      const viewportFitScale =
+        viewportFitApplied &&
+        Number.isFinite(rawViewportFitScale) &&
+        rawViewportFitScale > 0
+          ? Math.min(1, rawViewportFitScale)
+          : 1;
       const interactiveElements = Array.from(
         document.querySelectorAll<HTMLElement>(
           "a[href],button,input,select,textarea,[role='button'],[tabindex]",
@@ -552,6 +645,7 @@ async function captureViewport(
       );
       return {
         viewportFitApplied,
+        viewportFitScale,
         documentWidth,
         documentHeight,
         horizontalOverflowPx: Math.max(0, root.scrollWidth - root.clientWidth),
@@ -561,12 +655,10 @@ async function captureViewport(
         zeroSizeInteractiveCount: interactiveRects.filter(
           (rect) => rect.width < 1 || rect.height < 1,
         ).length,
-        touchTargetUnder24Count: visibleInteractiveRects.filter(
-          (rect) => rect.width < 24 || rect.height < 24,
-        ).length,
-        touchTargetUnder44Count: visibleInteractiveRects.filter(
-          (rect) => rect.width < 44 || rect.height < 44,
-        ).length,
+        visibleInteractiveSizes: visibleInteractiveRects.map((rect) => ({
+          width: rect.width,
+          height: rect.height,
+        })),
         primaryActionBelowFoldCount: primaryActions.filter((element) => {
           const rect = element.getBoundingClientRect();
           return (
@@ -582,12 +674,23 @@ async function captureViewport(
         visualCandidates,
       };
     });
-    const { viewportFitApplied, visualCandidates, ...baseMetrics } = evaluated;
+    const {
+      viewportFitApplied,
+      viewportFitScale,
+      visualCandidates,
+      visibleInteractiveSizes,
+      ...baseMetrics
+    } = evaluated;
     const metrics: BrowserScreenshotMetrics = {
       ...normalizeViewportFitMetrics(
         baseMetrics,
         input.viewport,
         viewportFitApplied,
+      ),
+      viewportFitScale,
+      ...countAuthoredTouchTargets(
+        visibleInteractiveSizes,
+        viewportFitScale,
       ),
       ...resolveDominantVisualMetrics(visualCandidates),
     };
@@ -595,6 +698,12 @@ async function captureViewport(
     const interactionMetrics = await exerciseInteraction(
       page,
       input.runtimeConfig,
+      {
+        traceId: input.traceId,
+        pageId: input.pageId,
+        attempt: input.attempt,
+        viewport: input.viewport,
+      },
     );
     return { metrics: { ...metrics, ...interactionMetrics }, png };
   } finally {
@@ -630,6 +739,12 @@ export function normalizeViewportFitMetrics(
 async function exerciseInteraction(
   page: Page,
   runtimeConfig?: TrustedLessonRuntimeConfig,
+  diagnostics?: {
+    traceId?: string;
+    pageId: string;
+    attempt?: number;
+    viewport: BrowserViewport;
+  },
 ): Promise<
   Pick<
     BrowserScreenshotMetrics,
@@ -666,7 +781,18 @@ async function exerciseInteraction(
       interactionFeedbackVisible:
         (await feedback.count()) > 0 && (await feedback.isVisible()),
     };
-  } catch {
+  } catch (error) {
+    if (diagnostics) {
+      logScreenshotError({
+        traceId: diagnostics.traceId,
+        pageId: diagnostics.pageId,
+        phase: "interaction",
+        attempt: diagnostics.attempt,
+        code: "SCREENSHOT_INTERACTION_FAILED",
+        viewport: diagnostics.viewport,
+        error,
+      });
+    }
     return {
       interactionSubmitTested: false,
       interactionFeedbackVisible: false,
@@ -674,9 +800,53 @@ async function exerciseInteraction(
   }
 }
 
+function logScreenshotError(input: {
+  traceId?: string;
+  pageId: string;
+  phase: "browser:launch" | "capture" | "interaction" | "storage:mkdir" | "storage:write";
+  attempt?: number;
+  code: string;
+  viewport?: BrowserViewport;
+  error: unknown;
+}) {
+  const original = serializeError(input.error);
+  console.error("[page-qa-browser]", {
+    event: "screenshot:error",
+    traceId: input.traceId ?? "unavailable",
+    pageId: input.pageId,
+    stage: "qa",
+    attempt: input.attempt ?? 1,
+    phase: input.phase,
+    code: input.code,
+    message: original.message,
+    ...(input.viewport
+      ? { viewport: `${input.viewport.width}x${input.viewport.height}` }
+      : {}),
+    errorName: original.name,
+    errorMessage: original.message,
+    errorStack: original.stack,
+  });
+}
+
+function serializeError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+  return {
+    name: typeof error,
+    message: String(error),
+    stack: undefined,
+  };
+}
+
 function browserIssues(
   pageId: string,
   evidence: ScreenshotCapture,
+  content?: PageContentDSL,
 ): QualityIssue[] {
   if (evidence.status !== "captured" || !evidence.metrics) return [];
   const location = {
@@ -685,6 +855,25 @@ function browserIssues(
     description: "Playwright 固定视口渲染结果",
   };
   const issues: QualityIssue[] = [];
+  if (
+    evidence.metrics.viewportFitScale !== undefined &&
+    evidence.metrics.viewportFitScale < 0.9
+  ) {
+    issues.push({
+      code: "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
+      dimension: "layoutQuality",
+      severity: "error",
+      source: "browser",
+      message: `页面为装入画布被整体缩放到约 ${Math.round(evidence.metrics.viewportFitScale * 100)}%，正文和控件会难以阅读。`,
+      location: {
+        ...location,
+        selector: "main[data-page-id]",
+        description: "被播放器整体缩小的课程主画布",
+      },
+      repairHint:
+        "减少单页内容密度并重组为横向或紧凑网格；限制竖版素材高度，必要时重新生成或拆分页面。不要继续只增大控件 CSS，也不要裁切必要内容。",
+    });
+  }
   if (evidence.metrics.horizontalOverflowPx > 0) {
     issues.push({
       code: "BROWSER_HORIZONTAL_OVERFLOW",
@@ -779,7 +968,7 @@ function browserIssues(
     issues.push({
       code: "BROWSER_TOUCH_TARGET_UNDER_44",
       dimension: "htmlRuntime",
-      severity: "warning",
+      severity: "info",
       source: "browser",
       message: `${evidence.metrics.touchTargetUnder44Count} 个可见交互控件小于建议的 44×44px。`,
       location,
@@ -849,6 +1038,39 @@ function browserIssues(
         description: "播放器首屏中占比最大的可见视觉素材",
       },
       repairHint: "缩小或裁切素材，把标题、核心解释和学习动作放回首屏主焦点。",
+    });
+  }
+  if (
+    content?.assetSlots.some(
+      (slot) =>
+        slot.required &&
+        slot.role !== "decorative" &&
+        slot.type !== "icon",
+    ) &&
+    evidence.metrics.largestVisualAreaRatio !== undefined &&
+    evidence.metrics.largestVisualAreaRatio < 0.08
+  ) {
+    const requiredSlot = content.assetSlots.find(
+      (slot) =>
+        slot.required &&
+        slot.role !== "decorative" &&
+        slot.type !== "icon",
+    );
+    issues.push({
+      code: "BROWSER_VISUAL_TOO_SMALL",
+      dimension: "assetUsability",
+      severity: "error",
+      source: "browser",
+      message: `页面要求展示的主插图仅占首屏约 ${Math.round(evidence.metrics.largestVisualAreaRatio * 100)}%，无法形成清晰的视觉焦点。`,
+      location: {
+        ...location,
+        selector:
+          evidence.metrics.largestVisualSelector ??
+          `[data-asset-slot-id="${requiredSlot?.id ?? "asset-slot-01"}"]`,
+        description: "播放器首屏中面积过小的必需视觉素材",
+      },
+      repairHint:
+        "在不引起画布溢出的前提下扩大素材容器，使可见面积至少占视口 8%，建议达到 12%–30%；配合 object-fit 或 background-size 保持主体完整、清晰且不遮挡正文。",
     });
   }
   if (

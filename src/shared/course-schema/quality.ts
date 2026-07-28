@@ -67,6 +67,7 @@ const QualityScreenshotMetricsSchema = z
     largestVisualSelector: z.string().min(1).max(240).optional(),
     visibleContentAreaRatio: z.number().min(0).max(1).optional(),
     mainViewportCoverageRatio: z.number().min(0).max(1).optional(),
+    viewportFitScale: z.number().min(0).max(1).optional(),
   })
   .strict();
 

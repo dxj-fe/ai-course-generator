@@ -19,9 +19,14 @@ describe("Visual Director prompts", () => {
       styleTemplate: { id: "sci-fi" },
     });
 
-    expect(prompts.version).toBe("2.0.0/2.0.0");
+    expect(prompts.version).toBe("2.2.0/2.0.0");
     expect(prompts.systemPrompt).toContain("layoutPrinciples 必须包含 2–10 条");
     expect(prompts.systemPrompt).toContain("accessibilityRules 必须包含 2–12 条");
+    expect(prompts.systemPrompt).toContain("主次层级、内容与插图的空间关系");
+    expect(prompts.systemPrompt).toContain("不能只写“卡片布局”");
+    expect(prompts.systemPrompt).toContain("不得要求生成带文字");
+    expect(prompts.systemPrompt).toContain("整门课程唯一的“视觉圣经”");
+    expect(prompts.systemPrompt).toContain("棋盘格假透明背景");
     expect(prompts.userPrompt).toContain("pageGuidance 必须恰好输出 3 项");
   });
 });

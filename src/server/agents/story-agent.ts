@@ -14,6 +14,7 @@ import {
 } from "@/shared/course-schema";
 
 import { createMinimalAgent } from "./core/minimal-agent";
+import { normalizeSingleChoiceWording } from "./core/fixed-canvas-language";
 import type {
   Agent,
   AgentRuntimeContext,
@@ -68,6 +69,7 @@ export function createStoryAgent(
   dependencies: StoryAgentDependencies = defaultDependencies,
 ): Agent<StoryAgentState> {
   return createMinimalAgent({
+    name: "story-agent",
     isComplete: (state) => Boolean(state.arc),
     step: async (state, context, emit) => {
       const arc = StoryArcSchema.parse(
@@ -164,10 +166,21 @@ async function generateArc(input: {
       draft.narrativeMode,
       draft.characters,
     ),
-    pageBeats: draft.pageBeats.map((beat, index) => ({
-      ...beat,
-      pageId: input.outline.pages[index].id,
-    })),
+    pageBeats: draft.pageBeats.map((beat, index) => {
+      const page = input.outline.pages[index];
+      const alignedBeat =
+        page.interactionType === "choice"
+          ? {
+              beat: normalizeSingleChoiceWording(beat.beat),
+              transition: normalizeSingleChoiceWording(beat.transition),
+            }
+          : beat;
+
+      return {
+        ...alignedBeat,
+        pageId: page.id,
+      };
+    }),
   });
 }
 

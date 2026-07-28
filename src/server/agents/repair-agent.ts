@@ -112,6 +112,7 @@ export function createRepairAgent(
   dependencies: RepairAgentDependencies = defaultDependencies,
 ): Agent<RepairAgentState> {
   return createMinimalAgent({
+    name: "repair-agent",
     isComplete: (state) => Boolean(state.result),
     step: async (state, context, emit) => {
       const request = RepairRequestSchema.parse(state.task);
@@ -138,7 +139,7 @@ export function createRepairAgent(
       });
 
       const applied = validateAndApplyRepairResult(
-        normalizeRepairModelOutput(output),
+        normalizeRepairModelOutput(output, request),
         request,
       );
       emit({
@@ -393,7 +394,7 @@ async function generateCandidate(
     capability: "repair",
     fallbackTimeoutMs: REPAIR_MODEL_FALLBACK_TIMEOUT_MS,
     maxTokens: 8_000,
-    normalizeOutput: normalizeRepairModelOutput,
+    normalizeOutput: (output) => normalizeRepairModelOutput(output, input),
     prompt: prompts.userPrompt,
     promptVersion: prompts.version,
     schema: RepairModelOutputSchema,
@@ -446,10 +447,14 @@ export function buildRepairModelInput(input: RepairRequest) {
 
 /**
  * 只归一化可确定恢复的 Provider 形态偏差：DSL candidate 的已知别名、
- * 单项公开摘要，以及边界插入时以安全标签名开头的 CSS selector。归一化后
- * 仍须通过严格结果 Schema、请求授权范围和完整原产物合同校验。
+ * 单项公开摘要、缺失的 patch 公开摘要，以及边界插入时可证明属于 CSS 的
+ * `html, body` 定位。归一化后仍须通过严格结果 Schema、请求授权范围和
+ * 完整原产物合同校验；无法安全收敛的边界会在已知请求范围时结构化拒绝。
  */
-export function normalizeRepairModelOutput(output: unknown): unknown {
+export function normalizeRepairModelOutput(
+  output: unknown,
+  request?: RepairRequest,
+): unknown {
   if (!isRecord(output)) return output;
 
   let normalized = normalizeDslCandidateAliases(output);
@@ -459,11 +464,27 @@ export function normalizeRepairModelOutput(output: unknown): unknown {
       changeSummary: [output.changeSummary],
     };
   }
+  normalized = normalizeRepairBranchFields(normalized);
 
   if (!Array.isArray(normalized.patches)) return normalized;
 
   let patchesChanged = false;
-  const patches = normalized.patches.map((patch) => {
+  const patches = normalized.patches.map((rawPatch) => {
+    let patch = rawPatch;
+    if (
+      isRecord(patch) &&
+      patch.summary === undefined &&
+      typeof patch.issueCode === "string"
+    ) {
+      patch = {
+        ...patch,
+        summary:
+          patch.operation === "replace" || patch.operation === undefined
+            ? `针对 ${patch.issueCode} 应用唯一匹配替换。`
+            : `针对 ${patch.issueCode} 在授权标签边界插入修复。`,
+      };
+      patchesChanged = true;
+    }
     if (
       isRecord(patch) &&
       (patch.operation === undefined || patch.operation === "replace") &&
@@ -483,17 +504,130 @@ export function normalizeRepairModelOutput(output: unknown): unknown {
       return patch;
     }
 
-    const selector = normalizeBoundarySelector(patch.selector);
+    const selector = normalizeBoundarySelector(
+      patch.selector,
+      patch.replacement,
+    );
     if (selector === patch.selector) return patch;
 
     patchesChanged = true;
     return { ...patch, selector };
   });
 
-  if (patchesChanged) {
-    normalized = { ...normalized, patches };
+  const normalizedWithPatches = patchesChanged
+    ? { ...normalized, patches }
+    : normalized;
+  return request
+    ? declineUnsafeBoundaryCandidate(normalizedWithPatches, request)
+    : normalizedWithPatches;
+}
+
+/**
+ * Provider 有时会把 QA 的 CSS selector（例如 `.course-content`）误当作
+ * HTML 标签边界。该形态不能进入 canonical RepairResult，也不能被猜测性
+ * 扩权为某个标签。把它收敛成结构化拒绝，避免相同 Schema 错误被无反馈
+ * 重试；纯标签仍必须通过 request.allowedSelectors 的授权检查。
+ */
+function declineUnsafeBoundaryCandidate(
+  output: Record<string, unknown>,
+  request: RepairRequest,
+): Record<string, unknown> {
+  if (
+    output.kind !== "html_patch_candidate" ||
+    output.targetArtifact !== "html" ||
+    !Array.isArray(output.patches)
+  ) {
+    return output;
   }
 
+  const unsafePatch = output.patches.find((patch) => {
+    if (
+      !isRecord(patch) ||
+      (patch.operation !== "insert_after_open_tag" &&
+        patch.operation !== "insert_before_close_tag")
+    ) {
+      return false;
+    }
+    return (
+      typeof patch.selector !== "string" ||
+      !/^[a-z][a-z0-9-]*$/i.test(patch.selector)
+    );
+  });
+  if (!isRecord(unsafePatch)) return output;
+
+  const selector =
+    typeof unsafePatch.selector === "string"
+      ? unsafePatch.selector
+      : "(missing)";
+  return {
+    kind: "declined",
+    pageId: request.pageId,
+    targetArtifact: "html",
+    issueCodes: request.issueCodes,
+    failureClass: "unlocatable_issue",
+    reasonSummary: `Repair 返回的 ${selector} 不是可安全定位的唯一标签边界，已拒绝猜测性扩大修复范围。`,
+  };
+}
+
+/**
+ * Provider 使用一个兼容根 Schema 生成三种 Repair 分支，偶尔会把另一分支
+ * 的已知字段一并返回。根据已经明确的 kind/targetArtifact 只移除这些跨分支
+ * 字段；其他未知字段仍保留并由 strict Schema 拒绝。
+ */
+function normalizeRepairBranchFields(
+  output: Record<string, unknown>,
+): Record<string, unknown> {
+  if (
+    output.kind === "dsl_candidate" &&
+    output.targetArtifact === "dsl"
+  ) {
+    const normalized = { ...output };
+    for (const key of [
+      "patches",
+      "issueCodes",
+      "failureClass",
+      "reasonSummary",
+    ]) {
+      delete normalized[key];
+    }
+    return normalized;
+  }
+
+  if (
+    output.kind === "html_patch_candidate" &&
+    output.targetArtifact === "html"
+  ) {
+    const normalized = { ...output };
+    for (const key of [
+      "candidate",
+      "issueCodes",
+      "failureClass",
+      "reasonSummary",
+    ]) {
+      delete normalized[key];
+    }
+    return normalized;
+  }
+
+  if (output.kind !== "declined") return output;
+
+  const nested = isRecord(output.declined) ? output.declined : {};
+  const normalized: Record<string, unknown> = {
+    ...output,
+    issueCodes: output.issueCodes ?? nested.issueCodes,
+    failureClass: output.failureClass ?? nested.failureClass,
+    reasonSummary: output.reasonSummary ?? nested.reasonSummary,
+  };
+  for (const key of [
+    "declined",
+    "addressedIssueCodes",
+    "unresolvedIssueCodes",
+    "changeSummary",
+    "candidate",
+    "patches",
+  ]) {
+    delete normalized[key];
+  }
   return normalized;
 }
 
@@ -545,17 +679,31 @@ function sameValue(left: unknown, right: unknown) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function normalizeBoundarySelector(selector: string) {
+function normalizeBoundarySelector(
+  selector: string,
+  replacement: unknown,
+) {
   if (/^[a-z][a-z0-9-]*$/i.test(selector)) return selector;
 
-  const rootedSelector = selector.match(/^([a-z][a-z0-9-]*)(.*)$/i);
-  if (!rootedSelector) return selector;
+  /**
+   * CSS QA occasionally reports the authored rule scope (`html, body`) and
+   * providers copy that value into a boundary-insert patch. A selector list
+   * can never be a safe HTML tag boundary. Only when the replacement is
+   * provably a CSS rule fragment do we redirect the insertion to the
+   * canonical `style` boundary; request-scope validation still has to
+   * explicitly authorize `style`.
+   */
+  if (
+    /^(?:html\s*,\s*body|body\s*,\s*html)$/i.test(selector.trim()) &&
+    typeof replacement === "string" &&
+    /(?:^|})\s*(?:@(?:media|supports|layer)\b|[^{}]+)\s*\{[\s\S]*\}\s*$/i.test(
+      replacement.trim(),
+    )
+  ) {
+    return "style";
+  }
 
-  const suffix = rootedSelector[2]!;
-  const startsCssContinuation =
-    /^\s/.test(suffix) ||
-    [".", "#", "[", ":", ">", "+", "~"].includes(suffix[0] ?? "");
-  return startsCssContinuation ? rootedSelector[1]! : selector;
+  return selector;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

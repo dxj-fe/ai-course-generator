@@ -54,7 +54,8 @@ export async function PATCH(
             taskId: record.taskId,
             traceId: record.traceId,
             errorCode: classified.code,
-          });
+            errorMessage: classified.message,
+          }, error);
         }
       });
     }

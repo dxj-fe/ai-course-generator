@@ -231,6 +231,7 @@ export function useSSETask({
       );
     } catch (error) {
       const fatalError = toError(error);
+      logCourseTaskStreamError(taskId, "event-source:create-error", fatalError);
       update({ type: "error", error: fatalError });
       callbacksRef.current.onError?.(fatalError);
       return;
@@ -246,6 +247,11 @@ export function useSSETask({
     };
     const handleError = () => {
       if (isCurrentSource()) {
+        logCourseTaskStreamError(
+          taskId,
+          "event-source:connection-error",
+          new Error("课程任务 EventSource 连接异常，浏览器将尝试自动重连。"),
+        );
         update({ type: "reconnecting" });
       }
     };
@@ -260,6 +266,11 @@ export function useSSETask({
         message = parseCourseTaskStreamMessage(event.data);
       } catch (error) {
         const fatalError = toError(error);
+        logCourseTaskStreamError(
+          taskId,
+          "event-source:protocol-error",
+          fatalError,
+        );
         source.close();
         sourceRef.current = null;
         update({ type: "error", error: fatalError });
@@ -269,6 +280,11 @@ export function useSSETask({
 
       if (message.taskId !== taskId) {
         const fatalError = new Error("课程任务事件引用了其他 taskId。");
+        logCourseTaskStreamError(
+          taskId,
+          "event-source:task-mismatch",
+          fatalError,
+        );
         source.close();
         sourceRef.current = null;
         update({
@@ -288,6 +304,11 @@ export function useSSETask({
       }
 
       if (shouldCloseCourseTaskStream(previousState, nextState)) {
+        logCourseTaskStreamError(
+          taskId,
+          "event-source:state-error",
+          nextState.error!,
+        );
         source.close();
         sourceRef.current = null;
         callbacksRef.current.onError?.(nextState.error!);
@@ -449,4 +470,18 @@ function defaultEventSourceFactory(url: string): CourseTaskEventSource {
 
 function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+function logCourseTaskStreamError(
+  taskId: string,
+  event: string,
+  error: Error,
+) {
+  console.error("[course-task-client]", {
+    event,
+    taskId,
+    errorName: error.name,
+    errorMessage: error.message,
+    errorStack: error.stack,
+  });
 }

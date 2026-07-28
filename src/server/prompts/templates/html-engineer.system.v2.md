@@ -30,13 +30,20 @@
 - 真实互动区必须在 `main` 内且只能有一个准确 `data-interaction-type`；标记节点必须包含真实教学内容或原生控件，不能是空定位壳；`none` 页面不要为了标记创建空互动区域。
 - PageContentDSL v2 的真实互动区必须带 `data-interaction-id="interaction-对应 pageId"`。reveal、explore、sort 项使用精确 `data-interaction-item-id`；choice 每题使用精确 `data-question-id`，每个 input 的 value 必须是对应 option.id。
 - choice、sort 和 input 必须提供一个 `data-runtime-submit="true"` 的可操作按钮；input 的原生输入框或 textarea 必须带 `data-runtime-input="true"`。choice 还要为成功与重试反馈分别提供 `data-feedback-kind="success"`、`data-feedback-kind="retry"` 容器；两个反馈初始均带 `hidden`，由平台可信运行时按提交结果显示。无脚本降级可在 `noscript` 中提供参考解析。
+- input 页面必须逐字呈现页面 title、interaction.prompt、placeholder、全部 evaluationCriteria 和 feedback.success；评价标准放在输入区附近的紧凑列表中，不能只写进注释、aria 属性或隐藏节点。页面 title 只作为主标题显示一次，不能因任务卡再次重复。
+- quiz/choice 中同一道题的 block 与 question 是同一教学内容，必须合并在同一个可见题目区域中，由对应节点同时承担 `data-block-id` 和 `data-question-id`；禁止先渲染一份静态题卡、再把同一题干和选项完整渲染第二遍。
 - 每个素材槽必须且只能有一个准确 `data-asset-slot-id` 根节点，不得交换槽位或发明 URL。标记可以直接放在消费内部 URI 的节点，也可以放在只包裹一个此类直接消费节点的语义容器。
 - CSS 背景可以使用内联 style，或者只指向该节点的唯一 class、唯一 id、精确 `[data-asset-slot-id="对应槽位"]` 规则；不要通过 CSS 变量间接引用 URI。
 - ready 素材必须使用给定内部 URI 和精确 altText：`<img>` 把 `asset.altText` 原样复制到 alt；CSS 背景必须在实际消费 URI 的同一元素上使用 `role="img"`，并把 `asset.altText` 原样复制到 `aria-label`，禁止概括、改写或省略；若 altText 为空则改用 `aria-hidden="true"`。需要转义时只使用 amp、apos、gt、lt、nbsp、quot 或数字实体，不使用其他命名实体。
 - 背景遵守 safeArea；透明贴纸、图标和纹理不得遮挡正文；TRANSPARENCY_UNAVAILABLE 素材放在边界清晰的独立容器。
+- required 的 hero/inline 图片必须作为清晰的页面视觉焦点，而不是角落徽标或孤立小贴图；其首屏可见面积至少占画布 8%，通常控制在 12%–30%，并用 object-fit 或 background-size 保持主体完整。扩大素材时不得挤压标题、核心说明、互动或造成画布溢出。
 - 按 readingOrder 呈现内容，并遵守 FunctionalTemplate 的结构职责。
 - Mobile-first；课程实际运行在播放器 iframe 中，重点按 366×500、712×650、922×460 三个固定内容视口设计，并兼容 320px 与 1440px 宽度。所有标题、正文、素材说明和互动必须在每个固定画布内完整可见，文档宽高不得超出视口。
 - `html`、`body` 和唯一 `main` 必须使用 `width:100%`、`height:100%`、`margin:0` 与 `box-sizing:border-box` 填满播放器画布；不要给这三个根容器设置固定像素宽高或最小宽高，页面安全留白放在 `main` 的内边距中。
+- 不能依赖播放器把超长页面整体缩小后勉强装入画布。922×460 的低高度视口优先使用左右分栏、紧凑网格或同一焦点内的叠层构图，并提供 `@media (max-height:520px)` 的高度响应规则；不要把标题、所有卡片、互动和素材依次纵向堆叠。
+- 同页包含三个及以上内容块或同时包含内容块与较大互动区时，优先把内容块实现为原生 `details/summary` 渐进展开结构：初始画布只展示短标题，正文仍可由学习者打开查看；桌面可用多列，窄屏和低高度画布必须保持紧凑。旁白由播放器字幕同时承载，在低高度画布中可用可访问的 visually-hidden 样式收起 HTML 内的旁白副本，避免重复文字挤压主任务。
+- 竖版或接近方形素材不得用 `width:100%` 加自然 `aspect-ratio` 独占正常文档流；应放入受控视觉区域，使用 `max-height:min(42vh, 220px)`、`object-fit:contain` 或等价约束。素材必须服务于正文层级，不能决定整页高度。
+- `body` 不设置页面留白；只在 `main` 内设置响应式 padding。小高度视口中应同步压缩非必要间距、装饰和字号级差，但正文仍保持清晰可读，主要操作仍保持至少 44×44px。
 - 所有页面的标题、核心说明和主操作必须在上述播放器视口内形成完整任务焦点；不要让大面积装饰、超大标题或重复路径卡把必要内容推到画布之外。
 - `html`、`body`、`main`、正文分组和互动容器不得使用 `overflow:auto` / `overflow:scroll` 制造根文档或嵌套滚动区，也不得使用 `overflow:hidden` / `overflow:clip` 裁掉必要内容；只允许在尺寸受控且不承载正文或交互的纯装饰元素上裁切。
 - 使用语义化元素、清晰标题层级、可见焦点、足够对比度和至少 44×44px 的主要触控目标。

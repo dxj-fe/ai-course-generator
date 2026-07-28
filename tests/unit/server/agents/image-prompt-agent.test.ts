@@ -99,6 +99,84 @@ describe("ImagePromptAgent", () => {
     expect(requests[1].prompt).toContain(
       "do not add a presentation frame or surrounding layout",
     );
+    expect(requests[0].prompt).toContain(
+      "focal subject and its immediate context must fill 65–85%",
+    );
+    expect(requests[1].prompt).toContain(
+      "single complete subject must fill 75–90%",
+    );
+    expect(requests[1].prompt).toContain(
+      "never draw a checkerboard, transparency grid",
+    );
+    expect(requests[1].prompt).toContain(
+      "Keep strict visual continuity with the rest of this course",
+    );
+    expect(requests[0].prompt).toContain("Course visual bible:");
+    expect(requests[0].prompt).toContain(
+      visualBrief.assetDirection.medium,
+    );
+    expect(requests[0].prompt).toContain("This page's composition:");
+  });
+
+  it("uses a wide scene request for an inline illustration unless the slot explicitly asks for a character sticker", () => {
+    const content = {
+      ...pageContentDsl,
+      assetSlots: [
+        {
+          id: "asset-slot-01" as const,
+          type: "illustration" as const,
+          role: "inline" as const,
+          purpose: "展示猴王出世的情节时间线和花果山场景",
+          required: true,
+          altTextGuidance: "猴王出世的情节时间线",
+        },
+      ],
+    };
+    const requests = validateImagePromptOutput(
+      {
+        directions: [
+          {
+            assetSlotId: "asset-slot-01",
+            promptCore: "A coherent educational story scene with one clear focal subject",
+            safeAreaPosition: "none",
+          },
+        ],
+      },
+      resolveImagePromptInput({ content, visualBrief }),
+    );
+
+    expect(requests[0]).toMatchObject({
+      assetType: "background",
+      aspectRatio: "16:9",
+      transparentBackground: false,
+      safeArea: { position: "left", coveragePercent: 40 },
+    });
+    expect(requests[0].prompt).toContain("wide editorial scene illustration");
+    expect(requests[0].prompt).toContain(
+      "avoid a tiny, distant, icon-like, or isolated subject",
+    );
+  });
+
+  it("keeps a detailed model direction after adding the production quality contract", () => {
+    const resolved = resolveImagePromptInput({
+      content: contentWithFourAssetKinds,
+      visualBrief,
+    });
+    const requests = validateImagePromptOutput(
+      {
+        directions: contentWithFourAssetKinds.assetSlots.map((slot) => ({
+          assetSlotId: slot.id,
+          promptCore: `Detailed visual direction ${"with coherent educational details ".repeat(20)}`,
+          safeAreaPosition: slot.role === "background" ? "left" : "none",
+        })),
+      },
+      resolved,
+    );
+
+    expect(requests).toHaveLength(4);
+    expect(Math.max(...requests.map(({ prompt }) => prompt.length))).toBeGreaterThan(
+      1_800,
+    );
   });
 
   it("skips the model when the page has no asset slots", async () => {

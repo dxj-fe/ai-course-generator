@@ -27,7 +27,7 @@ describe("HTML Engineer prompts", () => {
       pageGuidance,
     });
 
-    expect(prompts.version).toBe("2.4.0/2.2.0");
+    expect(prompts.version).toBe("2.7.0/2.2.0");
     expect(prompts.systemPrompt).toContain("禁止任何 `<script>`");
     expect(prompts.systemPrompt).toContain("不得交换槽位");
     expect(prompts.systemPrompt).toContain("精确 altText");
@@ -52,6 +52,25 @@ describe("HTML Engineer prompts", () => {
     );
     expect(prompts.systemPrompt).toContain(
       "`html`、`body` 和唯一 `main` 必须使用 `width:100%`",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "不能依赖播放器把超长页面整体缩小",
+    );
+    expect(prompts.systemPrompt).toContain("@media (max-height:520px)");
+    expect(prompts.systemPrompt).toContain(
+      "max-height:min(42vh, 220px)",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "其首屏可见面积至少占画布 8%",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "禁止先渲染一份静态题卡",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "input 页面必须逐字呈现页面 title",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "原生 `details/summary` 渐进展开结构",
     );
     expect(prompts.userPrompt).toContain(pageContentDsl.pageId);
     expect(prompts.userPrompt).toContain("--course-color-background");

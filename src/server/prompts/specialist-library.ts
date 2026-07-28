@@ -16,7 +16,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     ],
     system: {
       name: "course-planner-system",
-      version: "2.4.0",
+      version: "2.5.0",
       role: "system",
       inputContract: [
         "已校验的 CourseIntent、功能模板 ID allowlist、相关 Template Cards 和 Reference Hits。",
@@ -44,7 +44,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     templateVariables: ["courseIntentJson", "coursePlanJson"],
     system: {
       name: "pedagogy-system",
-      version: "2.0.2",
+      version: "2.1.0",
       role: "system",
       inputContract: ["已校验的 CourseIntent 和 CoursePlan。"],
       outputContract: ["只返回 PedagogyPlan 内容草稿 JSON。"],
@@ -72,7 +72,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     ],
     system: {
       name: "story-system",
-      version: "2.0.1",
+      version: "2.1.0",
       role: "system",
       inputContract: ["已校验的 CourseIntent、CoursePlan 和 PedagogyPlan。"],
       outputContract: ["只返回 StoryArc 内容草稿 JSON。"],
@@ -103,7 +103,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     ],
     system: {
       name: "visual-director-system",
-      version: "2.0.0",
+      version: "2.2.0",
       role: "system",
       inputContract: [
         "已校验的课程产物和一个由服务端 Registry 解析的 StyleTemplate。",
@@ -138,7 +138,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     ],
     system: {
       name: "page-writer-system",
-      version: "2.3.0",
+      version: "2.8.0",
       role: "system",
       inputContract: [
         "已校验的 CourseIntent、单页 PagePlan、同页 PageWorkerBrief 和唯一 FunctionalTemplate。",
@@ -166,7 +166,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     templateVariables: ["imagePromptInputJson"],
     system: {
       name: "image-prompt-system",
-      version: "2.1.0",
+      version: "2.2.0",
       role: "system",
       inputContract: [
         "已校验的 PageContentDSL 素材槽、当前页视觉指导和 StyleTemplate。",
@@ -203,7 +203,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     ],
     system: {
       name: "html-engineer-system",
-      version: "2.4.0",
+      version: "2.7.0",
       role: "system",
       inputContract: [
         "只接收 DSL、服务端模板、视觉指导和已校验素材；不接收原始用户 Prompt。",
@@ -231,7 +231,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     templateVariables: ["pageQaInputJson"],
     system: {
       name: "page-qa-system",
-      version: "2.3.0",
+      version: "2.3.1",
       role: "system",
       inputContract: [
         "已校验的页面计划、DSL、HTML、课程上下文、brief、素材及静态/浏览器证据。",
@@ -259,7 +259,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     templateVariables: ["repairInputJson"],
     system: {
       name: "repair-system",
-      version: "1.4.0",
+      version: "1.6.0",
       role: "system",
       inputContract: [
         "只接收原始页面产物、已校验 QualityReport、限定目标和当前修订尝试序号。",

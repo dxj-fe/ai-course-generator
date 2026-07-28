@@ -31,7 +31,7 @@
 - styleConsistency 不得仅检查颜色是否一致；还要识别通用后台面板、等权卡片堆叠、缺少主焦点、过度装饰和素材/HTML 信息重复。
 - 每个具体问题都必须输出可操作的 repairHint；程序会按 dimension 派生维度内 issueCodes 和 repairHints。
 - severity 只能是 `info`、`warning`、`error` 之一，不得使用 high、medium、low 或其他同义词。
-- 每个 location 都必须包含 2–240 字符的 description；即使已有 blockId、selector 或 viewport 也不能省略。
+- 每个 location 只允许 pageId、blockId、selector、viewport、description；必须包含 2–240 字符的 description。视口字段只能使用单数键 viewport 和字符串值，禁止输出复数键 viewports 或数组；即使已有 blockId、selector 或 viewport 也不能省略 description。
 - 不能从静态 HTML 证明像素级遮挡；没有浏览器几何证据时使用“风险”措辞。
 - location.pageId 可以省略，系统会用当前 PagePlan.id 覆盖。
 - blockId 只能引用真实 DSL block；selector 只在 HTML 中可稳定定位时填写。

@@ -78,6 +78,7 @@ export type CourseGenerationLogEntry = {
   stage?: CourseGenerationState["currentStage"];
   attempt?: number;
   errorCode?: string;
+  errorMessage?: string;
   causeCode?: CourseGenerationCauseCode;
   issueCodes?: string[];
   durationMs?: number;
@@ -629,6 +630,7 @@ async function executeTask(
       pageId: currentState?.currentPageId,
       stage: currentState?.currentStage,
       errorCode: classified.code,
+      errorMessage: classified.message,
       causeCode: toCourseGenerationCauseCode(classified.code),
       durationMs: durationBetween(running.createdAt, completedAt),
       completedPages: countCompletedPages(currentState),
@@ -721,6 +723,7 @@ function createTaskLogEntry(
     pageId: latestError?.pageId,
     stage: latestError?.stage ?? state?.currentStage,
     errorCode: latestError?.code,
+    errorMessage: latestError?.message,
     causeCode: latestError?.causeCode,
     durationMs:
       event === "task:start"
@@ -758,6 +761,10 @@ function createPageFailureLogEntry(
     stage: matchingError?.stage ?? page.currentStage,
     attempt: resolvePageAttempt(page),
     errorCode: page.error?.code ?? matchingError?.code,
+    errorMessage: (page.error?.message ?? matchingError?.message)?.slice(
+      0,
+      4_000,
+    ),
     causeCode: page.error?.causeCode ?? matchingError?.causeCode,
     issueCodes: issueCodes.length > 0 ? issueCodes.slice(0, 20) : undefined,
     durationMs: state.durationMs,

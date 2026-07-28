@@ -9,6 +9,7 @@ import { generateCourseIntent } from "@/server/agents/intent-agent";
 import { runPageQAAgent } from "@/server/agents/page-qa-agent";
 import {
   buildLessonRuntime,
+  exceedsFixedCanvasCapacity,
   runPageWriterAgent,
 } from "@/server/agents/page-writer-agent";
 import { runRepairAgent } from "@/server/agents/repair-agent";
@@ -122,8 +123,9 @@ export function initializeCourseGenerationState(
       const pagePlan = existing.outline?.pages.find(
         ({ id }) => id === page.pageId,
       );
+      const staleRunningErrorCleared = clearStaleRunningPageError(page);
       const disabledChoiceRecovered =
-        recoverLegacyDisabledChoiceRepairFailure(page);
+        recoverLegacyDisabledChoiceRepairFailure(staleRunningErrorCleared);
       const recovered =
         recoverLegacyUnauthorizedIssueCodeRepairFailure(
           disabledChoiceRecovered,
@@ -151,10 +153,19 @@ export function initializeCourseGenerationState(
         );
       const viewportFitRecovered =
         recoverPreViewportFitLayoutCheckpoint(visualPrimitiveRecovered);
+      const cleanReQaRecovered =
+        recoverStructurallyInvalidReQaFromCleanCheckpoint(
+          viewportFitRecovered,
+        );
+      const interruptedRepairRecovered =
+        recoverInterruptedRepairFromCleanCheckpoint(cleanReQaRecovered);
+      const cleanRepairRecovered =
+        recoverFailedRepairFromCleanCheckpoint(interruptedRepairRecovered);
       const rearmed = rearmRecoverableRepairExecutionFailure(
-        viewportFitRecovered,
+        cleanRepairRecovered,
       );
       if (
+        staleRunningErrorCleared !== page ||
         recovered !== disabledChoiceRecovered ||
         choiceScopeRecovered !== recovered ||
         visualDominanceRecovered !== choiceScopeRecovered ||
@@ -163,7 +174,10 @@ export function initializeCourseGenerationState(
         restoredDuplicationRecovered !== modelQaRecovered ||
         visualPrimitiveRecovered !== restoredDuplicationRecovered ||
         viewportFitRecovered !== visualPrimitiveRecovered ||
-        rearmed !== viewportFitRecovered
+        cleanReQaRecovered !== viewportFitRecovered ||
+        interruptedRepairRecovered !== cleanReQaRecovered ||
+        cleanRepairRecovered !== interruptedRepairRecovered ||
+        rearmed !== cleanRepairRecovered
       ) {
         resetSupervisorPageIds.add(rearmed.pageId);
       }
@@ -172,7 +186,10 @@ export function initializeCourseGenerationState(
        * Page Worker 的错误分类和单次预算限制；显式恢复则必须重新开放所有
        * 非 Repair 失败页，才能在额度、认证或配置恢复后真正继续。
        */
-      if (rearmed.status === "failed" && rearmed.currentStage !== "repair") {
+      if (
+        rearmed.status === "failed" &&
+        rearmed.currentStage !== "repair"
+      ) {
         resetSupervisorPageIds.add(rearmed.pageId);
         const failureCode =
           rearmed.error?.causeCode ?? rearmed.error?.code ?? "";
@@ -614,9 +631,159 @@ function recoverPreViewportFitLayoutCheckpoint(
 }
 
 /**
- * 用户显式恢复时重新开放可重试的 Repair 执行/候选失败，以及用户已经
- * 处理过的额度、认证或配置失败。失败记录继续保留审计；质量停滞与紧急
- * 上限仍不重置。
+ * Repair 候选已写入 HTML、但随后的模型 QA 因结构化输出漂移而失败时，当前
+ * HTML 从未得到质量验证，且旧 Repair 轮次不再是可继续追加修改的可信基线。
+ * 显式恢复从稳定 DSL/素材重建页面；若 DSL 已超出固定画布容量，则先回到
+ * Page Writer 收敛内容。没有 Repair 历史的首次/确定性重建 QA 失败仍可直接
+ * 重跑 QA，避免无谓丢弃完整 HTML。
+ */
+function recoverStructurallyInvalidReQaFromCleanCheckpoint(
+  page: PageGenerationState,
+): PageGenerationState {
+  const isStructurallyInvalidReQa =
+    page.status === "failed" &&
+    page.currentStage === "qa" &&
+    page.error?.code === "PAGE_REQA_FAILED" &&
+    (page.repairHistory?.length ?? 0) > 0 &&
+    (page.error.causeCode === "SCHEMA_ERROR" ||
+      /结构化输出校验失败|Unrecognized key|Invalid (?:input|string)/i.test(
+        page.error.message,
+      ));
+  if (!isStructurallyInvalidReQa) return page;
+
+  const needsContentRewrite =
+    page.content !== undefined && exceedsFixedCanvasCapacity(page.content);
+  return PageGenerationStateSchema.parse({
+    ...page,
+    status: "running",
+    currentStage: needsContentRewrite ? "page_writer" : "html",
+    ...(needsContentRewrite ? { content: undefined, assets: [] } : {}),
+    htmlOutput: undefined,
+    qualityReport: undefined,
+    repairHistory: [],
+    attempts: needsContentRewrite
+      ? []
+      : page.attempts?.filter(
+          ({ stage }) => stage !== "html" && stage !== "qa",
+        ),
+    error: undefined,
+  });
+}
+
+/**
+ * 暂停可能发生在 Repair 请求或 re-QA 之间，此时课程 checkpoint 仍是
+ * running，旧候选与累计修订历史不构成可安全续写的基线。显式恢复从稳定
+ * DSL/素材重新生成 HTML；内容已经超出固定画布容量时先回到 Page Writer。
+ */
+function recoverInterruptedRepairFromCleanCheckpoint(
+  page: PageGenerationState,
+): PageGenerationState {
+  if (
+    page.status !== "running" ||
+    page.currentStage !== "repair" ||
+    (page.repairHistory?.length ?? 0) === 0
+  ) {
+    return page;
+  }
+
+  const needsContentRewrite =
+    page.content !== undefined && exceedsFixedCanvasCapacity(page.content);
+  return PageGenerationStateSchema.parse({
+    ...page,
+    currentStage: needsContentRewrite ? "page_writer" : "html",
+    ...(needsContentRewrite ? { content: undefined, assets: [] } : {}),
+    htmlOutput: undefined,
+    qualityReport: undefined,
+    repairHistory: [],
+    attempts: needsContentRewrite
+      ? []
+      : page.attempts?.filter(
+          ({ stage }) => stage !== "html" && stage !== "qa",
+        ),
+    error: undefined,
+  });
+}
+
+/**
+ * 运行中的页面不能继续向产品层暴露上一轮终态错误。显式恢复已经重新开放
+ * 当前阶段，因此同步清空该阶段的旧预算，下一次 Worker 调度会真正执行。
+ */
+function clearStaleRunningPageError(
+  page: PageGenerationState,
+): PageGenerationState {
+  if (page.status !== "running" || !page.error) return page;
+
+  return PageGenerationStateSchema.parse({
+    ...page,
+    attempts: page.attempts?.filter(
+      ({ stage }) => stage !== page.currentStage,
+    ),
+    error: undefined,
+  });
+}
+
+/**
+ * Repair 候选结构耗尽或质量停滞说明继续在同一份已反复打补丁的 HTML 上
+ * 追加修改已经没有价值。用户显式重试时保留已完成章节及本页上游成果，
+ * 从干净 HTML 检查点重建；旧的多题 quiz 已超出固定画布容量，则连同内容
+ * 一起回到 Page Writer，按当前单页容量合同重新生成。
+ */
+function recoverFailedRepairFromCleanCheckpoint(
+  page: PageGenerationState,
+): PageGenerationState {
+  const failureCode = page.error?.code ?? "";
+  const failureMessage = page.error?.message ?? "";
+  const repairExecutionIsStructurallyCorrupted =
+    failureCode === "REPAIR_EXECUTION_RETRY_EXHAUSTED" &&
+    (page.error?.causeCode === "SCHEMA_ERROR" ||
+      /结构化输出校验失败|Unrecognized key|search 必须在当前文档中唯一匹配/.test(
+        failureMessage,
+      ) ||
+      page.qualityReport?.issues.some(({ code }) =>
+        ["CSS_DUPLICATE_RULE", "DUPLICATE_CSS_RULE", "DUPLICATE_CSS_RULES"].includes(
+          code,
+        ),
+      ));
+  if (
+    page.status !== "failed" ||
+    page.currentStage !== "repair" ||
+    (failureCode !== "QUALITY_STALLED" &&
+      !repairExecutionIsStructurallyCorrupted)
+  ) {
+    return page;
+  }
+
+  const content = page.content;
+  const needsContentRewrite =
+    content !== undefined &&
+    (exceedsFixedCanvasCapacity(content) ||
+      (content.interaction.type === "choice" &&
+        (content.interaction.questions.length > 1 ||
+          (content.functionalTemplateId === "interactive-quiz" &&
+            content.blocks.length !== 1))));
+  const currentStage = needsContentRewrite ? "page_writer" : "html";
+
+  return PageGenerationStateSchema.parse({
+    ...page,
+    status: "running",
+    currentStage,
+    ...(needsContentRewrite ? { content: undefined, assets: [] } : {}),
+    htmlOutput: undefined,
+    qualityReport: undefined,
+    repairHistory: [],
+    attempts: needsContentRewrite
+      ? []
+      : page.attempts?.filter(
+          ({ stage }) => stage !== "html" && stage !== "qa",
+        ),
+    error: undefined,
+  });
+}
+
+/**
+ * 用户显式恢复时重新开放可重试的瞬时 Repair 执行/候选失败，以及用户
+ * 已经处理过的额度、认证或配置失败。结构污染和质量停滞已由前置 clean
+ * checkpoint 迁移处理；紧急安全上限仍不重置。
  */
 function rearmRecoverableRepairExecutionFailure(
   page: PageGenerationState,

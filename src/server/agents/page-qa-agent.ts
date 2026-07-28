@@ -113,6 +113,18 @@ const UNLOCATABLE_MODEL_WARNING_CODES = new Set([
   "CONTENT_REDUNDANCY",
   "CONTENT_REDUNDANT",
 ]);
+const MODEL_REDUNDANCY_ISSUE_CODES = new Set([
+  "CONTENT_DUPLICATION",
+  "CONTENT_REDUNDANCY",
+  "CONTENT_REDUNDANT",
+  "REDUNDANT_CONTENT",
+  "REDUNDANT_CONTENT_BLOCK",
+]);
+const MODEL_TOUCH_TARGET_ISSUE_CODES = new Set([
+  "TOO_SMALL_TOUCH_TARGET",
+  "TOUCH_TARGET_INSUFFICIENT",
+  "TOUCH_TARGET_TOO_SMALL",
+]);
 export type PageQACourseContext = {
   courseOverview?: string;
   learningObjectives: string[];
@@ -147,6 +159,7 @@ export type PageQAAgentDependencies = {
     html: string;
     content?: PageContentDSL;
     abortSignal?: AbortSignal;
+    traceId?: string;
   }): Promise<PageScreenshotResult>;
 };
 
@@ -161,6 +174,7 @@ export function createPageQAAgent(
 ): Agent<PageQAAgentState> {
   const dependencies = { ...defaultDependencies, ...overrides };
   return createMinimalAgent({
+    name: "page-qa-agent",
     isComplete: (state) => Boolean(state.report),
     step: async (state, context, emit) => {
       validatePageQAInput(state.task);
@@ -184,6 +198,7 @@ export function createPageQAAgent(
         html: state.task.html,
         content: state.task.content,
         abortSignal: context.abortSignal,
+        traceId: context.traceId,
       });
       emit({
         type: "validation",
@@ -317,10 +332,11 @@ export function validatePageQAOutput(
   const blockIds = new Set(input.content.blocks.map(({ id }) => id));
   const safelyContainedTransparencyFallbacks =
     hasOnlySafelyContainedTransparencyFallbacks(input);
+  const browserIssues = screenshot?.issues ?? [];
   const modelIssueDecisions = parsed.data.issues.map((issue) => ({
     issue,
     keep:
-      shouldKeepModelIssue(issue, input) &&
+      shouldKeepModelIssue(issue, input, browserIssues) &&
       !(
         safelyContainedTransparencyFallbacks &&
         issue.code === "ASSET_TRANSPARENCY_UNAVAILABLE"
@@ -351,7 +367,6 @@ export function validatePageQAOutput(
         ({ code }) => code !== "ASSET_TRANSPARENCY_UNAVAILABLE",
       )
     : heuristicIssues;
-  const browserIssues = screenshot?.issues ?? [];
   const hasOtherAssetIssue = [
     ...effectiveHeuristicIssues,
     ...browserIssues,
@@ -376,7 +391,12 @@ export function validatePageQAOutput(
     ...modelIssues,
   ];
   for (const dimension of ignoredModelIssueDimensions) {
-    if (retainedIssues.some((issue) => issue.dimension === dimension)) {
+    if (
+      retainedIssues.some(
+        (issue) =>
+          issue.dimension === dimension && issue.severity !== "info",
+      )
+    ) {
       continue;
     }
     modelDimensions = {
@@ -464,6 +484,13 @@ export function normalizePageQAModelOutput(output: unknown): unknown {
       if (!isRecord(issue)) return issue;
       let normalizedIssue = issue;
 
+      const issueWithCanonicalRepairHint =
+        normalizeMisplacedIssueRepairHint(normalizedIssue);
+      if (issueWithCanonicalRepairHint !== normalizedIssue) {
+        normalizedIssue = issueWithCanonicalRepairHint;
+        changed = true;
+      }
+
       const severity = normalizeModelSeverity(issue.severity);
       if (severity !== issue.severity) {
         normalizedIssue = { ...normalizedIssue, severity };
@@ -479,12 +506,11 @@ export function normalizePageQAModelOutput(output: unknown): unknown {
       }
 
       if (isRecord(normalizedIssue.location)) {
-        const location = normalizedIssue.location;
-        const description = normalizeLocationDescription(location);
-        if (description !== location.description) {
+        const location = normalizeModelIssueLocation(normalizedIssue.location);
+        if (location !== normalizedIssue.location) {
           normalizedIssue = {
             ...normalizedIssue,
-            location: { ...location, description },
+            location,
           };
           changed = true;
         }
@@ -506,11 +532,45 @@ function normalizeModelSeverity(value: unknown) {
   ] ?? value;
 }
 
+function normalizeMisplacedIssueRepairHint(
+  issue: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!isRecord(issue.location)) return issue;
+
+  const misplacedRepairHint = issue.location.repairHint;
+  if (typeof misplacedRepairHint !== "string") return issue;
+
+  const canonicalLocation = { ...issue.location };
+  delete canonicalLocation.repairHint;
+  return {
+    ...issue,
+    ...(issue.repairHint === undefined
+      ? { repairHint: misplacedRepairHint }
+      : {}),
+    location: canonicalLocation,
+  };
+}
+
 function shouldKeepModelIssue(
   issue: z.infer<typeof PageQAModelIssueSchema>,
   input: PageQAInput,
+  browserIssues: QualityIssue[],
 ) {
   if (CONTRACT_OWNED_MODEL_ISSUE_CODES.has(issue.code)) return false;
+  if (
+    MODEL_TOUCH_TARGET_ISSUE_CODES.has(issue.code) &&
+    browserIssues.some(({ code }) =>
+      code.startsWith("BROWSER_TOUCH_TARGET_"),
+    )
+  ) {
+    return false;
+  }
+  if (
+    MODEL_REDUNDANCY_ISSUE_CODES.has(issue.code) &&
+    isTrustedRestorationIssue(issue, input.html)
+  ) {
+    return false;
+  }
   const validBlockId =
     issue.location.blockId &&
     input.content.blocks.some(({ id }) => id === issue.location.blockId);
@@ -529,6 +589,78 @@ function shouldKeepModelIssue(
     return false;
   }
   return true;
+}
+
+function normalizeModelIssueLocation(location: Record<string, unknown>) {
+  let normalizedLocation = location;
+
+  if ("viewports" in location) {
+    const { viewports, ...canonicalLocation } = location;
+    const viewport =
+      typeof location.viewport === "string"
+        ? location.viewport
+        : normalizeViewportAlias(viewports);
+    normalizedLocation =
+      viewport === undefined
+        ? canonicalLocation
+        : { ...canonicalLocation, viewport };
+  }
+
+  const description = normalizeLocationDescription(normalizedLocation);
+  return description === normalizedLocation.description
+    ? normalizedLocation
+    : { ...normalizedLocation, description };
+}
+
+function normalizeViewportAlias(value: unknown) {
+  const candidates = (Array.isArray(value) ? value : [value])
+    .filter((viewport): viewport is string => typeof viewport === "string")
+    .map((viewport) => viewport.trim())
+    .filter((viewport, index, viewports) => {
+      return viewport.length > 0 && viewports.indexOf(viewport) === index;
+    });
+  if (candidates.length === 0) return undefined;
+  return truncateString(candidates.join("、"), 80);
+}
+
+function isTrustedRestorationIssue(
+  issue: z.infer<typeof PageQAModelIssueSchema>,
+  html: string,
+) {
+  if (!html.includes("data-course-contract-restored=")) return false;
+  if (issue.location.selector?.includes("data-course-contract-restored")) {
+    return true;
+  }
+  if (!issue.location.blockId) return false;
+
+  const blockId = issue.location.blockId.replace(
+    /[.*+?^${}()|[\]\\]/g,
+    "\\$&",
+  );
+  const opening = new RegExp(
+    `<([a-z][\\w:-]*)\\b[^>]*\\bdata-block-id\\s*=\\s*(["'])${blockId}\\2[^>]*>`,
+    "i",
+  ).exec(html);
+  if (!opening?.[1] || opening.index === undefined) return false;
+
+  const tagName = opening[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const tag = new RegExp(`<\\/?${tagName}\\b[^>]*>`, "gi");
+  tag.lastIndex = opening.index + opening[0].length;
+  let depth = 1;
+  let match: RegExpExecArray | null;
+  while ((match = tag.exec(html))) {
+    if (/^<\//.test(match[0])) {
+      depth -= 1;
+      if (depth === 0) {
+        return html
+          .slice(opening.index, tag.lastIndex)
+          .includes("data-course-contract-restored=");
+      }
+    } else if (!/\/>$/.test(match[0])) {
+      depth += 1;
+    }
+  }
+  return false;
 }
 
 function followsDeclaredBlockOrder(html: string, blockIds: string[]) {

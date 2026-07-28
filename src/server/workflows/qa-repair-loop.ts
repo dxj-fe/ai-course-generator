@@ -24,14 +24,19 @@ const UPSTREAM_ASSET_CODES = new Set([
 ]);
 const HTML_ASSET_PRESENTATION_CODES = new Set([
   "BROWSER_VISUAL_DOMINATES_VIEWPORT",
+  "BROWSER_VISUAL_TOO_SMALL",
 ]);
 const CSS_PRESENTATION_ISSUE_CODES = new Set([
+  "ASSET_OVERDOMINATES",
   "BROWSER_PRIMARY_ACTION_BELOW_FOLD",
   "BROWSER_TOUCH_TARGET_UNDER_24",
   "BROWSER_TOUCH_TARGET_UNDER_44",
   "BROWSER_VISUAL_DOMINATES_VIEWPORT",
+  "BROWSER_VISUAL_TOO_SMALL",
+  "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
   "CSS_DUPLICATE_RULE",
   "DUPLICATE_CSS_RULE",
+  "LAYOUT_CLIPPING_RISK",
   "LAYOUT_PRIMARY_ACTION_BELOW_FOLD",
   "PRIMARY_ACTION_BELOW_FOLD",
   "TOO_SMALL_TOUCH_TARGET",
@@ -50,6 +55,7 @@ export type RepairQualityVector = {
   thresholdDeficit: number;
   overallScore: number;
   actionableIssueSignature: string[];
+  deterministicBrowserErrorSignature: string[];
 };
 
 /** 把最新 QA 报告确定性路由到一个最小修复目标；模型不能选择修复范围。 */
@@ -193,7 +199,10 @@ function isNarrationRepairIssue(
   const selector = issue.location.selector ?? "";
   return (
     /(?:^|[-_])narration(?:$|[-_])/i.test(selector) ||
-    (issue.code === "OBJECTIVE_COVERAGE_GAP" && content.blocks.length === 0)
+    (content.blocks.length === 0 &&
+      (issue.code === "OBJECTIVE_COVERAGE_GAP" ||
+        (issue.code === "CORE_LEARNING_TARGETS_MISSING" &&
+          content.functionalTemplateId === "course-cover")))
   );
 }
 
@@ -245,6 +254,16 @@ function defaultSelector(issue: QualityIssue) {
 export function buildRepairQualityVector(
   report: QualityReport,
 ): RepairQualityVector {
+  const issueSignature = (issue: QualityIssue) =>
+    [
+      issue.code,
+      issue.dimension,
+      issue.severity,
+      issue.location.blockId ?? "",
+      issue.location.selector ?? "",
+      issue.location.viewport ?? "",
+    ].join(":");
+
   return {
     errorCount: report.issues.filter(({ severity }) => severity === "error")
       .length,
@@ -262,16 +281,16 @@ export function buildRepairQualityVector(
     overallScore: report.overallScore,
     actionableIssueSignature: report.issues
       .filter((issue) => contributesToRepairDecision(issue, report))
-      .map((issue) =>
-        [
-          issue.code,
-          issue.dimension,
-          issue.severity,
-          issue.location.blockId ?? "",
-          issue.location.selector ?? "",
-          issue.location.viewport ?? "",
-        ].join(":"),
+      .map(issueSignature)
+      .sort(),
+    deterministicBrowserErrorSignature: report.issues
+      .filter(
+        ({ code, severity, source }) =>
+          source === "browser" &&
+          severity === "error" &&
+          code.startsWith("BROWSER_"),
       )
+      .map(issueSignature)
       .sort(),
   };
 }
@@ -284,16 +303,23 @@ export function didRepairQualityImprove(
   const previous = buildRepairQualityVector(before);
   const next = buildRepairQualityVector(after);
 
+  if (
+    previous.deterministicBrowserErrorSignature.length > 0 &&
+    next.deterministicBrowserErrorSignature.length > 0 &&
+    !isStrictSubset(
+      next.deterministicBrowserErrorSignature,
+      previous.deterministicBrowserErrorSignature,
+    )
+  ) {
+    return false;
+  }
+
   if (next.errorCount !== previous.errorCount) {
     return next.errorCount < previous.errorCount;
   }
   if (next.thresholdDeficit !== previous.thresholdDeficit) {
     return next.thresholdDeficit < previous.thresholdDeficit;
   }
-  if (next.overallScore !== previous.overallScore) {
-    return next.overallScore > previous.overallScore;
-  }
-
   return isStrictSubset(
     next.actionableIssueSignature,
     previous.actionableIssueSignature,

@@ -39,7 +39,8 @@ export async function POST(request: Request) {
           taskId: task.taskId,
           traceId: task.traceId,
           errorCode: classified.code,
-        });
+          errorMessage: classified.message,
+        }, error);
       }
     });
 

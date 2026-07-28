@@ -78,6 +78,7 @@ export function createImagePromptAgent(
   dependencies: ImagePromptAgentDependencies = defaultDependencies,
 ): Agent<ImagePromptAgentState> {
   return createMinimalAgent({
+    name: "image-prompt-agent",
     isComplete: (state) => Boolean(state.requests),
     step: async (state, context, emit) => {
       const resolved = resolveImagePromptInput(state.task);
@@ -231,7 +232,17 @@ function assetKindForSlot(slot: PageContentAssetSlot): GeneratedAssetKind {
   if (slot.type === "icon") return "icon";
   if (slot.role === "background" || slot.role === "hero") return "background";
   if (slot.role === "decorative") return "texture";
-  return slot.type === "illustration" ? "character_sticker" : "texture";
+  if (
+    slot.type === "illustration" &&
+    (/(?:头像|肖像|吉祥物|表情|贴纸)/u.test(slot.purpose) ||
+      (/(?:角色|人物|单人形象|单个形象)/u.test(slot.purpose) &&
+        !/(?:场景|过程|流程|时间线|地图|关系|结构|对比|情节|概念|图示|总结|全景|环境|实验|示意)/u.test(
+          slot.purpose,
+        )))
+  ) {
+    return "character_sticker";
+  }
+  return "background";
 }
 
 function aspectRatioForKind(kind: GeneratedAssetKind): AssetAspectRatio {
@@ -250,7 +261,7 @@ function buildProductionPrompt(
   input: ResolvedImagePromptInput,
 ) {
   const transparency = ["character_sticker", "icon"].includes(kind)
-    ? "Transparent background with a clean complete silhouette."
+    ? "Use a real transparent background with a clean complete silhouette. If alpha transparency is unavailable, use one clean low-detail solid backdrop from the course palette; never draw a checkerboard, transparency grid, cutout preview, or fake alpha pattern into the pixels."
     : "Opaque image background suitable for HTML composition.";
   const safeArea =
     kind === "background"
@@ -259,6 +270,19 @@ function buildProductionPrompt(
           "Do not draw a panel, card, sheet of paper, label, sign, frame, text box, placeholder, or UI container in that negative space; HTML content will be overlaid separately.",
         ].join(" ")
       : "Create only the isolated visual subject; do not add a presentation frame or surrounding layout.";
+  const composition =
+    kind === "background"
+      ? "Create a wide editorial scene illustration with one unmistakable focal subject. Inside the non-safe portion, the focal subject and its immediate context must fill 65–85% of that region; avoid a tiny, distant, icon-like, or isolated subject surrounded by unused canvas."
+      : kind === "character_sticker"
+        ? "Use a medium or medium-close composition. The single complete subject must fill 75–90% of the canvas, with only a narrow even margin; do not reserve blank space for HTML text and do not render the subject as a tiny distant sticker."
+        : kind === "icon"
+          ? "The icon must fill 75–90% of the square canvas with a clean, immediately recognizable silhouette."
+          : "Fill the canvas edge to edge with a seamless, low-contrast texture; do not leave an empty central area.";
+  const visualContinuity = [
+    "Keep strict visual continuity with the rest of this course:",
+    `use the same ${input.styleTemplate.name} rendering technique, line weight, shape language, lighting, material treatment, and controlled palette.`,
+    "Keep recurring characters and environments consistent in proportions, facial design, costume, and color; do not introduce a new art style or unrelated palette for this page.",
+  ].join(" ");
 
   return [
     "Generate artwork only, never a course slide or designed page.",
@@ -266,6 +290,11 @@ function buildProductionPrompt(
     `Asset type: ${kind}. Semantic usage only—do not render this wording: ${slot.purpose}.`,
     `Conceptual visual direction only—do not render this wording: ${input.visualBrief.visualConcept}. Conceptual page focus: ${input.pageGuidance.focalPoint}.`,
     `Style: ${input.styleTemplate.name}; ${input.styleTemplate.goal}.`,
+    `Course visual bible: ${input.visualBrief.assetDirection.medium}. Course composition baseline: ${input.visualBrief.assetDirection.composition}.`,
+    `This page's composition: ${input.pageGuidance.composition}. Learning purpose of the artwork: ${input.pageGuidance.assetPurpose}.`,
+    `Course-specific exclusions: ${input.visualBrief.assetDirection.negativeConstraints.join("; ")}.`,
+    visualContinuity,
+    composition,
     transparency,
     safeArea,
     "No text or text-like marks may appear in the pixels: no Chinese characters, letters, numbers, formulas, captions, labels, fake writing, gibberish glyphs, logos, watermarks, buttons, cards, navigation, or complete UI layouts.",

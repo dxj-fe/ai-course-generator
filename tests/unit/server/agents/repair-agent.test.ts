@@ -47,14 +47,33 @@ describe("RepairAgent", () => {
     });
   });
 
-  it("normalizes a rooted CSS selector to its authorized tag boundary", () => {
+  it.each(["body > .container", "section.foo", "body[data-x]"])(
+    "does not widen the complex boundary selector %s to its leading tag",
+    (selector) => {
+      const output = {
+        kind: "html_patch_candidate",
+        patches: [
+          {
+            operation: "insert_after_open_tag",
+            selector,
+          },
+        ],
+      };
+
+      expect(normalizeRepairModelOutput(output)).toBe(output);
+    },
+  );
+
+  it("redirects an html/body CSS scope insertion to the canonical style boundary", () => {
     expect(
       normalizeRepairModelOutput({
         kind: "html_patch_candidate",
         patches: [
           {
-            operation: "insert_after_open_tag",
-            selector: "body > .container",
+            operation: "insert_before_close_tag",
+            selector: "html, body",
+            replacement:
+              "\nhtml, body { overflow: auto; }\n.course-stage { min-height: 0; }\n",
           },
         ],
       }),
@@ -62,8 +81,53 @@ describe("RepairAgent", () => {
       kind: "html_patch_candidate",
       patches: [
         {
-          operation: "insert_after_open_tag",
-          selector: "body",
+          operation: "insert_before_close_tag",
+          selector: "style",
+          replacement:
+            "\nhtml, body { overflow: auto; }\n.course-stage { min-height: 0; }\n",
+        },
+      ],
+    });
+  });
+
+  it("does not reinterpret an html/body selector when the insertion is not CSS", () => {
+    const output = {
+      kind: "html_patch_candidate",
+      patches: [
+        {
+          operation: "insert_before_close_tag",
+          selector: "html, body",
+          replacement: "<section>新增内容</section>",
+        },
+      ],
+    };
+
+    expect(normalizeRepairModelOutput(output)).toBe(output);
+  });
+
+  it("derives a bounded patch summary when the provider omits it", () => {
+    expect(
+      normalizeRepairModelOutput({
+        kind: "html_patch_candidate",
+        patches: [
+          {
+            issueCode: "LAYOUT_CLIPPING_RISK",
+            operation: "insert_before_close_tag",
+            selector: "style",
+            replacement: "html, body { overflow: auto; }",
+          },
+        ],
+      }),
+    ).toEqual({
+      kind: "html_patch_candidate",
+      patches: [
+        {
+          issueCode: "LAYOUT_CLIPPING_RISK",
+          operation: "insert_before_close_tag",
+          selector: "style",
+          replacement: "html, body { overflow: auto; }",
+          summary:
+            "针对 LAYOUT_CLIPPING_RISK 在授权标签边界插入修复。",
         },
       ],
     });
@@ -107,6 +171,47 @@ describe("RepairAgent", () => {
 
     expect(normalizeRepairModelOutput(output)).toBe(output);
   });
+
+  it.each([
+    "body > .container",
+    "section.foo",
+    "body[data-x]",
+    ".course-content",
+  ])(
+    "turns the unsafe boundary %s into a structured refusal when request scope is known",
+    (selector) => {
+      const request = htmlRequest();
+      expect(
+        normalizeRepairModelOutput(
+          {
+            kind: "html_patch_candidate",
+            pageId: request.pageId,
+            targetArtifact: "html",
+            addressedIssueCodes: request.issueCodes,
+            unresolvedIssueCodes: [],
+            changeSummary: ["向课程正文区域补充内容。"],
+            patches: [
+              {
+                issueCode: request.issueCodes[0],
+                operation: "insert_before_close_tag",
+                selector,
+                replacement: "<ul><li>学习目标</li></ul>",
+                summary: "补充学习目标。",
+              },
+            ],
+          },
+          request,
+        ),
+      ).toEqual({
+        kind: "declined",
+        pageId: request.pageId,
+        targetArtifact: "html",
+        issueCodes: request.issueCodes,
+        failureClass: "unlocatable_issue",
+        reasonSummary: `Repair 返回的 ${selector} 不是可安全定位的唯一标签边界，已拒绝猜测性扩大修复范围。`,
+      });
+    },
+  );
 
   it("only exposes the issues authorized for the current repair round", () => {
     const request = htmlRequest();
@@ -188,6 +293,46 @@ describe("RepairAgent", () => {
       "validation",
       "finish",
     ]);
+  });
+
+  it("applies a CSS presentation patch copied from an html/body QA scope without retrying", async () => {
+    const request = htmlRequest();
+    const generateCandidate = vi.fn().mockResolvedValue({
+      kind: "html_patch_candidate",
+      pageId: request.pageId,
+      targetArtifact: "html",
+      addressedIssueCodes: request.issueCodes,
+      unresolvedIssueCodes: [],
+      changeSummary: ["限制全局裁切并保持固定画布适配。"],
+      patches: [
+        {
+          issueCode: request.issueCodes[0],
+          operation: "insert_before_close_tag",
+          selector: "html, body",
+          replacement: "\nhtml, body { overflow: auto; }\n",
+        },
+      ],
+    });
+
+    const state = await createRepairAgent({ generateCandidate }).run(
+      createRepairAgentState(request),
+      { traceId: "trace-repair-html-body-css-scope" },
+    );
+
+    expect(generateCandidate).toHaveBeenCalledTimes(1);
+    expect(state.status).toBe("completed");
+    expect(state.repairedHtml).toContain(
+      "html, body { overflow: auto; }\n</style>",
+    );
+    expect(state.result).toMatchObject({
+      kind: "html_patch_candidate",
+      patches: [
+        {
+          selector: "style",
+          summary: expect.stringContaining(request.issueCodes[0]),
+        },
+      ],
+    });
   });
 
   it("repairs touch-target sizing deterministically without another model call", async () => {
@@ -498,7 +643,7 @@ describe("RepairAgent", () => {
     expect(state.repairedHtml).toMatch(/<body>\s*<main[\s\S]*<\/main>\s*<\/body>/);
   });
 
-  it("applies a main wrapper when the provider repeats a rooted QA selector", async () => {
+  it("declines a main wrapper when the provider returns a complex QA selector", async () => {
     const htmlWithoutMain = buildValidGeneratedHtml(pageContentDsl)
       .replace(`<main data-page-id="${pageContentDsl.pageId}">`, "")
       .replace("</main>", "");
@@ -547,7 +692,11 @@ describe("RepairAgent", () => {
     });
 
     expect(state.status).toBe("completed");
-    expect(state.repairedHtml).toMatch(/<body>\s*<main[\s\S]*<\/main>\s*<\/body>/);
+    expect(state.repairedHtml).toBeUndefined();
+    expect(state.result).toMatchObject({
+      kind: "declined",
+      failureClass: "unlocatable_issue",
+    });
   });
 
   it("rejects changes to DSL blocks outside the authorized issue location", async () => {
@@ -660,6 +809,18 @@ describe("RepairAgent", () => {
         unresolvedIssueCodes: [],
         changeSummary: ["让揭示任务直接检查本页学习目标。"],
         dsl: candidate,
+        patches: [
+          {
+            issueCode: request.issueCodes[0],
+            operation: "replace",
+            search: "unused",
+            replacement: "unused",
+            summary: "Provider 误带的 HTML 分支字段。",
+          },
+        ],
+        issueCodes: request.issueCodes,
+        failureClass: "agent_failed",
+        reasonSummary: "Provider 误带的拒绝分支字段。",
       }),
     }).run(createRepairAgentState(request), {
       traceId: "trace-repair-interaction-alias",
@@ -668,6 +829,39 @@ describe("RepairAgent", () => {
     expect(state.status).toBe("completed");
     expect(state.repairedContent?.interaction).toEqual(candidate.interaction);
     expect(state.repairedContent?.blocks).toEqual(pageContentDsl.blocks);
+  });
+
+  it("normalizes a nested provider decline into the strict declined branch", async () => {
+    const request = htmlRequest();
+    const state = await createRepairAgent({
+      generateCandidate: vi.fn().mockResolvedValue({
+        kind: "declined",
+        pageId: request.pageId,
+        targetArtifact: request.targetArtifact,
+        addressedIssueCodes: [],
+        unresolvedIssueCodes: request.issueCodes,
+        changeSummary: ["当前选择器不足以安全完成布局重构。"],
+        candidate: pageContentDsl,
+        patches: [],
+        declined: {
+          issueCodes: request.issueCodes,
+          failureClass: "unlocatable_issue",
+          reasonSummary: "当前授权范围不足以安全修改该布局。",
+        },
+      }),
+    }).run(createRepairAgentState(request), {
+      traceId: "trace-repair-nested-decline",
+    });
+
+    expect(state.status).toBe("completed");
+    expect(state.result).toEqual({
+      kind: "declined",
+      pageId: request.pageId,
+      targetArtifact: request.targetArtifact,
+      issueCodes: request.issueCodes,
+      failureClass: "unlocatable_issue",
+      reasonSummary: "当前授权范围不足以安全修改该布局。",
+    });
   });
 
   it("rejects changing the interaction type during an authorized interaction repair", async () => {

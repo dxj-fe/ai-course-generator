@@ -117,7 +117,14 @@ export function buildTrustedLessonSrcDoc(
       if (config.runtime.completionRule.type === "view") {
         window.setTimeout(complete, reduced ? 0 : 180);
       }
-    } catch {
+    } catch (error) {
+      console.error("[keya-lesson-runtime]", {
+        event: "runtime:bind-error",
+        pageId: config.pageId,
+        errorName: error instanceof Error ? error.name : typeof error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+      });
       fail("RUNTIME_BIND_FAILED");
     }
 

@@ -32,6 +32,48 @@ type HtmlThumbnailFrameProps = {
   title: string;
 };
 
+type LessonRuntimeMessageRoute =
+  | { kind: "ignored"; reason: "foreign-source" | "stale-runtime" }
+  | {
+      kind: "invalid";
+      issues: Array<{ message: string; path: string }>;
+    }
+  | { event: LessonRuntimeEvent; kind: "accepted" };
+
+/**
+ * iframe 导航会复用 WindowProxy，旧页面已排队的消息可能在切页后才到达。
+ * 这类消息属于正常竞态，应丢弃而不是作为运行时错误上报。
+ */
+export function routeLessonRuntimeMessage(
+  message: Pick<MessageEvent<unknown>, "data" | "source">,
+  expectedSource: MessageEventSource | null | undefined,
+  expectedRuntime: TrustedLessonRuntimeConfig,
+): LessonRuntimeMessageRoute {
+  if (!expectedSource || message.source !== expectedSource) {
+    return { kind: "ignored", reason: "foreign-source" };
+  }
+
+  const parsed = LessonRuntimeEventSchema.safeParse(message.data);
+  if (!parsed.success) {
+    return {
+      kind: "invalid",
+      issues: parsed.error.issues.map((issue) => ({
+        path: issue.path.join(".") || "root",
+        message: issue.message,
+      })),
+    };
+  }
+
+  if (
+    parsed.data.pageId !== expectedRuntime.pageId ||
+    parsed.data.runtimeVersion !== expectedRuntime.runtime.runtimeVersion
+  ) {
+    return { kind: "ignored", reason: "stale-runtime" };
+  }
+
+  return { event: parsed.data, kind: "accepted" };
+}
+
 /**
  * 课程缩略图使用不可交互的独立文档，只为平台固定的视口适配脚本开放执行权限，
  * 再以固定 16:9 画布缩放。外层按钮负责导航，iframe 本身不进入焦点顺序。
@@ -102,16 +144,21 @@ export function HtmlPreviewFrame({
   useEffect(() => {
     if (!trustedRuntime || !onRuntimeEvent) return;
     const handleMessage = (message: MessageEvent<unknown>) => {
-      if (message.source !== iframeRef.current?.contentWindow) return;
-      const parsed = LessonRuntimeEventSchema.safeParse(message.data);
-      if (
-        !parsed.success ||
-        parsed.data.pageId !== trustedRuntime.pageId ||
-        parsed.data.runtimeVersion !== trustedRuntime.runtime.runtimeVersion
-      ) {
+      const routed = routeLessonRuntimeMessage(
+        message,
+        iframeRef.current?.contentWindow,
+        trustedRuntime,
+      );
+      if (routed.kind === "invalid") {
+        console.error("[keya-html-preview]", {
+          event: "lesson-runtime:protocol-error",
+          pageId: trustedRuntime.pageId,
+          issues: routed.issues,
+        });
         return;
       }
-      onRuntimeEvent(parsed.data);
+      if (routed.kind === "ignored") return;
+      onRuntimeEvent(routed.event);
     };
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
@@ -183,6 +230,11 @@ export function HtmlPreviewFrame({
         )}
       >
         <iframe
+          key={
+            trustedRuntime
+              ? `${trustedRuntime.pageId}:v${trustedRuntime.runtime.runtimeVersion}`
+              : "static-preview"
+          }
           className={cn(
             "block w-full bg-white",
             chrome === "diagnostic" ? "h-[480px]" : "h-full",

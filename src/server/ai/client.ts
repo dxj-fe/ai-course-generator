@@ -8,7 +8,11 @@ import {
 } from "ai";
 import type { z } from "zod";
 
-import { AiSchemaValidationError, toAiErrorPayload } from "./error";
+import {
+  AiSchemaValidationError,
+  serializeErrorForLog,
+  toAiErrorPayload,
+} from "./error";
 import {
   getLanguageModel,
   getLanguageModelIdentity,
@@ -221,7 +225,11 @@ export async function generateStructuredObjectSafe<T>(
     });
     return result.data;
   } catch (error) {
-    logAiError("generate-object:error", error, traceId, startedAt);
+    logAiError("generate-object:error", error, traceId, startedAt, {
+      capability: request.capability ?? "general",
+      promptVersion: request.promptVersion,
+      schemaName: request.schemaName,
+    });
     throw error;
   }
 }
@@ -385,10 +393,17 @@ function logAiError(
   error: unknown,
   traceId: string,
   startedAt: number,
+  context: {
+    capability?: AiCapability | "general";
+    promptVersion?: string;
+    schemaName?: string;
+  } = {},
 ) {
   console.error("[ai]", {
     event,
+    ...context,
     ...toAiErrorPayload(error, traceId),
+    ...serializeErrorForLog(error),
     durationMs: Date.now() - startedAt,
   });
 }

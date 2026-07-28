@@ -27,6 +27,10 @@ import {
 } from "@/server/tools/retrieval-skills";
 
 import { createMinimalAgent } from "./core/minimal-agent";
+import {
+  claimsMultipleChoiceQuestions,
+  normalizeSingleChoiceWording,
+} from "./core/fixed-canvas-language";
 import type {
   Agent,
   AgentRuntimeContext,
@@ -100,6 +104,7 @@ export function createCoursePlannerAgent(
   dependencies: CoursePlannerAgentDependencies = defaultDependencies,
 ): Agent<CoursePlannerAgentState> {
   return createMinimalAgent({
+    name: "course-planner-agent",
     isComplete: (state) => Boolean(state.outline),
     step: async (state, context, emit) => {
       const outline = validateCoursePlannerOutput(
@@ -216,6 +221,16 @@ export function validateCoursePlannerOutput(
       page.htmlOutput
     ) {
       issues.push(`页面 ${page.id} 包含了规划阶段之外的生成结果`);
+    }
+    if (
+      page.interactionType === "choice" &&
+      claimsMultipleChoiceQuestions(
+        `${page.learningObjective} ${page.contentSummary}`,
+      )
+    ) {
+      issues.push(
+        `页面 ${page.id} 的固定画布只能规划 1 道 choice 题目，目标或摘要不能声明多题`,
+      );
     }
   }
 
@@ -341,13 +356,45 @@ export function normalizeCoursePlannerModelOutput(output: unknown): unknown {
     const interactionType = PageInteractionTypeSchema.safeParse(
       page.interactionType,
     );
-    if (!pageType.success || interactionType.success) return page;
+    if (!pageType.success) return page;
 
-    changed = true;
-    return {
-      ...page,
-      interactionType: DEFAULT_INTERACTION_BY_PAGE_TYPE[pageType.data],
-    };
+    const normalizedInteractionType = interactionType.success
+      ? interactionType.data
+      : DEFAULT_INTERACTION_BY_PAGE_TYPE[pageType.data];
+    let normalizedPage = page;
+
+    if (!interactionType.success) {
+      changed = true;
+      normalizedPage = {
+        ...normalizedPage,
+        interactionType: normalizedInteractionType,
+      };
+    }
+
+    if (normalizedInteractionType === "choice") {
+      const learningObjective =
+        typeof normalizedPage.learningObjective === "string"
+          ? normalizeSingleChoiceWording(normalizedPage.learningObjective)
+          : normalizedPage.learningObjective;
+      const contentSummary =
+        typeof normalizedPage.contentSummary === "string"
+          ? normalizeSingleChoiceWording(normalizedPage.contentSummary)
+          : normalizedPage.contentSummary;
+
+      if (
+        learningObjective !== normalizedPage.learningObjective ||
+        contentSummary !== normalizedPage.contentSummary
+      ) {
+        changed = true;
+        normalizedPage = {
+          ...normalizedPage,
+          learningObjective,
+          contentSummary,
+        };
+      }
+    }
+
+    return normalizedPage;
   });
 
   return changed ? { ...output, pages } : output;

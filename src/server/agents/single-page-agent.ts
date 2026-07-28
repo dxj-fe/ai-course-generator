@@ -70,6 +70,7 @@ export function createSinglePageAgent(
   dependencies: SinglePageAgentDependencies = defaultDependencies,
 ): Agent<SinglePageAgentState> {
   return createMinimalAgent({
+    name: "single-page-agent",
     isComplete: (state) => Boolean(state.pagePlan),
     step: async (state, context, emit) => {
       if (!state.selectedTemplate) {

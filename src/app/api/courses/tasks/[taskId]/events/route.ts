@@ -196,6 +196,15 @@ function createTaskEventStream(
             }, HEARTBEAT_INTERVAL_MS);
           }
         } catch (error) {
+          console.error("[course-task-sse]", {
+            event: "stream:init-error",
+            taskId: task.taskId,
+            courseId: task.courseId,
+            traceId: task.traceId,
+            cursor: initialCursor,
+            errorMessage:
+              error instanceof Error ? error.message : String(error),
+          }, error);
           if (!closed) {
             closed = true;
             unsubscribe();

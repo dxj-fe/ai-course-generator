@@ -183,6 +183,21 @@ describe("CoursePlannerAgent", () => {
     );
   });
 
+  it("rejects a fixed-canvas choice page that promises multiple questions", () => {
+    const testCase = plannerCases[0];
+    const intent = createIntent(testCase);
+    const outline = structuredClone(createOutline(testCase));
+    const quiz = outline.pages.find(
+      ({ interactionType }) => interactionType === "choice",
+    );
+    if (!quiz) throw new Error("choice page fixture is required");
+    quiz.contentSummary = "设置3道选择题检验本页的核心判断依据。";
+
+    expect(() => validateCoursePlannerOutput(outline, intent)).toThrow(
+      "固定画布只能规划 1 道 choice 题目",
+    );
+  });
+
   it("passes Reference Packs to Planner and rejects invented chunk usages", async () => {
     const intent = createIntent(plannerCases[0]);
     const outline = structuredClone(createOutline(plannerCases[0]));
@@ -277,6 +292,30 @@ describe("CoursePlannerAgent", () => {
         { pageType: "quiz", interactionType: "choice" },
         { pageType: "summary", interactionType: "navigate" },
         { pageType: "invented", interactionType: "custom" },
+      ],
+    });
+  });
+
+  it("aligns model-authored choice task counts with the fixed canvas", () => {
+    const output = {
+      pages: [
+        {
+          pageType: "quiz",
+          interactionType: "choice",
+          learningObjective: "完成3道关于核心概念的选择题。",
+          contentSummary: "设置3道带解释反馈的测验题。",
+        },
+      ],
+    };
+
+    expect(normalizeCoursePlannerModelOutput(output)).toEqual({
+      pages: [
+        {
+          pageType: "quiz",
+          interactionType: "choice",
+          learningObjective: "完成1道关于核心概念的选择题。",
+          contentSummary: "设置1道带解释反馈的测验题。",
+        },
       ],
     });
   });

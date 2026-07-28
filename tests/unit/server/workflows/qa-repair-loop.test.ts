@@ -10,6 +10,7 @@ import {
 } from "../../../fixtures/course-design";
 import { buildValidGeneratedHtml } from "../../../fixtures/generated-html";
 import { qualityReportWithIssue } from "../../../fixtures/quality-report";
+import { QualityReportSchema } from "../../../../src/shared/course-schema";
 import { getFunctionalTemplateDslExample } from "../../../../src/shared/templates/functional/dsl-examples";
 
 const base = {
@@ -80,6 +81,84 @@ describe("QA repair planning", () => {
     expect(request).toMatchObject({
       targetArtifact: "html",
       issueCodes: ["BROWSER_VISUAL_DOMINATES_VIEWPORT"],
+      allowedBlockIds: [],
+      allowedSelectors: ["style"],
+    });
+  });
+
+  it("collapses asset dominance and html/body clipping locations into one CSS presentation scope", () => {
+    const report = qualityReportWithIssue({
+      code: "ASSET_OVERDOMINATES",
+      dimension: "assetUsability",
+      selector: '[data-asset-slot-id="asset-slot-01"]',
+    });
+    const request = planRepairRound({
+      ...base,
+      report: {
+        ...report,
+        dimensions: {
+          ...report.dimensions,
+          layoutQuality: {
+            ...report.dimensions.layoutQuality,
+            score: 70,
+          },
+        },
+        issues: [
+          ...report.issues,
+          {
+            code: "BROWSER_VISUAL_DOMINATES_VIEWPORT",
+            dimension: "assetUsability" as const,
+            severity: "error" as const,
+            source: "browser" as const,
+            message: "单个视觉素材占据整个首屏。",
+            location: {
+              pageId: pageContentDsl.pageId,
+              selector: '[data-asset-slot-id="asset-slot-01"]',
+              description: "首屏主视觉",
+            },
+            repairHint: "缩小主视觉并恢复正文焦点。",
+          },
+          {
+            code: "LAYOUT_CLIPPING_RISK",
+            dimension: "layoutQuality" as const,
+            severity: "warning" as const,
+            source: "model" as const,
+            message: "html 与 body 的全局裁切可能隐藏内容。",
+            location: {
+              pageId: pageContentDsl.pageId,
+              selector: "html, body",
+              description: "全局 CSS 规则",
+            },
+            repairHint: "只在必要容器中限制溢出。",
+          },
+        ],
+      },
+    });
+
+    expect(request).toMatchObject({
+      targetArtifact: "html",
+      issueCodes: [
+        "ASSET_OVERDOMINATES",
+        "BROWSER_VISUAL_DOMINATES_VIEWPORT",
+        "LAYOUT_CLIPPING_RISK",
+      ],
+      allowedSelectors: ["style"],
+    });
+  });
+
+  it("routes an undersized required visual to bounded style repair", () => {
+    const request = planRepairRound({
+      ...base,
+      report: qualityReportWithIssue({
+        code: "BROWSER_VISUAL_TOO_SMALL",
+        dimension: "assetUsability",
+        selector: '[data-asset-slot-id="asset-slot-01"]',
+      }),
+    });
+
+    expect(request).toMatchObject({
+      targetArtifact: "html",
+      issueCodes: ["BROWSER_VISUAL_TOO_SMALL"],
       allowedBlockIds: [],
       allowedSelectors: ["style"],
     });
@@ -186,6 +265,30 @@ describe("QA repair planning", () => {
     expect(request).toMatchObject({
       targetArtifact: "dsl",
       issueCodes: ["OBJECTIVE_COVERAGE_GAP"],
+      allowedBlockIds: [],
+      allowedContentFields: ["narration"],
+      allowedSelectors: [],
+    });
+  });
+
+  it("routes the observed blockless cover learning-target issue to narration instead of a class selector", () => {
+    const example = getFunctionalTemplateDslExample("course-cover");
+    if (!example) throw new Error("course-cover fixture is required");
+    const content = { ...example, pageId: pageContentDsl.pageId };
+    const request = planRepairRound({
+      ...base,
+      content,
+      html: buildValidGeneratedHtml(content),
+      report: qualityReportWithIssue({
+        code: "CORE_LEARNING_TARGETS_MISSING",
+        dimension: "courseCoherence",
+        selector: ".course-content",
+      }),
+    });
+
+    expect(request).toMatchObject({
+      targetArtifact: "dsl",
+      issueCodes: ["CORE_LEARNING_TARGETS_MISSING"],
       allowedBlockIds: [],
       allowedContentFields: ["narration"],
       allowedSelectors: [],
@@ -322,6 +425,14 @@ describe("QA repair planning", () => {
     const improved = {
       ...before,
       id: "quality-layout-improved",
+      issues: before.issues.map((issue) => ({
+        ...issue,
+        severity: "warning" as const,
+      })),
+    };
+    const scoreOnlyFluctuation = {
+      ...before,
+      id: "quality-layout-score-only",
       overallScore: before.overallScore + 5,
     };
 
@@ -333,6 +444,66 @@ describe("QA repair planning", () => {
       }),
     ).toMatchObject({ round: 4, maxRounds: 24 });
     expect(didRepairQualityImprove(before, improved)).toBe(true);
+    expect(
+      didRepairQualityImprove(before, scoreOnlyFluctuation),
+    ).toBe(false);
     expect(didRepairQualityImprove(before, before)).toBe(false);
+  });
+
+  it("does not treat model score fluctuation as progress while the same browser blockers persist", () => {
+    const baseReport = qualityReportWithIssue({
+      code: "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
+      dimension: "layoutQuality",
+      selector: "main[data-page-id]",
+    });
+    const before = QualityReportSchema.parse({
+      ...baseReport,
+      id: "quality-browser-blockers-before",
+      overallScore: 58,
+      dimensions: {
+        ...baseReport.dimensions,
+        layoutQuality: {
+          score: 42,
+          summary: "画布缩放且存在内容裁切。",
+        },
+      },
+      issues: [
+        {
+          ...baseReport.issues[0],
+          source: "browser",
+          location: {
+            ...baseReport.issues[0]!.location,
+            viewport: "922x460",
+          },
+        },
+        {
+          code: "BROWSER_CONTENT_CLIPPED",
+          dimension: "layoutQuality",
+          severity: "error",
+          source: "browser",
+          message: "2 个元素存在可测量的内容裁切。",
+          location: {
+            pageId: pageContentDsl.pageId,
+            viewport: "922x460",
+            description: "Playwright 固定视口渲染结果",
+          },
+          repairHint: "检查 overflow 与固定高度。",
+        },
+      ],
+    });
+    const scoreOnlyFluctuation = QualityReportSchema.parse({
+      ...before,
+      id: "quality-browser-blockers-score-fluctuation",
+      overallScore: 72,
+      dimensions: {
+        ...before.dimensions,
+        layoutQuality: {
+          score: 69,
+          summary: "模型评分提高，但浏览器硬错误仍然存在。",
+        },
+      },
+    });
+
+    expect(didRepairQualityImprove(before, scoreOnlyFluctuation)).toBe(false);
   });
 });

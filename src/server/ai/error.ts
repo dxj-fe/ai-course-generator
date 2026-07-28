@@ -61,6 +61,15 @@ export function toAiErrorPayload(
 
 export function createAiErrorResponse(error: unknown, traceId: string) {
   const classified = classifyAiError(error);
+  const diagnostic = serializeErrorForLog(error);
+
+  console.error("[api]", {
+    event: "request:error",
+    traceId,
+    code: classified.code,
+    message: classified.message,
+    ...diagnostic,
+  });
 
   return Response.json(
     {
@@ -70,6 +79,23 @@ export function createAiErrorResponse(error: unknown, traceId: string) {
     } satisfies AiErrorPayload,
     { status: classified.status },
   );
+}
+
+/** 控制台只记录诊断字段，不回显 Prompt、HTML、请求体或 Provider 凭据。 */
+export function serializeErrorForLog(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      errorName: error.name,
+      errorMessage: error.message.slice(0, 4_000),
+      errorStack: error.stack?.slice(0, 8_000),
+    };
+  }
+
+  return {
+    errorName: typeof error,
+    errorMessage: String(error).slice(0, 4_000),
+    errorStack: undefined,
+  };
 }
 
 function classifyAiError(error: unknown): ClassifiedAiError {

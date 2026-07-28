@@ -36,7 +36,7 @@ describe("Page Writer prompts", () => {
       },
     });
 
-    expect(prompts.version).toBe("2.3.0/2.2.0");
+    expect(prompts.version).toBe("2.8.0/2.2.0");
     expect(prompts.systemPrompt).toContain(
       "contentDensity 只能是 sparse、balanced、dense",
     );
@@ -63,6 +63,36 @@ describe("Page Writer prompts", () => {
     );
     expect(prompts.systemPrompt).toContain(
       "`dense` 只表示紧凑分组",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "禁止同时生成“3 个长故事块 + 4 个选项 + 必需插图”",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "禁止同时生成“3 个任务块 + 长输入说明 + 必需插图”",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "questions 必须且只能包含 1 道完整题目",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "items 中每项必须是只包含 label、content 的对象",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "不能重复 label",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "不能只列关键词",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "input 和 sort 在 interaction 根级返回 feedbackSuccess、feedbackRetry",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "choice 的根级 feedbackSuccess、feedbackRetry 必须为空数组",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "还缺少『评价标准』，请补充",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "不得只改字数或增加鼓励语",
     );
     expect(prompts.userPrompt).toContain(
       '"issues":["questions.0.correctOptionIndex 超出 options 范围"]',

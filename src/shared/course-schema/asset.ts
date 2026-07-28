@@ -41,7 +41,7 @@ export const AssetRequestSchema = z
     assetSlotId: z.string().regex(/^asset-slot-[0-9]{2}$/),
     assetType: GeneratedAssetKindSchema,
     usage: z.string().min(2).max(300),
-    prompt: z.string().min(20).max(1_800),
+    prompt: z.string().min(20).max(3_000),
     transparentBackground: z.boolean(),
     safeArea: AssetSafeAreaSchema,
     aspectRatio: AssetAspectRatioSchema,
@@ -100,7 +100,7 @@ export const AssetSchema = z
     status: AssetStatusSchema,
     uri: z.string().min(1).max(2_000).optional(),
     altText: z.string().max(300).optional(),
-    generationPrompt: z.string().min(1).max(1_800).optional(),
+    generationPrompt: z.string().min(1).max(3_000).optional(),
     mimeType: z.string().min(1).max(100).optional(),
     dimensions: z
       .object({

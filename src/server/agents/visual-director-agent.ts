@@ -110,6 +110,7 @@ export function createVisualDirectorAgent(
   dependencies: VisualDirectorAgentDependencies = defaultDependencies,
 ): Agent<VisualDirectorAgentState> {
   return createMinimalAgent({
+    name: "visual-director-agent",
     isComplete: (state) => Boolean(state.brief),
     step: async (state, context, emit) => {
       const brief = VisualBriefSchema.parse(

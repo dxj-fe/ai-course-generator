@@ -2,7 +2,11 @@ import type { UIMessage } from "ai";
 
 import { getHtmlEngineerTimeoutMs } from "@/config/env";
 import { generateTextSafe } from "@/server/ai/client";
-import { AiSchemaValidationError } from "@/server/ai/error";
+import {
+  AiSchemaValidationError,
+  serializeErrorForLog,
+} from "@/server/ai/error";
+import { renderDeterministicPageFallback } from "@/server/html/deterministic-page-fallback";
 import { buildHtmlEngineerPrompts } from "@/server/prompts/html-engineer";
 import {
   HtmlOutputSchema,
@@ -39,6 +43,11 @@ export type HtmlEngineerInput = {
   visualBrief: VisualBrief;
   assets?: AssetGenerationResult[];
   validationFeedback?: HtmlEngineerValidationFeedback;
+  /**
+   * 默认优先保留模型的高级构图；QA 已证明整页布局无法经局部修复收敛时，
+   * 可直接使用平台确定性紧凑渲染器重建干净页面。
+   */
+  renderMode?: "model" | "deterministic";
 };
 
 export type HtmlEngineerValidationFeedback = {
@@ -81,40 +90,73 @@ export function createHtmlEngineerAgent(
   dependencies: HtmlEngineerAgentDependencies = defaultDependencies,
 ): Agent<HtmlEngineerAgentState> {
   return createMinimalAgent({
+    name: "html-engineer-agent",
     isComplete: (state) => Boolean(state.htmlOutput),
     step: async (state, context, emit) => {
       const resolved = resolveHtmlEngineerInput(state.task);
-      const generated = await dependencies.generateHtml({
-        ...resolved,
-        abortSignal: context.abortSignal,
-        traceId: context.traceId,
-      });
+      const forceDeterministic = state.task.renderMode === "deterministic";
+      let normalized: unknown;
+      if (forceDeterministic) {
+        normalized = renderDeterministicPageFallback({
+          assets: resolved.assets,
+          content: resolved.content,
+          styleTemplate: resolved.styleTemplate,
+        });
+      } else {
+        const generated = await dependencies.generateHtml({
+          ...resolved,
+          abortSignal: context.abortSignal,
+          traceId: context.traceId,
+        });
 
-      emit({
-        type: "model_call",
-        summary: "HTML Engineer 已返回单页 HTML 文档。",
-        data: {
+        emit({
+          type: "model_call",
+          summary: "HTML Engineer 已返回单页 HTML 文档。",
+          data: {
+            pageId: state.task.content.pageId,
+            purpose: "page-html-generation",
+            styleTemplateId: resolved.styleTemplate.id,
+          },
+        });
+
+        normalized = normalizeGeneratedCanvasRoot(generated);
+        normalized = normalizeTrustedDslMarkup(normalized, state.task);
+        normalized = normalizeNativeInteractionMarker(normalized, state.task);
+        normalized = normalizeRevealCardInteraction(normalized, state.task);
+        normalized = normalizeChoiceInteractionRoot(normalized, state.task);
+        normalized = normalizeChoiceRuntimeMarkers(normalized, state.task);
+        normalized = normalizeVisualPrimitiveMarker(normalized, state.task);
+        normalized = normalizeReadyCssBackgroundAccessibility(
+          normalized,
+          state.task,
+        );
+      }
+      let fallbackApplied = forceDeterministic;
+      let validated: ReturnType<typeof validateHtmlEngineerOutput>;
+      try {
+        validated = validateHtmlEngineerOutput(normalized, state.task);
+      } catch (error) {
+        if (!(error instanceof AiSchemaValidationError)) throw error;
+        if (forceDeterministic) throw error;
+        console.error("[html-engineer]", {
+          event: "model-html:validation-failed",
+          traceId: context.traceId,
           pageId: state.task.content.pageId,
-          purpose: "page-html-generation",
-          styleTemplateId: resolved.styleTemplate.id,
-        },
-      });
+          stage: "html",
+          errorCode: error.code,
+          ...serializeErrorForLog(error),
+          recovery: "deterministic-fallback",
+        });
 
-      let normalized = normalizeGeneratedCanvasRoot(generated);
-      normalized = normalizeTrustedDslMarkup(normalized, state.task);
-      normalized = normalizeNativeInteractionMarker(normalized, state.task);
-      normalized = normalizeRevealCardInteraction(normalized, state.task);
-      normalized = normalizeChoiceInteractionRoot(normalized, state.task);
-      normalized = normalizeChoiceRuntimeMarkers(normalized, state.task);
-      normalized = normalizeVisualPrimitiveMarker(normalized, state.task);
-      normalized = normalizeReadyCssBackgroundAccessibility(
-        normalized,
-        state.task,
-      );
-      const { html, validation } = validateHtmlEngineerOutput(
-        normalized,
-        state.task,
-      );
+        const fallbackHtml = renderDeterministicPageFallback({
+          assets: resolved.assets,
+          content: resolved.content,
+          styleTemplate: resolved.styleTemplate,
+        });
+        validated = validateHtmlEngineerOutput(fallbackHtml, state.task);
+        fallbackApplied = true;
+      }
+      const { html, validation } = validated;
       const htmlOutput = HtmlOutputSchema.parse({
         html,
         generatedAt: new Date().toISOString(),
@@ -123,9 +165,17 @@ export function createHtmlEngineerAgent(
 
       emit({
         type: "validation",
-        summary: "HTML 合同、内容标记与安全预检已通过。",
+        summary: forceDeterministic
+          ? "QA 布局无法经局部修复收敛，已使用可信课程数据重建紧凑页面。"
+          : fallbackApplied
+            ? "模型 HTML 未通过合同校验，已使用可信课程数据生成安全回退页面。"
+          : "HTML 合同、内容标记与安全预检已通过。",
         data: {
           blockCount: state.task.content.blocks.length,
+          fallbackApplied,
+          ...(forceDeterministic
+            ? { fallbackReason: "quality-stalled" }
+            : {}),
           pageId: state.task.content.pageId,
           safetyIssueCount: validation.safety.issues.length,
         },
@@ -573,9 +623,9 @@ function validateStableMarkupStructure(
 }
 
 /**
- * 模型负责布局，但 DSL 正文是服务端事实。只在已有 main 和唯一 block marker
- * 内恢复被模型遗漏的可信文字，并先转义原样输出的数学比较符；插入内容保持
- * 可见且最终仍须通过完整 HTML、安全、素材和稳定标记合同。
+ * DSL 正文是服务端事实，但缺失正文不能在布局完成后机械追加，否则会把
+ * 本应重试的生成错误变成超长、重复页面。这里只清理旧恢复节点并转义模型
+ * 原样输出的数学比较符；缺失内容交给严格校验反馈后重新生成整页。
  */
 export function normalizeTrustedDslMarkup(
   output: unknown,
@@ -591,100 +641,7 @@ export function normalizeTrustedDslMarkup(
       html = html.replaceAll(text, escapeHtmlText(text));
     }
   }
-
-  for (const block of input.content.blocks) {
-    const markers = findTagMatchesWithAttributes(html, {
-      "data-block-id": block.id,
-    });
-    if (markers.length !== 1) continue;
-    const marker = markers[0]!;
-    const element = getElementHtml(html, marker);
-    if (!element) continue;
-
-    const visible = normalizeVisibleText(element);
-    const missingHeading = !containsTrustedText(visible, block.heading);
-    const missingBody = !containsTrustedText(visible, block.body);
-    const missingPoints = block.supportingPoints.filter(
-      (point) => !containsTrustedText(visible, point),
-    );
-    if (!missingHeading && !missingBody && missingPoints.length === 0) {
-      continue;
-    }
-
-    const restored = [
-      missingHeading ? `<h2>${escapeHtmlText(block.heading)}</h2>` : "",
-      missingBody ? `<p>${escapeHtmlText(block.body)}</p>` : "",
-      missingPoints.length > 0
-        ? `<ul>${missingPoints.map((point) => `<li>${escapeHtmlText(point)}</li>`).join("")}</ul>`
-        : "",
-    ].join("");
-    html = insertBeforeElementClose(
-      html,
-      marker,
-      `<div data-course-contract-restored="block">${restored}</div>`,
-    );
-  }
-
-  if (
-    input.content.interaction.type === "reveal" ||
-    input.content.interaction.type === "explore" ||
-    input.content.interaction.type === "sort"
-  ) {
-    for (const item of input.content.interaction.items) {
-      const markers = findTagMatchesWithAttributes(html, {
-        "data-interaction-item-id": item.id,
-      });
-      if (markers.length !== 1) continue;
-      const marker = markers[0]!;
-      const element = getElementHtml(html, marker);
-      if (!element) continue;
-      const visible = normalizeVisibleText(element);
-      const missing = [...new Set([item.label, item.content])].filter(
-        (text) => !containsTrustedText(visible, text),
-      );
-      if (missing.length === 0) continue;
-
-      html = insertBeforeElementClose(
-        html,
-        marker,
-        `<div data-course-contract-restored="interaction-item">${missing
-          .map((text) => `<p>${escapeHtmlText(text)}</p>`)
-          .join("")}</div>`,
-      );
-    }
-  }
-
-  const mainMatches = [...html.matchAll(/<main\b[^>]*>/gi)].map((match) => ({
-    index: match.index,
-    tag: match[0],
-  }));
-  if (mainMatches.length !== 1) return html;
-
-  const pageVisible = normalizeVisibleText(html);
-  const pageText = [input.content.title, ...input.content.narration];
-  if (
-    input.content.interaction.type === "reveal" ||
-    input.content.interaction.type === "explore"
-  ) {
-    pageText.push(input.content.interaction.prompt);
-  }
-  const missingPageText = pageText.filter(
-    (text) => !containsTrustedText(pageVisible, text),
-  );
-  if (missingPageText.length === 0) return html;
-
-  const restored = missingPageText
-    .map((text, index) =>
-      text === input.content.title && index === 0
-        ? `<h1>${escapeHtmlText(text)}</h1>`
-        : `<p>${escapeHtmlText(text)}</p>`,
-    )
-    .join("");
-  return insertBeforeElementClose(
-    html,
-    mainMatches[0]!,
-    `<div data-course-contract-restored="page">${restored}</div>`,
-  );
+  return html;
 }
 
 /**

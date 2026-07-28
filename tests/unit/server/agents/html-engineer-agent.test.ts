@@ -6,6 +6,7 @@ import {
 } from "../../../fixtures/course-design";
 import { buildValidGeneratedHtml } from "../../../fixtures/generated-html";
 import { generateTextSafe } from "../../../../src/server/ai/client";
+import { renderDeterministicPageFallback } from "../../../../src/server/html/deterministic-page-fallback";
 import {
   createHtmlEngineerAgent,
   createHtmlEngineerAgentState,
@@ -170,6 +171,42 @@ function getChoiceContent(): ChoiceContent {
   };
 }
 
+function withTrustedRuntime(
+  interaction: PageContentDSL["interaction"],
+  base: PageContentDSL = pageContentDsl,
+): PageContentDSL {
+  return {
+    ...base,
+    version: 2,
+    interaction,
+    runtime: {
+      runtimeVersion: 1,
+      sceneKind: interaction.type === "none" ? "explain" : "practice",
+      visualPrimitive: "comparison",
+      motionPlan: {
+        intensity: "none",
+        cuePoints: [],
+      },
+      completionRule:
+        interaction.type === "none" || interaction.type === "navigate"
+          ? { type: "view" }
+          : {
+              type:
+                interaction.type === "choice"
+                  ? "correct-answer"
+                  : "interaction-complete",
+              interactionId: `interaction-${base.pageId}`,
+            },
+    },
+  };
+}
+
+function countBodyText(html: string, text: string) {
+  const body = html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1] ?? "";
+  const escaped = text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return body.match(new RegExp(escaped, "g"))?.length ?? 0;
+}
+
 describe("HtmlEngineerAgent", () => {
   it("uses the bounded HTML-specific timeout for the default model call", async () => {
     vi.stubEnv("AI_HTML_TIMEOUT_MS", "180000");
@@ -223,6 +260,221 @@ describe("HtmlEngineerAgent", () => {
       }),
     );
     expect(generateHtml.mock.calls[0]?.[0]).not.toHaveProperty("userPrompt");
+  });
+
+  it("renders a strictly valid v2 fallback for every interaction type", () => {
+    const interactions: PageContentDSL["interaction"][] = [
+      { type: "none" },
+      {
+        type: "navigate",
+        actionLabel: "继续学习",
+        destination: "next",
+      },
+      pageContentDsl.interaction,
+      {
+        type: "explore",
+        prompt: "探索两类天体的特点。",
+        items: [
+          { id: "item-star", label: "恒星线索", content: "观察它是否自行发光。" },
+          { id: "item-planet", label: "行星线索", content: "观察它如何围绕恒星运行。" },
+        ],
+      },
+      {
+        type: "choice",
+        questions: [
+          {
+            id: "question-01",
+            prompt: "哪一种天体会自己发光？",
+            options: [
+              { id: "option-star", label: "恒星" },
+              { id: "option-planet", label: "行星" },
+            ],
+            correctOptionId: "option-star",
+            feedback: {
+              success: "正确，恒星能够自行发光。",
+              retry: "再比较恒星和行星的发光方式。",
+            },
+            maxAttempts: 2,
+          },
+        ],
+      },
+      {
+        type: "sort",
+        prompt: "按学习顺序排列观察步骤。",
+        items: [
+          { id: "item-observe", label: "先观察", content: "查看天体是否发光。" },
+          { id: "item-compare", label: "再比较", content: "比较两类天体的差异。" },
+        ],
+        correctOrderIds: ["item-observe", "item-compare"],
+        feedback: {
+          success: "顺序正确，先观察再比较。",
+          retry: "先寻找线索，再进行比较。",
+        },
+      },
+      {
+        type: "input",
+        prompt: "写下恒星与行星的一项差异。",
+        placeholder: "例如：是否会自己发光",
+        evaluationCriteria: ["指出恒星特点", "指出行星特点"],
+        feedback: {
+          success: "回答已提交，比较结果清楚。",
+          retry: "请同时说明两类天体的特点。",
+        },
+      },
+    ];
+    const styleTemplate = resolveHtmlEngineerInput(input).styleTemplate;
+
+    for (const interaction of interactions) {
+      const content = withTrustedRuntime(interaction);
+      const html = renderDeterministicPageFallback({
+        content,
+        styleTemplate,
+      });
+
+      expect(() =>
+        validateHtmlEngineerOutput(html, {
+          content,
+          visualBrief,
+        }),
+      ).not.toThrow();
+      expect(html).toContain('data-visual-primitive="comparison"');
+      for (const block of content.blocks) {
+        expect(html).toContain(
+          `data-block-id="${block.id}" data-runtime-target-id="${block.id}"`,
+        );
+      }
+      if (interaction.type !== "none") {
+        expect(html).toContain(
+          `data-interaction-id="interaction-${content.pageId}"`,
+        );
+      }
+    }
+  });
+
+  it("falls back from an incomplete achievement input page without duplicating trusted body copy", async () => {
+    const example = getFunctionalTemplateDslExample("achievement-task");
+    if (!example || example.interaction.type !== "input") {
+      throw new Error("achievement-task 测试夹具必须使用 input interaction");
+    }
+    const interaction = {
+      ...example.interaction,
+      prompt: "请完成猴王小解说任务。",
+      placeholder: "写下猴王出世的意义",
+      evaluationCriteria: [
+        "能说明猴王出世在开篇的意义",
+        "能关联到后续取经情节",
+      ],
+      feedback: {
+        success: "猴王小解说任务已提交。",
+        retry: "请补充开篇意义与后续情节的关联。",
+      },
+    };
+    const achievementBase = {
+      ...example,
+      pageId: pageContentDsl.pageId,
+      title: "猴王小解说任务",
+      interaction,
+    };
+    const content = withTrustedRuntime(interaction, achievementBase);
+    const result = await createHtmlEngineerAgent({
+      generateHtml: vi.fn().mockResolvedValue(
+        `<!doctype html><html><head><meta name="viewport" content="width=device-width"><style>body{margin:0}</style></head><body><main data-page-id="${content.pageId}"><p>模型遗漏了任务标题与评价标准</p></main></body></html>`,
+      ),
+    }).run(
+      createHtmlEngineerAgentState({
+        content,
+        visualBrief,
+      }),
+      { traceId: "achievement-input-fallback-test" },
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.htmlOutput?.html).toBeDefined();
+    expect(() =>
+      validateHtmlEngineerOutput(result.htmlOutput?.html, {
+        content,
+        visualBrief,
+      }),
+    ).not.toThrow();
+    expect(
+      result.htmlOutput!.html.match(
+        new RegExp(`<h1>${content.title}</h1>`, "g"),
+      ),
+    ).toHaveLength(1);
+    for (const block of content.blocks) {
+      expect(countBodyText(result.htmlOutput!.html, block.body)).toBe(1);
+    }
+    for (const criterion of interaction.evaluationCriteria) {
+      expect(countBodyText(result.htmlOutput!.html, criterion)).toBe(1);
+    }
+    expect(result.htmlOutput?.html).toContain('data-runtime-input="true"');
+    expect(result.htmlOutput?.html).toContain('data-runtime-submit="true"');
+    expect(
+      result.events.find(({ type }) => type === "validation")?.data,
+    ).toMatchObject({ fallbackApplied: true });
+  });
+
+  it("can rebuild a quality-stalled page without making another model call", async () => {
+    const generateHtml = vi.fn();
+    const result = await createHtmlEngineerAgent({ generateHtml }).run(
+      createHtmlEngineerAgentState({
+        ...input,
+        renderMode: "deterministic",
+      }),
+      { traceId: "deterministic-rebuild-test" },
+    );
+
+    expect(result.status).toBe("completed");
+    expect(generateHtml).not.toHaveBeenCalled();
+    expect(result.htmlOutput?.html).toContain(
+      'data-keya-renderer="deterministic"',
+    );
+    expect(
+      result.events.find(
+        ({ type, data }) =>
+          type === "validation" && data?.fallbackReason === "quality-stalled",
+      )?.data,
+    ).toMatchObject({
+      fallbackApplied: true,
+      fallbackReason: "quality-stalled",
+    });
+  });
+
+  it("renders ready and fallback asset slots through the same strict contract", () => {
+    const fallbackAsset: AssetGenerationResult = {
+      request: readyAssetResults[1]!.request,
+      status: "fallback",
+      fallback: {
+        kind: "css-gradient",
+        description: "使用柔和渐变代替角色贴纸。",
+      },
+      durationMs: 10,
+    };
+    const assets = [readyAssetResults[0]!, fallbackAsset];
+    const styleTemplate = resolveHtmlEngineerInput({
+      content: assetRichContent,
+      visualBrief,
+      assets,
+    }).styleTemplate;
+    const html = renderDeterministicPageFallback({
+      assets,
+      content: assetRichContent,
+      styleTemplate,
+    });
+
+    expect(() =>
+      validateHtmlEngineerOutput(html, {
+        assets,
+        content: assetRichContent,
+        visualBrief,
+      }),
+    ).not.toThrow();
+    expect(html).toContain(
+      'data-asset-slot-id="asset-slot-01" src="/api/assets/asset-background"',
+    );
+    expect(html).toContain(
+      'data-asset-slot-id="asset-slot-02" data-asset-fallback="css-gradient"',
+    );
   });
 
   it("normalizes the generated document to the platform fluid canvas mode", () => {
@@ -806,7 +1058,7 @@ describe("HtmlEngineerAgent", () => {
     expect(result.htmlOutput?.html).not.toContain("模型改写的背景说明");
   });
 
-  it("rejects model HTML that asks for script execution", async () => {
+  it("discards unsafe model HTML and completes with the trusted fallback", async () => {
     const unsafeHtml = buildValidGeneratedHtml(pageContentDsl).replace(
       "</body>",
       "<script>document.body.textContent = 'unsafe'</script></body>",
@@ -817,13 +1069,20 @@ describe("HtmlEngineerAgent", () => {
       traceId: "unsafe-html-test",
     });
 
-    expect(result.status).toBe("failed");
-    expect(result.error?.message).toContain("禁止任何内联脚本");
+    expect(result.status).toBe("completed");
+    expect(result.htmlOutput?.html).not.toContain("<script");
+    expect(() =>
+      validateHtmlEngineerOutput(result.htmlOutput?.html, input),
+    ).not.toThrow();
     expect(result.events.map(({ type }) => type)).toEqual([
       "start",
       "model_call",
-      "error",
+      "validation",
+      "finish",
     ]);
+    expect(
+      result.events.find(({ type }) => type === "validation")?.data,
+    ).toMatchObject({ fallbackApplied: true });
   });
 
   it("rejects a page without a unique main content region", () => {
@@ -957,7 +1216,7 @@ describe("HtmlEngineerAgent", () => {
     expect(() => validateHtmlEngineerOutput(normalized, input)).not.toThrow();
   });
 
-  it("escapes trusted mathematical text and restores omitted reveal content visibly", () => {
+  it("escapes present mathematical text and leaves omitted DSL content to a full retry", () => {
     const mathematicalBody =
       "不等式是用不等号（>、<、≥、≤等）连接两个表达式所形成的式子，表示两个量之间的大小关系";
     const content = {
@@ -974,7 +1233,6 @@ describe("HtmlEngineerAgent", () => {
     const html = buildValidGeneratedHtml(content)
       .replaceAll(content.title, "数学概念课程")
       .replaceAll(content.interaction.prompt, "")
-      .replaceAll(mathematicalBody, "模型遗漏的公式说明")
       .replace(' data-interaction-type="reveal"', "");
 
     let normalized = normalizeTrustedDslMarkup(html, {
@@ -990,13 +1248,14 @@ describe("HtmlEngineerAgent", () => {
       visualBrief,
     });
 
-    expect(normalized).toContain("高一数学核心概念拆解");
-    expect(normalized).toContain("点击对应卡片查看详细内容");
+    expect(normalized).not.toContain("高一数学核心概念拆解");
+    expect(normalized).not.toContain("点击对应卡片查看详细内容");
     expect(normalized).toContain("&gt;、&lt;、≥、≤");
     expect(normalized).toContain('data-interaction-type="reveal"');
+    expect(normalized).not.toContain("data-course-contract-restored=");
     expect(() =>
       validateHtmlEngineerOutput(normalized, { content, visualBrief }),
-    ).not.toThrow();
+    ).toThrow();
   });
 
   it("treats Markdown inline code and rendered code tags as the same trusted text", () => {
@@ -1056,7 +1315,7 @@ describe("HtmlEngineerAgent", () => {
     ).not.toThrow();
   });
 
-  it("restores trusted reveal item text inside its unique runtime item", () => {
+  it("does not append reveal item copies when aligned blocks already carry the content", () => {
     const interaction = pageContentDsl.interaction;
     if (interaction.type !== "reveal") {
       throw new Error("reveal fixture is required");
@@ -1078,13 +1337,12 @@ describe("HtmlEngineerAgent", () => {
 
     const normalized = normalizeTrustedDslMarkup(html, input);
 
-    for (const item of interaction.items) {
-      expect(normalized).toContain(item.content);
-    }
-    expect(normalized).toContain(
+    expect(normalized).not.toContain(
       'data-course-contract-restored="interaction-item"',
     );
-    expect(() => validateHtmlEngineerOutput(normalized, input)).not.toThrow();
+    expect(() =>
+      validateHtmlEngineerOutput(normalized, input),
+    ).not.toThrow();
   });
 
   it("does not invent a reveal marker for an incomplete native interaction", () => {

@@ -39,6 +39,8 @@
 - 至少一个页面使用 reveal、choice、sort、input 或 explore 主动交互。
 - learningObjective 表达学习者完成本页后能做什么。
 - contentSummary 只表达本页核心信息，不写完整正文，并且其范围必须能由单个固定画布完整承载。
+- title 使用准确、简洁的课程编辑语言，优先采用“具体主题”“主题：关键关系”或“可观察的学习任务”，避免只靠“超棒、大冒险、大总结、小达人、时间小线”等夸张或低幼修饰词制造吸引力；适合儿童不等于幼稚化。相邻标题应清楚显示知识推进，而不是重复“探索、挑战、学习”。
+- contentSummary、learningObjective 与 interactionType 的任务数量必须一致。固定画布中的 choice/quiz 只规划 1 道聚焦核心判断依据、带解释性反馈的题目；不得在摘要、目标或后续 brief 中宣称同页完成 2 道及以上题目。需要覆盖多个判断时拆分到其他页面或选择最关键的一项。
 - pageType 只能来自输入 FunctionalTemplate allowlist；相关 Template Cards 只用于理解适用场景，不能扩大 allowlist。
 - interactionType 必须逐字使用允许枚举；推荐映射为 cover→navigate、story_intro→choice、knowledge_card→reveal、quiz→choice、comparison→explore、timeline→explore、summary→navigate、achievement→input，禁止翻译、增加后缀或写成页面类型。
 - assetNeeds 只描述 purpose 和 required；素材类型由确定性代码补齐。

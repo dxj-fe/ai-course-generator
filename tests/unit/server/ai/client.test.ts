@@ -94,6 +94,53 @@ describe("AI client", () => {
     ]);
   });
 
+  it("logs the structured schema identity when validation fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    generateTextMock.mockResolvedValue({
+      output: {
+        issues: [{ location: { viewports: ["desktop"] } }],
+      },
+      usage: {},
+    });
+
+    await expect(
+      generateStructuredObjectSafe({
+        capability: "page-qa",
+        model: {} as never,
+        prompt: "Evaluate this page",
+        promptVersion: "page-qa@diagnostic-test",
+        schema: z
+          .object({
+            issues: z.array(
+              z.object({
+                location: z
+                  .object({ viewport: z.string().optional() })
+                  .strict(),
+              }),
+            ),
+          })
+          .strict(),
+        schemaName: "page_quality_report",
+        traceId: "schema-diagnostic-test",
+      }),
+    ).rejects.toThrow('Unrecognized key: "viewports"');
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[ai]",
+      expect.objectContaining({
+        capability: "page-qa",
+        errorMessage: expect.stringContaining(
+          'issues.0.location: Unrecognized key: "viewports"',
+        ),
+        event: "generate-object:error",
+        promptVersion: "page-qa@diagnostic-test",
+        schemaName: "page_quality_report",
+        traceId: "schema-diagnostic-test",
+      }),
+    );
+    errorSpy.mockRestore();
+  });
+
   it("reuses a schema-valid cached result without another model call", async () => {
     generateTextMock.mockResolvedValue({
       output: { value: "cached" },

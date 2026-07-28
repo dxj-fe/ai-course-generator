@@ -295,6 +295,14 @@ export function InteractiveCoursePlayer({
 
   const handleRuntimeEvent = (event: LessonRuntimeEvent) => {
     if (!currentSection || event.pageId !== currentSection.id) return;
+    if (event.type === "section-error") {
+      console.error("[keya-course-player]", {
+        event: "lesson-runtime:error",
+        courseId: course.courseId,
+        pageId: event.pageId,
+        errorCode: event.code,
+      });
+    }
     setPageStates((current) => {
       const previous = current[event.pageId] ?? { attempts: 0 };
       const next: StoredPageRuntimeState = {
@@ -453,6 +461,7 @@ export function InteractiveCoursePlayer({
               >
                 {currentSection?.html ? (
                   <HtmlPreviewFrame
+                    key={`${currentSection.id}:v${currentSection.htmlVersion ?? "unversioned"}`}
                     chrome="learner"
                     className="h-full min-h-0"
                     frameClassName="h-full min-h-0"

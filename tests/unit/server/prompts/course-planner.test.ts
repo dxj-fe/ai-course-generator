@@ -14,7 +14,7 @@ describe("Course Planner prompts", () => {
       referenceHits: [],
     });
 
-    expect(prompts.version).toBe("2.4.0/2.2.0");
+    expect(prompts.version).toBe("2.5.0/2.2.0");
     expect(prompts.systemPrompt).toContain(
       "每个 pages item 对应一个无需滚动的固定课程画布",
     );
@@ -23,6 +23,12 @@ describe("Course Planner prompts", () => {
     );
     expect(prompts.systemPrompt).toContain(
       "单个固定画布完整承载",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "适合儿童不等于幼稚化",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "choice/quiz 只规划 1 道",
     );
   });
 });

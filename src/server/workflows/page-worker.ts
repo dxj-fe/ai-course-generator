@@ -12,11 +12,13 @@ import type {
   AgentEvent,
   AgentRuntimeContext,
 } from "@/server/agents/core/types";
+import { DETERMINISTIC_PAGE_RENDERER_VERSION } from "@/server/html/deterministic-page-fallback";
 import { runImageAssetWorkflow } from "@/server/workflows/image-asset-workflow";
 import {
   didRepairQualityImprove,
   planRepairRound,
 } from "@/server/workflows/qa-repair-loop";
+import { PAGE_QUALITY_THRESHOLDS } from "@/server/quality/page-quality";
 import {
   CourseIntentSchema,
   CourseGenerationCauseCodeSchema,
@@ -34,6 +36,7 @@ import {
   type PageGenerationStage,
   type PageGenerationState,
   type PagePlan,
+  type QualityReport,
   type PageWorkerBrief,
   type PageWorkerEvent,
   type PageWorkerResult,
@@ -46,6 +49,10 @@ import {
 export const PAGE_WORKER_MAX_STAGE_ATTEMPTS = 3;
 export const REPAIR_EXECUTION_MAX_ATTEMPTS = 3;
 const HTML_VALIDATION_PREFIX = "生成 HTML 校验失败：";
+const DETERMINISTIC_LAYOUT_REBUILD_CODES = new Set([
+  "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
+  "BROWSER_VISUAL_DOMINATES_VIEWPORT",
+]);
 
 export type PageWorkerDependencies = {
   runPageWriter: typeof runPageWriterAgent;
@@ -324,6 +331,142 @@ export async function generatePageWorker(
     if (!completed) return result();
   }
 
+  const deterministicLayoutIssues = getDeterministicLayoutRebuildIssues(state);
+  if (deterministicLayoutIssues.length > 0) {
+    const rebuildCode = deterministicLayoutIssues.some(
+      ({ code }) => code === "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
+    )
+      ? "BROWSER_VIEWPORT_SCALE_TOO_SMALL"
+      : "BROWSER_VISUAL_DOMINATES_VIEWPORT";
+    await publish([
+      workerEvent(
+        dependencies.now,
+        page.id,
+        "html",
+        "html-engineer",
+        "agent_start",
+        `第 ${page.order} 页的固定画布构图未达标，开始从可信 DSL 重建紧凑 HTML。`,
+      ),
+    ]);
+    const compactHtmlState = await dependencies.runHtml(
+      {
+        content: requireValue(state.content, "page content"),
+        visualBrief: briefs.visualBrief,
+        assets: state.assets,
+        renderMode: "deterministic",
+        validationFeedback: {
+          code: rebuildCode,
+          issues: deterministicLayoutIssues
+            .map(({ message, repairHint }) => `${message} ${repairHint}`)
+            .slice(0, 12),
+        },
+      },
+      context.runtime,
+    );
+    const compactHtmlEvents = projectAgentEvents(
+      compactHtmlState.events,
+      page.id,
+      "html",
+      "html-engineer",
+      dependencies.now,
+    );
+    if (compactHtmlEvents.length > 0) await publish(compactHtmlEvents);
+    if (
+      compactHtmlState.status !== "completed" ||
+      !compactHtmlState.htmlOutput
+    ) {
+      await failStage(
+        "html",
+        "html-engineer",
+        compactHtmlState.error?.code === "AGENT_ABORTED"
+          ? "WORKFLOW_ABORTED"
+          : "HTML_DETERMINISTIC_FALLBACK_FAILED",
+        compactHtmlState.error?.message ??
+          "固定画布紧凑 HTML 重建失败。",
+        compactHtmlState.error?.code === "AGENT_ABORTED"
+          ? undefined
+          : toCourseGenerationCauseCode(
+              compactHtmlState.error?.code ??
+                "HTML_DETERMINISTIC_FALLBACK_FAILED",
+            ),
+      );
+      return result();
+    }
+
+    await publish(
+      [
+        workerEvent(
+          dependencies.now,
+          page.id,
+          "html",
+          "html-engineer",
+          "agent_done",
+          `第 ${page.order} 页已从可信 DSL 重建紧凑 HTML，开始重新 QA。`,
+        ),
+      ],
+      {
+        ...state,
+        htmlOutput: compactHtmlState.htmlOutput,
+        qualityReport: undefined,
+        repairHistory: [],
+        status: "running",
+        currentStage: "qa",
+        error: undefined,
+      },
+    );
+    const compactQaState = await dependencies.runQA(
+      {
+        page,
+        content: requireValue(state.content, "page content"),
+        html: compactHtmlState.htmlOutput.html,
+        visualBrief: briefs.visualBrief,
+        assets: state.assets,
+        courseContext: briefs.courseContext,
+      },
+      context.runtime,
+    );
+    const compactQaEvents = projectAgentEvents(
+      compactQaState.events,
+      page.id,
+      "qa",
+      "page-qa",
+      dependencies.now,
+    );
+    if (compactQaEvents.length > 0) await publish(compactQaEvents);
+    if (compactQaState.status !== "completed" || !compactQaState.report) {
+      await failStage(
+        "qa",
+        "page-qa",
+        compactQaState.error?.code === "AGENT_ABORTED"
+          ? "WORKFLOW_ABORTED"
+          : "PAGE_REQA_FAILED",
+        compactQaState.error?.message ??
+          "紧凑 HTML 重建后重新 QA 失败。",
+      );
+      return result();
+    }
+    await publish(
+      [
+        workerEvent(
+          dependencies.now,
+          page.id,
+          "qa",
+          "page-qa",
+          "validation",
+          `紧凑 HTML 已重新 QA：${compactQaState.report.overallScore} 分。`,
+        ),
+      ],
+      {
+        ...state,
+        htmlOutput: compactHtmlState.htmlOutput,
+        qualityReport: compactQaState.report,
+        status: "running",
+        currentStage: "qa",
+        error: undefined,
+      },
+    );
+  }
+
   const interruptedRepair = getRepairHistory(state).findIndex(
     ({ status }) => status === "running",
   );
@@ -370,7 +513,10 @@ export async function generatePageWorker(
     | { code: string; message: string }
     | undefined;
 
-  while (state.qualityReport?.shouldRepair) {
+  while (
+    state.qualityReport?.shouldRepair &&
+    !canPublishDeterministicPageWithWarnings(state)
+  ) {
     if (successfulRepairIterations >= maxRepairRoundsPerRun) return result();
 
     if (context.runtime.abortSignal?.aborted) {
@@ -710,6 +856,19 @@ export async function generatePageWorker(
     }
   }
 
+  if (canPublishDeterministicPageWithWarnings(state)) {
+    await publish([
+      workerEvent(
+        dependencies.now,
+        page.id,
+        "qa",
+        "page-qa",
+        "validation",
+        "确定性紧凑页面已通过内容与运行时底线；剩余视觉建议已记录，但不再阻断整课生成。",
+      ),
+    ]);
+  }
+
   await publish(
     [
       workerEvent(
@@ -775,9 +934,11 @@ export async function generatePageWorker(
       ]);
 
       let outcome: StageSuccess | StageFailure;
+      let originalError: unknown;
       try {
         outcome = await execute(previousFailure);
       } catch (error) {
+        originalError = error;
         outcome = {
           status: "failed",
           code:
@@ -821,6 +982,16 @@ export async function generatePageWorker(
       const attempts = attemptCount(state, stage);
       const retryable = isPageWorkerRetryableError(outcome.code);
       if (retryable && attempts < PAGE_WORKER_MAX_STAGE_ATTEMPTS) {
+        logPageWorkerError({
+          event: "stage:attempt_failed",
+          traceId: context.runtime.traceId,
+          pageId: page.id,
+          stage,
+          attempt: attempts,
+          code: outcome.code,
+          message: outcome.message,
+          error: originalError,
+        });
         state = PageGenerationStateSchema.parse({
           ...state,
           error: previousFailure,
@@ -848,6 +1019,7 @@ export async function generatePageWorker(
         retryable && attempts >= PAGE_WORKER_MAX_STAGE_ATTEMPTS
           ? toCourseGenerationCauseCode(outcome.code)
           : undefined,
+        originalError,
       );
       return false;
     }
@@ -867,6 +1039,7 @@ export async function generatePageWorker(
     code: string,
     message: string,
     causeCode?: CourseGenerationCauseCode,
+    originalError?: unknown,
   ) {
     state = PageGenerationStateSchema.parse({
       ...state,
@@ -874,6 +1047,21 @@ export async function generatePageWorker(
       currentStage: stage,
       error: { code, causeCode, message },
     });
+    if (code !== "WORKFLOW_ABORTED") {
+      logPageWorkerError({
+        event: "stage:failed",
+        traceId: context.runtime.traceId,
+        pageId: page.id,
+        stage,
+        attempt:
+          stage === "repair"
+            ? (state.repairHistory?.at(-1)?.round ?? 0)
+            : attemptCount(state, stage),
+        code,
+        message,
+        error: originalError,
+      });
+    }
     await publish([
       workerEvent(
         dependencies.now,
@@ -915,6 +1103,121 @@ export async function generatePageWorker(
       ),
     });
   }
+}
+
+function getDeterministicLayoutRebuildIssues(state: PageGenerationState) {
+  const html = state.htmlOutput?.html;
+  if (
+    state.status === "completed" ||
+    (html && isCurrentDeterministicRenderer(html)) ||
+    state.qualityReport?.shouldRepair !== true
+  ) {
+    return [];
+  }
+  return state.qualityReport.issues.filter(({ code }) =>
+    DETERMINISTIC_LAYOUT_REBUILD_CODES.has(code),
+  );
+}
+
+function isCurrentDeterministicRenderer(html: string) {
+  if (!html.includes('data-keya-renderer="deterministic"')) return false;
+
+  const version = html.match(
+    /\bdata-keya-renderer-version\s*=\s*["'](\d+)["']/i,
+  )?.[1];
+  return (
+    version !== undefined &&
+    Number.parseInt(version, 10) >= DETERMINISTIC_PAGE_RENDERER_VERSION
+  );
+}
+
+function canPublishDeterministicPageWithWarnings(
+  state: PageGenerationState,
+) {
+  const report = state.qualityReport;
+  if (
+    !report?.shouldRepair ||
+    !state.htmlOutput?.html.includes('data-keya-renderer="deterministic"')
+  ) {
+    return false;
+  }
+  return hasOnlyNonBlockingPresentationIssues(report);
+}
+
+function hasOnlyNonBlockingPresentationIssues(report: QualityReport) {
+  if (report.decision === "fail") return false;
+
+  const blockingDimensions = [
+    "contentAccuracy",
+    "courseCoherence",
+    "htmlRuntime",
+  ] as const;
+  const presentationFloors = {
+    layoutQuality: 76,
+    styleConsistency: 74,
+    assetUsability: 72,
+  } as const;
+  return (
+    blockingDimensions.every(
+      (dimension) =>
+        report.dimensions[dimension].score >=
+        PAGE_QUALITY_THRESHOLDS[dimension],
+    ) &&
+    Object.entries(presentationFloors).every(
+      ([dimension, floor]) =>
+        report.dimensions[dimension as keyof typeof presentationFloors].score >=
+        floor,
+    ) &&
+    !report.issues.some(
+      (issue) =>
+        issue.severity === "error",
+    )
+  );
+}
+
+function logPageWorkerError(input: {
+  event: "stage:attempt_failed" | "stage:failed";
+  traceId: string;
+  pageId: string;
+  stage: ActivePageStage;
+  attempt: number;
+  code: string;
+  message: string;
+  error?: unknown;
+}) {
+  const original = serializeError(input.error);
+  console.error("[page-worker]", {
+    event: input.event,
+    traceId: input.traceId,
+    pageId: input.pageId,
+    stage: input.stage,
+    attempt: input.attempt,
+    code: input.code,
+    message: input.message,
+    ...(original
+      ? {
+          errorName: original.name,
+          errorMessage: original.message,
+          errorStack: original.stack,
+        }
+      : {}),
+  });
+}
+
+function serializeError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+  if (error === undefined) return undefined;
+  return {
+    name: typeof error,
+    message: String(error),
+    stack: undefined,
+  };
 }
 
 function validateWorkerHandoff(

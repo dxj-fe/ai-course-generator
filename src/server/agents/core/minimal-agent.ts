@@ -1,5 +1,6 @@
 import {
   AiSchemaValidationError,
+  serializeErrorForLog,
   toAiErrorPayload,
 } from "@/server/ai/error";
 
@@ -14,11 +15,13 @@ import type {
 } from "./types";
 
 export type CreateMinimalAgentOptions<State extends AgentStateBase> = {
+  name?: string;
   isComplete(state: State): boolean;
   step: AgentStep<State>;
 };
 
 export function createMinimalAgent<State extends AgentStateBase>({
+  name = "minimal-agent",
   isComplete,
   step,
 }: CreateMinimalAgentOptions<State>): Agent<State> {
@@ -80,6 +83,15 @@ export function createMinimalAgent<State extends AgentStateBase>({
         const stateError = toAgentStateError(error, context.traceId);
         const failedStep =
           state.step >= state.maxSteps ? state.step : state.step + 1;
+        console.error("[agent]", {
+          event: "agent:error",
+          agent: name,
+          traceId: context.traceId,
+          step: failedStep,
+          errorCode: stateError.code,
+          publicErrorMessage: stateError.message.slice(0, 4_000),
+          ...serializeErrorForLog(error),
+        });
 
         return appendEvents(
           {

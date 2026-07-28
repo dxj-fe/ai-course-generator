@@ -34,9 +34,19 @@ const PageWriterBlockDraftSchema = z.object({
   kind: PageContentBlockKindSchema,
   label: z.string().min(1).max(80).optional(),
   heading: z.string().min(1).max(120),
-  body: z.string().min(2).max(800),
-  supportingPoints: z.array(z.string().min(2).max(240)).max(8),
+  body: z.string().trim().min(12).max(800),
+  supportingPoints: z.array(z.string().trim().min(4).max(240)).max(8),
 });
+
+const PageWriterInteractionItemDraftSchema = z.union([
+  z.object({
+    label: z.string().trim().min(1).max(160),
+    content: z.string().trim().min(4).max(500),
+  }),
+  // 兼容把简单对象压成标签字符串的 Provider；适配层只会用同页 block
+  // 的完整正文补足解释，无法匹配时仍由内容校验拒绝。
+  z.string().trim().min(1).max(160),
+]);
 
 const PageWriterChoiceQuestionDraftSchema = z.object({
   prompt: z.string().min(2).max(500),
@@ -50,8 +60,8 @@ const PageWriterChoiceQuestionDraftSchema = z.object({
 const PageWriterInteractionDraftSchema = z.object({
   type: PageInteractionTypeSchema,
   prompt: z.string().max(500),
-  items: z.array(z.string().min(1).max(500)).max(8),
-  questions: z.array(PageWriterChoiceQuestionDraftSchema).max(8),
+  items: z.array(PageWriterInteractionItemDraftSchema).max(8),
+  questions: z.array(PageWriterChoiceQuestionDraftSchema).max(1),
   feedbackSuccess: z.array(z.string().min(2).max(300)).max(8),
   feedbackRetry: z.array(z.string().min(2).max(300)).max(8),
   maxAttempts: z.number().int().min(1).max(5),
@@ -63,7 +73,7 @@ const PageWriterInteractionDraftSchema = z.object({
 });
 
 const PageWriterModelOutputSchema = z.object({
-  narration: z.array(z.string().min(2).max(500)).max(3),
+  narration: z.array(z.string().trim().min(12).max(500)).max(3),
   // 兼容部分模型把简单对象数组压缩为字符串数组；领域 Schema 仍保持严格。
   blocks: z.array(z.unknown()).max(12),
   interaction: PageWriterInteractionDraftSchema,
@@ -73,6 +83,22 @@ const PageWriterModelOutputSchema = z.object({
   groupingStrategy: z.string().min(2).max(240),
   usedReferences: z.array(ReferenceUsageSchema).max(12).default([]),
 });
+
+const STORY_INTRO_VISUAL_CHOICE_LIMITS = {
+  narration: 1,
+  blocks: 2,
+  supportingPoints: 2,
+  options: 3,
+  textWidth: 260,
+} as const;
+
+const ACHIEVEMENT_VISUAL_INPUT_LIMITS = {
+  narration: 1,
+  blocks: 2,
+  supportingPoints: 2,
+  evaluationCriteria: 2,
+  textWidth: 260,
+} as const;
 
 export const PageWriterValidationFeedbackSchema = z
   .object({
@@ -114,6 +140,7 @@ export function createPageWriterAgent(
   dependencies: PageWriterAgentDependencies = defaultDependencies,
 ): Agent<PageWriterAgentState> {
   return createMinimalAgent({
+    name: "page-writer-agent",
     isComplete: (state) => Boolean(state.content),
     step: async (state, context, emit) => {
       const content = validatePageWriterOutput(
@@ -212,6 +239,19 @@ export function validatePageWriterOutput(
       `DSL interaction.type ${dsl.interaction.type} 与 PagePlan ${input.page.interactionType} 不一致`,
     );
   }
+  if (
+    dsl.interaction.type === "choice" &&
+    dsl.interaction.questions.length !== 1
+  ) {
+    issues.push(
+      "固定课程画布中的 choice 页面必须且只能包含 1 道完整题目",
+    );
+  }
+  if (input.page.pageType === "quiz" && dsl.blocks.length !== 1) {
+    issues.push(
+      "固定课程画布中的 quiz 页面必须且只能包含 1 个题目内容块",
+    );
+  }
 
   issues.push(
     ...validateReferenceUsages(
@@ -255,6 +295,8 @@ export function validatePageWriterOutput(
   if (template) {
     issues.push(...validateTemplateSlots(dsl, template));
   }
+  issues.push(...validateContentSubstance(dsl));
+  issues.push(...validateFixedCanvasCapacity(dsl, input));
 
   if (issues.length > 0) {
     throw new AiSchemaValidationError(
@@ -313,7 +355,10 @@ async function generateContent(
     );
   }
 
-  const interaction = materializePageWriterInteraction(draft.interaction);
+  const interaction = materializePageWriterInteraction(
+    draft.interaction,
+    blocks,
+  );
   return validatePageWriterOutput(
     {
       version: 2,
@@ -472,19 +517,31 @@ function interactionTargetIds(interaction: PageContentInteraction) {
   }
 }
 
-/** 只收敛 choice 不使用的 items 占位字段，其余内容交给严格 Schema。 */
+function normalizeInteractionFeedback(value: unknown): unknown {
+  return typeof value === "string" ? [value] : value;
+}
+
+/**
+ * 收敛 Provider 已知的无损结构压缩：
+ * - 单条互动反馈字符串还原为单元素数组；
+ * - choice 不使用的 items 占位字段固定为空数组。
+ * 其余未知形状保持原样，继续交给严格 Schema 拒绝。
+ */
 export function normalizePageWriterModelOutput(output: unknown): unknown {
   if (!isRecord(output) || !isRecord(output.interaction)) return output;
 
   const interaction = output.interaction;
-  if (interaction.type !== "choice") return output;
 
   return {
     ...output,
     interaction: {
       ...interaction,
+      feedbackSuccess: normalizeInteractionFeedback(
+        interaction.feedbackSuccess,
+      ),
+      feedbackRetry: normalizeInteractionFeedback(interaction.feedbackRetry),
       // choice 不使用 items；部分 Provider 会把空数组错误压缩成 0。
-      items: [],
+      ...(interaction.type === "choice" ? { items: [] } : {}),
     },
   };
 }
@@ -571,7 +628,7 @@ function normalizeBlocks(items: unknown[]) {
       return { id, ...parsed.data };
     }
 
-    if (typeof item === "string" && item.trim().length >= 2) {
+    if (typeof item === "string" && semanticTextLength(item) >= 24) {
       return {
         id,
         kind: "fact" as const,
@@ -590,6 +647,7 @@ function normalizeBlocks(items: unknown[]) {
 /** 根据 interaction.type 投影必要字段，丢弃兼容草稿中的占位字段。 */
 export function materializePageWriterInteraction(
   draft: z.infer<typeof PageWriterInteractionDraftSchema>,
+  blocks: PageContentBlock[] = [],
 ): PageContentInteraction {
   const prompt = usable(draft.prompt, "请完成本页互动。");
   const feedback = {
@@ -610,7 +668,7 @@ export function materializePageWriterInteraction(
       return {
         type: "reveal",
         prompt,
-        items: materializeInteractionItems(draft.items),
+        items: materializeInteractionItems(draft.items, blocks),
       };
     case "choice": {
       return {
@@ -619,7 +677,7 @@ export function materializePageWriterInteraction(
       };
     }
     case "sort": {
-      const items = materializeInteractionItems(draft.items);
+      const items = materializeInteractionItems(draft.items, blocks);
 
       return {
         type: "sort",
@@ -641,26 +699,318 @@ export function materializePageWriterInteraction(
       return {
         type: "explore",
         prompt,
-        items: materializeInteractionItems(draft.items),
+        items: materializeInteractionItems(draft.items, blocks),
       };
   }
 }
 
-/** 把模型返回的简洁文字列表转换为可被 QA 定位的互动项。 */
-export function materializeInteractionItems(items: string[]) {
-  return items.map((content, index) => {
-    const normalized = content.trim();
-    const label =
-      normalized.length <= 80
-        ? normalized
-        : `${normalized.slice(0, 79).trimEnd()}…`;
+/** 把模型的标签与解释补齐为可被 QA 定位的互动项。 */
+export function materializeInteractionItems(
+  items: Array<z.infer<typeof PageWriterInteractionItemDraftSchema>>,
+  blocks: PageContentBlock[] = [],
+) {
+  return items.map((item, index) => {
+    const label = typeof item === "string" ? item.trim() : item.label.trim();
+    const matchingBlock = blocks.find(
+      (block) =>
+        normalizeComparableText(block.heading) ===
+          normalizeComparableText(label) ||
+        (block.label &&
+          normalizeComparableText(block.label) ===
+            normalizeComparableText(label)),
+    );
+    const content =
+      typeof item === "string"
+        ? (matchingBlock?.body ?? label)
+        : item.content.trim();
 
     return {
       id: `item-${String(index + 1).padStart(2, "0")}`,
       label,
-      content: normalized,
+      content,
     };
   });
+}
+
+/**
+ * 阻止结构合法但教学信息几乎为空的页面进入 HTML 阶段。
+ * 这里只检查可确定识别的低质量模式，事实正确性仍交给 QA。
+ */
+function validateContentSubstance(dsl: PageContentDSL) {
+  const issues: string[] = [];
+
+  dsl.narration.forEach((line, index) => {
+    if (semanticTextLength(line) < 10) {
+      issues.push(`narration.${index} 过短，必须说明本页任务或认知推进`);
+    }
+  });
+
+  dsl.blocks.forEach((block, index) => {
+    const minimumLength = ["instruction", "question"].includes(block.kind)
+      ? 8
+      : 12;
+
+    if (semanticTextLength(block.body) < minimumLength) {
+      issues.push(
+        `blocks.${index}.body 信息不足，必须使用完整解释而不是词组`,
+      );
+    }
+    if (
+      normalizeComparableText(block.body) ===
+      normalizeComparableText(block.heading)
+    ) {
+      issues.push(`blocks.${index}.body 不能只重复 heading`);
+    }
+  });
+
+  if (dsl.interaction.type === "reveal" || dsl.interaction.type === "explore") {
+    dsl.interaction.items.forEach((item, index) => {
+      if (
+        normalizeComparableText(item.content) ===
+        normalizeComparableText(item.label)
+      ) {
+        issues.push(
+          `interaction.items.${index}.content 必须解释标签，不能只重复 label`,
+        );
+      }
+    });
+  }
+
+  for (const [path, message] of interactionFeedback(dsl.interaction)) {
+    if (semanticTextLength(message) < 8 || isGenericFeedback(message)) {
+      issues.push(feedbackSubstanceIssue(dsl.interaction, path));
+    }
+  }
+
+  return issues;
+}
+
+function feedbackSubstanceIssue(
+  interaction: PageContentInteraction,
+  path: string,
+) {
+  if (interaction.type === "input") {
+    const criteria = interaction.evaluationCriteria
+      .map((criterion) => `“${criterion}”`)
+      .join("、");
+    return path.endsWith(".success")
+      ? `${path} 必须点名已满足的 evaluationCriteria，并说明回答中用于判断的可观察内容；当前评价标准：${criteria}`
+      : `${path} 必须点名尚未满足的 evaluationCriteria，并说明应补充的事实、证据、步骤或理由；当前评价标准：${criteria}`;
+  }
+
+  if (interaction.type === "sort") {
+    return path.endsWith(".success")
+      ? `${path} 必须说明该顺序成立的先后关系依据`
+      : `${path} 必须指出需要重新检查的具体先后关系`;
+  }
+
+  return path.endsWith(".success")
+    ? `${path} 必须把正确答案连接到本页的具体判断依据`
+    : `${path} 必须给出重新判断所需的具体观察线索或改进方法`;
+}
+
+/**
+ * 最窄课程画布需要同时容纳必需插图、正文与真实互动。若把故事或成就任务
+ * 的每个槽位都填到 FunctionalTemplate 上限，即使结构合法也只能缩小、
+ * 滚动或隐藏正文。
+ */
+export function exceedsFixedCanvasCapacity(dsl: PageContentDSL) {
+  if (!dsl.assetSlots.some((slot) => slot.required)) return false;
+
+  const supportingPointCount = dsl.blocks.reduce(
+    (total, block) => total + block.supportingPoints.length,
+    0,
+  );
+  const textWidth = estimateFixedCanvasVisibleTextWidth(dsl);
+
+  if (
+    dsl.functionalTemplateId === "story-intro" &&
+    dsl.interaction.type === "choice"
+  ) {
+    const question = dsl.interaction.questions[0];
+    return (
+      dsl.narration.length > STORY_INTRO_VISUAL_CHOICE_LIMITS.narration ||
+      dsl.blocks.length > STORY_INTRO_VISUAL_CHOICE_LIMITS.blocks ||
+      supportingPointCount >
+        STORY_INTRO_VISUAL_CHOICE_LIMITS.supportingPoints ||
+      (question?.options.length ?? 0) >
+        STORY_INTRO_VISUAL_CHOICE_LIMITS.options ||
+      textWidth > STORY_INTRO_VISUAL_CHOICE_LIMITS.textWidth
+    );
+  }
+
+  if (
+    dsl.functionalTemplateId === "achievement-task" &&
+    dsl.interaction.type === "input"
+  ) {
+    return (
+      dsl.narration.length > ACHIEVEMENT_VISUAL_INPUT_LIMITS.narration ||
+      dsl.blocks.length > ACHIEVEMENT_VISUAL_INPUT_LIMITS.blocks ||
+      supportingPointCount >
+        ACHIEVEMENT_VISUAL_INPUT_LIMITS.supportingPoints ||
+      dsl.interaction.evaluationCriteria.length >
+        ACHIEVEMENT_VISUAL_INPUT_LIMITS.evaluationCriteria ||
+      textWidth > ACHIEVEMENT_VISUAL_INPUT_LIMITS.textWidth
+    );
+  }
+
+  return false;
+}
+
+function validateFixedCanvasCapacity(
+  dsl: PageContentDSL,
+  input: PageWriterInput,
+) {
+  if (!exceedsFixedCanvasCapacity(dsl)) return [];
+
+  const supportingPointCount = dsl.blocks.reduce(
+    (total, block) => total + block.supportingPoints.length,
+    0,
+  );
+  const textWidth = estimateFixedCanvasVisibleTextWidth(dsl);
+
+  if (
+    input.page.pageType === "achievement" &&
+    dsl.functionalTemplateId === "achievement-task" &&
+    dsl.interaction.type === "input"
+  ) {
+    return [
+      `固定画布容量超限：achievement 同时包含必需插图和 input 时，最多 ${ACHIEVEMENT_VISUAL_INPUT_LIMITS.narration} 句 narration、${ACHIEVEMENT_VISUAL_INPUT_LIMITS.blocks} 个 blocks、合计 ${ACHIEVEMENT_VISUAL_INPUT_LIMITS.supportingPoints} 条 supportingPoints、${ACHIEVEMENT_VISUAL_INPUT_LIMITS.evaluationCriteria} 条 evaluationCriteria 且可见文本约 ${ACHIEVEMENT_VISUAL_INPUT_LIMITS.textWidth} 个汉字宽度；当前分别为 ${dsl.narration.length}、${dsl.blocks.length}、${supportingPointCount}、${dsl.interaction.evaluationCriteria.length}、${textWidth}。请把步骤与依据合并为最少充分的两块内容，保留一个明确提交条件并压缩文字，不能隐藏正文。`,
+    ];
+  }
+
+  const question =
+    dsl.interaction.type === "choice"
+      ? dsl.interaction.questions[0]
+      : undefined;
+
+  return [
+    `固定画布容量超限：story_intro 同时包含必需插图和 choice 时，最多 ${STORY_INTRO_VISUAL_CHOICE_LIMITS.narration} 句 narration、${STORY_INTRO_VISUAL_CHOICE_LIMITS.blocks} 个 blocks、合计 ${STORY_INTRO_VISUAL_CHOICE_LIMITS.supportingPoints} 条 supportingPoints、${STORY_INTRO_VISUAL_CHOICE_LIMITS.options} 个选项且可见文本约 ${STORY_INTRO_VISUAL_CHOICE_LIMITS.textWidth} 个汉字宽度；当前分别为 ${dsl.narration.length}、${dsl.blocks.length}、${supportingPointCount}、${question?.options.length ?? 0}、${textWidth}。请保留一个核心情境与一项判断依据并压缩文字，不能隐藏正文。`,
+  ];
+}
+
+function estimateFixedCanvasVisibleTextWidth(dsl: PageContentDSL) {
+  const visibleText = [
+    dsl.title,
+    ...dsl.narration,
+    ...dsl.blocks.flatMap((block) => [
+      block.label ?? "",
+      block.heading,
+      block.body,
+      ...block.supportingPoints,
+    ]),
+    ...fixedCanvasInteractionText(dsl.interaction),
+  ];
+
+  return Math.ceil(
+    visibleText.reduce(
+      (total, value) => total + estimateReadableTextWidth(value),
+      0,
+    ),
+  );
+}
+
+function fixedCanvasInteractionText(
+  interaction: PageContentInteraction,
+): string[] {
+  if (interaction.type === "choice") {
+    const question = interaction.questions[0];
+    return [
+      question?.prompt ?? "",
+      ...(question?.options.map((option) => option.label) ?? []),
+      question
+        ? longestReadableText([
+            question.feedback.success,
+            question.feedback.retry,
+          ])
+        : "",
+    ];
+  }
+
+  if (interaction.type === "input") {
+    return [
+      interaction.prompt,
+      interaction.placeholder,
+      ...interaction.evaluationCriteria,
+      longestReadableText([
+        interaction.feedback.success,
+        interaction.feedback.retry,
+      ]),
+    ];
+  }
+
+  return [];
+}
+
+function longestReadableText(values: string[]) {
+  return (
+    values.sort(
+      (left, right) =>
+        estimateReadableTextWidth(right) -
+        estimateReadableTextWidth(left),
+    )[0] ?? ""
+  );
+}
+
+function estimateReadableTextWidth(value: string) {
+  let width = 0;
+
+  for (const character of value.normalize("NFKC")) {
+    if (/[\p{Script=Han}\u3040-\u30ff\uac00-\ud7af]/u.test(character)) {
+      width += 1;
+    } else if (/[\p{L}\p{N}]/u.test(character)) {
+      width += 0.5;
+    } else if (/\s/u.test(character)) {
+      width += 0.15;
+    } else {
+      width += 0.25;
+    }
+  }
+
+  return width;
+}
+
+function interactionFeedback(
+  interaction: PageContentInteraction,
+): Array<[path: string, message: string]> {
+  switch (interaction.type) {
+    case "choice":
+      return interaction.questions.flatMap((question, index) => [
+        [
+          `interaction.questions.${index}.feedback.success`,
+          question.feedback.success,
+        ],
+        [
+          `interaction.questions.${index}.feedback.retry`,
+          question.feedback.retry,
+        ],
+      ]);
+    case "sort":
+    case "input":
+      return [
+        ["interaction.feedback.success", interaction.feedback.success],
+        ["interaction.feedback.retry", interaction.feedback.retry],
+      ];
+    default:
+      return [];
+  }
+}
+
+function semanticTextLength(value: string) {
+  return value.replace(/[\s\p{P}\p{S}]/gu, "").length;
+}
+
+function normalizeComparableText(value: string) {
+  return value
+    .normalize("NFKC")
+    .replace(/[\s\p{P}\p{S}]/gu, "")
+    .toLocaleLowerCase();
+}
+
+function isGenericFeedback(value: string) {
+  return /^(?:(?:回答|作答)?(?:正确|错误)|完成得很好|太棒了|很好|再试一次|请重试|请再试一次)[哦呀吧啊]*$/u.test(
+    normalizeComparableText(value),
+  );
 }
 
 /** 为模型返回的选择题语义草稿补齐稳定 question/option ID。 */

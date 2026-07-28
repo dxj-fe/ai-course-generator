@@ -111,7 +111,41 @@ function getErrorMessage(error: unknown, fallback: string) {
     return "请求已取消。";
   }
 
+  logClientError("request:error", error, { fallback });
   return error instanceof Error ? error.message : fallback;
+}
+
+function logClientError(
+  event: string,
+  error: unknown,
+  context: Record<string, unknown> = {},
+) {
+  console.error("[keya-client]", {
+    event,
+    ...context,
+    errorName: error instanceof Error ? error.name : typeof error,
+    errorMessage: error instanceof Error ? error.message : String(error),
+    errorStack: error instanceof Error ? error.stack : undefined,
+  });
+}
+
+function logRemoteCoursePageFailure(
+  error: {
+    code: string;
+    causeCode?: string;
+    message: string;
+  },
+  context: Record<string, unknown>,
+) {
+  console.error("[keya-client]", {
+    event: "course-page:failed",
+    ...context,
+    errorOrigin: "course-generation-state",
+    errorName: "RemoteCoursePageError",
+    errorMessage: error.message,
+    errorCode: error.code,
+    causeCode: error.causeCode,
+  });
 }
 
 function updateConversation(
@@ -208,7 +242,7 @@ function CourseTaskStreamBridge({
   onTerminal,
 }: {
   task: ActiveCourseTask;
-  onError(task: ActiveCourseTask): void;
+  onError(task: ActiveCourseTask, error: Error): void;
   onProgress(
     task: ActiveCourseTask,
     state: CourseGenerationState,
@@ -243,10 +277,11 @@ function CourseTaskStreamBridge({
     onTerminal: ({ state }) => {
       callbacksRef.current.onTerminal(task, state);
     },
-    onError: () => {
-      callbacksRef.current.onError(task);
+    onError: (error) => {
+      callbacksRef.current.onError(task, error);
     },
   });
+  const loggedFailureSignaturesRef = useRef(new Set<string>());
   const latestMessage = messages.at(-1);
   const resolvedTaskStatus =
     latestMessage?.type === "snapshot"
@@ -263,6 +298,32 @@ function CourseTaskStreamBridge({
     resolvedTaskStatus,
     task,
   ]);
+
+  useEffect(() => {
+    if (!latestState) return;
+
+    for (const page of latestState.pages) {
+      if (page.status !== "failed" || !page.error) continue;
+      const signature = [
+        latestState.traceId,
+        page.pageId,
+        page.currentStage,
+        page.error.code,
+        page.error.causeCode ?? "",
+        page.error.message,
+      ].join(":");
+      if (loggedFailureSignaturesRef.current.has(signature)) continue;
+      loggedFailureSignaturesRef.current.add(signature);
+      logRemoteCoursePageFailure(page.error, {
+        conversationId: task.conversationId,
+        taskId: task.taskId,
+        courseId: latestState.courseId,
+        traceId: latestState.traceId,
+        pageId: page.pageId,
+        stage: page.currentStage,
+      });
+    }
+  }, [latestState, task]);
 
   useEffect(() => {
     if (latestState?.traceId === task.traceId) {
@@ -426,8 +487,16 @@ export function ChatApp({
     });
   };
 
-  const handleCourseTaskStreamError = (task: ActiveCourseTask) => {
+  const handleCourseTaskStreamError = (
+    task: ActiveCourseTask,
+    error: Error,
+  ) => {
     if (!isCurrentCourseTask(task)) return;
+    logClientError("course-stream:error", error, {
+      conversationId: task.conversationId,
+      taskId: task.taskId,
+      traceId: task.traceId,
+    });
 
     setConversations((current) =>
       updateConversation(current, task.conversationId, (conversation) => ({
@@ -654,7 +723,12 @@ export function ChatApp({
           taskStatus: response.status,
         },
       }));
-    } catch {
+    } catch (error) {
+      logClientError("course-task:pause-error", error, {
+        conversationId,
+        taskId: task.taskId,
+        traceId: task.traceId,
+      });
       const publicMessage = "课程任务暂时无法暂停，请稍后再试。";
       setConversations((current) =>
         updateConversation(current, conversationId, (conversation) => ({
@@ -737,7 +811,12 @@ export function ChatApp({
         },
       }));
       resumed = true;
-    } catch {
+    } catch (error) {
+      logClientError("course-task:resume-error", error, {
+        conversationId,
+        taskId: task.taskId,
+        traceId: task.traceId,
+      });
       const publicMessage = "课程任务暂时无法继续，请稍后再试。";
       setConversations((current) =>
         updateConversation(current, conversationId, (conversation) => ({
@@ -797,7 +876,10 @@ export function ChatApp({
       { pinned },
       controller.signal,
     )
-      .catch(() => {
+      .catch((error) => {
+        logClientError("conversation:pin-error", error, {
+          conversationId,
+        });
         setConversations((current) =>
           updateConversation(current, conversationId, (conversation) => ({
             ...conversation,
@@ -836,7 +918,10 @@ export function ChatApp({
       { title: normalizedTitle },
       controller.signal,
     )
-      .catch(() => {
+      .catch((error) => {
+        logClientError("conversation:rename-error", error, {
+          conversationId,
+        });
         setConversations((current) =>
           updateConversation(current, conversationId, (conversation) => ({
             ...conversation,
@@ -927,7 +1012,10 @@ export function ChatApp({
           ),
         );
       }
-    } catch {
+    } catch (error) {
+      logClientError("conversation:delete-error", error, {
+        conversationId,
+      });
       window.alert("对话删除失败，请稍后再试。");
     } finally {
       releaseController(conversationId, controller);
@@ -1342,7 +1430,12 @@ export function ChatApp({
           task.status,
         ),
       );
-    } catch {
+    } catch (error) {
+      logClientError("course-task:retry-error", error, {
+        conversationId,
+        courseId: run.courseId,
+        traceId: run.traceId,
+      });
       const publicMessage =
         "没有成功重新开始课程生成，请检查网络或模型服务配置后再试。";
       setConversations((current) =>

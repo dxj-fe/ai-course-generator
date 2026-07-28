@@ -1,9 +1,10 @@
 import { readFile } from "node:fs/promises";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   capturePageScreenshot,
+  countAuthoredTouchTargets,
   normalizeViewportFitMetrics,
   resolveDominantVisualMetrics,
 } from "../../../../src/server/quality/playwright-screenshot";
@@ -23,8 +24,17 @@ const cleanMetrics = {
 };
 
 describe("Playwright screenshot QA evidence", () => {
+  let consoleError: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.restoreAllMocks();
   });
 
   it("captures metrics, stores the PNG, and derives browser issues", async () => {
@@ -82,6 +92,11 @@ describe("Playwright screenshot QA evidence", () => {
         ({ location }) => location.viewport === "922x460",
       ),
     ).toBe(true);
+    expect(
+      result.issues.find(
+        ({ code }) => code === "BROWSER_TOUCH_TARGET_UNDER_44",
+      )?.severity,
+    ).toBe("info");
     await expect(readFile(result.serverPath!)).resolves.toEqual(
       Buffer.from([137, 80, 78, 71]),
     );
@@ -178,6 +193,53 @@ describe("Playwright screenshot QA evidence", () => {
     ).toBe(fitted);
   });
 
+  it("flags a page that only fits after unreadable whole-canvas scaling", async () => {
+    const result = await capturePageScreenshot(
+      { pageId: "page-overdense", html },
+      {
+        enabled: true,
+        rootDir: "/tmp/ai-course-generator-scale-screenshots",
+        captureBrowser: vi.fn().mockImplementation(async ({ viewport }) => ({
+          png: new Uint8Array([137, 80, 78, 71]),
+          metrics: {
+            ...cleanMetrics,
+            documentWidth: viewport.width,
+            documentHeight: viewport.height,
+            viewportFitScale: viewport.width === 922 ? 0.72 : 1,
+          },
+        })),
+      },
+    );
+
+    expect(result.issues).toMatchObject([
+      {
+        code: "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
+        dimension: "layoutQuality",
+        severity: "error",
+        location: {
+          viewport: "922x460",
+          selector: "main[data-page-id]",
+        },
+      },
+    ]);
+    expect(result.evidence.metrics?.viewportFitScale).toBe(0.72);
+  });
+
+  it("evaluates touch targets in authored CSS pixels before contain-fit scaling", () => {
+    expect(
+      countAuthoredTouchTargets(
+        [
+          { width: 22, height: 22 },
+          { width: 20, height: 20 },
+        ],
+        0.5,
+      ),
+    ).toEqual({
+      touchTargetUnder24Count: 0,
+      touchTargetUnder44Count: 1,
+    });
+  });
+
   it("runs by default and only skips when the environment explicitly disables it", async () => {
     const captureBrowser = vi.fn().mockResolvedValue({
       png: new Uint8Array([137, 80, 78, 71]),
@@ -205,7 +267,12 @@ describe("Playwright screenshot QA evidence", () => {
 
   it("keeps successful viewport evidence when another viewport fails", async () => {
     const result = await capturePageScreenshot(
-      { pageId: "page-partial", html },
+      {
+        pageId: "page-partial",
+        html,
+        traceId: "trace-screenshot-partial",
+        attempt: 2,
+      },
       {
         enabled: true,
         rootDir: "/tmp/ai-course-generator-partial-screenshots",
@@ -238,6 +305,65 @@ describe("Playwright screenshot QA evidence", () => {
         location: { viewport: "366x500" },
       },
     ]);
+    expect(consoleError).toHaveBeenCalledWith(
+      "[page-qa-browser]",
+      expect.objectContaining({
+        event: "screenshot:error",
+        traceId: "trace-screenshot-partial",
+        pageId: "page-partial",
+        stage: "qa",
+        attempt: 2,
+        phase: "capture",
+        code: "SCREENSHOT_CAPTURE_FAILED",
+        message: "tablet rendering failed",
+        viewport: "712x650",
+        errorName: "Error",
+        errorMessage: "tablet rendering failed",
+        errorStack: expect.stringContaining("tablet rendering failed"),
+      }),
+    );
+    const captureLog = consoleError.mock.calls.at(-1)?.[1];
+    expect(captureLog).not.toHaveProperty("html");
+    expect(captureLog).not.toHaveProperty("prompt");
+  });
+
+  it("logs screenshot storage preparation failures with diagnostic context", async () => {
+    const result = await capturePageScreenshot(
+      {
+        pageId: "page-storage-failure",
+        html,
+        traceId: "trace-storage-failure",
+        attempt: 3,
+      },
+      {
+        enabled: true,
+        rootDir: "/dev/null/keya-screenshots",
+        captureBrowser: vi.fn().mockImplementation(async ({ viewport }) => ({
+          png: new Uint8Array([137, 80, 78, 71]),
+          metrics: {
+            ...cleanMetrics,
+            documentWidth: viewport.width,
+            documentHeight: viewport.height,
+          },
+        })),
+      },
+    );
+
+    expect(result.evidence.status).toBe("failed");
+    expect(consoleError).toHaveBeenCalledWith(
+      "[page-qa-browser]",
+      expect.objectContaining({
+        event: "screenshot:error",
+        traceId: "trace-storage-failure",
+        pageId: "page-storage-failure",
+        stage: "qa",
+        attempt: 3,
+        phase: "storage:mkdir",
+        code: "SCREENSHOT_STORAGE_PREPARE_FAILED",
+        errorName: "Error",
+        errorStack: expect.any(String),
+      }),
+    );
   });
 
   it("records timeout and unavailable browser states without throwing", async () => {
@@ -315,6 +441,60 @@ describe("Playwright screenshot QA evidence", () => {
         ({ code }) => code === "BROWSER_CANVAS_NOT_FILLED",
       )?.location.selector,
     ).toBe("main[data-page-id]");
+  });
+
+  it("rejects a required course illustration rendered as a tiny decoration", async () => {
+    const content = {
+      ...pageContentDsl,
+      assetSlots: [
+        {
+          id: "asset-slot-01" as const,
+          type: "illustration" as const,
+          role: "inline" as const,
+          purpose: "解释本页核心情节",
+          required: true,
+          altTextGuidance: "本页核心情节插图",
+        },
+      ],
+    };
+    const result = await capturePageScreenshot(
+      {
+        pageId: content.pageId,
+        html: buildValidGeneratedHtml(content),
+        content,
+      },
+      {
+        enabled: true,
+        rootDir: "/tmp/ai-course-generator-tiny-visual-screenshots",
+        captureBrowser: vi.fn().mockImplementation(async ({ viewport }) => ({
+          png: new Uint8Array([137, 80, 78, 71]),
+          metrics: {
+            ...cleanMetrics,
+            documentWidth: viewport.width,
+            documentHeight: viewport.height,
+            largestVisualAreaRatio: 0.04,
+            largestVisualSelector: '[data-asset-slot-id="asset-slot-01"]',
+          },
+        })),
+      },
+    );
+
+    const tinyVisualIssues = result.issues.filter(
+      ({ code }) => code === "BROWSER_VISUAL_TOO_SMALL",
+    );
+    expect(tinyVisualIssues).toHaveLength(3);
+    expect(tinyVisualIssues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: "error",
+          dimension: "assetUsability",
+          location: expect.objectContaining({
+            selector: '[data-asset-slot-id="asset-slot-01"]',
+            viewport: "922x460",
+          }),
+        }),
+      ]),
+    );
   });
 
   it("discounts low-opacity and negative-layer decorative backgrounds", () => {

@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 
 import { pageContentDsl } from "../../fixtures/course-design";
 import { buildValidGeneratedHtml } from "../../fixtures/generated-html";
-import { HtmlPreviewFrame } from "../../../src/features/keya/html-preview-frame";
+import {
+  HtmlPreviewFrame,
+  routeLessonRuntimeMessage,
+} from "../../../src/features/keya/html-preview-frame";
 
 describe("HtmlPreviewFrame", () => {
   it("renders valid HTML only inside a no-permissions sandbox", () => {
@@ -62,5 +65,73 @@ describe("HtmlPreviewFrame", () => {
     expect(markup).toContain('sandbox="allow-scripts"');
     expect(markup).toContain("keya-trusted-runtime");
     expect(markup).not.toContain("allow-same-origin");
+  });
+
+  it("ignores delayed messages from the previous lesson document", () => {
+    const source = {} as MessageEventSource;
+    const otherSource = {} as MessageEventSource;
+    const runtimeConfig = {
+      pageId: "page-06-achievement",
+      interaction: pageContentDsl.interaction,
+      runtime: {
+        runtimeVersion: 1 as const,
+        sceneKind: "demo" as const,
+        visualPrimitive: "concept-map" as const,
+        motionPlan: { intensity: "subtle" as const, cuePoints: [] },
+        completionRule: { type: "view" as const },
+      },
+    };
+    const currentEvent = {
+      channel: "keya.lesson-runtime",
+      type: "section-ready",
+      pageId: runtimeConfig.pageId,
+      runtimeVersion: 1,
+    };
+
+    expect(
+      routeLessonRuntimeMessage(
+        { data: currentEvent, source: otherSource },
+        source,
+        runtimeConfig,
+      ),
+    ).toEqual({ kind: "ignored", reason: "foreign-source" });
+    expect(
+      routeLessonRuntimeMessage(
+        {
+          data: { ...currentEvent, pageId: "page-01-cover" },
+          source,
+        },
+        source,
+        runtimeConfig,
+      ),
+    ).toEqual({ kind: "ignored", reason: "stale-runtime" });
+    expect(
+      routeLessonRuntimeMessage(
+        { data: currentEvent, source },
+        source,
+        runtimeConfig,
+      ),
+    ).toMatchObject({ event: currentEvent, kind: "accepted" });
+  });
+
+  it("keeps malformed messages visible as protocol errors", () => {
+    const source = {} as MessageEventSource;
+    const result = routeLessonRuntimeMessage(
+      { data: { channel: "unexpected" }, source },
+      source,
+      {
+        pageId: pageContentDsl.pageId,
+        interaction: pageContentDsl.interaction,
+        runtime: {
+          runtimeVersion: 1,
+          sceneKind: "demo",
+          visualPrimitive: "concept-map",
+          motionPlan: { intensity: "subtle", cuePoints: [] },
+          completionRule: { type: "view" },
+        },
+      },
+    );
+
+    expect(result.kind).toBe("invalid");
   });
 });

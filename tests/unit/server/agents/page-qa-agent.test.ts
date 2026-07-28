@@ -186,6 +186,125 @@ describe("PageQAAgent", () => {
     );
   });
 
+  it("normalizes the model's plural viewports alias without failing QA", async () => {
+    const state = await createTestPageQAAgent({
+      evaluate: vi.fn().mockResolvedValue({
+        ...modelOutput,
+        dimensions: {
+          ...modelOutput.dimensions,
+          layoutQuality: {
+            score: 70,
+            summary: "多个固定视口存在布局问题。",
+          },
+        },
+        issues: [
+          {
+            code: "MULTI_VIEWPORT_LAYOUT_RISK",
+            dimension: "layoutQuality",
+            severity: "error",
+            message: "窄屏和横屏视口中的内容布局存在风险。",
+            location: {
+              viewports: ["366×500", "922×460", "366×500"],
+              description: "固定课程画布",
+            },
+            repairHint: "调整固定画布中的响应式布局。",
+          },
+          {
+            code: "TABLET_LAYOUT_RISK",
+            dimension: "layoutQuality",
+            severity: "warning",
+            message: "平板视口中的内容布局存在风险。",
+            location: {
+              viewports: "712×650",
+              description: "平板课程画布",
+            },
+            repairHint: "调整平板画布中的内容密度。",
+          },
+        ],
+      }),
+    }).run(createPageQAAgentState(createInput()), {
+      traceId: "trace-plural-viewports-page-qa",
+    });
+
+    expect(state.status).toBe("completed");
+    expect(state.report?.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "MULTI_VIEWPORT_LAYOUT_RISK",
+          location: expect.objectContaining({
+            viewport: "366×500、922×460",
+          }),
+        }),
+        expect.objectContaining({
+          code: "TABLET_LAYOUT_RISK",
+          location: expect.objectContaining({ viewport: "712×650" }),
+        }),
+      ]),
+    );
+    expect(
+      state.report?.issues.some(({ location }) => "viewports" in location),
+    ).toBe(false);
+  });
+
+  it("lifts a repair hint misplaced inside the issue location", async () => {
+    const state = await createTestPageQAAgent({
+      evaluate: vi.fn().mockResolvedValue({
+        ...modelOutput,
+        issues: [
+          {
+            code: "CONTENT_HIERARCHY_WEAK",
+            dimension: "layoutQuality",
+            severity: "warning",
+            message: "主要内容层级不够清晰。",
+            location: {
+              selector: "main",
+              description: "页面主要内容",
+              repairHint: "强化标题与正文之间的视觉层级。",
+            },
+          },
+        ],
+      }),
+    }).run(createPageQAAgentState(createInput()), {
+      traceId: "trace-nested-repair-hint-page-qa",
+    });
+
+    expect(state.status).toBe("completed");
+    expect(state.report?.issues).toEqual([
+      expect.objectContaining({
+        code: "CONTENT_HIERARCHY_WEAK",
+        repairHint: "强化标题与正文之间的视觉层级。",
+        location: expect.not.objectContaining({ repairHint: expect.anything() }),
+      }),
+    ]);
+  });
+
+  it("keeps unknown location fields strict while lifting a misplaced repair hint", async () => {
+    const state = await createTestPageQAAgent({
+      evaluate: vi.fn().mockResolvedValue({
+        ...modelOutput,
+        issues: [
+          {
+            code: "CONTENT_HIERARCHY_WEAK",
+            dimension: "layoutQuality",
+            severity: "warning",
+            message: "主要内容层级不够清晰。",
+            location: {
+              description: "页面主要内容",
+              repairHint: "强化标题与正文之间的视觉层级。",
+              visualRegion: "hero",
+            },
+          },
+        ],
+      }),
+    }).run(createPageQAAgentState(createInput()), {
+      traceId: "trace-unknown-location-field-page-qa",
+    });
+
+    expect(state.status).toBe("failed");
+    expect(state.error?.message).toContain("issues.0.location");
+    expect(state.error?.message).toContain("Unrecognized key");
+  });
+
   it("still rejects unknown severity values instead of guessing workflow impact", async () => {
     const state = await createTestPageQAAgent({
       evaluate: vi.fn().mockResolvedValue({
@@ -302,6 +421,120 @@ describe("PageQAAgent", () => {
     expect(state.report?.dimensions.htmlRuntime.score).toBe(92);
     expect(state.report?.dimensions.courseCoherence.score).toBe(88);
     expect(state.report?.decision).toBe("pass");
+  });
+
+  it("uses deterministic browser touch evidence instead of a duplicate model alias", async () => {
+    const input = createInput();
+    const browserTouchIssue = {
+      code: "BROWSER_TOUCH_TARGET_UNDER_44",
+      dimension: "htmlRuntime" as const,
+      severity: "info" as const,
+      source: "browser" as const,
+      message: "一个可见交互控件小于建议的 44×44px。",
+      location: {
+        pageId: input.page.id,
+        viewport: "922x460",
+        description: "Playwright 固定视口渲染结果",
+      },
+      repairHint: "优先扩大主要操作的触控区域。",
+    };
+    const output = {
+      ...modelOutput,
+      dimensions: {
+        ...modelOutput.dimensions,
+        htmlRuntime: {
+          score: 69,
+          summary: "模型重复报告了浏览器已测量的触控尺寸。",
+        },
+      },
+      issues: [
+        {
+          code: "TOUCH_TARGET_TOO_SMALL",
+          dimension: "htmlRuntime",
+          severity: "error",
+          message: "互动控件尺寸不足。",
+          location: {
+            selector: "[data-interaction-type]",
+            description: "课程互动控件",
+          },
+          repairHint: "扩大互动控件。",
+        },
+      ],
+    };
+    const withBrowserEvidence = await createTestPageQAAgent({
+      evaluate: vi.fn().mockResolvedValue(output),
+      captureScreenshot: vi.fn().mockResolvedValue({
+        evidence: capturedEvidence,
+        issues: [browserTouchIssue],
+      }),
+    }).run(createPageQAAgentState(input), {
+      traceId: "trace-browser-touch-authority",
+    });
+    const withoutBrowserEvidence = await createTestPageQAAgent({
+      evaluate: vi.fn().mockResolvedValue(output),
+    }).run(createPageQAAgentState(input), {
+      traceId: "trace-model-touch-fallback",
+    });
+
+    expect(withBrowserEvidence.report?.issues).toEqual([
+      browserTouchIssue,
+    ]);
+    expect(
+      withBrowserEvidence.report?.dimensions.htmlRuntime.score,
+    ).toBeGreaterThanOrEqual(92);
+    expect(withBrowserEvidence.report?.decision).toBe("pass");
+    expect(withoutBrowserEvidence.report?.issues[0]?.code).toBe(
+      "TOUCH_TARGET_TOO_SMALL",
+    );
+    expect(withoutBrowserEvidence.report?.decision).toBe("revise");
+  });
+
+  it("ignores restored-content redundancy only for the located restored block", async () => {
+    const input = createInput();
+    const html = input.html.replace(
+      "</article>",
+      '<div data-course-contract-restored="block"><p>平台恢复的必需正文</p></div></article>',
+    );
+    const outputForBlock = (blockId: string) => ({
+      ...modelOutput,
+      dimensions: {
+        ...modelOutput.dimensions,
+        courseCoherence: {
+          score: 69,
+          summary: "模型把平台合同恢复节点误判为正文重复。",
+        },
+      },
+      issues: [
+        {
+          code: "CONTENT_REDUNDANT",
+          dimension: "courseCoherence",
+          severity: "error",
+          message: "内容块出现重复正文。",
+          location: {
+            blockId,
+            description: `内容块 ${blockId}`,
+          },
+          repairHint: "删除重复正文。",
+        },
+      ],
+    });
+    const restoredBlock = await createTestPageQAAgent({
+      evaluate: vi.fn().mockResolvedValue(outputForBlock("block-01")),
+    }).run(createPageQAAgentState({ ...input, html }), {
+      traceId: "trace-restored-block-redundancy",
+    });
+    const differentBlock = await createTestPageQAAgent({
+      evaluate: vi.fn().mockResolvedValue(outputForBlock("block-02")),
+    }).run(createPageQAAgentState({ ...input, html }), {
+      traceId: "trace-real-block-redundancy",
+    });
+
+    expect(restoredBlock.report?.issues).toEqual([]);
+    expect(restoredBlock.report?.decision).toBe("pass");
+    expect(differentBlock.report?.issues[0]?.code).toBe(
+      "CONTENT_REDUNDANT",
+    );
+    expect(differentBlock.report?.decision).toBe("revise");
   });
 
   it("keeps below-fold failures on a balanced lesson", async () => {

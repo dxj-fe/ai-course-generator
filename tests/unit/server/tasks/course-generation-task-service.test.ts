@@ -272,6 +272,7 @@ describe("course generation task service", () => {
         stage: "qa",
         attempt: 2,
         errorCode: "PAGE_QA_FAILED",
+        errorMessage: "公开错误摘要。",
         causeCode: "SCHEMA_ERROR",
         issueCodes: ["HTML_RUNTIME_ERROR"],
         completedPages: 0,
@@ -284,6 +285,7 @@ describe("course generation task service", () => {
         pageId: "page-03",
         stage: "qa",
         errorCode: "PAGE_QA_FAILED",
+        errorMessage: "公开错误摘要。",
         causeCode: "SCHEMA_ERROR",
         status: "failed",
       }),
@@ -310,6 +312,7 @@ describe("course generation task service", () => {
       expect.objectContaining({
         event: "task:error",
         errorCode: "MODEL_ERROR",
+        errorMessage: "模型服务未返回有效结果，请稍后重试。",
         causeCode: "MODEL_ERROR",
         status: "failed",
       }),
@@ -318,6 +321,7 @@ describe("course generation task service", () => {
       expect.objectContaining({
         event: "task:failed",
         errorCode: "COURSE_TASK_EXECUTION_ERROR",
+        errorMessage: "模型服务未返回有效结果，请稍后重试。",
         causeCode: "MODEL_ERROR",
         status: "failed",
       }),

@@ -15,6 +15,7 @@ import {
 } from "@/shared/course-schema";
 
 import { createMinimalAgent } from "./core/minimal-agent";
+import { normalizeSingleChoiceWording } from "./core/fixed-canvas-language";
 import type {
   Agent,
   AgentRuntimeContext,
@@ -66,6 +67,7 @@ export function createPedagogyAgent(
   dependencies: PedagogyAgentDependencies = defaultDependencies,
 ): Agent<PedagogyAgentState> {
   return createMinimalAgent({
+    name: "pedagogy-agent",
     isComplete: (state) => Boolean(state.plan),
     step: async (state, context, emit) => {
       const plan = PedagogyPlanSchema.parse(
@@ -172,10 +174,29 @@ async function generatePlan(input: {
         "Pedagogy misconceptions 必须是文字或包含 misconception/correction 的对象。",
       );
     }),
-    pageGuidance: draft.pageGuidance.map((guidance, index) => ({
-      ...guidance,
-      pageId: input.outline.pages[index].id,
-    })),
+    pageGuidance: draft.pageGuidance.map((guidance, index) => {
+      const page = input.outline.pages[index];
+      const alignedGuidance =
+        page.interactionType === "choice"
+          ? {
+              ...guidance,
+              scaffolding: guidance.scaffolding.map(
+                normalizeSingleChoiceWording,
+              ),
+              interactionPurpose: normalizeSingleChoiceWording(
+                guidance.interactionPurpose,
+              ),
+              checkForUnderstanding: normalizeSingleChoiceWording(
+                guidance.checkForUnderstanding,
+              ),
+            }
+          : guidance;
+
+      return {
+        ...alignedGuidance,
+        pageId: page.id,
+      };
+    }),
   });
 }
 

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   generatePageWorker,
@@ -18,6 +18,7 @@ import {
   storyArc,
   visualBrief,
 } from "../../../fixtures/course-design";
+import { DETERMINISTIC_PAGE_RENDERER_VERSION } from "../../../../src/server/html/deterministic-page-fallback";
 
 const timestamp = "2026-07-16T08:00:00.000Z";
 const page = courseDesignOutline.pages[0]!;
@@ -77,6 +78,13 @@ const repairReport = QualityReportSchema.parse({
   ...report,
   id: "quality-page-01-repair",
   overallScore: 68,
+  dimensions: {
+    ...report.dimensions,
+    layoutQuality: {
+      score: 68,
+      summary: "页面发生横向溢出。",
+    },
+  },
   issues: [
     {
       code: "LAYOUT_OVERFLOW",
@@ -95,8 +103,123 @@ const repairReport = QualityReportSchema.parse({
   shouldRepair: true,
   decision: "revise",
 });
+const viewportScaleReport = QualityReportSchema.parse({
+  ...repairReport,
+  id: "quality-page-01-viewport-scale",
+  issues: [
+    {
+      code: "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
+      dimension: "layoutQuality",
+      severity: "error",
+      source: "browser",
+      message: "页面为装入画布被整体缩放到约 52%。",
+      location: {
+        pageId: page.id,
+        selector: "main[data-page-id]",
+        viewport: "922x460",
+        description: "被播放器整体缩小的课程主画布",
+      },
+      repairHint: "从可信 DSL 重建紧凑布局。",
+    },
+  ],
+});
+const visualDominanceReport = QualityReportSchema.parse({
+  ...repairReport,
+  id: "quality-page-01-visual-dominance",
+  dimensions: {
+    ...repairReport.dimensions,
+    assetUsability: {
+      score: 52,
+      summary: "主视觉遮蔽了正文焦点。",
+    },
+  },
+  issues: [
+    {
+      code: "BROWSER_VISUAL_DOMINATES_VIEWPORT",
+      dimension: "assetUsability",
+      severity: "error",
+      source: "browser",
+      message: "单个视觉素材占据约 100% 的首屏面积。",
+      location: {
+        pageId: page.id,
+        selector: '[data-asset-slot-id="asset-slot-01"]',
+        viewport: "922x460",
+        description: "播放器首屏中占比最大的可见视觉素材",
+      },
+      repairHint: "从可信 DSL 重建构图，让正文和学习动作保持可见。",
+    },
+  ],
+});
+const compactPresentationWarningReport = QualityReportSchema.parse({
+  ...report,
+  id: "quality-page-01-compact-warning",
+  overallScore: 91,
+  dimensions: {
+    ...report.dimensions,
+    styleConsistency: {
+      score: 80,
+      summary: "仍可继续优化装饰层次。",
+    },
+  },
+  issues: [
+    {
+      code: "STYLE_DECORATION_REFINEMENT",
+      dimension: "styleConsistency",
+      severity: "warning",
+      source: "model",
+      message: "装饰层次仍可继续优化。",
+      location: {
+        pageId: page.id,
+        selector: "style",
+        description: "紧凑页面视觉样式",
+      },
+      repairHint: "后续迭代中优化装饰细节。",
+    },
+  ],
+  shouldRepair: true,
+  decision: "revise",
+});
+const compactPresentationErrorReport = QualityReportSchema.parse({
+  ...report,
+  id: "quality-page-01-compact-error",
+  overallScore: 86,
+  dimensions: {
+    ...report.dimensions,
+    assetUsability: {
+      score: 69,
+      summary: "必需插图在首屏中面积过小。",
+    },
+  },
+  issues: [
+    {
+      code: "BROWSER_VISUAL_TOO_SMALL",
+      dimension: "assetUsability",
+      severity: "error",
+      source: "browser",
+      message: "必需插图仅占首屏 4%，无法形成清晰视觉焦点。",
+      location: {
+        pageId: page.id,
+        selector: '[data-asset-slot-id="asset-slot-01"]',
+        description: "面积过小的必需视觉素材",
+      },
+      repairHint: "扩大素材容器并重新构图。",
+    },
+  ],
+  shouldRepair: true,
+  decision: "revise",
+});
 
 describe("generatePageWorker", () => {
+  let consoleError: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("runs one isolated Writer → Assets → HTML → QA pipeline", async () => {
     const order: string[] = [];
     const updates: string[] = [];
@@ -136,6 +259,286 @@ describe("generatePageWorker", () => {
       stage: "qa",
     });
     expect(updates).toContain("qa");
+  });
+
+  it("rebuilds an over-scaled model page deterministically and does not let presentation-only warnings fail the course", async () => {
+    const order: string[] = [];
+    const dependencies = createDependencies(order, {
+      qaReports: [viewportScaleReport, compactPresentationWarningReport],
+    });
+
+    const result = await generatePageWorker(
+      page,
+      {
+        intent: courseDesignIntent,
+        brief,
+        visualBrief,
+        courseContext: {
+          learningObjectives: courseDesignOutline.learningObjectives,
+        },
+      },
+      {
+        runtime: { traceId: "trace-page-compact-rebuild" },
+        dependencies,
+      },
+    );
+
+    expect(order).toEqual(["writer", "html", "qa", "html", "qa"]);
+    expect(dependencies.runHtml).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        renderMode: "deterministic",
+        validationFeedback: expect.objectContaining({
+          code: "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
+        }),
+      }),
+      expect.objectContaining({ traceId: "trace-page-compact-rebuild" }),
+    );
+    expect(dependencies.runRepair).not.toHaveBeenCalled();
+    expect(result.state).toMatchObject({
+      status: "completed",
+      currentStage: "complete",
+      qualityReport: {
+        id: compactPresentationWarningReport.id,
+        shouldRepair: true,
+      },
+    });
+    expect(result.state.htmlOutput?.html).toContain(
+      'data-keya-renderer="deterministic"',
+    );
+    expect(result.events.map(({ summary }) => summary)).toContain(
+      "确定性紧凑页面已通过内容与运行时底线；剩余视觉建议已记录，但不再阻断整课生成。",
+    );
+  });
+
+  it("rebuilds a model page deterministically before Repair when its visual fills the viewport", async () => {
+    const order: string[] = [];
+    const dependencies = createDependencies(order, {
+      qaReports: [visualDominanceReport, report],
+    });
+
+    const result = await generatePageWorker(
+      page,
+      {
+        intent: courseDesignIntent,
+        brief,
+        visualBrief,
+        courseContext: {
+          learningObjectives: courseDesignOutline.learningObjectives,
+        },
+      },
+      {
+        runtime: { traceId: "trace-page-visual-dominance-rebuild" },
+        dependencies,
+      },
+    );
+
+    expect(order).toEqual(["writer", "html", "qa", "html", "qa"]);
+    expect(dependencies.runHtml).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        renderMode: "deterministic",
+        validationFeedback: expect.objectContaining({
+          code: "BROWSER_VISUAL_DOMINATES_VIEWPORT",
+          issues: [
+            expect.stringContaining("单个视觉素材占据约 100%"),
+          ],
+        }),
+      }),
+      expect.objectContaining({
+        traceId: "trace-page-visual-dominance-rebuild",
+      }),
+    );
+    expect(dependencies.runRepair).not.toHaveBeenCalled();
+    expect(result.state).toMatchObject({
+      status: "completed",
+      currentStage: "complete",
+      qualityReport: { id: report.id },
+    });
+    expect(result.state.htmlOutput?.html).toContain(
+      'data-keya-renderer="deterministic"',
+    );
+  });
+
+  it.each([
+    ["missing version", ""],
+    [
+      "outdated version",
+      ` data-keya-renderer-version="${DETERMINISTIC_PAGE_RENDERER_VERSION - 1}"`,
+    ],
+  ])(
+    "rebuilds a deterministic checkpoint with %s before Repair",
+    async (_versionCase, rendererVersionAttribute) => {
+      const order: string[] = [];
+      const dependencies = createDependencies(order, {
+        qaReports: [report],
+      });
+      const initialState = PageGenerationStateSchema.parse({
+        pageId: page.id,
+        order: page.order,
+        status: "running",
+        currentStage: "repair",
+        content,
+        assets: [],
+        htmlOutput: {
+          version: 8,
+          generatedAt: timestamp,
+          html: `<!doctype html><html data-page-id="${page.id}" data-keya-renderer="deterministic"${rendererVersionAttribute}><body><h1>${page.title}</h1></body></html>`,
+        },
+        qualityReport: viewportScaleReport,
+        repairHistory: [
+          {
+            round: 1,
+            sourceReport: viewportScaleReport,
+            targetArtifact: "html",
+            issueCodes: ["BROWSER_VIEWPORT_SCALE_TOO_SMALL"],
+            status: "applied",
+            changeSummary: ["旧版确定性页面曾尝试局部修复。"],
+            resultReportId: viewportScaleReport.id,
+            qualityProgress: "stalled",
+            consecutiveNoProgress: 1,
+            startedAt: timestamp,
+            completedAt: timestamp,
+          },
+        ],
+      });
+
+      const result = await generatePageWorker(
+        page,
+        {
+          intent: courseDesignIntent,
+          brief,
+          visualBrief,
+          courseContext: {
+            learningObjectives: courseDesignOutline.learningObjectives,
+          },
+        },
+        {
+          runtime: { traceId: "trace-page-stale-deterministic-rebuild" },
+          dependencies,
+          initialState,
+        },
+      );
+
+      expect(order).toEqual(["html", "qa"]);
+      expect(dependencies.runHtml).toHaveBeenCalledWith(
+        expect.objectContaining({
+          renderMode: "deterministic",
+          validationFeedback: expect.objectContaining({
+            code: "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
+          }),
+        }),
+        expect.objectContaining({
+          traceId: "trace-page-stale-deterministic-rebuild",
+        }),
+      );
+      expect(dependencies.runRepair).not.toHaveBeenCalled();
+      expect(result.state).toMatchObject({
+        status: "completed",
+        currentStage: "complete",
+        qualityReport: { id: report.id },
+        repairHistory: [],
+      });
+      expect(result.state.htmlOutput?.html).toContain(
+        `data-keya-renderer-version="${DETERMINISTIC_PAGE_RENDERER_VERSION}"`,
+      );
+    },
+  );
+
+  it("does not rebuild a checkpoint produced by the current deterministic renderer", async () => {
+    const order: string[] = [];
+    const dependencies = createDependencies(order, {
+      qaReports: [report],
+    });
+    const initialState = PageGenerationStateSchema.parse({
+      pageId: page.id,
+      order: page.order,
+      status: "running",
+      currentStage: "repair",
+      content,
+      assets: [],
+      htmlOutput: {
+        version: 2,
+        generatedAt: timestamp,
+        html: `<!doctype html><html data-page-id="${page.id}" data-keya-renderer="deterministic" data-keya-renderer-version="${DETERMINISTIC_PAGE_RENDERER_VERSION}"><body><h1>${page.title}</h1></body></html>`,
+      },
+      qualityReport: viewportScaleReport,
+    });
+
+    const result = await generatePageWorker(
+      page,
+      {
+        intent: courseDesignIntent,
+        brief,
+        visualBrief,
+        courseContext: {
+          learningObjectives: courseDesignOutline.learningObjectives,
+        },
+      },
+      {
+        runtime: { traceId: "trace-page-current-deterministic-guard" },
+        dependencies,
+        initialState,
+      },
+    );
+
+    expect(order).toEqual(["repair", "qa"]);
+    expect(dependencies.runHtml).not.toHaveBeenCalled();
+    expect(dependencies.runRepair).toHaveBeenCalledOnce();
+    expect(result.state).toMatchObject({
+      status: "completed",
+      currentStage: "complete",
+      qualityReport: { id: report.id },
+    });
+  });
+
+  it("does not auto-publish a deterministic page with a presentation error", async () => {
+    const order: string[] = [];
+    const dependencies = createDependencies(order, {
+      qaReports: [
+        viewportScaleReport,
+        compactPresentationErrorReport,
+        report,
+      ],
+    });
+
+    const result = await generatePageWorker(
+      page,
+      {
+        intent: courseDesignIntent,
+        brief,
+        visualBrief,
+        courseContext: {
+          learningObjectives: courseDesignOutline.learningObjectives,
+        },
+      },
+      {
+        runtime: { traceId: "trace-page-presentation-error" },
+        dependencies,
+      },
+    );
+
+    expect(order).toEqual([
+      "writer",
+      "html",
+      "qa",
+      "html",
+      "qa",
+      "repair",
+      "qa",
+    ]);
+    expect(dependencies.runRepair).toHaveBeenCalledWith(
+      expect.objectContaining({
+        issueCodes: ["BROWSER_VISUAL_TOO_SMALL"],
+        targetArtifact: "html",
+      }),
+      expect.objectContaining({ traceId: "trace-page-presentation-error" }),
+    );
+    expect(result.state).toMatchObject({
+      status: "completed",
+      currentStage: "complete",
+      qualityReport: { id: report.id, shouldRepair: false },
+    });
   });
 
   it("resumes at HTML and forwards the persisted validation failure", async () => {
@@ -217,6 +620,49 @@ describe("generatePageWorker", () => {
       stage: "html",
       attempts: 3,
     });
+  });
+
+  it("logs terminal stage failures with page context and the original stack", async () => {
+    const order: string[] = [];
+    const dependencies = createDependencies(order);
+    const originalError = new Error("HTML renderer crashed");
+    dependencies.runHtml = vi.fn().mockRejectedValue(originalError);
+
+    const result = await generatePageWorker(
+      page,
+      {
+        intent: courseDesignIntent,
+        brief,
+        visualBrief,
+        courseContext: {
+          learningObjectives: courseDesignOutline.learningObjectives,
+        },
+      },
+      {
+        runtime: { traceId: "trace-page-html-crash" },
+        dependencies,
+      },
+    );
+
+    expect(result.state.error?.code).toBe("PAGE_WORKER_RETRY_EXHAUSTED");
+    expect(consoleError).toHaveBeenLastCalledWith(
+      "[page-worker]",
+      expect.objectContaining({
+        event: "stage:failed",
+        traceId: "trace-page-html-crash",
+        pageId: page.id,
+        stage: "html",
+        attempt: 3,
+        code: "PAGE_WORKER_RETRY_EXHAUSTED",
+        message: "HTML renderer crashed",
+        errorName: "Error",
+        errorMessage: "HTML renderer crashed",
+        errorStack: expect.stringContaining("HTML renderer crashed"),
+      }),
+    );
+    const terminalLog = consoleError.mock.calls.at(-1)?.[1];
+    expect(terminalLog).not.toHaveProperty("html");
+    expect(terminalLog).not.toHaveProperty("prompt");
   });
 
   it("passes the previous Page Writer validation failure into the next attempt", async () => {
@@ -551,6 +997,80 @@ describe("generatePageWorker", () => {
     ]);
   });
 
+  it("stops after three repairs when browser blockers persist despite rising model scores", async () => {
+    const order: string[] = [];
+    const persistentBrowserReports = [52, 58, 64, 69].map(
+      (layoutScore, iteration) =>
+        QualityReportSchema.parse({
+          ...viewportScaleReport,
+          id: `quality-page-01-browser-blockers-${iteration}`,
+          overallScore: layoutScore,
+          dimensions: {
+            ...viewportScaleReport.dimensions,
+            layoutQuality: {
+              score: layoutScore,
+              summary: "模型评分波动，但固定视口仍有缩放和裁切。",
+            },
+          },
+          issues: [
+            viewportScaleReport.issues[0],
+            {
+              code: "BROWSER_CONTENT_CLIPPED",
+              dimension: "layoutQuality",
+              severity: "error",
+              source: "browser",
+              message: "2 个元素存在可测量的内容裁切。",
+              location: {
+                pageId: page.id,
+                viewport: "922x460",
+                description: "Playwright 固定视口渲染结果",
+              },
+              repairHint: "检查 overflow 与固定高度。",
+            },
+          ],
+        }),
+    );
+    const dependencies = createDependencies(order, {
+      qaReports: [viewportScaleReport, ...persistentBrowserReports],
+    });
+
+    const result = await generatePageWorker(
+      page,
+      {
+        intent: courseDesignIntent,
+        brief,
+        visualBrief,
+        courseContext: {
+          learningObjectives: courseDesignOutline.learningObjectives,
+        },
+      },
+      {
+        runtime: { traceId: "trace-page-browser-blockers-stalled" },
+        dependencies,
+      },
+    );
+
+    expect(order.filter((stage) => stage === "repair")).toHaveLength(3);
+    expect(result.state).toMatchObject({
+      status: "failed",
+      currentStage: "repair",
+      qualityReport: { id: persistentBrowserReports[3]!.id },
+      error: { code: "QUALITY_STALLED" },
+    });
+    expect(
+      result.state.repairHistory?.map(
+        ({ qualityProgress, consecutiveNoProgress }) => ({
+          qualityProgress,
+          consecutiveNoProgress,
+        }),
+      ),
+    ).toEqual([
+      { qualityProgress: "stalled", consecutiveNoProgress: 1 },
+      { qualityProgress: "stalled", consecutiveNoProgress: 2 },
+      { qualityProgress: "stalled", consecutiveNoProgress: 3 },
+    ]);
+  });
+
   it("allows more than three improving Repair iterations before passing", async () => {
     const order: string[] = [];
     const improvingReports = [72, 76, 80].map((overallScore) =>
@@ -558,6 +1078,13 @@ describe("generatePageWorker", () => {
         ...repairReport,
         id: `quality-page-01-improved-${overallScore}`,
         overallScore,
+        dimensions: {
+          ...repairReport.dimensions,
+          layoutQuality: {
+            score: overallScore,
+            summary: "横向溢出逐步收敛。",
+          },
+        },
       }),
     );
     const dependencies = createDependencies(order, {
@@ -690,7 +1217,7 @@ function createDependencies(
           : {
               version: 1 as const,
               generatedAt: timestamp,
-              html: `<!doctype html><html data-page-id="${page.id}"><body><h1>${page.title}</h1></body></html>`,
+              html: `<!doctype html><html data-page-id="${page.id}"${input.renderMode === "deterministic" ? ` data-keya-renderer="deterministic" data-keya-renderer-version="${DETERMINISTIC_PAGE_RENDERER_VERSION}"` : ""}><body><h1>${page.title}</h1></body></html>`,
             },
         error: failed
           ? {

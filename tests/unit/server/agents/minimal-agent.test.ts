@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { AiSchemaValidationError } from "../../../../src/server/ai/error";
 import { createMinimalAgent } from "../../../../src/server/agents/core/minimal-agent";
@@ -72,7 +72,11 @@ describe("createMinimalAgent", () => {
   });
 
   it("preserves structured validation feedback internally but emits a safe public summary", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
     const agent = createMinimalAgent<TestState>({
+      name: "test-agent",
       isComplete: () => false,
       step: async () => {
         throw new AiSchemaValidationError(
@@ -92,6 +96,19 @@ describe("createMinimalAgent", () => {
       summary: "模型返回的内容格式不完整。",
       data: { code: "SCHEMA_ERROR" },
     });
+    expect(consoleError).toHaveBeenCalledWith(
+      "[agent]",
+      expect.objectContaining({
+        agent: "test-agent",
+        traceId: "trace-schema",
+        errorCode: "SCHEMA_ERROR",
+        publicErrorMessage:
+          "choice.prompts: expected 2 items but received 1",
+        errorMessage:
+          "choice.prompts: expected 2 items but received 1",
+      }),
+    );
+    consoleError.mockRestore();
   });
 
   it("preserves transient provider error categories", async () => {
