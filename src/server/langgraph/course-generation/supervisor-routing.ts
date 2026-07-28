@@ -1,5 +1,6 @@
-import { MAX_REPAIR_ROUNDS } from "@/shared/course-schema";
 import {
+  MAX_REPAIR_ATTEMPTS,
+  MAX_SUPERVISOR_DECISIONS,
   SupervisorDecisionSchema,
   type CourseGenerationStage,
   type CourseGenerationState,
@@ -25,8 +26,6 @@ export const COURSE_GRAPH_ROUTES = [
 
 export type CourseGraphRoute = (typeof COURSE_GRAPH_ROUTES)[number];
 
-const MAX_GRAPH_SUPERVISOR_DECISIONS = 63;
-
 /**
  * Rule-first Graph Supervisor. Specialist outputs, budgets and stop conditions
  * are facts from validated state; no model call is needed when only one route is legal.
@@ -34,10 +33,11 @@ const MAX_GRAPH_SUPERVISOR_DECISIONS = 63;
 export function decideCourseGraphSupervisor(
   state: CourseGenerationState,
 ): SupervisorDecision {
-  if ((state.supervisor?.decisionCount ?? 0) >= MAX_GRAPH_SUPERVISOR_DECISIONS) {
+  const decisionLimit = resolveCourseGraphSupervisorDecisionLimit(state);
+  if ((state.supervisor?.decisionCount ?? 0) >= decisionLimit - 1) {
     return stop(
       "decision_limit",
-      "LangGraph Supervisor 已达到全局决策上限。",
+      `LangGraph Supervisor 已达到本课程的 ${decisionLimit - 1} 次调度安全上限。`,
       false,
     );
   }
@@ -71,21 +71,21 @@ export function decideCourseGraphSupervisor(
   }
 
   const repairPage = state.pages.find(
-    (page) => page.qualityReport?.shouldRepair && page.status !== "completed",
+    (page) => page.qualityReport?.shouldRepair && page.status === "running",
   );
   if (repairPage) {
-    const rounds = repairPage.repairHistory?.length ?? 0;
-    if (rounds >= MAX_REPAIR_ROUNDS) {
+    const attempts = repairPage.repairHistory?.length ?? 0;
+    if (attempts >= MAX_REPAIR_ATTEMPTS) {
       return stop(
-        "retry_exhausted",
-        `页面 ${repairPage.pageId} 已达到 ${MAX_REPAIR_ROUNDS} 轮 Repair 预算。`,
+        "decision_limit",
+        `页面 ${repairPage.pageId} 的 Repair 已触发 ${MAX_REPAIR_ATTEMPTS} 次安全熔断上限。`,
         true,
       );
     }
     return run(
       "repair",
       repairPage.pageId,
-      `页面 ${repairPage.pageId} 的 QA 要求修订，执行第 ${rounds + 1} 轮定向 Repair。`,
+      `页面 ${repairPage.pageId} 的 QA 要求修订，执行第 ${attempts + 1} 次定向 Repair。`,
     );
   }
 
@@ -111,6 +111,26 @@ export function decideCourseGraphSupervisor(
     "no_available_node",
     "当前状态没有满足输入合同的 LangGraph 节点。",
     true,
+  );
+}
+
+/**
+ * 调度安全预算随真实章节数线性增长，避免把 Supervisor 的防死循环保护
+ * 变成课程章节数上限。尚未生成 Intent 时保留原有基础预算。
+ */
+export function resolveCourseGraphSupervisorDecisionLimit(
+  state: CourseGenerationState,
+) {
+  const pageCount =
+    state.intent?.courseLength ??
+    state.outline?.pages?.length ??
+    state.pages.length;
+  const decisionsPerPage =
+    MAX_REPAIR_ATTEMPTS + PAGE_WORKER_MAX_STAGE_ATTEMPTS + 2;
+
+  return Math.max(
+    MAX_SUPERVISOR_DECISIONS,
+    pageCount * decisionsPerPage + 16,
   );
 }
 

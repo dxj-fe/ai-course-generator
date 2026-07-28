@@ -8,7 +8,6 @@ const EXPLANATION_PAGE_TYPES = new Set([
   "comparison",
   "timeline",
 ]);
-const ASSESSMENT_PAGE_TYPES = new Set(["quiz", "achievement"]);
 const PASSIVE_INTERACTIONS = new Set(["none", "navigate"]);
 
 /**
@@ -17,18 +16,15 @@ const PASSIVE_INTERACTIONS = new Set(["none", "navigate"]);
  */
 export const CoursePlanSchema = CourseOutlineSchema.superRefine(
   (outline, context) => {
-    if (outline.pages.length < 3 || outline.pages.length > 12) {
-      context.addIssue({
-        code: "custom",
-        message: "课程规划必须包含 3 到 12 个页面",
-        path: ["pages"],
-      });
-    }
-
     const firstPage = outline.pages[0];
     const lastPage = outline.pages.at(-1);
+    const isSinglePageCourse = outline.pages.length === 1;
 
-    if (firstPage && !INTRO_PAGE_TYPES.has(firstPage.pageType)) {
+    if (
+      !isSinglePageCourse &&
+      firstPage &&
+      !INTRO_PAGE_TYPES.has(firstPage.pageType)
+    ) {
       context.addIssue({
         code: "custom",
         message: "课程第一页必须是封面或故事导入",
@@ -36,7 +32,11 @@ export const CoursePlanSchema = CourseOutlineSchema.superRefine(
       });
     }
 
-    if (lastPage && lastPage.pageType !== "summary") {
+    if (
+      !isSinglePageCourse &&
+      lastPage &&
+      lastPage.pageType !== "summary"
+    ) {
       context.addIssue({
         code: "custom",
         message: "课程最后一页必须是总结页",
@@ -45,6 +45,7 @@ export const CoursePlanSchema = CourseOutlineSchema.superRefine(
     }
 
     if (
+      outline.pages.length >= 3 &&
       !outline.pages.some((page) =>
         EXPLANATION_PAGE_TYPES.has(page.pageType),
       )
@@ -68,22 +69,33 @@ export const CoursePlanSchema = CourseOutlineSchema.superRefine(
       });
     }
 
-    const firstAssessmentIndex = outline.pages.findIndex((page) =>
-      ASSESSMENT_PAGE_TYPES.has(page.pageType),
-    );
+    let passiveRun = 0;
+    outline.pages.forEach((page, index) => {
+      passiveRun = PASSIVE_INTERACTIONS.has(page.interactionType)
+        ? passiveRun + 1
+        : 0;
+      if (passiveRun > 2) {
+        context.addIssue({
+          code: "custom",
+          message: "课程不能连续安排超过 2 个没有主动交互的页面",
+          path: ["pages", index, "interactionType"],
+        });
+      }
+    });
 
-    if (
-      firstAssessmentIndex >= 0 &&
-      outline.pages
-        .slice(firstAssessmentIndex + 1, -1)
-        .some((page) => EXPLANATION_PAGE_TYPES.has(page.pageType))
-    ) {
+    const activePageCount = outline.pages.filter(
+      (page) => !PASSIVE_INTERACTIONS.has(page.interactionType),
+    ).length;
+    const minimumActivePages = Math.ceil(outline.pages.length / 4);
+
+    if (activePageCount < minimumActivePages) {
       context.addIssue({
         code: "custom",
-        message: "知识讲解页面必须位于测验或成果任务之前",
+        message: `当前课程至少需要 ${minimumActivePages} 个分散的主动交互页面`,
         path: ["pages"],
       });
     }
+
   },
 );
 

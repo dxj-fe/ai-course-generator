@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  CourseGenerationCauseCodeSchema,
   CourseGenerationPublicEventSchema,
   CourseGenerationStateSchema,
   CourseIdSchema,
@@ -10,6 +11,7 @@ import {
   REFERENCE_MAX_PACKS,
   ReferencePackSchema,
 } from "./reference";
+import { CoursePageCountSchema } from "./intent";
 
 /** 可安全用作任务存储目录名及 SSE 订阅键的稳定 ID。 */
 export const CourseTaskIdSchema = z
@@ -21,10 +23,19 @@ export const CourseTaskIdSchema = z
 export const CourseTaskStatusSchema = z.enum([
   "queued",
   "running",
+  "paused",
   "completed",
   "failed",
   "cancelled",
 ]);
+
+export const CourseTaskControlActionSchema = z.enum(["pause", "resume"]);
+
+export const CourseTaskControlRequestSchema = z
+  .object({
+    action: CourseTaskControlActionSchema,
+  })
+  .strict();
 
 /** 公开标识任务由兼容手写编排还是 LangGraph 运行。 */
 export const CourseTaskRuntimeSourceSchema = z.enum([
@@ -32,15 +43,10 @@ export const CourseTaskRuntimeSourceSchema = z.enum([
   "langgraph",
 ]);
 
-const CourseTaskPageCountSchema = z.union([
-  z.literal(3),
-  z.literal(4),
-  z.literal(5),
-]);
-
 const CourseTaskErrorSchema = z
   .object({
     code: z.string().min(1).max(100),
+    causeCode: CourseGenerationCauseCodeSchema.optional(),
     message: z.string().min(1).max(1_000),
   })
   .strict();
@@ -54,7 +60,7 @@ export const CourseTaskRecordSchema = z
     traceId: z.string().min(1).max(120),
     userPrompt: z.string().min(2).max(4_000),
     referencePacks: z.array(ReferencePackSchema).max(REFERENCE_MAX_PACKS).optional(),
-    pageCount: CourseTaskPageCountSchema.optional(),
+    pageCount: CoursePageCountSchema.optional(),
     executionMode: PageWorkerModeSchema.optional(),
     concurrency: z.number().int().min(1).max(5).optional(),
     source: CourseTaskRuntimeSourceSchema.default("workflow"),
@@ -64,7 +70,19 @@ export const CourseTaskRecordSchema = z
     completedAt: z.string().datetime({ offset: true }).optional(),
     error: CourseTaskErrorSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((record, context) => {
+    if (
+      record.status === "paused" &&
+      (record.completedAt !== undefined || record.error !== undefined)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "paused 任务不能包含终态时间或错误",
+        path: ["status"],
+      });
+    }
+  });
 
 export const CourseTaskCreateResponseSchema = z
   .object({
@@ -76,12 +94,24 @@ export const CourseTaskCreateResponseSchema = z
   })
   .strict();
 
+export const CourseTaskControlResponseSchema = z
+  .object({
+    taskId: CourseTaskIdSchema,
+    courseId: CourseIdSchema,
+    traceId: z.string().min(1).max(120),
+    status: CourseTaskStatusSchema,
+    source: CourseTaskRuntimeSourceSchema.default("workflow"),
+  })
+  .strict();
+
 const CourseTaskStreamSnapshotSchema = z
   .object({
     type: z.literal("snapshot"),
     taskId: CourseTaskIdSchema,
     courseId: CourseIdSchema,
     source: CourseTaskRuntimeSourceSchema.default("workflow"),
+    /** 课程 checkpoint 在暂停时仍是 running；任务控制态由此字段独立表达。 */
+    taskStatus: CourseTaskStatusSchema.optional(),
     state: CourseGenerationStateSchema,
   })
   .strict();
@@ -142,10 +172,31 @@ export const CourseTaskStreamMessageSchema = z
         path: ["status"],
       });
     }
+
+    if (
+      message.type === "snapshot" &&
+      message.taskStatus === "paused" &&
+      message.state.status !== "running"
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "paused 任务必须保留 running 课程检查点",
+        path: ["taskStatus"],
+      });
+    }
   });
 
 export type CourseTaskId = z.infer<typeof CourseTaskIdSchema>;
 export type CourseTaskStatus = z.infer<typeof CourseTaskStatusSchema>;
+export type CourseTaskControlAction = z.infer<
+  typeof CourseTaskControlActionSchema
+>;
+export type CourseTaskControlRequest = z.infer<
+  typeof CourseTaskControlRequestSchema
+>;
+export type CourseTaskControlResponse = z.infer<
+  typeof CourseTaskControlResponseSchema
+>;
 export type CourseTaskRuntimeSource = z.infer<
   typeof CourseTaskRuntimeSourceSchema
 >;

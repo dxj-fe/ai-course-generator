@@ -30,7 +30,17 @@ export type AgentEvent = {
 export type AgentEventDraft = Pick<AgentEvent, "type" | "summary" | "data">;
 
 export type AgentStateError = {
-  code: "AGENT_ABORTED" | "AGENT_EXECUTION_ERROR" | "AGENT_STEP_LIMIT";
+  code:
+    | "AGENT_ABORTED"
+    | "AGENT_EXECUTION_ERROR"
+    | "AGENT_STEP_LIMIT"
+    | "AUTH_ERROR"
+    | "CONFIG_ERROR"
+    | "MODEL_ERROR"
+    | "QUOTA_ERROR"
+    | "RATE_LIMIT_ERROR"
+    | "SCHEMA_ERROR"
+    | "TIMEOUT_ERROR";
   message: string;
 };
 

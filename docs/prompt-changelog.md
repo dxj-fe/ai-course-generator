@@ -1,6 +1,97 @@
 # Prompt Changelog
 
+## 2026-07-27 — 课程页面固定画布与无滚动合同
+
+- Intent system `1.3.0`、Planner system `2.4.0`、Page Writer system `2.3.0`、HTML Engineer system `2.4.0` 与 Page QA system `2.3.0` 统一按 `366×500`、`712×650`、`922×460` 固定播放器画布规划和生成内容。
+- 自动课程长度会把单页容量计入章节数；定义、示例、练习和反馈无法在同一画布清晰呈现时，必须在规划阶段拆到相邻页面。
+- 新生成 HTML 的 `html`、`body`、`main` 采用 100% 流式根画布；平台会写入稳定画布标记并覆盖模型遗留的固定根尺寸，旧课程仍保留原尺寸做 contain-fit。
+- 浏览器 QA 关闭学习端 contain-fit 后再测量模型原始布局，并以主 `main` 的播放器视口覆盖率阻止“运行时缩小后看似合格”的页面通过。
+- 浏览器 QA 新增文档及嵌套纵向溢出检查；不再把普通长知识页滚动视为合法，也禁止用裁切或极小字号伪装适配。
+
+回滚方式：恢复上述五个 system Prompt 版本及旧的长页滚动规则，并移除 `BROWSER_VERTICAL_OVERFLOW`、`BROWSER_NESTED_VERTICAL_OVERFLOW` 检查。
+
+## 2026-07-27 — 课程章节数改为内容驱动
+
+- Intent system `1.2.0` 和 Course Planner system `2.3.0` 不再把课程限制在 3–12 节；明确的正整数节数会被保留，未指定时按知识依赖、练习与总结需要动态规划。
+- 单页、双页微课使用合并教学职责；长课程继续按每 4 页至少一次主动练习的节奏扩展。
+- Planner 与专业 brief 输出预算随真实章节数增长，逐页交接数组不再以 12 项截断。
+
+回滚方式：恢复 CoursePageCount、CoursePlan、逐页 brief Schema 和对应 Prompt 的 3–12 限制。
+
+## 2026-07-27 — 生图素材禁止烘焙文字
+
+- Image Prompt system 升级到 `2.1.0`：背景安全区必须由连续场景自然形成，禁止生成白板、卡片、纸张、标签或其他文字容器。
+- 生产 Prompt 将课程用途和视觉说明明确标记为不可渲染的语义元数据，并同时禁止中文、字母、数字、伪文字和乱码字形。
+- Prompt 版本变化会使素材请求缓存失效；新生成课程不会复用旧的含文字素材。
+
+回滚方式：恢复 Image Prompt system 2.0.0 和旧生产 Prompt；已有课程与素材记录无需迁移。
+
+## 2026-07-24 — Page QA reveal 运行时边界
+
+- Page QA system 升级到 `2.2.1`：明确 reveal、explore、sort 的互动项是可见可操作目标，不能误套 choice 反馈的初始隐藏规则。
+- 运行层忽略与可信互动合同冲突的可见性判断，以及没有可授权定位的内容冗余 warning；对应维度没有其他证据时恢复到最低通过门槛。
+
+回滚方式：恢复 Page QA system 2.2.0，并移除对应模型 issue 过滤；既有页面产物无需迁移。
+
+## 2026-07-24 — Repair CSS 呈现问题定向修复
+
+- Repair system 升级到 `1.4.0`：当运行层只授权 `style` 时，明确使用唯一 style 边界插入最小作用域 CSS。
+- 禁止把 QA issue code 当作 selector 或 search，避免触控尺寸、首屏主操作等问题反复生成不可应用候选。
+
+回滚方式：恢复 Repair system 1.3.0；RepairResult Schema 与既有 checkpoint 无需迁移。
+
+## 2026-07-24 — HTML v2 运行时标记显式自检
+
+- HTML Engineer user 升级到 `2.2.0`：在模型输出前显式列出 visual primitive、block target、interaction、question、option、submit 与 feedback 的运行时标记清单。
+- 运行层只对唯一、可由现有语义结构和可信 DSL 证明的标记做机械规范化；不会创建教学内容、猜测多按钮目标或把素材/装饰图冒充代码原生图示。
+- 严格预检把 visual primitive 限制在 main 内且排除素材子树，并把 choice 的提交、题目和 option 控件限制在对应 interaction/question 根节点。
+
+回滚方式：恢复 HTML Engineer user 2.1.0，移除运行时标记规范化；共享 DSL 与既有成功页面无需迁移。
+
+## 2026-07-24 — Repair DSL 输出协议与互动目标修复
+
+- Repair system 升级到 `1.3.0`：明确 `dsl_candidate` 只能是 `kind` 的值，完整 DSL 必须放在唯一根字段 `candidate`，并补充合法 DSL 结果示例。
+- `allowedContentFields` 可定向授权 `interaction`；只允许修复本页目标检查，必须保留互动类型与技术 ID。
+- DSL Repair 的模型输入不再携带无关 HTML、视觉 brief 和素材结果，减少长页面恢复时的输入体积。
+
+回滚方式：恢复 Repair system 1.2.0，并移除 interaction 根字段授权；既有 checkpoint 与 RepairResult Schema 无需迁移。
+
+## 2026-07-24 — Repair 质量优先迭代与旁白定向修订
+
+- Repair system 升级到 `1.2.0`：移除“最多两轮”的成本式描述，尝试序号只作为运行层安全熔断信息。
+- 候选仍必须遵守授权 issue/scope、原产物合同和 re-QA；模型不能修改安全熔断条件或自行宣布通过。
+- 当无 blocks 的 cover/sparse 页面把目标覆盖问题定位到 narration 时，运行层可只授权 `allowedContentFields=["narration"]`；其他 DSL 根字段仍保持不可修改。
+
 本文件记录 Specialist Prompt 的可审计合同变化。组合版本格式为 `system/user`。
+
+## 2026-07-24 · Page Writer 页面目标覆盖合同
+
+### Page Writer · 2.2.1/2.2.0 active
+
+- 每页 PageContentDSL 必须直接满足 `PagePlan.learningObjective`；“之后会学习”“将认识”等课程预告不再视为目标覆盖。
+- cover 和 sparse 页面即使因模板约束保持 `blocks=[]`，也必须在 narration 中同时提供目标要求的最小核心事实与学习路径，不能为了视觉简洁删除事实。
+- 练习页的题目、答案或评价标准必须检验本页目标，成功与重试反馈必须解释对应的判断依据和改进方向。
+- 输入不足以提供目标事实时必须失败并交回运行层，不能用未来时占位或自行发明事实。
+
+回滚方式：恢复 Page Writer system 2.2.0；PageContentDSL Schema、数据库和既有 checkpoint 无需迁移。
+
+## 2026-07-24 · 播放器视口与 HTML 结构质量门槛
+
+### HTML Engineer · 2.2.0/2.1.0 active
+
+- 以播放器实际内容视口 `366×500`、`712×650`、`1080×600` 作为主要响应式目标；封面、测验和稀疏页面必须让核心说明与主操作形成首屏焦点。
+- 禁止在整页根容器裁切内容，明确主要触控目标、教学层级与非后台面板式的视觉要求。
+- 稳定标记升级为结构合同：`data-page-id` 直接标记唯一 main，block/asset/interaction 标记唯一、位于 main 内且保持 DSL 归属与顺序。
+
+回滚方式：恢复 HTML Engineer system 2.1.1，并移除对应稳定 DOM 结构预检；PageContentDSL 与既有成功页面无需迁移。
+
+### Page QA · 2.2.1/2.1.0 active
+
+- 六维通过门槛改为质量优先配置，视觉风格和素材可用性不再因 HTML 合同有效而被忽略。
+- 任一低于门槛的维度必须同时输出同维度可定位 issue，避免低分报告进入无法定向修复的死路。
+- 排版与风格评估增加播放器实际视口、首屏任务焦点和“通用面板式课程页”识别要求。
+
+回滚方式：恢复 Page QA system 2.1.4 和旧的四维工作流门槛。
 
 ## 2026-07-22 · Page Writer choice 输出回归修复
 

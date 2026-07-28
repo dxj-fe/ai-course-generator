@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -13,7 +14,10 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { useSSETask } from "@/features/course-planner/hooks/use-sse-task";
+import {
+  useSSETask,
+  type CourseTaskConnectionStatus,
+} from "@/features/course-planner/hooks/use-sse-task";
 import {
   designCourse,
   evaluateCoursePage,
@@ -27,6 +31,7 @@ import {
 } from "@/features/course-planner/lib/course-library-api";
 import { saveGeneratedHtmlPreview } from "@/features/course-planner/lib/html-preview-api";
 import {
+  deleteStoredConversation,
   saveConversation,
   updateStoredConversation,
 } from "@/features/course-planner/lib/conversation-api";
@@ -34,18 +39,37 @@ import { parseReferenceFile } from "@/features/course-planner/lib/reference-api"
 import {
   cancelCourseTask,
   createCourseTask,
+  pauseCourseTask,
+  resumeCourseTask,
 } from "@/features/course-planner/lib/course-task-api";
 import {
   ChatComposer,
-  type CourseCreationOptions,
   type ReferenceAttachment,
 } from "@/features/keya/chat-composer";
 import { ChatSidebar } from "@/features/keya/chat-sidebar";
+import {
+  createInitialTaskRegistry,
+  removeRegisteredTask,
+  updateConversationTaskStatus,
+  type ActiveCourseTask,
+  type ActiveCourseTaskRegistry,
+} from "@/features/keya/chat-task-registry";
 import { ChatThread } from "@/features/keya/chat-thread";
+import {
+  applyCourseCreationAnswer,
+  buildCourseTaskPrompt,
+  createCourseCreationBrief,
+  deriveCourseCreationBrief,
+  getNextClarificationQuestion,
+  resolveCourseSectionCount,
+  type ClarificationQuestionId,
+  type CourseCreationBrief,
+} from "@/features/keya/course-creation-model";
+import { getCourseFailurePresentation } from "@/features/keya/course-run-timeline";
 import { CourseWorkspacePanel } from "@/features/keya/course-workspace-panel";
 import type {
   CourseGenerationState,
-  CourseTaskRuntimeSource,
+  CourseTaskStatus,
   ReferencePack,
 } from "@/shared/course-schema";
 import type {
@@ -59,6 +83,19 @@ function cloneConversations(conversations: KeyaConversation[]) {
     ...conversation,
     messages: conversation.messages.map((message) => ({ ...message })),
   }));
+}
+
+function initialCourseBriefs(conversations: KeyaConversation[]) {
+  return Object.fromEntries(
+    conversations.flatMap((conversation) => {
+      const hasUserRequest = conversation.messages.some(
+        ({ role }) => role === "user",
+      );
+      return !conversation.courseRun && hasUserRequest
+        ? [[conversation.id, deriveCourseCreationBrief(conversation.messages)]]
+        : [];
+    }),
+  ) as Record<string, CourseCreationBrief>;
 }
 
 function messageId(role: "user" | "assistant") {
@@ -97,14 +134,28 @@ function updateMessage(
   );
 }
 
+function withSetValue<T>(values: Set<T>, value: T) {
+  if (values.has(value)) return values;
+  const next = new Set(values);
+  next.add(value);
+  return next;
+}
+
+function withoutSetValue<T>(values: Set<T>, value: T) {
+  if (!values.has(value)) return values;
+  const next = new Set(values);
+  next.delete(value);
+  return next;
+}
+
 function subscribeToWorkspaceOverlay(onChange: () => void) {
-  const query = window.matchMedia("(max-width: 1023px)");
+  const query = window.matchMedia("(max-width: 1199px)");
   query.addEventListener("change", onChange);
   return () => query.removeEventListener("change", onChange);
 }
 
 function getWorkspaceOverlaySnapshot() {
-  return window.matchMedia("(max-width: 1023px)").matches;
+  return window.matchMedia("(max-width: 1199px)").matches;
 }
 
 function getServerWorkspaceOverlaySnapshot() {
@@ -117,23 +168,17 @@ interface ChatAppProps {
   initialPrompt?: string;
 }
 
-type ActiveCourseTask = {
-  taskId: string;
-  traceId: string;
-  conversationId: string;
-  assistantId: string;
-  runId: string;
-  prompt: string;
-  runStartedAt: number;
-  requestStartedAt: number;
-  mode: "create" | "resume";
-  source: CourseTaskRuntimeSource;
-};
-
 type ReferenceUploadState = ReferenceAttachment & {
   file: File;
   pack?: ReferencePack;
 };
+
+type TaskTelemetry = {
+  connectionStatus: CourseTaskConnectionStatus;
+  taskStatus?: CourseTaskStatus;
+};
+
+const newConversationComposerKey = "__new-conversation__";
 
 function mapStreamedCourseRun(
   state: CourseGenerationState,
@@ -155,6 +200,83 @@ function mapStreamedCourseRun(
   );
 }
 
+function CourseTaskStreamBridge({
+  task,
+  onError,
+  onProgress,
+  onTelemetry,
+  onTerminal,
+}: {
+  task: ActiveCourseTask;
+  onError(task: ActiveCourseTask): void;
+  onProgress(
+    task: ActiveCourseTask,
+    state: CourseGenerationState,
+    taskStatus?: CourseTaskStatus,
+  ): void;
+  onTelemetry(task: ActiveCourseTask, telemetry: TaskTelemetry): void;
+  onTerminal(task: ActiveCourseTask, state: CourseGenerationState): void;
+}) {
+  const callbacksRef = useRef({
+    onError,
+    onProgress,
+    onTelemetry,
+    onTerminal,
+  });
+  useEffect(() => {
+    callbacksRef.current = {
+      onError,
+      onProgress,
+      onTelemetry,
+      onTerminal,
+    };
+  }, [onError, onProgress, onTelemetry, onTerminal]);
+
+  const {
+    connectionStatus,
+    latestState,
+    messages,
+    taskStatus,
+  } = useSSETask({
+    taskId: task.taskId,
+    enabled: true,
+    onTerminal: ({ state }) => {
+      callbacksRef.current.onTerminal(task, state);
+    },
+    onError: () => {
+      callbacksRef.current.onError(task);
+    },
+  });
+  const latestMessage = messages.at(-1);
+  const resolvedTaskStatus =
+    latestMessage?.type === "snapshot"
+      ? (latestMessage.taskStatus ?? latestMessage.state.status)
+      : taskStatus;
+
+  useEffect(() => {
+    callbacksRef.current.onTelemetry(task, {
+      connectionStatus,
+      taskStatus: resolvedTaskStatus,
+    });
+  }, [
+    connectionStatus,
+    resolvedTaskStatus,
+    task,
+  ]);
+
+  useEffect(() => {
+    if (latestState?.traceId === task.traceId) {
+      callbacksRef.current.onProgress(
+        task,
+        latestState,
+        resolvedTaskStatus,
+      );
+    }
+  }, [latestState, resolvedTaskStatus, task]);
+
+  return null;
+}
+
 export function ChatApp({
   initialConversations,
   initialConversationId,
@@ -168,27 +290,50 @@ export function ChatApp({
       ? (initialConversationId ?? null)
       : null;
   });
-  const [draft, setDraft] = useState(initialPrompt);
-  const [referenceUploads, setReferenceUploads] = useState<
-    ReferenceUploadState[]
-  >([]);
-  const [courseCreationOptions, setCourseCreationOptions] =
-    useState<CourseCreationOptions>({
-      pageCount: "auto",
-      executionMode: "parallel",
-      concurrency: 2,
-    });
+  const [draftsByConversation, setDraftsByConversation] = useState<
+    Record<string, string>
+  >(() => ({
+    [initialConversations.some(({ id }) => id === initialConversationId)
+      ? (initialConversationId ?? newConversationComposerKey)
+      : newConversationComposerKey]: initialPrompt,
+  }));
+  const [referenceUploadsByConversation, setReferenceUploadsByConversation] =
+    useState<Record<string, ReferenceUploadState[]>>({});
+  const [courseBriefs, setCourseBriefs] = useState<
+    Record<string, CourseCreationBrief>
+  >(() => initialCourseBriefs(initialConversations));
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [rightPanelOpen, setRightPanelOpen] = useState(false);
-  const [busyConversationId, setBusyConversationId] = useState<string | null>(
-    null,
+  const [rightPanelOpen, setRightPanelOpen] = useState(() =>
+    initialConversations.some(
+      ({ courseRun, id, messages }) =>
+        id === initialConversationId &&
+        (Boolean(courseRun) || messages.some(({ role }) => role === "user")),
+    ),
   );
-  const [activeCourseTask, setActiveCourseTask] =
-    useState<ActiveCourseTask | null>(null);
+  const [busyConversationIds, setBusyConversationIds] = useState<Set<string>>(
+    () =>
+      new Set(
+        initialConversations.flatMap((conversation) =>
+          conversation.taskStatus === "queued" ||
+          conversation.taskStatus === "running"
+            ? [conversation.id]
+            : [],
+        ),
+      ),
+  );
+  const [activeCourseTasks, setActiveCourseTasks] =
+    useState<ActiveCourseTaskRegistry>(() =>
+      createInitialTaskRegistry(initialConversations),
+    );
+  const activeCourseTasksRef = useRef(activeCourseTasks);
+  const [taskTelemetryByConversation, setTaskTelemetryByConversation] =
+    useState<Record<string, TaskTelemetry>>({});
   const [exportingCourseId, setExportingCourseId] = useState<string | null>(null);
   const [courseExportError, setCourseExportError] = useState<string>();
-  const requestControllers = useRef(new Set<AbortController>());
+  const requestControllers = useRef(
+    new Map<string, Set<AbortController>>(),
+  );
   const selectedIdRef = useRef(selectedId);
   const workspaceRef = useRef<HTMLElement>(null);
   const workspaceToggleRef = useRef<HTMLButtonElement>(null);
@@ -200,9 +345,28 @@ export function ChatApp({
   );
   const workspaceIsModal = rightPanelOpen && workspaceOverlay;
 
-  const finishCourseTask = (state: CourseGenerationState) => {
-    const task = activeCourseTask;
-    if (!task || state.traceId !== task.traceId) return;
+  useLayoutEffect(() => {
+    activeCourseTasksRef.current = activeCourseTasks;
+  }, [activeCourseTasks]);
+
+  const isCurrentCourseTask = (task: ActiveCourseTask) => {
+    const current = activeCourseTasksRef.current[task.conversationId];
+    return (
+      current?.taskId === task.taskId &&
+      current.traceId === task.traceId
+    );
+  };
+
+  const finishCourseTask = (
+    task: ActiveCourseTask,
+    state: CourseGenerationState,
+  ) => {
+    if (
+      state.traceId !== task.traceId ||
+      !isCurrentCourseTask(task)
+    ) {
+      return;
+    }
 
     const mappedRun = mapStreamedCourseRun(state, task);
     const completedPageCount = state.pages.filter(
@@ -212,12 +376,21 @@ export function ChatApp({
       1,
       Math.round((Date.now() - task.requestStartedAt) / 1_000),
     )}s`;
+    const failure =
+      state.status === "failed" || state.status === "cancelled"
+        ? getCourseFailurePresentation(
+            state.status,
+            state.errors.at(-1),
+          )
+        : undefined;
     const terminalMessage =
       state.status === "completed"
         ? task.mode === "resume"
           ? `已从断点完成全部 ${completedPageCount} 页课程。`
           : `已完成「${state.intent?.topic ?? task.prompt}」的 ${state.outline?.pages.length ?? completedPageCount} 页课程。右侧学习空间可以统一预览 HTML，也可逐页检查素材与结果。`
-        : `${state.status === "cancelled" ? "课程生成已取消" : task.mode === "resume" ? "断点恢复仍未完成" : "课程生成未完成"}：${state.errors.at(-1)?.message ?? "未知错误"} 已保留 ${completedPageCount} 个完成页面。`;
+        : failure
+          ? `${failure.title}：${failure.description} 已保留 ${completedPageCount} 个完成页面。`
+          : `课程生成未完成。已保留 ${completedPageCount} 个完成页面。`;
 
     setConversations((current) =>
       updateConversation(current, task.conversationId, (conversation) => ({
@@ -227,6 +400,7 @@ export function ChatApp({
           duration,
         }),
         courseRun: mappedRun,
+        taskStatus: state.status,
       })),
     );
     void updateStoredConversation(task.conversationId, {
@@ -239,50 +413,100 @@ export function ChatApp({
     if (selectedIdRef.current === task.conversationId) {
       setRightPanelOpen(true);
     }
-    setBusyConversationId((current) =>
-      current === task.conversationId ? null : current,
+    setBusyConversationIds((current) =>
+      withoutSetValue(current, task.conversationId),
     );
-    setActiveCourseTask((current) =>
-      current?.taskId === task.taskId ? null : current,
+    setActiveCourseTasks((current) =>
+      removeRegisteredTask(current, task.conversationId, task.taskId),
     );
+    setTaskTelemetryByConversation((current) => {
+      const next = { ...current };
+      delete next[task.conversationId];
+      return next;
+    });
   };
 
-  const handleCourseTaskStreamError = (error: Error) => {
-    const task = activeCourseTask;
-    if (!task) return;
+  const handleCourseTaskStreamError = (task: ActiveCourseTask) => {
+    if (!isCurrentCourseTask(task)) return;
 
     setConversations((current) =>
       updateConversation(current, task.conversationId, (conversation) => ({
         ...conversation,
+        taskStatus: undefined,
         messages: updateMessage(conversation.messages, task.assistantId, {
-          content: `实时进度连接已停止：${error.message} 服务端任务可能仍在运行，已保存的检查点不会丢失。`,
+          content:
+            "实时进度连接已断开。服务端任务可能仍在运行，已保存的内容不会丢失，请稍后重新打开对话查看。",
         }),
       })),
     );
     void updateStoredConversation(task.conversationId, {
       updateMessage: {
         id: task.assistantId,
-        content: `实时进度连接已停止：${error.message} 服务端任务可能仍在运行，已保存的检查点不会丢失。`,
+        content:
+          "实时进度连接已断开。服务端任务可能仍在运行，已保存的内容不会丢失，请稍后重新打开对话查看。",
       },
     });
-    setBusyConversationId((current) =>
-      current === task.conversationId ? null : current,
+    setBusyConversationIds((current) =>
+      withoutSetValue(current, task.conversationId),
     );
-    setActiveCourseTask((current) =>
-      current?.taskId === task.taskId ? null : current,
+    setActiveCourseTasks((current) =>
+      removeRegisteredTask(current, task.conversationId, task.taskId),
     );
+    setTaskTelemetryByConversation((current) => {
+      const next = { ...current };
+      delete next[task.conversationId];
+      return next;
+    });
   };
 
-  const {
-    connectionStatus: courseTaskConnectionStatus,
-    latestState: streamedCourseState,
-    taskStatus: courseTaskStatus,
-  } = useSSETask({
-    taskId: activeCourseTask?.taskId ?? null,
-    enabled: activeCourseTask !== null,
-    onTerminal: ({ state }) => finishCourseTask(state),
-    onError: handleCourseTaskStreamError,
-  });
+  const handleCourseTaskProgress = (
+    task: ActiveCourseTask,
+    state: CourseGenerationState,
+    taskStatus?: CourseTaskStatus,
+  ) => {
+    if (
+      state.traceId !== task.traceId ||
+      !isCurrentCourseTask(task)
+    ) {
+      return;
+    }
+    setConversations((current) =>
+      updateConversation(current, task.conversationId, (conversation) => ({
+        ...conversation,
+        courseRun: mapStreamedCourseRun(state, task),
+        taskStatus: taskStatus ?? conversation.taskStatus,
+      })),
+    );
+    if (taskStatus === "paused") {
+      setBusyConversationIds((current) =>
+        withoutSetValue(current, task.conversationId),
+      );
+    }
+  };
+
+  const handleTaskTelemetry = (
+    task: ActiveCourseTask,
+    telemetry: TaskTelemetry,
+  ) => {
+    if (!isCurrentCourseTask(task)) return;
+
+    const conversationId = task.conversationId;
+    setTaskTelemetryByConversation((current) => {
+      const previous = current[conversationId];
+      if (
+        previous?.connectionStatus === telemetry.connectionStatus &&
+        previous.taskStatus === telemetry.taskStatus
+      ) {
+        return current;
+      }
+      return { ...current, [conversationId]: telemetry };
+    });
+    if (telemetry.taskStatus === "paused") {
+      setBusyConversationIds((current) =>
+        withoutSetValue(current, conversationId),
+      );
+    }
+  };
 
   const selectConversation = (conversationId: string | null) => {
     selectedIdRef.current = conversationId;
@@ -291,7 +515,9 @@ export function ChatApp({
 
   useEffect(
     () => () => {
-      requestControllers.current.forEach((controller) => controller.abort());
+      requestControllers.current.forEach((controllers) => {
+        controllers.forEach((controller) => controller.abort());
+      });
       requestControllers.current.clear();
     },
     [],
@@ -313,149 +539,485 @@ export function ChatApp({
     return () => window.clearTimeout(timer);
   }, [rightPanelOpen, workspaceIsModal]);
 
-  const streamedCourseRun = useMemo(() => {
-    if (
-      !activeCourseTask ||
-      !streamedCourseState ||
-      streamedCourseState.traceId !== activeCourseTask.traceId
-    ) {
-      return undefined;
-    }
-
-    return mapStreamedCourseRun(streamedCourseState, activeCourseTask);
-  }, [activeCourseTask, streamedCourseState]);
   const selectedConversation = useMemo(() => {
-    const conversation =
-      conversations.find(({ id }) => id === selectedId) ?? null;
-
-    if (
-      !conversation ||
-      !streamedCourseRun ||
-      conversation.id !== activeCourseTask?.conversationId
-    ) {
-      return conversation;
-    }
-
-    return { ...conversation, courseRun: streamedCourseRun };
-  }, [
-    activeCourseTask?.conversationId,
-    conversations,
-    selectedId,
-    streamedCourseRun,
-  ]);
+    return conversations.find(({ id }) => id === selectedId) ?? null;
+  }, [conversations, selectedId]);
   const selectedRun = selectedConversation?.courseRun;
-  const selectedTaskTelemetry =
-    selectedConversation &&
-    activeCourseTask?.conversationId === selectedConversation.id
-      ? {
-          connectionStatus: courseTaskConnectionStatus,
-          taskStatus: courseTaskStatus,
-        }
+  const selectedBrief = selectedConversation
+    ? courseBriefs[selectedConversation.id]
+    : undefined;
+  const selectedCourseQuestion = selectedBrief
+    ? getNextClarificationQuestion(selectedBrief)
+    : undefined;
+  const selectedTaskTelemetry = selectedConversation
+    ? {
+        connectionStatus:
+          taskTelemetryByConversation[selectedConversation.id]
+            ?.connectionStatus ?? "idle",
+        taskStatus:
+          taskTelemetryByConversation[selectedConversation.id]?.taskStatus ??
+          selectedConversation.taskStatus,
+      }
+    : undefined;
+  const selectedComposerTaskStatus =
+    selectedTaskTelemetry?.taskStatus === "queued" ||
+    selectedTaskTelemetry?.taskStatus === "running" ||
+    selectedTaskTelemetry?.taskStatus === "paused"
+      ? selectedTaskTelemetry.taskStatus
       : undefined;
-  const busy = busyConversationId !== null;
+  const composerKey = selectedId ?? newConversationComposerKey;
+  const draft = draftsByConversation[composerKey] ?? "";
+  const referenceUploads =
+    referenceUploadsByConversation[composerKey] ?? [];
+  const busy = selectedId ? busyConversationIds.has(selectedId) : false;
 
-  const createController = () => {
+  const setConversationBusy = (conversationId: string, value: boolean) => {
+    setBusyConversationIds((current) =>
+      value
+        ? withSetValue(current, conversationId)
+        : withoutSetValue(current, conversationId),
+    );
+  };
+
+  const setDraft = (value: string) => {
+    setDraftsByConversation((current) => ({
+      ...current,
+      [composerKey]: value,
+    }));
+  };
+
+  const setReferenceUploads = (
+    updater:
+      | ReferenceUploadState[]
+      | ((current: ReferenceUploadState[]) => ReferenceUploadState[]),
+    key = composerKey,
+  ) => {
+    setReferenceUploadsByConversation((current) => {
+      const previous = current[key] ?? [];
+      const next =
+        typeof updater === "function" ? updater(previous) : updater;
+      return { ...current, [key]: next };
+    });
+  };
+
+  const createController = (conversationId: string) => {
     const controller = new AbortController();
-    requestControllers.current.add(controller);
+    const controllers =
+      requestControllers.current.get(conversationId) ??
+      new Set<AbortController>();
+    controllers.add(controller);
+    requestControllers.current.set(conversationId, controllers);
     return controller;
   };
 
-  const releaseController = (controller: AbortController) => {
-    requestControllers.current.delete(controller);
+  const releaseController = (
+    conversationId: string,
+    controller: AbortController,
+  ) => {
+    const controllers = requestControllers.current.get(conversationId);
+    controllers?.delete(controller);
+    if (controllers?.size === 0) {
+      requestControllers.current.delete(conversationId);
+    }
   };
 
-  const handleCancel = () => {
-    requestControllers.current.forEach((controller) => controller.abort());
+  const handlePauseCourse = async () => {
+    const conversationId = selectedIdRef.current;
+    const task = conversationId
+      ? activeCourseTasksRef.current[conversationId]
+      : undefined;
+    if (!conversationId || !task) {
+      return;
+    }
 
-    if (!activeCourseTask) return;
+    setConversationBusy(conversationId, true);
+    const controller = createController(conversationId);
+    let shouldRemainBusy = true;
+    try {
+      const response = await pauseCourseTask(task.taskId, {
+        signal: controller.signal,
+        traceId: task.traceId,
+      });
+      shouldRemainBusy =
+        response.status === "queued" || response.status === "running";
+      setConversations((current) =>
+        updateConversationTaskStatus(
+          current,
+          conversationId,
+          response.status,
+        ),
+      );
+      setTaskTelemetryByConversation((current) => ({
+        ...current,
+        [conversationId]: {
+          connectionStatus: "closed",
+          taskStatus: response.status,
+        },
+      }));
+    } catch {
+      const publicMessage = "课程任务暂时无法暂停，请稍后再试。";
+      setConversations((current) =>
+        updateConversation(current, conversationId, (conversation) => ({
+          ...conversation,
+          messages: updateMessage(conversation.messages, task.assistantId, {
+            content: publicMessage,
+          }),
+        })),
+      );
+      void updateStoredConversation(conversationId, {
+        updateMessage: {
+          id: task.assistantId,
+          content: publicMessage,
+        },
+      });
+    } finally {
+      releaseController(conversationId, controller);
+      setConversationBusy(
+        conversationId,
+        shouldRemainBusy && isCurrentCourseTask(task),
+      );
+    }
+  };
 
-    const task = activeCourseTask;
-    const controller = createController();
-    void cancelCourseTask(task.taskId, {
-      signal: controller.signal,
-      traceId: task.traceId,
-    })
-      .catch((error) => {
-        const message = getErrorMessage(error, "取消课程任务失败。");
-        setConversations((current) =>
-          updateConversation(current, task.conversationId, (conversation) => ({
+  const handleResumePausedCourse = async () => {
+    const conversationId = selectedIdRef.current;
+    const task = conversationId
+      ? activeCourseTasksRef.current[conversationId]
+      : undefined;
+    if (
+      !conversationId ||
+      !task ||
+      busyConversationIds.has(conversationId)
+    ) {
+      return;
+    }
+
+    setConversationBusy(conversationId, true);
+    const controller = createController(conversationId);
+    let resumed = false;
+    try {
+      const response = await resumeCourseTask(task.taskId, {
+        signal: controller.signal,
+        traceId: task.traceId,
+      });
+      setActiveCourseTasks((current) => ({
+        ...current,
+        [conversationId]: {
+          ...task,
+          traceId: response.traceId,
+          source: response.source,
+          requestStartedAt: Date.now(),
+        },
+      }));
+      setConversations((current) =>
+        updateConversation(
+          updateConversationTaskStatus(
+            current,
+            conversationId,
+            response.status,
+          ),
+          conversationId,
+          (conversation) => ({
             ...conversation,
-            messages: updateMessage(conversation.messages, task.assistantId, {
-              content: `课程任务暂时无法取消：${message}`,
-            }),
-          })),
-        );
-        void updateStoredConversation(task.conversationId, {
-          updateMessage: {
-            id: task.assistantId,
-            content: `课程任务暂时无法取消：${message}`,
-          },
-        });
-      })
-      .finally(() => releaseController(controller));
+            courseRun: conversation.courseRun
+              ? {
+                  ...conversation.courseRun,
+                  traceId: response.traceId,
+                  source: response.source,
+                }
+              : conversation.courseRun,
+          }),
+        ),
+      );
+      setTaskTelemetryByConversation((current) => ({
+        ...current,
+        [conversationId]: {
+          connectionStatus: "connecting",
+          taskStatus: response.status,
+        },
+      }));
+      resumed = true;
+    } catch {
+      const publicMessage = "课程任务暂时无法继续，请稍后再试。";
+      setConversations((current) =>
+        updateConversation(current, conversationId, (conversation) => ({
+          ...conversation,
+          messages: updateMessage(conversation.messages, task.assistantId, {
+            content: publicMessage,
+          }),
+        })),
+      );
+      void updateStoredConversation(conversationId, {
+        updateMessage: {
+          id: task.assistantId,
+          content: publicMessage,
+        },
+      });
+    } finally {
+      releaseController(conversationId, controller);
+      if (!resumed) {
+        setConversationBusy(conversationId, false);
+      }
+    }
   };
 
   const handleNewConversation = () => {
     selectConversation(null);
-    setDraft("");
-    setReferenceUploads([]);
     setRightPanelOpen(false);
   };
 
   const handleSelectConversation = (conversationId: string) => {
     selectConversation(conversationId);
-    setReferenceUploads([]);
     setRightPanelOpen(
       Boolean(
-        conversations.find(({ id }) => id === conversationId)?.courseRun,
+        conversations.find(({ id }) => id === conversationId)?.courseRun ||
+          courseBriefs[conversationId],
       ),
     );
+  };
+
+  const handleTogglePinned = (
+    conversationId: string,
+    pinned: boolean,
+  ) => {
+    const previous = conversations.find(
+      (conversation) => conversation.id === conversationId,
+    );
+    if (!previous || previous.pinned === pinned) return;
+
+    setConversations((current) =>
+      updateConversation(current, conversationId, (conversation) => ({
+        ...conversation,
+        pinned,
+      })),
+    );
+    const controller = createController(conversationId);
+    void updateStoredConversation(
+      conversationId,
+      { pinned },
+      controller.signal,
+    )
+      .catch(() => {
+        setConversations((current) =>
+          updateConversation(current, conversationId, (conversation) => ({
+            ...conversation,
+            pinned: previous.pinned,
+          })),
+        );
+      })
+      .finally(() => releaseController(conversationId, controller));
+  };
+
+  const handleRenameConversation = (
+    conversationId: string,
+    title: string,
+  ) => {
+    const normalizedTitle = title.trim();
+    const previous = conversations.find(
+      (conversation) => conversation.id === conversationId,
+    );
+    if (
+      !previous ||
+      !normalizedTitle ||
+      previous.title === normalizedTitle
+    ) {
+      return;
+    }
+
+    setConversations((current) =>
+      updateConversation(current, conversationId, (conversation) => ({
+        ...conversation,
+        title: normalizedTitle,
+      })),
+    );
+    const controller = createController(conversationId);
+    void updateStoredConversation(
+      conversationId,
+      { title: normalizedTitle },
+      controller.signal,
+    )
+      .catch(() => {
+        setConversations((current) =>
+          updateConversation(current, conversationId, (conversation) => ({
+            ...conversation,
+            title: previous.title,
+          })),
+        );
+      })
+      .finally(() => releaseController(conversationId, controller));
+  };
+
+  const handleDeleteConversation = async (conversationId: string) => {
+    const conversation = conversations.find(
+      (candidate) => candidate.id === conversationId,
+    );
+    if (!conversation) return;
+
+    const task = activeCourseTasksRef.current[conversationId];
+    const taskId = task?.taskId ?? conversation.courseRun?.taskId;
+    const hasNonTerminalTask =
+      conversation.taskStatus === "queued" ||
+      conversation.taskStatus === "running" ||
+      conversation.taskStatus === "paused";
+    if (hasNonTerminalTask && !taskId) {
+      window.alert("课程任务正在启动，请稍后再删除这个对话。");
+      return;
+    }
+    if (!window.confirm(`确认删除对话“${conversation.title}”吗？`)) return;
+
+    requestControllers.current
+      .get(conversationId)
+      ?.forEach((controller) => controller.abort());
+    requestControllers.current.delete(conversationId);
+    setConversationBusy(conversationId, true);
+
+    const controller = createController(conversationId);
+
+    try {
+      if (hasNonTerminalTask && taskId) {
+        await cancelCourseTask(taskId, {
+          signal: controller.signal,
+          traceId: task?.traceId ?? conversation.courseRun?.traceId,
+        });
+      }
+      await deleteStoredConversation(conversationId, controller.signal);
+
+      const deletedIndex = conversations.findIndex(
+        (candidate) => candidate.id === conversationId,
+      );
+      const remaining = conversations.filter(
+        (candidate) => candidate.id !== conversationId,
+      );
+      const nextConversation =
+        remaining[deletedIndex] ?? remaining[deletedIndex - 1] ?? null;
+
+      setConversations((current) =>
+        current.filter((candidate) => candidate.id !== conversationId),
+      );
+      setActiveCourseTasks((current) =>
+        removeRegisteredTask(current, conversationId),
+      );
+      setTaskTelemetryByConversation((current) => {
+        const next = { ...current };
+        delete next[conversationId];
+        return next;
+      });
+      setCourseBriefs((current) => {
+        const next = { ...current };
+        delete next[conversationId];
+        return next;
+      });
+      setDraftsByConversation((current) => {
+        const next = { ...current };
+        delete next[conversationId];
+        return next;
+      });
+      setReferenceUploadsByConversation((current) => {
+        const next = { ...current };
+        delete next[conversationId];
+        return next;
+      });
+
+      if (selectedIdRef.current === conversationId) {
+        selectConversation(nextConversation?.id ?? null);
+        setRightPanelOpen(
+          Boolean(
+            nextConversation?.courseRun ||
+              (nextConversation && courseBriefs[nextConversation.id]),
+          ),
+        );
+      }
+    } catch {
+      window.alert("对话删除失败，请稍后再试。");
+    } finally {
+      releaseController(conversationId, controller);
+      setConversationBusy(conversationId, false);
+    }
   };
 
   const handleSuggestion = (value: string) => {
     setDraft(value);
   };
 
-  const handleSubmit = async (value: string) => {
-    const text = value.trim();
+  const appendCourseBriefAnswer = async (
+    conversationId: string,
+    answer: string,
+    questionId?: ClarificationQuestionId,
+  ) => {
+    const currentBrief = courseBriefs[conversationId];
+    if (!currentBrief || busyConversationIds.has(conversationId)) return;
+
+    const userMessage: KeyaChatMessage = {
+      id: messageId("user"),
+      role: "user",
+      content: answer,
+      createdAt: new Date().toISOString(),
+    };
+    const updatedBrief = applyCourseCreationAnswer(
+      currentBrief,
+      answer,
+      questionId,
+    );
+
+    setCourseBriefs((current) => ({
+      ...current,
+      [conversationId]: updatedBrief,
+    }));
+    setConversations((current) =>
+      updateConversation(current, conversationId, (conversation) => ({
+        ...conversation,
+        messages: [...conversation.messages, userMessage],
+      })),
+    );
+    setDraftsByConversation((current) => ({
+      ...current,
+      [conversationId]: "",
+    }));
+
+    const controller = createController(conversationId);
+    try {
+      await updateStoredConversation(
+        conversationId,
+        { appendMessages: [userMessage] },
+        controller.signal,
+      );
+    } finally {
+      releaseController(conversationId, controller);
+    }
+  };
+
+  const startCourseGeneration = async (
+    conversationId: string,
+    brief: CourseCreationBrief,
+  ) => {
     if (
-      !text ||
-      busy ||
-      referenceUploads.some(({ status }) => status !== "ready")
+      busyConversationIds.has(conversationId) ||
+      getNextClarificationQuestion(brief)
     ) {
       return;
     }
 
-    const referencePacks = referenceUploads.flatMap(({ pack }) =>
+    const conversationUploads =
+      referenceUploadsByConversation[conversationId] ?? [];
+    const referencePacks = conversationUploads.flatMap(({ pack }) =>
       pack ? [pack] : [],
     );
-
+    const taskPrompt = buildCourseTaskPrompt(brief);
+    const pageCount = resolveCourseSectionCount(brief);
     const startedAt = Date.now();
-    const conversationId =
-      selectedId ?? `conversation-${crypto.randomUUID()}`;
-    const storedTitle =
-      conversations.find(({ id }) => id === conversationId)?.title ??
-      conversationTitle(text);
     const assistantId = messageId("assistant");
     const traceId = crypto.randomUUID();
     const courseId = `course-${crypto.randomUUID()}`;
-    const createdAt = new Date(startedAt).toISOString();
-    const userMessage: KeyaChatMessage = {
-      id: messageId("user"),
-      role: "user",
-      content: text,
-      createdAt,
-    };
     const assistantMessage: KeyaChatMessage = {
       id: assistantId,
       role: "assistant",
-      content: "正在串行生成课程规划、专业设计与多页 HTML…",
-      createdAt,
+      content: "课程方向已确认，正在生成内容。",
+      createdAt: new Date(startedAt).toISOString(),
     };
     const courseRun: KeyaCourseRun = {
       id: `run-${startedAt}`,
       courseId,
-      prompt: text,
+      prompt: taskPrompt,
       traceId,
       source: "langgraph",
       startedAt,
@@ -467,62 +1029,37 @@ export function ChatApp({
       pageQa: {},
     };
 
-    setConversations((current) => {
-      const existing = current.find(
-        (conversation) => conversation.id === conversationId,
-      );
-
-      if (!existing) {
-        return [
-          ...current,
-          {
-            id: conversationId,
-            title: storedTitle,
-            messages: [userMessage, assistantMessage],
-            courseRun,
-          },
-        ];
-      }
-
-      return updateConversation(current, conversationId, (conversation) => ({
+    setConversations((current) =>
+      updateConversation(current, conversationId, (conversation) => ({
         ...conversation,
-        title:
-          conversation.title === "未命名会话"
-            ? conversationTitle(text)
-            : conversation.title,
-        messages: [...conversation.messages, userMessage, assistantMessage],
+        title: brief.topic || conversation.title,
+        messages: [...conversation.messages, assistantMessage],
         courseRun,
-      }));
-    });
-    selectConversation(conversationId);
-    setDraft("");
-    setBusyConversationId(conversationId);
+        taskStatus: "queued",
+      })),
+    );
+    setConversationBusy(conversationId, true);
+    setDraftsByConversation((current) => ({
+      ...current,
+      [conversationId]: "",
+    }));
 
-    const controller = createController();
-
+    const controller = createController(conversationId);
     try {
       await saveConversation(
         {
           id: conversationId,
-          title: storedTitle,
-          messages: [userMessage, assistantMessage],
+          title: brief.topic || conversationTitle(brief.originalRequest),
+          messages: [assistantMessage],
         },
         controller.signal,
       );
       const task = await createCourseTask(
         {
           courseId,
-          userPrompt: text,
-          source: "langgraph",
+          userPrompt: taskPrompt,
           referencePacks,
-          ...(courseCreationOptions.pageCount === "auto"
-            ? {}
-            : { pageCount: courseCreationOptions.pageCount }),
-          executionMode: courseCreationOptions.executionMode,
-          concurrency:
-            courseCreationOptions.executionMode === "parallel"
-              ? courseCreationOptions.concurrency
-              : 1,
+          ...(pageCount ? { pageCount } : {}),
         },
         { signal: controller.signal, traceId },
       );
@@ -548,29 +1085,42 @@ export function ChatApp({
         },
         controller.signal,
       );
-      setActiveCourseTask({
-        taskId: task.taskId,
-        traceId: task.traceId,
-        conversationId,
-        assistantId,
-        runId: courseRun.id,
-        prompt: text,
-        runStartedAt: startedAt,
-        requestStartedAt: startedAt,
-        mode: "create",
-        source: task.source,
-      });
-      setReferenceUploads([]);
+      setActiveCourseTasks((current) => ({
+        ...current,
+        [conversationId]: {
+          taskId: task.taskId,
+          traceId: task.traceId,
+          conversationId,
+          assistantId,
+          runId: courseRun.id,
+          prompt: taskPrompt,
+          runStartedAt: startedAt,
+          requestStartedAt: startedAt,
+          mode: "create",
+          source: task.source,
+        },
+      }));
+      setConversations((current) =>
+        updateConversationTaskStatus(
+          current,
+          conversationId,
+          task.status,
+        ),
+      );
+      setReferenceUploads([], conversationId);
       if (selectedIdRef.current === conversationId) {
         setRightPanelOpen(true);
       }
     } catch (error) {
-      const message = getErrorMessage(error, "整课生成请求失败。");
+      const message = getErrorMessage(error, "课程生成请求失败。");
+      const publicMessage =
+        "课程生成请求失败。请检查网络或模型服务配置后重试。";
       setConversations((current) =>
         updateConversation(current, conversationId, (conversation) => ({
           ...conversation,
+          taskStatus: undefined,
           messages: updateMessage(conversation.messages, assistantId, {
-            content: `课程生成没有完成：${message}`,
+            content: publicMessage,
           }),
           courseRun: conversation.courseRun
             ? {
@@ -587,17 +1137,107 @@ export function ChatApp({
       void updateStoredConversation(conversationId, {
         updateMessage: {
           id: assistantId,
-          content: `课程生成没有完成：${message}`,
+          content: publicMessage,
         },
       });
-      if (selectedIdRef.current === conversationId) {
-        setRightPanelOpen(true);
-      }
-      setBusyConversationId((current) =>
-        current === conversationId ? null : current,
-      );
+      setConversationBusy(conversationId, false);
     } finally {
-      releaseController(controller);
+      releaseController(conversationId, controller);
+    }
+  };
+
+  const handleAnswerCourseQuestion = (
+    answer: string,
+    questionId?: ClarificationQuestionId,
+  ) => {
+    if (!selectedConversation || selectedRun) return;
+    void appendCourseBriefAnswer(
+      selectedConversation.id,
+      answer,
+      questionId,
+    );
+  };
+
+  const handleConfirmCourse = () => {
+    if (!selectedConversation || !selectedBrief || selectedRun) return;
+    void startCourseGeneration(selectedConversation.id, selectedBrief);
+  };
+
+  const handleSubmit = async (value: string) => {
+    const text = value.trim();
+    if (
+      !text ||
+      busy ||
+      referenceUploads.some(({ status }) => status !== "ready")
+    ) {
+      return;
+    }
+
+    if (selectedConversation && selectedBrief && !selectedRun) {
+      if (
+        !selectedCourseQuestion &&
+        /^(?:开始|开始生成|生成课程|就这样|确认)$/u.test(text)
+      ) {
+        await startCourseGeneration(selectedConversation.id, selectedBrief);
+        return;
+      }
+      await appendCourseBriefAnswer(
+        selectedConversation.id,
+        text,
+        selectedCourseQuestion?.id,
+      );
+      return;
+    }
+
+    const courseBrief = createCourseCreationBrief(text);
+    const conversationId = `conversation-${crypto.randomUUID()}`;
+    const userMessage: KeyaChatMessage = {
+      id: messageId("user"),
+      role: "user",
+      content: text,
+      createdAt: new Date().toISOString(),
+    };
+    const storedTitle =
+      courseBrief.topic || conversationTitle(courseBrief.originalRequest);
+    const controller = createController(conversationId);
+    const pendingUploads =
+      referenceUploadsByConversation[newConversationComposerKey] ?? [];
+
+    try {
+      await saveConversation(
+        {
+          id: conversationId,
+          title: storedTitle,
+          messages: [userMessage],
+        },
+        controller.signal,
+      );
+      setConversations((current) => [
+        ...current,
+        {
+          id: conversationId,
+          title: storedTitle,
+          messages: [userMessage],
+        },
+      ]);
+      setCourseBriefs((current) => ({
+        ...current,
+        [conversationId]: courseBrief,
+      }));
+      setDraftsByConversation((current) => ({
+        ...current,
+        [newConversationComposerKey]: "",
+        [conversationId]: "",
+      }));
+      setReferenceUploadsByConversation((current) => ({
+        ...current,
+        [newConversationComposerKey]: [],
+        [conversationId]: pendingUploads,
+      }));
+      selectConversation(conversationId);
+      setRightPanelOpen(true);
+    } finally {
+      releaseController(conversationId, controller);
     }
   };
 
@@ -605,7 +1245,14 @@ export function ChatApp({
     const conversationId = selectedConversation?.id;
     const run = selectedConversation?.courseRun;
     const courseId = run?.courseId;
-    if (!conversationId || !run || !courseId || busy) return;
+    if (
+      !conversationId ||
+      !run ||
+      !courseId ||
+      busyConversationIds.has(conversationId)
+    ) {
+      return;
+    }
 
     const assistantId = messageId("assistant");
     const startedAt = Date.now();
@@ -616,21 +1263,23 @@ export function ChatApp({
       createdAt: new Date(startedAt).toISOString(),
     };
     const knownPageCount = run.planner.data?.intent.courseLength;
+    const previousTaskStatus = selectedConversation.taskStatus;
     const pageCount =
-      knownPageCount === 3 || knownPageCount === 4 || knownPageCount === 5
+      Number.isSafeInteger(knownPageCount) && (knownPageCount ?? 0) > 0
         ? knownPageCount
         : undefined;
-    setBusyConversationId(conversationId);
+    setConversationBusy(conversationId, true);
     setConversations((current) =>
       updateConversation(current, conversationId, (conversation) => ({
         ...conversation,
+        taskStatus: "queued",
         messages: [
           ...conversation.messages,
           resumeMessage,
         ],
       })),
     );
-    const controller = createController();
+    const controller = createController(conversationId);
     const traceId = crypto.randomUUID();
 
     try {
@@ -649,7 +1298,6 @@ export function ChatApp({
           courseId,
           userPrompt: run.prompt,
           ...(pageCount ? { pageCount } : {}),
-          source: run.source ?? "langgraph",
         },
         { signal: controller.signal, traceId },
       );
@@ -672,39 +1320,49 @@ export function ChatApp({
         { courseId: task.courseId, taskId: task.taskId },
         controller.signal,
       );
-      setActiveCourseTask({
-        taskId: task.taskId,
-        traceId: task.traceId,
-        conversationId,
-        assistantId,
-        runId: run.id,
-        prompt: run.prompt,
-        runStartedAt: run.startedAt,
-        requestStartedAt: startedAt,
-        mode: "resume",
-        source: task.source,
-      });
-    } catch (error) {
-      const message = getErrorMessage(error, "断点恢复请求失败。");
+      setActiveCourseTasks((current) => ({
+        ...current,
+        [conversationId]: {
+          taskId: task.taskId,
+          traceId: task.traceId,
+          conversationId,
+          assistantId,
+          runId: run.id,
+          prompt: run.prompt,
+          runStartedAt: run.startedAt,
+          requestStartedAt: startedAt,
+          mode: "resume",
+          source: task.source,
+        },
+      }));
+      setConversations((current) =>
+        updateConversationTaskStatus(
+          current,
+          conversationId,
+          task.status,
+        ),
+      );
+    } catch {
+      const publicMessage =
+        "没有成功重新开始课程生成，请检查网络或模型服务配置后再试。";
       setConversations((current) =>
         updateConversation(current, conversationId, (conversation) => ({
           ...conversation,
+          taskStatus: previousTaskStatus,
           messages: updateMessage(conversation.messages, assistantId, {
-            content: `断点恢复没有完成：${message}`,
+            content: publicMessage,
           }),
         })),
       );
       void updateStoredConversation(conversationId, {
         updateMessage: {
           id: assistantId,
-          content: `断点恢复没有完成：${message}`,
+          content: publicMessage,
         },
       });
-      setBusyConversationId((current) =>
-        current === conversationId ? null : current,
-      );
+      setConversationBusy(conversationId, false);
     } finally {
-      releaseController(controller);
+      releaseController(conversationId, controller);
     }
   };
 
@@ -716,7 +1374,7 @@ export function ChatApp({
 
     if (!conversationId || !run || !planner || !outline || busy) return;
 
-    setBusyConversationId(conversationId);
+    setConversationBusy(conversationId, true);
     setConversations((current) =>
       updateConversation(current, conversationId, (conversation) => ({
         ...conversation,
@@ -732,7 +1390,7 @@ export function ChatApp({
           : conversation.courseRun,
       })),
     );
-    const controller = createController();
+    const controller = createController(conversationId);
 
     try {
       const result = await designCourse(
@@ -799,10 +1457,8 @@ export function ChatApp({
         })),
       );
     } finally {
-      releaseController(controller);
-      setBusyConversationId((current) =>
-        current === conversationId ? null : current,
-      );
+      releaseController(conversationId, controller);
+      setConversationBusy(conversationId, false);
     }
   };
 
@@ -818,7 +1474,7 @@ export function ChatApp({
 
     if (!conversationId || !run || !planner || !page || !brief || busy) return;
 
-    setBusyConversationId(conversationId);
+    setConversationBusy(conversationId, true);
     setConversations((current) =>
       updateConversation(current, conversationId, (conversation) => ({
         ...conversation,
@@ -845,7 +1501,7 @@ export function ChatApp({
           : conversation.courseRun,
       })),
     );
-    const controller = createController();
+    const controller = createController(conversationId);
 
     try {
       const result = await writeCoursePage(
@@ -926,10 +1582,8 @@ export function ChatApp({
         })),
       );
     } finally {
-      releaseController(controller);
-      setBusyConversationId((current) =>
-        current === conversationId ? null : current,
-      );
+      releaseController(conversationId, controller);
+      setConversationBusy(conversationId, false);
     }
   };
 
@@ -941,7 +1595,7 @@ export function ChatApp({
 
     if (!conversationId || !run || !content || !visualBrief || busy) return;
 
-    setBusyConversationId(conversationId);
+    setConversationBusy(conversationId, true);
     setConversations((current) =>
       updateConversation(current, conversationId, (conversation) => ({
         ...conversation,
@@ -964,7 +1618,7 @@ export function ChatApp({
           : conversation.courseRun,
       })),
     );
-    const controller = createController();
+    const controller = createController(conversationId);
 
     try {
       const result = await generateCoursePageAssets(
@@ -1040,10 +1694,8 @@ export function ChatApp({
         })),
       );
     } finally {
-      releaseController(controller);
-      setBusyConversationId((current) =>
-        current === conversationId ? null : current,
-      );
+      releaseController(conversationId, controller);
+      setConversationBusy(conversationId, false);
     }
   };
 
@@ -1063,7 +1715,7 @@ export function ChatApp({
       busy
     ) return;
 
-    setBusyConversationId(conversationId);
+    setConversationBusy(conversationId, true);
     setConversations((current) =>
       updateConversation(current, conversationId, (conversation) => ({
         ...conversation,
@@ -1082,7 +1734,7 @@ export function ChatApp({
           : conversation.courseRun,
       })),
     );
-    const controller = createController();
+    const controller = createController(conversationId);
 
     try {
       const result = await generateCoursePageHtml(
@@ -1158,10 +1810,8 @@ export function ChatApp({
         })),
       );
     } finally {
-      releaseController(controller);
-      setBusyConversationId((current) =>
-        current === conversationId ? null : current,
-      );
+      releaseController(conversationId, controller);
+      setConversationBusy(conversationId, false);
     }
   };
 
@@ -1189,7 +1839,7 @@ export function ChatApp({
       return;
     }
 
-    setBusyConversationId(conversationId);
+    setConversationBusy(conversationId, true);
     setConversations((current) =>
       updateConversation(current, conversationId, (conversation) => ({
         ...conversation,
@@ -1204,7 +1854,7 @@ export function ChatApp({
           : conversation.courseRun,
       })),
     );
-    const controller = createController();
+    const controller = createController(conversationId);
 
     try {
       const result = await evaluateCoursePage(
@@ -1289,10 +1939,8 @@ export function ChatApp({
         })),
       );
     } finally {
-      releaseController(controller);
-      setBusyConversationId((current) =>
-        current === conversationId ? null : current,
-      );
+      releaseController(conversationId, controller);
+      setConversationBusy(conversationId, false);
     }
   };
 
@@ -1321,6 +1969,16 @@ export function ChatApp({
     }
   };
 
+  const handleOpenCoursePlayer = () => {
+    const courseId = selectedRun?.courseId;
+    if (!courseId) return;
+    window.open(
+      `/course/${encodeURIComponent(courseId)}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+  };
+
   const handleExportCourse = async () => {
     const courseId = selectedRun?.courseId;
     if (!courseId || exportingCourseId) return;
@@ -1335,14 +1993,18 @@ export function ChatApp({
     }
   };
 
-  const parseUpload = (upload: ReferenceUploadState) => {
-    const controller = createController();
+  const parseUpload = (
+    upload: ReferenceUploadState,
+    key: string,
+  ) => {
+    const controller = createController(key);
     setReferenceUploads((current) =>
       current.map((item) =>
         item.id === upload.id
           ? { ...item, status: "uploading", error: undefined, pack: undefined }
           : item,
       ),
+      key,
     );
 
     void parseReferenceFile(upload.file, {
@@ -1350,29 +2012,33 @@ export function ChatApp({
       traceId: crypto.randomUUID(),
     })
       .then((pack) => {
-        setReferenceUploads((current) =>
-          current.map((item) =>
-            item.id === upload.id
-              ? { ...item, status: "ready", pack, error: undefined }
-              : item,
-          ),
+        setReferenceUploads(
+          (current) =>
+            current.map((item) =>
+              item.id === upload.id
+                ? { ...item, status: "ready", pack, error: undefined }
+                : item,
+            ),
+          key,
         );
       })
       .catch((error) => {
-        setReferenceUploads((current) =>
-          current.map((item) =>
-            item.id === upload.id
-              ? {
-                  ...item,
-                  status: "error",
-                  error: getErrorMessage(error, "资料解析失败。"),
-                  pack: undefined,
-                }
-              : item,
-          ),
+        setReferenceUploads(
+          (current) =>
+            current.map((item) =>
+              item.id === upload.id
+                ? {
+                    ...item,
+                    status: "error",
+                    error: getErrorMessage(error, "资料解析失败。"),
+                    pack: undefined,
+                  }
+                : item,
+            ),
+          key,
         );
       })
-      .finally(() => releaseController(controller));
+      .finally(() => releaseController(key, controller));
   };
 
   const handleFilesSelected = (files: File[]) => {
@@ -1386,26 +2052,46 @@ export function ChatApp({
     }));
     if (uploads.length === 0) return;
 
-    setReferenceUploads((current) => [...current, ...uploads]);
-    uploads.forEach(parseUpload);
+    setReferenceUploads((current) => [...current, ...uploads], composerKey);
+    uploads.forEach((upload) => parseUpload(upload, composerKey));
   };
 
   const handleRetryReference = (id: string) => {
     const upload = referenceUploads.find((item) => item.id === id);
-    if (upload && !busy) parseUpload(upload);
+    if (upload && !busy) parseUpload(upload, composerKey);
   };
 
   return (
     <main className="fixed inset-0 flex overflow-hidden bg-[#fff9ee] text-[#2d332b]">
+      {Object.values(activeCourseTasks).map((task) => {
+        const taskStatus = conversations.find(
+          (conversation) => conversation.id === task.conversationId,
+        )?.taskStatus;
+        if (taskStatus === "paused") return null;
+
+        return (
+          <CourseTaskStreamBridge
+            key={`${task.taskId}:${task.traceId}`}
+            onError={handleCourseTaskStreamError}
+            onProgress={handleCourseTaskProgress}
+            onTelemetry={handleTaskTelemetry}
+            onTerminal={finishCourseTask}
+            task={task}
+          />
+        );
+      })}
       <ChatSidebar
         collapsed={collapsed}
         conversations={conversations}
         inert={workspaceIsModal}
         mobileOpen={mobileOpen}
         onCloseMobile={() => setMobileOpen(false)}
+        onDeleteConversation={handleDeleteConversation}
         onNewConversation={handleNewConversation}
+        onRenameConversation={handleRenameConversation}
         onSelectConversation={handleSelectConversation}
         onToggleCollapsed={() => setCollapsed((value) => !value)}
+        onTogglePinned={handleTogglePinned}
         selectedConversationId={selectedId}
       />
 
@@ -1434,6 +2120,11 @@ export function ChatApp({
             busy={busy}
             connectionStatus={selectedTaskTelemetry?.connectionStatus}
             conversation={selectedConversation}
+            courseBrief={selectedBrief}
+            courseQuestion={selectedCourseQuestion}
+            onAnswerCourseQuestion={handleAnswerCourseQuestion}
+            onConfirmCourse={handleConfirmCourse}
+            onOpenCoursePlayer={handleOpenCoursePlayer}
             onResumeCourse={handleResumeCourse}
             taskStatus={selectedTaskTelemetry?.taskStatus}
           />
@@ -1454,20 +2145,21 @@ export function ChatApp({
               selectedRun ? "课程" : selectedConversation ? "演示" : undefined
             }
             draft={draft}
-            onCancel={handleCancel}
             onDraftChange={setDraft}
             onFilesSelected={handleFilesSelected}
+            onPause={handlePauseCourse}
             onRemoveAttachment={(id) =>
-              setReferenceUploads((current) =>
-                current.filter((item) => item.id !== id),
+              setReferenceUploads(
+                (current) => current.filter((item) => item.id !== id),
+                composerKey,
               )
             }
+            onResume={handleResumePausedCourse}
             onRetryAttachment={handleRetryReference}
             onSelectSuggestion={handleSuggestion}
             onSubmit={handleSubmit}
-            onTaskOptionsChange={setCourseCreationOptions}
             showSuggestions={selectedConversation === null}
-            taskOptions={courseCreationOptions}
+            taskStatus={selectedComposerTaskStatus}
           />
         </div>
 
@@ -1485,9 +2177,9 @@ export function ChatApp({
           aria-hidden={!rightPanelOpen}
           aria-label="学习空间"
           aria-modal={workspaceIsModal ? true : undefined}
-          className={`shrink-0 overflow-hidden border-l border-[#e8dfd0] bg-[#fffcf5] transition-[width,visibility] duration-300 max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-20 ${
+          className={`min-h-0 shrink-0 overflow-hidden border-l border-border bg-card transition-[width,visibility] duration-300 max-[1199px]:absolute max-[1199px]:inset-y-0 max-[1199px]:right-0 max-[1199px]:z-20 ${
             rightPanelOpen
-              ? "visible w-[390px] max-md:w-full"
+              ? "visible w-[410px] max-md:w-full"
               : "invisible w-0 border-l-0"
           }`}
           id="course-learning-workspace"
@@ -1496,8 +2188,9 @@ export function ChatApp({
           role={workspaceIsModal ? "dialog" : undefined}
           tabIndex={workspaceIsModal ? -1 : undefined}
         >
-          <div className="scrollbar-hide h-full w-[390px] max-w-full overflow-y-auto max-md:w-screen">
+          <div className="h-full min-h-0 w-[410px] max-w-full overflow-hidden max-md:w-screen">
             <CourseWorkspacePanel
+              brief={selectedBrief}
               busy={busy}
               exportError={courseExportError}
               exporting={exportingCourseId === selectedRun?.courseId}
@@ -1508,8 +2201,10 @@ export function ChatApp({
               onEvaluatePage={handleEvaluatePage}
               onGeneratePage={handleGeneratePage}
               onOpenHtmlPreview={handleOpenHtmlPreview}
+              onOpenCoursePlayer={handleOpenCoursePlayer}
               onResumeCourse={handleResumeCourse}
               run={selectedRun}
+              taskStatus={selectedTaskTelemetry?.taskStatus}
             />
           </div>
         </aside>

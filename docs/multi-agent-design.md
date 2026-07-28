@@ -1,6 +1,6 @@
 # 多 Agent 架构设计
 
-> Day 21 架构评审文档，已更新至 Day 31：手写 Supervisor 兼容入口与生产 LangGraph 入口共享领域状态、节点生命周期和公开事件；LangGraph 已通过受限条件边调度 Specialist、页面重试及两轮 QA/Repair/re-QA。
+> Day 21 架构评审文档，已更新至 2026-07-24：手写 Supervisor 兼容入口与生产 LangGraph 入口共享领域状态、节点生命周期和公开事件；LangGraph 已通过受限条件边调度 Specialist、页面重试及质量优先 QA/Repair/re-QA。
 
 ## 1. 结论
 
@@ -136,7 +136,7 @@ Supervisor 只应读取调度所需的验证事实：
 - 已存在的类型化产物；
 - 最新结构化错误或 QA 报告；
 - 页面依赖完成情况；
-- attempt 与 repair budget；
+- execution attempt、质量进展与安全熔断；
 - 取消状态；
 - 必要时的人工批准或拒绝。
 
@@ -212,7 +212,7 @@ HTML 候选
   -> 可修复且仍有预算：定向 Repair
   -> 校验修复产物
   -> 再次 QA
-  -> 预算耗尽或不可修复：失败或请求人工处理
+  -> 质量停滞或不可修复：失败或请求人工处理
 ```
 
 Repair 只能针对明确 issue 和最小责任产物。HTML 排版问题不能授权它重写课程规划，事实错误也不能用 CSS 隐藏。每次修复都要保留原报告并生成可追踪结果。
@@ -344,7 +344,7 @@ flowchart TD
 
 - [x] `START` 先进入 Supervisor；所有非终态 Specialist、Page Worker、Retry 和 Repair 节点执行后都返回 Supervisor。
 - [x] `routeBySupervisor` 只接受 `SupervisorDecisionSchema` 校验后的最后决策，并只返回图中声明的节点白名单。
-- [x] 缺失产物、页面依赖、QA `shouldRepair`、阶段 attempts、两轮 Repair 预算、取消和完成状态都由确定性规则判断。
+- [x] 缺失产物、页面依赖、QA `shouldRepair`、阶段 attempts、Repair 质量停滞/紧急上限、取消和完成状态都由确定性规则判断。
 - [x] 普通 Page Worker 在 QA 后暂停；Repair 节点每次只执行一轮 Repair/re-QA，失败页 Retry 每次只恢复一个页面，避免节点内部形成无界循环。
 - [x] Supervisor decisions 与手写入口共享 attempt、checkpoint 和公开事件语义；Graph streaming 继续经过 Day 30 的严格映射。
 - [x] 原始页面错误码在终态中保留，使用户显式恢复时可以重新判断 retryability；Supervisor stop 原因保存在 `lastDecision`。

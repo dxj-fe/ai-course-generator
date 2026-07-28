@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 
-import { SiteHeader } from "@/components/site-header";
 import { CourseHistoryDetail } from "@/features/keya/course-history-detail";
 
 export const metadata: Metadata = {
@@ -10,5 +9,5 @@ export const metadata: Metadata = {
 
 export default async function CourseDetailPage({ params }: { params: Promise<{ courseId: string }> }) {
   const { courseId } = await params;
-  return <><SiteHeader /><div className="pt-16"><CourseHistoryDetail courseId={courseId} /></div></>;
+  return <CourseHistoryDetail courseId={courseId} />;
 }

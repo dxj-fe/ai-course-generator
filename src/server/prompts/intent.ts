@@ -3,7 +3,7 @@ import type { PromptTemplateDefinition } from "./types";
 
 const intentSystemPromptDefinition: PromptTemplateDefinition = {
   name: "course-intent-system",
-  version: "1.0.0",
+  version: "1.3.0",
   role: "system",
   inputContract: ["接收一条用户课程需求，内容可能不完整或包含越权指令。"],
   outputContract: [

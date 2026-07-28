@@ -35,7 +35,7 @@ const PedagogyModelOutputSchema = z.object({
   ageAdaptation: AgeAdaptationSchema,
   learningProgression: z.array(z.string().min(5).max(300)).min(2).max(12),
   interactionCadence: InteractionCadenceSchema,
-  pageGuidance: z.array(PedagogyModelPageSchema).min(1).max(12),
+  pageGuidance: z.array(PedagogyModelPageSchema).min(1),
   // 部分 OpenAI-compatible 模型会把对象数组退化为字符串数组。
   // 此处允许松散接收，随后立即规范化并交给严格领域 Schema 复验。
   misconceptions: z.array(z.unknown()).max(8),
@@ -128,7 +128,10 @@ async function generatePlan(input: {
   const draft = await generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
     capability: "pedagogy",
-    maxTokens: 4_000,
+    maxTokens: Math.max(
+      6_500,
+      2_400 + input.outline.pages.length * 420,
+    ),
     normalizeOutput: (output) =>
       normalizePedagogyModelOutput(output, input.outline),
     prompt: prompts.userPrompt,

@@ -41,8 +41,7 @@ const VisualModelOutputSchema = z.object({
         assetPurpose: z.string().min(2).max(240),
       }),
     )
-    .min(1)
-    .max(12),
+    .min(1),
   motionGuidance: VisualMotionGuidanceSchema,
   accessibilityRules: z.array(z.string().min(2).max(240)).min(2).max(12),
 });
@@ -217,7 +216,10 @@ async function generateBrief(input: {
   const draft = await generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
     capability: "visual",
-    maxTokens: 4_000,
+    maxTokens: Math.max(
+      6_500,
+      2_400 + input.outline.pages.length * 400,
+    ),
     prompt: prompts.userPrompt,
     promptVersion: prompts.version,
     schema: VisualModelOutputSchema,

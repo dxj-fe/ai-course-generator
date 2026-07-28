@@ -87,6 +87,18 @@ describe("ImagePromptAgent", () => {
     });
     expect(requests.every(({ prompt }) => prompt.includes("No text"))).toBe(true);
     expect(requests.every(({ prompt }) => prompt.includes("complete UI layouts"))).toBe(true);
+    expect(requests.every(({ prompt }) => prompt.includes("No text or text-like marks"))).toBe(
+      true,
+    );
+    expect(requests[0].prompt).toContain(
+      "Do not draw a panel, card, sheet of paper",
+    );
+    expect(requests[0].prompt).toContain(
+      "HTML content will be overlaid separately",
+    );
+    expect(requests[1].prompt).toContain(
+      "do not add a presentation frame or surrounding layout",
+    );
   });
 
   it("skips the model when the page has no asset slots", async () => {

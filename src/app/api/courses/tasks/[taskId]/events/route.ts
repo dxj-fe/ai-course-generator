@@ -139,6 +139,7 @@ function createTaskEventStream(
                 taskId: task.taskId,
                 courseId: task.courseId,
                 source: task.source,
+                taskStatus: currentTask?.status ?? task.status,
                 state,
               });
             } else {
@@ -155,6 +156,16 @@ function createTaskEventStream(
                     event,
                   });
                 }
+              }
+              if (currentTask?.status === "paused") {
+                send({
+                  type: "snapshot",
+                  taskId: task.taskId,
+                  courseId: task.courseId,
+                  source: task.source,
+                  taskStatus: "paused",
+                  state,
+                });
               }
             }
           }

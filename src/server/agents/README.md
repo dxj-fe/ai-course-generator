@@ -1,6 +1,6 @@
 # Agent 契约索引
 
-本目录保存课程生成中的模型 Agent。当前系统已经把不同专业职责拆成多个 Agent：受限 Supervisor 调度全局 `WorkflowNode`，依赖感知运行层以隔离 Page Worker 和默认并发度 2 的 Promise Pool 生成页面，并执行 QA → 有界 Repair → re-QA。Day 29 另有复用同一状态和业务节点的固定 LangGraph runner，但产品任务服务仍默认使用手写 Supervisor workflow。本文只记录当前真实契约与后续角色边界。
+本目录保存课程生成中的模型 Agent。当前系统已经把不同专业职责拆成多个 Agent：受限 Supervisor 调度全局 `WorkflowNode`，依赖感知运行层以隔离 Page Worker 和默认并发度 2 的 Promise Pool 生成页面，并执行 QA → 有界 Repair → re-QA。产品任务默认通过复用同一状态和业务节点的 LangGraph runner 执行，手写 Supervisor workflow 只保留为内部兼容路径。本文只记录当前真实契约与后续角色边界。
 
 九名 Specialist Prompt 的版本、状态和模板文件由 [`specialist-library.ts`](../prompts/specialist-library.ts) 集中登记；统一合同、Lint 与版本规则见 [`docs/prompt-library.md`](../../../docs/prompt-library.md)。Day 27 已将 Repair 从合同草案升级为 active 运行角色。
 
@@ -27,7 +27,7 @@
 - **状态**：已实现的入口解析能力；它不在手册列出的九名 Specialist 中。
 - **输入**：原始 `userPrompt`、`traceId`、可选 `AbortSignal`。
 - **输出**：经过 `CourseIntentSchema` 校验的 `CourseIntent`。
-- **校验边界**：Intent 模块校验结构；课程 Workflow 再把 MVP 页数收敛到 3–5 页并复验。
+- **校验边界**：Intent 模块按课程内容选择正整数章节数且不设固定上限；课程 Workflow 复用同一共享页数 Schema，不再二次收敛到固定页数。
 - **禁止职责**：不规划具体页面，不写页面内容，不选择 HTML 实现，不调度后续 Agent。
 - **源码**：[intent-agent.ts](./intent-agent.ts)、[course-generation-nodes.ts](../workflows/course-generation-nodes.ts)、[course-generation-workflow.ts](../workflows/course-generation-workflow.ts)。
 
@@ -109,9 +109,9 @@
 ### 9. Repair
 
 - **状态**：已实现，对应 `RepairAgent`；只由 Page Worker 的确定性 QA/Repair 运行层调用。
-- **输入边界**：`RepairRequest` 只包含当前页 DSL、HTML、VisualBrief、素材、来源 `QualityReport`、允许 issue/scope 和最多两轮预算；不包含原始用户 Prompt 或其他页面。
+- **输入边界**：`RepairRequest` 只包含当前页 DSL、HTML、VisualBrief、素材、来源 `QualityReport`、允许 issue/scope 和当前尝试序号；不包含原始用户 Prompt 或其他页面。
 - **输出边界**：`RepairResult` 返回 located DSL block 候选、唯一匹配 HTML patches，或结构化拒绝。DSL 候选保持页面身份、模板、互动、素材槽、布局提示和未授权 blocks；HTML patch 应用后复用原 HTML/DSL/asset 安全校验。
-- **运行边界**：内容/教学问题优先路由 DSL；排版/风格/HTML 及可修复素材标记路由 HTML；Provider 素材失败不由 Repair 伪造。每轮 checkpoint 后必须 re-QA，只有运行层决定通过、下一轮或失败。
+- **运行边界**：内容/教学问题优先路由 DSL；排版/风格/HTML 及可修复素材标记路由 HTML；Provider 素材失败不由 Repair 伪造。候选应用后必须 re-QA；只有成功 re-QA 才算质量迭代，连续三次质量向量无改善时安全熔断。瞬时执行失败最多自动重试三次，但相同 Schema/model 合同错误只做一次恢复重试。
 - **公开状态**：页面 checkpoint 保存来源报告、轮次、目标、issue、状态、变更摘要和 re-QA report ID；候选正文不重复持久化。Timeline 只展示 `repair_attempt`、`repair_success` 和结构化错误摘要。
 - **禁止职责**：不改全局 CoursePlan，不掩盖原始报告，不自行宣布质量通过，不无限循环，不无差别重写整页，不扩展到未授权页面。
 - **源码**：[repair-agent.ts](./repair-agent.ts)、[repair.ts](../../shared/course-schema/repair.ts)、[qa-repair-loop.ts](../workflows/qa-repair-loop.ts)、[repair-candidate.ts](../repair/repair-candidate.ts)。
@@ -140,7 +140,7 @@
 - **状态**：已实现的**逐页隔离执行范围**，不是独立模型 Agent。
 - `CourseDesignWorkflow` 把全局 briefs 投影为每页 `PageWorkerBrief`；`generatePageWorker` 只消费当前页计划、对应 brief、必要全局指导和局部 checkpoint，内部依次执行 PageWriter → Assets → HtmlEngineer → PageQA。
 - Worker 只返回 `PageWorkerResult` 和页面局部公开事件，不能读取、修改或持久化完整 `CourseGenerationState`。每页拥有独立阶段、attempts、错误和取消检查。
-- `runCourseWorkersWorkflow` 根据 `dependsOnPageIds` 解锁页面，并用可配置 serial/parallel 模式与默认并发度 2 的 Promise Pool 调度；所有局部更新经单一 merge/checkpoint 队列写回整课状态。
+- `runCourseWorkersWorkflow` 在 serial 模式按 `dependsOnPageIds` 解锁页面；parallel 模式把这些依赖保留为学习顺序语义，并用默认并发度 2 的 Promise Pool 独立生成页面。所有局部更新经单一 merge/checkpoint 队列写回整课状态。
 - **源码**：[page-worker.ts](../workflows/page-worker.ts)、[promise-pool.ts](../workflows/promise-pool.ts)、[course-workers-workflow.ts](../workflows/course-workers-workflow.ts)、[course-generation-workflow.ts](../workflows/course-generation-workflow.ts)。
 
 ### GenerateImage Skill
@@ -169,4 +169,4 @@
 
 当前运行链路是：Supervisor 在确定性候选集合中调度 Intent → Planner → Pedagogy → Story → Visual；全局设计完成后，依赖感知课程运行层调度隔离 Page Worker，每个 Worker 执行 PageWriter → ImagePrompt/GenerateImage Skill → HtmlEngineer → PageQA。全局节点继续由 `runSupervisedWorkflow` 持有限重试，页面阶段由 Worker 持有独立三次预算；checkpoint 与恢复继续由兼容 facade 和任务基础设施集中管理。
 
-可选 LangGraph 固定执行层已实现 `Intent → Planner → Briefs → Page Workers → Finalize`，并复用同一 `CourseGenerationState`、节点生命周期和 checkpoint。产品默认仍是手写 Supervisor workflow；后续只在保持公开事件与 SSE 合同的前提下增加 Graph streaming 和评估默认切换。Repair 已受两轮预算、issue scope、原产物合同和 re-QA 约束；Page Worker 并发不会绕过页面依赖、Schema、checkpoint 或公开事件合同。
+LangGraph 执行层已实现 `Intent → Planner → Briefs → Page Workers → Finalize`，并复用同一 `CourseGenerationState`、节点生命周期和 checkpoint，作为产品默认运行路径。手写 Supervisor workflow 继续保留为内部兼容实现。Repair 受 issue scope、原产物合同、re-QA、连续无进展熔断和较高紧急上限约束；Page Worker 并发不会绕过学习顺序语义、Schema、checkpoint 或公开事件合同。

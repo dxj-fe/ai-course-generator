@@ -119,6 +119,25 @@ describe("course task SSE client state", () => {
     expect(withEvent.messages).toEqual([snapshot, eventMessage]);
   });
 
+  it("keeps the paused task control state separate from its running checkpoint", () => {
+    const snapshot = CourseTaskStreamMessageSchema.parse({
+      type: "snapshot",
+      taskId,
+      courseId,
+      source: "langgraph",
+      taskStatus: "paused",
+      state: createState({ status: "running" }),
+    });
+
+    const next = reduceMessage(
+      { connectionStatus: "connecting", messages: [] },
+      snapshot,
+    );
+
+    expect(next.taskStatus).toBe("paused");
+    expect(next.latestState?.status).toBe("running");
+  });
+
   it("deduplicates a replayed sequence and reports a sequence gap", () => {
     const event = {
       id: "event-1",

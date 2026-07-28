@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { AssetRoleSchema, AssetTypeSchema } from "./asset";
+import { LessonRuntimeSchema } from "./lesson-runtime";
 import { ReferenceUsageSchema } from "./reference";
 
 /** 语义内容块的职责，而不是前端组件或布局名称。 */
@@ -192,18 +193,23 @@ export const PageLayoutHintsSchema = z
  * HTML Engineer、QA、Repair 和预览层共享的单页内容协议。
  * 它约束内容与互动语义，但不会锁死任何具体 UI 实现。
  */
+const PageContentDSLFields = {
+  pageId: z.string().min(1).max(80),
+  functionalTemplateId: z.string().min(1).max(80),
+  title: z.string().min(1).max(120),
+  narration: z.array(z.string().min(2).max(500)).max(3),
+  blocks: z.array(PageContentBlockSchema).max(12),
+  interaction: PageContentInteractionSchema,
+  usedReferences: z.array(ReferenceUsageSchema).max(12).optional(),
+  assetSlots: z.array(PageContentAssetSlotSchema).max(12),
+  layoutHints: PageLayoutHintsSchema,
+};
+
 export const PageContentDSLSchema = z
   .object({
-    version: z.literal(1),
-    pageId: z.string().min(1).max(80),
-    functionalTemplateId: z.string().min(1).max(80),
-    title: z.string().min(1).max(120),
-    narration: z.array(z.string().min(2).max(500)).max(3),
-    blocks: z.array(PageContentBlockSchema).max(12),
-    interaction: PageContentInteractionSchema,
-    usedReferences: z.array(ReferenceUsageSchema).max(12).optional(),
-    assetSlots: z.array(PageContentAssetSlotSchema).max(12),
-    layoutHints: PageLayoutHintsSchema,
+    version: z.union([z.literal(1), z.literal(2)]),
+    ...PageContentDSLFields,
+    runtime: LessonRuntimeSchema.optional(),
   })
   .strict()
   .superRefine((dsl, context) => {
@@ -243,6 +249,27 @@ export const PageContentDSLSchema = z
         code: "custom",
         message: "PageContentDSL 不能包含 HTML 标记",
         path: [],
+      });
+    }
+
+    if (dsl.version === 2 && !dsl.runtime) {
+      context.addIssue({
+        code: "custom",
+        message: "PageContentDSL v2 必须包含 runtime",
+        path: ["runtime"],
+      });
+    }
+
+    if (
+      dsl.version === 2 &&
+      dsl.runtime &&
+      dsl.runtime.completionRule.type !== "view" &&
+      ["none", "navigate"].includes(dsl.interaction.type)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "需要互动完成的 completionRule 必须对应真实页内互动",
+        path: ["runtime", "completionRule"],
       });
     }
   });

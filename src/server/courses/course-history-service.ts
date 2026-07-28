@@ -19,7 +19,6 @@ import {
 export type CourseHistoryQuery = {
   query?: string;
   status?: CourseGenerationState["status"];
-  source?: CourseTaskRecord["source"];
 };
 
 export type CourseHistoryService = {
@@ -44,12 +43,19 @@ export function createCourseHistoryService(input: {
         courseStore.list(),
         taskStore.list(),
       ]);
-      const tasksByCourse = groupTasksByCourse(tasks.items);
+      const tasksByCourse = groupTasksByCourse(
+        tasks.items.filter(({ source }) => source === "langgraph"),
+      );
+      const latestTasksByCourse = groupTasksByCourse(tasks.items);
       const normalizedQuery = query.query?.trim().toLocaleLowerCase("zh-CN");
       const items = courses.items
+        .filter(
+          (course) =>
+            latestTasksByCourse.get(course.courseId)?.[0]?.source ===
+            "langgraph",
+        )
         .map((course) => historyItem(course, tasksByCourse.get(course.courseId) ?? []))
         .filter((item) => !query.status || item.status === query.status)
-        .filter((item) => !query.source || item.latestRun?.source === query.source)
         .filter(
           (item) =>
             !normalizedQuery ||
@@ -73,14 +79,17 @@ export function createCourseHistoryService(input: {
         courseStore.load(safeCourseId),
         taskStore.list(),
       ]);
-      if (!course) return undefined;
+      const courseTasks = tasks.items
+        .filter((task) => task.courseId === safeCourseId)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+      if (!course || courseTasks[0]?.source !== "langgraph") return undefined;
+      const langGraphTasks = courseTasks.filter(
+        ({ source }) => source === "langgraph",
+      );
 
       return CourseHistoryDetailResponseSchema.parse({
         course,
-        runs: tasks.items
-          .filter((task) => task.courseId === safeCourseId)
-          .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-          .map(runSummary),
+        runs: langGraphTasks.map(runSummary),
       });
     },
   };
@@ -104,6 +113,15 @@ function historyItem(
   tasks: CourseTaskRecord[],
 ): CourseHistoryItem {
   const title = course.intent?.topic.trim() || course.userPrompt.trim();
+  const firstPage = course.pages.find(({ order }) => order === 1);
+  const cover =
+    firstPage?.status === "completed" && firstPage.htmlOutput
+      ? {
+          pageId: firstPage.pageId,
+          version: firstPage.htmlOutput.version,
+          generatedAt: firstPage.htmlOutput.generatedAt,
+        }
+      : undefined;
 
   return {
     courseId: course.courseId,
@@ -121,6 +139,7 @@ function historyItem(
     updatedAt: course.updatedAt,
     completedAt: course.completedAt,
     latestRun: tasks[0] ? runSummary(tasks[0]) : undefined,
+    cover,
   };
 }
 

@@ -15,7 +15,7 @@ describe("Supervisor capability retrieval", () => {
         events: [],
         errors: [],
         supervisor: { decisionCount: 0, attempts: [] },
-      } as CourseGenerationState,
+      } as unknown as CourseGenerationState,
       [createIntentNode()],
       false,
       undefined,

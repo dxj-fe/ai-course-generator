@@ -4,45 +4,56 @@ import { describe, expect, it, vi } from "vitest";
 import { ChatComposer } from "../../../src/features/keya/chat-composer";
 
 describe("ChatComposer", () => {
-  it("renders the existing task parameters without moving planning rules into UI", () => {
+  it("keeps technical execution parameters out of the learner composer", () => {
     const markup = renderToStaticMarkup(
       <ChatComposer
         draft="生成课程"
         onDraftChange={vi.fn()}
         onSubmit={vi.fn()}
-        onTaskOptionsChange={vi.fn()}
         showSuggestions={false}
-        taskOptions={{
-          pageCount: 4,
-          executionMode: "parallel",
-          concurrency: 2,
-        }}
       />,
     );
 
-    expect(markup).toContain("生成参数");
-    expect(markup).toContain("课程页数");
-    expect(markup).toContain("执行方式");
-    expect(markup).toContain("最大并发");
-    expect(markup).toContain("4 页");
+    expect(markup).not.toContain("生成参数");
+    expect(markup).not.toContain("课程页数");
+    expect(markup).not.toContain("执行方式");
+    expect(markup).not.toContain("最大并发");
+    expect(markup).not.toContain("并行");
+    expect(markup).not.toContain("串行");
   });
 
-  it("exposes an enabled cancel action while a course task is running", () => {
-    const markup = renderToStaticMarkup(
+  it("exposes isolated pause and resume actions for the selected task", () => {
+    const runningMarkup = renderToStaticMarkup(
       <ChatComposer
         busy
         draft="新的课程提示"
-        onCancel={vi.fn()}
         onDraftChange={vi.fn()}
+        onPause={vi.fn()}
         onSubmit={vi.fn()}
         showSuggestions={false}
+        taskStatus="running"
+      />,
+    );
+    const pausedMarkup = renderToStaticMarkup(
+      <ChatComposer
+        draft=""
+        onDraftChange={vi.fn()}
+        onResume={vi.fn()}
+        onSubmit={vi.fn()}
+        showSuggestions={false}
+        taskStatus="paused"
       />,
     );
 
-    expect(markup).toContain('aria-busy="true"');
-    expect(markup).toContain('aria-label="取消生成"');
-    expect(markup).not.toMatch(/aria-label="取消生成"[^>]*disabled/);
-    expect(markup).toContain('type="button"');
+    expect(runningMarkup).toContain('aria-busy="true"');
+    expect(runningMarkup).toContain('aria-label="暂停生成"');
+    expect(runningMarkup).not.toMatch(/aria-label="暂停生成"[^>]*disabled/);
+    expect(runningMarkup).not.toContain('aria-label="取消生成"');
+    expect(runningMarkup).toContain('type="button"');
+
+    expect(pausedMarkup).toContain('aria-label="继续生成"');
+    expect(pausedMarkup).not.toMatch(/aria-label="继续生成"[^>]*disabled/);
+    expect(pausedMarkup).toContain('type="button"');
   });
 
   it("renders upload, retry, remove, and blocked-submit attachment states", () => {

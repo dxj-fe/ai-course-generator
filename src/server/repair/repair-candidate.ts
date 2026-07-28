@@ -28,7 +28,7 @@ export function validateAndApplyRepairResult(
     );
   }
 
-  const result = parsed.data;
+  const result = normalizeIssueReferences(parsed.data, request);
   if (
     result.pageId !== request.pageId ||
     result.targetArtifact !== request.targetArtifact
@@ -37,13 +37,6 @@ export function validateAndApplyRepairResult(
   }
 
   const allowedCodes = new Set(request.issueCodes);
-  const referencedCodes =
-    result.kind === "declined"
-      ? result.issueCodes
-      : [...result.addressedIssueCodes, ...result.unresolvedIssueCodes];
-  if (referencedCodes.some((code) => !allowedCodes.has(code))) {
-    throw new AiSchemaValidationError("RepairResult 引用了未授权的 issue code。");
-  }
 
   if (result.kind === "declined") return { result };
 
@@ -88,21 +81,90 @@ export function validateAndApplyRepairResult(
   return { result, html };
 }
 
+/**
+ * patch/candidate 才是实际修改证据；模型返回的 addressed/unresolved 只是摘要。
+ * 将摘要收敛到请求授权范围，防止完整 QA 报告里的旁路 warning 消耗 Repair
+ * 预算，同时继续严格拒绝任何未授权 patch 和 selector。
+ */
+function normalizeIssueReferences(
+  result: RepairResult,
+  request: RepairRequest,
+): RepairResult {
+  const allowedCodes = new Set(request.issueCodes);
+
+  if (result.kind === "declined") {
+    return { ...result, issueCodes: request.issueCodes };
+  }
+
+  if (result.kind === "html_patch_candidate") {
+    const unauthorizedPatch = result.patches.find(
+      ({ issueCode }) => !allowedCodes.has(issueCode),
+    );
+    if (unauthorizedPatch) {
+      throw new AiSchemaValidationError(
+        `HTML patch 引用了未授权 issue ${unauthorizedPatch.issueCode}。`,
+      );
+    }
+
+    const addressedIssueCodes = unique(
+      result.patches.map(({ issueCode }) => issueCode),
+    );
+    return {
+      ...result,
+      addressedIssueCodes,
+      unresolvedIssueCodes: request.issueCodes.filter(
+        (code) => !addressedIssueCodes.includes(code),
+      ),
+    };
+  }
+
+  const addressedIssueCodes = unique(
+    result.addressedIssueCodes.filter((code) => allowedCodes.has(code)),
+  );
+  if (addressedIssueCodes.length === 0) {
+    throw new AiSchemaValidationError(
+      "DSL Repair 没有引用任何已授权的 issue code。",
+    );
+  }
+  return {
+    ...result,
+    addressedIssueCodes,
+    unresolvedIssueCodes: request.issueCodes.filter(
+      (code) => !addressedIssueCodes.includes(code),
+    ),
+  };
+}
+
 function validateDslCandidate(
   candidateInput: unknown,
   request: RepairRequest,
 ) {
   const candidate = PageContentDSLSchema.parse(candidateInput);
   const original = request.content;
+  const allowedContentFields = new Set(request.allowedContentFields);
   const immutablePairs: Array<[string, unknown, unknown]> = [
     ["version", original.version, candidate.version],
     ["pageId", original.pageId, candidate.pageId],
     ["functionalTemplateId", original.functionalTemplateId, candidate.functionalTemplateId],
     ["title", original.title, candidate.title],
-    ["narration", original.narration, candidate.narration],
-    ["interaction", original.interaction, candidate.interaction],
+    ...(!allowedContentFields.has("narration")
+      ? [["narration", original.narration, candidate.narration] as [
+          string,
+          unknown,
+          unknown,
+        ]]
+      : []),
+    ...(!allowedContentFields.has("interaction")
+      ? [["interaction", original.interaction, candidate.interaction] as [
+          string,
+          unknown,
+          unknown,
+        ]]
+      : []),
+    ["usedReferences", original.usedReferences, candidate.usedReferences],
     ["assetSlots", original.assetSlots, candidate.assetSlots],
     ["layoutHints", original.layoutHints, candidate.layoutHints],
+    ["runtime", original.runtime, candidate.runtime],
   ];
   const changedImmutable = immutablePairs.find(
     ([, left, right]) => !sameValue(left, right),
@@ -110,6 +172,26 @@ function validateDslCandidate(
   if (changedImmutable) {
     throw new AiSchemaValidationError(
       `DSL Repair 不得修改未授权字段 ${changedImmutable[0]}。`,
+    );
+  }
+
+  if (
+    allowedContentFields.has("interaction") &&
+    original.interaction.type !== candidate.interaction.type
+  ) {
+    throw new AiSchemaValidationError(
+      "DSL Repair 修改 interaction 时必须保留原互动类型。",
+    );
+  }
+  if (
+    allowedContentFields.has("interaction") &&
+    !sameValue(
+      interactionIdentity(original.interaction),
+      interactionIdentity(candidate.interaction),
+    )
+  ) {
+    throw new AiSchemaValidationError(
+      "DSL Repair 修改 interaction 时必须保留原技术 ID。",
     );
   }
 
@@ -137,6 +219,30 @@ function validateDslCandidate(
   }
 
   return candidate;
+}
+
+function interactionIdentity(
+  interaction: RepairRequest["content"]["interaction"],
+) {
+  switch (interaction.type) {
+    case "choice":
+      return {
+        type: interaction.type,
+        questions: interaction.questions.map((question) => ({
+          id: question.id,
+          optionIds: question.options.map(({ id }) => id),
+        })),
+      };
+    case "reveal":
+    case "sort":
+    case "explore":
+      return {
+        type: interaction.type,
+        itemIds: interaction.items.map(({ id }) => id),
+      };
+    default:
+      return { type: interaction.type };
+  }
 }
 
 function applyHtmlPatches(
@@ -232,12 +338,16 @@ function isAllowedHtmlScope(
     }
 
     const dataAttribute = selector.match(
-      /^\[([a-z0-9-]+)=["']([^"']+)["']\]$/i,
+      /\[([a-z0-9-]+)=["']([^"']+)["']\]\s*$/i,
     );
     if (dataAttribute) {
-      return (
-        search.includes(dataAttribute[2]!) ||
-        search.includes(`${dataAttribute[1]}=`)
+      return rangesForAttribute(
+        html,
+        dataAttribute[1]!,
+        dataAttribute[2]!,
+      ).some(
+        ([start, end]) =>
+          matchIndex >= start && matchIndex + search.length <= end,
       );
     }
 
@@ -249,24 +359,23 @@ function isAllowedHtmlScope(
     }
 
     const terminalClass = selector.match(/\.([a-z0-9_-]+)\s*$/i)?.[1];
-    if (terminalClass && hasAttributeToken(search, "class", terminalClass)) {
-      return true;
+    if (terminalClass) {
+      return rangesForAttribute(html, "class", terminalClass, true).some(
+        ([start, end]) =>
+          matchIndex >= start && matchIndex + search.length <= end,
+      );
     }
 
     const terminalId = selector.match(/#([a-z0-9_-]+)\s*$/i)?.[1];
-    if (terminalId && hasAttributeToken(search, "id", terminalId)) {
-      return true;
+    if (terminalId) {
+      return rangesForAttribute(html, "id", terminalId).some(
+        ([start, end]) =>
+          matchIndex >= start && matchIndex + search.length <= end,
+      );
     }
 
     return search.includes(selector);
   });
-}
-
-function hasAttributeToken(html: string, attribute: "class" | "id", token: string) {
-  const pattern = new RegExp(`${attribute}=["']([^"']*)["']`, "gi");
-  return [...html.matchAll(pattern)].some((match) =>
-    match[1]?.split(/\s+/).includes(token),
-  );
 }
 
 function rangesForTag(html: string, tag: string): Array<[number, number]> {
@@ -280,6 +389,99 @@ function rangesForTag(html: string, tag: string): Array<[number, number]> {
   return ranges;
 }
 
+/**
+ * QA selectors often point at an element while a Repair patch replaces only
+ * text inside that element. Resolve the owning element range instead of
+ * requiring the replacement snippet itself to repeat the class/id marker.
+ */
+function rangesForAttribute(
+  html: string,
+  attribute: string,
+  value: string,
+  tokenMatch = false,
+): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  const openingTag = /<([a-z][a-z0-9-]*)\b[^>]*>/gi;
+  for (const match of html.matchAll(openingTag)) {
+    if (match.index === undefined) continue;
+    const attributeValue = readAttribute(match[0], attribute);
+    const matches = tokenMatch
+      ? attributeValue?.split(/\s+/).includes(value)
+      : attributeValue === value;
+    if (!matches) continue;
+
+    const range = rangeForElement(html, {
+      tag: match[1]!,
+      start: match.index,
+      openEnd: match.index + match[0].length,
+      openingTag: match[0],
+    });
+    if (range) ranges.push(range);
+  }
+  return ranges;
+}
+
+function readAttribute(tag: string, attribute: string) {
+  const escaped = attribute.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return tag.match(
+    new RegExp(`\\s${escaped}\\s*=\\s*["']([^"']*)["']`, "i"),
+  )?.[1];
+}
+
+function rangeForElement(
+  html: string,
+  input: {
+    tag: string;
+    start: number;
+    openEnd: number;
+    openingTag: string;
+  },
+): [number, number] | undefined {
+  const voidTags = new Set([
+    "area",
+    "base",
+    "br",
+    "col",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "link",
+    "meta",
+    "param",
+    "source",
+    "track",
+    "wbr",
+  ]);
+  if (
+    voidTags.has(input.tag.toLowerCase()) ||
+    /\/\s*>$/.test(input.openingTag)
+  ) {
+    return [input.start, input.openEnd];
+  }
+
+  const escapedTag = input.tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const boundary = new RegExp(`<\\/?${escapedTag}\\b[^>]*>`, "gi");
+  boundary.lastIndex = input.openEnd;
+  let depth = 1;
+  let match: RegExpExecArray | null;
+  while ((match = boundary.exec(html))) {
+    if (new RegExp(`^<\\/${escapedTag}\\b`, "i").test(match[0])) {
+      depth -= 1;
+      if (depth === 0) {
+        return [input.start, match.index + match[0].length];
+      }
+    } else if (!/\/\s*>$/.test(match[0])) {
+      depth += 1;
+    }
+  }
+  return undefined;
+}
+
 function sameValue(left: unknown, right: unknown) {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function unique<Value>(values: Value[]) {
+  return [...new Set(values)];
 }

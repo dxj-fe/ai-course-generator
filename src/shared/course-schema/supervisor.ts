@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+export const MAX_SUPERVISOR_TARGET_ATTEMPTS = 24;
+export const MAX_SUPERVISOR_DECISIONS = 320;
+
 export const CourseGenerationNodeNameSchema = z.enum([
   "intent",
   "planner",
@@ -88,13 +91,13 @@ export const SupervisorDecisionSchema = z.union([
 ]);
 
 export const SupervisorAttemptSchema = SupervisorNodeTargetSchema.extend({
-  attempts: z.number().int().min(1).max(3),
+  attempts: z.number().int().min(1).max(MAX_SUPERVISOR_TARGET_ATTEMPTS),
 }).strict();
 
 export const SupervisorRuntimeStateSchema = z
   .object({
-    decisionCount: z.number().int().nonnegative().max(64),
-    attempts: z.array(SupervisorAttemptSchema).max(30),
+    decisionCount: z.number().int().nonnegative(),
+    attempts: z.array(SupervisorAttemptSchema),
     lastDecision: SupervisorDecisionSchema.optional(),
   })
   .strict();

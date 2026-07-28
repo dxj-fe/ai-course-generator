@@ -4,13 +4,14 @@ import {
   AiRequestError,
   createAiErrorResponse,
   createTraceId,
+  toAiErrorPayload,
 } from "@/server/ai/error";
 import { courseGenerationTaskService } from "@/server/tasks/course-generation-task-service";
 
 export const runtime = "nodejs";
 export const maxDuration = 900;
 
-/** 创建长任务后立即返回；课程编排继续由服务端 workflow 独占。 */
+/** 创建长任务后立即返回；课程编排继续由服务端任务服务持有并执行。 */
 export async function POST(request: Request) {
   const headerTraceId =
     request.headers.get("x-trace-id")?.trim() || createTraceId();
@@ -20,6 +21,7 @@ export async function POST(request: Request) {
     const input = isObjectRecord(payload)
       ? {
           ...payload,
+          source: "langgraph",
           traceId:
             typeof payload.traceId === "string" && payload.traceId.trim()
               ? payload.traceId
@@ -32,10 +34,11 @@ export async function POST(request: Request) {
       try {
         await courseGenerationTaskService.run(task.taskId);
       } catch (error) {
+        const classified = toAiErrorPayload(error, task.traceId);
         console.error("[course-task] 后台任务执行失败", {
           taskId: task.taskId,
           traceId: task.traceId,
-          error: error instanceof Error ? error.message : "未知错误",
+          errorCode: classified.code,
         });
       }
     });

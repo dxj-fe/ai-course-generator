@@ -14,12 +14,20 @@ export const metadata: Metadata = {
 
 export default async function Home() {
   const history = await courseHistoryService.list();
+  const completedCourses = history.items.filter(
+    (course) =>
+      course.status === "completed" &&
+      course.exportable &&
+      course.totalPages > 0 &&
+      course.completedPages === course.totalPages &&
+      (!course.latestRun || course.latestRun.status === "completed"),
+  );
 
   return (
     <>
       <SiteHeader />
       <div className="pt-16">
-        <HomeHero featuredWorks={history.items.slice(0, 3)} />
+        <HomeHero featuredWorks={completedCourses.slice(0, 3)} />
         <WorkGallery works={history.items} />
       </div>
     </>

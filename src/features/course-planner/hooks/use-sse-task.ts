@@ -370,7 +370,7 @@ function applyStreamMessage(
 
     return {
       connectionStatus: "open",
-      taskStatus: message.state.status,
+      taskStatus: message.taskStatus ?? message.state.status,
       source: message.source,
       messages: [...state.messages, message],
       latestState: message.state,

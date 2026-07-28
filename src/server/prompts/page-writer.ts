@@ -13,6 +13,7 @@ export async function buildPageWriterPrompts(input: {
   pageWorkerBrief: unknown;
   functionalTemplate: unknown;
   referenceContext?: unknown;
+  validationFeedback?: unknown;
 }) {
   const [systemTemplate, userTemplate] = await Promise.all([
     loadPromptTemplate(systemDefinition),
@@ -28,6 +29,9 @@ export async function buildPageWriterPrompts(input: {
       pageWorkerBriefJson: JSON.stringify(input.pageWorkerBrief),
       functionalTemplateJson: JSON.stringify(input.functionalTemplate),
       referenceContextJson: JSON.stringify(input.referenceContext ?? []),
+      validationFeedbackJson: JSON.stringify(
+        input.validationFeedback ?? null,
+      ),
     }),
   };
 }

@@ -2,13 +2,16 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import {
-  Check as CheckIcon,
-  ChevronDown as ChevronDownIcon,
-} from "lucide-react";
+import { ChevronDown as ChevronDownIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import type { CourseTaskConnectionStatus } from "@/features/course-planner/hooks/use-sse-task";
+import { CourseCreationCards } from "@/features/keya/course-creation-cards";
+import type {
+  ClarificationQuestion,
+  ClarificationQuestionId,
+  CourseCreationBrief,
+} from "@/features/keya/course-creation-model";
 import { CourseRunTimeline } from "@/features/keya/course-run-timeline";
 import type { CourseTaskStatus } from "@/shared/course-schema";
 import type { KeyaConversation } from "@/types/keya";
@@ -17,6 +20,14 @@ interface ChatThreadProps {
   busy?: boolean;
   connectionStatus?: CourseTaskConnectionStatus;
   conversation: KeyaConversation | null;
+  courseBrief?: CourseCreationBrief;
+  courseQuestion?: ClarificationQuestion;
+  onAnswerCourseQuestion?(
+    answer: string,
+    questionId?: ClarificationQuestionId,
+  ): void;
+  onConfirmCourse?(): void;
+  onOpenCoursePlayer?(): void;
   onResumeCourse?(): void;
   taskStatus?: CourseTaskStatus;
 }
@@ -25,6 +36,11 @@ export function ChatThread({
   busy = false,
   connectionStatus,
   conversation,
+  courseBrief,
+  courseQuestion,
+  onAnswerCourseQuestion,
+  onConfirmCourse,
+  onOpenCoursePlayer,
   onResumeCourse,
   taskStatus,
 }: ChatThreadProps) {
@@ -156,37 +172,45 @@ export function ChatThread({
             开始这段对话吧
           </div>
         ) : (
-          <div className="mx-auto w-[calc(100%-48px)] max-w-[750px] space-y-7 pt-7 pb-12 max-sm:w-[calc(100%-32px)] max-sm:pt-16">
-            {conversation.messages.map((message) =>
+          <div className="mx-auto w-[calc(100%-48px)] max-w-[760px] space-y-7 pt-8 pb-12 max-sm:w-[calc(100%-32px)] max-sm:pt-16">
+            {conversation.messages
+              .filter(
+                (message) =>
+                  message.role === "user" ||
+                  (!conversation.courseRun && !courseBrief),
+              )
+              .map((message) =>
               message.role === "user" ? (
                 <div className="flex justify-end" key={message.id}>
-                  <div className="max-w-[585px] rounded-2xl rounded-tr-md bg-[#f3ebd9] px-4 py-3 text-[14px] leading-6 whitespace-pre-wrap text-[#2d332b]">
+                  <div className="max-w-[585px] rounded-[20px] rounded-tr-md bg-[var(--keya-user-bubble)] px-5 py-3.5 text-[14px] leading-6 whitespace-pre-wrap text-foreground">
                     {message.content}
                   </div>
                 </div>
               ) : (
-                <article className="text-[#2d332b]" key={message.id}>
-                  {message.duration ? (
-                    <div className="mb-2 flex items-center gap-2 text-sm leading-5 text-[#7a7468]">
-                      <CheckIcon
-                        aria-hidden="true"
-                        className="text-[#397a52]"
-                        size={15}
-                        strokeWidth={1.7}
-                      />
-                      <span>已完成 {message.duration}</span>
-                    </div>
-                  ) : null}
+                <article className="text-foreground" key={message.id}>
                   <div className="text-[14.5px] leading-[25.81px] whitespace-pre-wrap">
                     {message.content}
                   </div>
                 </article>
               ),
             )}
+            {courseBrief &&
+            !conversation.courseRun &&
+            onAnswerCourseQuestion &&
+            onConfirmCourse ? (
+              <CourseCreationCards
+                brief={courseBrief}
+                busy={busy}
+                onAnswer={onAnswerCourseQuestion}
+                onConfirm={onConfirmCourse}
+                question={courseQuestion}
+              />
+            ) : null}
             {conversation.courseRun ? (
               <CourseRunTimeline
                 busy={busy}
                 connectionStatus={connectionStatus}
+                onOpenCoursePlayer={onOpenCoursePlayer}
                 onResumeCourse={onResumeCourse}
                 run={conversation.courseRun}
                 taskStatus={taskStatus}

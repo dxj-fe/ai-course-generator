@@ -57,9 +57,9 @@ function openDatabase(databasePath: string, migrateLegacy: boolean) {
   mkdirSync(path.dirname(databasePath), { recursive: true });
   const database = new DatabaseSync(databasePath);
   database.exec(`
+    PRAGMA busy_timeout = 5000;
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
-    PRAGMA busy_timeout = 5000;
 
     CREATE TABLE IF NOT EXISTS courses (
       id TEXT PRIMARY KEY,

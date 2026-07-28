@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cancelCourseTask,
   createCourseTask,
+  pauseCourseTask,
+  resumeCourseTask,
 } from "../../../src/features/course-planner/lib/course-task-api";
 
 describe("course task API client", () => {
@@ -32,7 +34,6 @@ describe("course task API client", () => {
         {
           userPrompt: "生成三页太阳系课程",
           pageCount: 3,
-          source: "langgraph",
         },
         { signal: controller.signal, traceId: payload.traceId },
       ),
@@ -49,7 +50,6 @@ describe("course task API client", () => {
     expect(JSON.parse(String(init.body))).toEqual({
       userPrompt: "生成三页太阳系课程",
       pageCount: 3,
-      source: "langgraph",
       traceId: payload.traceId,
     });
   });
@@ -118,4 +118,48 @@ describe("course task API client", () => {
       cancelCourseTask("task-missing", { traceId: "trace-missing" }),
     ).rejects.toThrow("[TASK_NOT_FOUND] 任务不存在 traceId: trace-missing");
   });
+
+  it.each([
+    ["pause", pauseCourseTask, "paused", 200],
+    ["resume", resumeCourseTask, "queued", 202],
+  ] as const)(
+    "controls only the addressed task with action %s",
+    async (action, controlTask, status, responseStatus) => {
+      const payload = {
+        taskId: "task-123e4567-e89b-42d3-a456-426614174000",
+        courseId: "course-123e4567-e89b-42d3-a456-426614174000",
+        traceId: `trace-task-${action}`,
+        status,
+        source: "langgraph",
+      };
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(payload), {
+          status: responseStatus,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      const controller = new AbortController();
+      vi.stubGlobal("fetch", fetchMock);
+
+      await expect(
+        controlTask(payload.taskId, {
+          signal: controller.signal,
+          traceId: payload.traceId,
+        }),
+      ).resolves.toEqual(payload);
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        `/api/courses/tasks/${payload.taskId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-trace-id": payload.traceId,
+          },
+          body: JSON.stringify({ action }),
+          signal: controller.signal,
+        },
+      );
+    },
+  );
 });

@@ -209,6 +209,7 @@ export function validateImagePromptOutput(
       prompt: buildProductionPrompt(
         direction.promptCore,
         assetType,
+        safeAreaPosition,
         slot,
         input,
       ),
@@ -244,20 +245,30 @@ function aspectRatioForKind(kind: GeneratedAssetKind): AssetAspectRatio {
 function buildProductionPrompt(
   promptCore: string,
   kind: GeneratedAssetKind,
+  safeAreaPosition: AssetRequest["safeArea"]["position"],
   slot: PageContentAssetSlot,
   input: ResolvedImagePromptInput,
 ) {
   const transparency = ["character_sticker", "icon"].includes(kind)
     ? "Transparent background with a clean complete silhouette."
     : "Opaque image background suitable for HTML composition.";
+  const safeArea =
+    kind === "background"
+      ? [
+          `Reserve the ${safeAreaPosition} 40% as calm, low-detail negative space that is a natural, continuous part of the scene.`,
+          "Do not draw a panel, card, sheet of paper, label, sign, frame, text box, placeholder, or UI container in that negative space; HTML content will be overlaid separately.",
+        ].join(" ")
+      : "Create only the isolated visual subject; do not add a presentation frame or surrounding layout.";
 
   return [
+    "Generate artwork only, never a course slide or designed page.",
     promptCore.trim(),
-    `Asset type: ${kind}. Usage: ${slot.purpose}.`,
-    `Visual direction: ${input.visualBrief.visualConcept}. Page focus: ${input.pageGuidance.focalPoint}.`,
+    `Asset type: ${kind}. Semantic usage only—do not render this wording: ${slot.purpose}.`,
+    `Conceptual visual direction only—do not render this wording: ${input.visualBrief.visualConcept}. Conceptual page focus: ${input.pageGuidance.focalPoint}.`,
     `Style: ${input.styleTemplate.name}; ${input.styleTemplate.goal}.`,
     transparency,
-    "No text, letters, numbers, formulas, captions, logos, watermarks, buttons, cards, navigation, or complete UI layouts.",
+    safeArea,
+    "No text or text-like marks may appear in the pixels: no Chinese characters, letters, numbers, formulas, captions, labels, fake writing, gibberish glyphs, logos, watermarks, buttons, cards, navigation, or complete UI layouts.",
   ].join(" ");
 }
 

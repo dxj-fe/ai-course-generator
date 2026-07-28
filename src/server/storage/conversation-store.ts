@@ -21,6 +21,7 @@ export type ConversationStore = {
     id: string,
     input: UpdateConversationInput,
   ): Promise<ConversationRecord | undefined>;
+  delete(id: string): Promise<boolean>;
 };
 
 export function createConversationStore(databasePath?: string): ConversationStore {
@@ -62,6 +63,10 @@ export function createConversationStore(databasePath?: string): ConversationStor
     ON CONFLICT(id) DO UPDATE SET
       content = excluded.content,
       duration = excluded.duration
+  `);
+  const deleteConversation = database.prepare(`
+    DELETE FROM conversations
+    WHERE id = ?
   `);
 
   return {
@@ -186,6 +191,11 @@ export function createConversationStore(databasePath?: string): ConversationStor
       });
 
       return (await this.load(safeId))!;
+    },
+
+    async delete(id) {
+      const safeId = ConversationIdSchema.parse(id);
+      return deleteConversation.run(safeId).changes > 0;
     },
   };
 }

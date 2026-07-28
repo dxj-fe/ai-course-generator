@@ -24,18 +24,21 @@
 - heuristics 是确定性证据，不得否认；可以补充影响，但不要复制相同问题。
 - browserIssues 和 screenshotEvidence 是固定视口的浏览器证据；存在时必须纳入对应维度，不得伪造成其他视口结论。
 - 内容事实错误必须输出 error，不能因为页面美观或其他维度高分而降低严重度。
-- courseCoherence 必须核对本页目标、课程学习目标、前后页承接和理解检查是否形成有效教学路径。
+- courseCoherence 必须核对本页目标、课程学习目标、前后页承接和理解检查是否形成有效教学路径；空泛填充、跨页重复、缺少具体示例、练习未检验目标或反馈不解释原因，都必须降低该维度分数并输出可定位问题。
 - styleConsistency 必须逐项对照 VisualBrief 的构图、排版、色彩、素材和无障碍约束。
+- 质量优先通过门槛为：contentAccuracy 88、courseCoherence 88、layoutQuality 82、styleConsistency 82、htmlRuntime 92、assetUsability 80。任一维度低于门槛时，必须至少输出一个同维度、可定位且可修复的 issue；不得只给低分而不给证据。
+- layoutQuality 必须以课程播放器固定内容视口为准，重点检查 366×500、712×650、922×460。任何页面的文档纵向溢出、根页面滚动、嵌套正文滚动或必要内容裁切都是 error；标题、核心说明和主操作被大标题、装饰或重复卡片推离画布时也必须降低分数。
+- styleConsistency 不得仅检查颜色是否一致；还要识别通用后台面板、等权卡片堆叠、缺少主焦点、过度装饰和素材/HTML 信息重复。
 - 每个具体问题都必须输出可操作的 repairHint；程序会按 dimension 派生维度内 issueCodes 和 repairHints。
 - severity 只能是 `info`、`warning`、`error` 之一，不得使用 high、medium、low 或其他同义词。
 - 每个 location 都必须包含 2–240 字符的 description；即使已有 blockId、selector 或 viewport 也不能省略。
 - 不能从静态 HTML 证明像素级遮挡；没有浏览器几何证据时使用“风险”措辞。
 - location.pageId 可以省略，系统会用当前 PagePlan.id 覆盖。
 - blockId 只能引用真实 DSL block；selector 只在 HTML 中可稳定定位时填写。
-- HTML 已通过硬合同：`feedback.success` 作为静态参考解析允许常显，不得要求 JavaScript 隐藏；批准素材的 altText 必须原样复用，不得要求 HTML Repair 改写。
+- HTML 已通过硬合同：PageContentDSL v2 的 choice 反馈必须初始隐藏并由平台运行时显示；reveal、explore、sort 的 `data-interaction-item-id` 是可见可操作目标，不得要求整个互动项初始隐藏；v1 的静态参考解析仍允许常显。批准素材的 altText 必须原样复用，不得要求 HTML Repair 改写。
 - PageContentDSL 同时要求内容 blocks 与 interaction 时，HTML 同时呈现这些结构本身不构成内容冗余；不得建议移除任一 DSL 必需结构或必需文本。只有存在超出 DSL 的实质性重复内容时才报告冗余，并给出保留全部 DSL 合同的修复建议。
 - layoutHints.readingOrder 只比较列出的 blockId 之间的相对顺序；素材或其他节点出现在 block 前后不构成顺序错误。
-- 没有具体问题时 issues 返回空数组；最终总分、限分、shouldRepair 和 decision 由程序计算。
+- 所有维度均达到上述门槛且没有具体问题时，issues 返回空数组；最终总分、限分、shouldRepair 和 decision 由程序计算。
 
 # Forbidden
 

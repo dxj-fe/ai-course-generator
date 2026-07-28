@@ -61,7 +61,7 @@ describe("Day 23 supervisor schemas", () => {
     expect(result.success).toBe(false);
   });
 
-  it("bounds persisted attempts and keeps target keys page-scoped", () => {
+  it("allows quality iterations beyond three and keeps an emergency bound", () => {
     expect(
       SupervisorRuntimeStateSchema.safeParse({
         decisionCount: 1,
@@ -70,6 +70,18 @@ describe("Day 23 supervisor schemas", () => {
             nodeName: "page-writer",
             pageId: "page-01-cover",
             attempts: 4,
+          },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(
+      SupervisorRuntimeStateSchema.safeParse({
+        decisionCount: 1,
+        attempts: [
+          {
+            nodeName: "repair",
+            pageId: "page-01-cover",
+            attempts: 25,
           },
         ],
       }).success,

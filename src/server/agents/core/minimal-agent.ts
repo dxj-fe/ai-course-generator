@@ -1,3 +1,8 @@
+import {
+  AiSchemaValidationError,
+  toAiErrorPayload,
+} from "@/server/ai/error";
+
 import { createAgentEvent } from "./events";
 import type {
   Agent,
@@ -72,7 +77,7 @@ export function createMinimalAgent<State extends AgentStateBase>({
           [{ type: "finish", summary: "Agent 已完成任务。" }],
         );
       } catch (error) {
-        const stateError = toAgentStateError(error);
+        const stateError = toAgentStateError(error, context.traceId);
         const failedStep =
           state.step >= state.maxSteps ? state.step : state.step + 1;
 
@@ -89,7 +94,7 @@ export function createMinimalAgent<State extends AgentStateBase>({
             ...pendingEvents,
             {
               type: "error",
-              summary: stateError.message,
+              summary: publicAgentErrorSummary(stateError),
               data: { code: stateError.code },
             },
           ],
@@ -127,13 +132,42 @@ class AgentRuntimeError extends Error {
   }
 }
 
-function toAgentStateError(error: unknown): AgentStateError {
+function toAgentStateError(
+  error: unknown,
+  traceId: string,
+): AgentStateError {
   if (error instanceof AgentRuntimeError) {
     return { code: error.code, message: error.message };
+  }
+  if (error instanceof AiSchemaValidationError) {
+    return { code: error.code, message: error.message };
+  }
+
+  const classified = toAiErrorPayload(error, traceId);
+  if (classified.code === "CANCELLED_ERROR") {
+    return { code: "AGENT_ABORTED", message: classified.message };
+  }
+  if (
+    classified.code === "AUTH_ERROR" ||
+    classified.code === "CONFIG_ERROR" ||
+    classified.code === "MODEL_ERROR" ||
+    classified.code === "QUOTA_ERROR" ||
+    classified.code === "RATE_LIMIT_ERROR" ||
+    classified.code === "SCHEMA_ERROR" ||
+    classified.code === "TIMEOUT_ERROR"
+  ) {
+    return { code: classified.code, message: classified.message };
   }
 
   return {
     code: "AGENT_EXECUTION_ERROR",
-    message: error instanceof Error ? error.message : "未知 Agent 执行错误。",
+    message: "Agent 执行失败，请稍后重试。",
   };
+}
+
+function publicAgentErrorSummary(error: AgentStateError) {
+  if (error.code === "SCHEMA_ERROR") {
+    return "模型返回的内容格式不完整。";
+  }
+  return error.message;
 }

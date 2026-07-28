@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "description": "课芽 HTML 视觉、教学与互动回归基准；每次模型、Prompt、模板或运行时变更至少抽样运行，发布前运行全部 20 项。",
+  "cases": [
+    { "id": "set-relations", "category": "math-diagram", "prompt": "为高中生生成集合基本关系课程，包含子集、真子集、集合相等和可操作理解检查。" },
+    { "id": "set-operations", "category": "math-diagram", "prompt": "为高中生生成集合并集、交集、补集课程，使用 Venn 图并安排即时反馈练习。" },
+    { "id": "function-monotonicity", "category": "math-diagram", "prompt": "为高一学生生成函数单调性课程，使用代码原生函数图并完成单选检测。" },
+    { "id": "quadratic-graph", "category": "math-diagram", "prompt": "讲解二次函数图像与参数变化，要求图形、解释、预测和反馈形成完整学习动作。" },
+    { "id": "fraction-equivalence", "category": "math-diagram", "prompt": "为小学五年级生成分数等值课程，使用可视化模型和两道理解检查。" },
+    { "id": "photosynthesis", "category": "science-process", "prompt": "为初中生生成光合作用课程，使用流程图解释输入、过程和产物。" },
+    { "id": "water-cycle", "category": "science-process", "prompt": "为小学生生成水循环课程，使用时间与过程关系并安排逐项揭示。" },
+    { "id": "cell-division", "category": "science-process", "prompt": "为高中生生成有丝分裂课程，使用阶段时间线和顺序练习。" },
+    { "id": "newton-laws", "category": "science-concept", "prompt": "为初中生生成牛顿运动定律入门课程，包含生活案例、概念对比和即时反馈。" },
+    { "id": "solar-system", "category": "science-concept", "prompt": "为 8 岁儿童生成太阳系课程，比较恒星与行星并使用适龄互动。" },
+    { "id": "silk-road", "category": "history-timeline", "prompt": "生成丝绸之路历史课程，用时间线呈现关键阶段、交流影响和复习任务。" },
+    { "id": "industrial-revolution", "category": "history-timeline", "prompt": "生成工业革命课程，用因果链和时间线解释技术、生产与社会变化。" },
+    { "id": "argument-structure", "category": "language-structure", "prompt": "为高中生生成议论文论证结构课程，比较论点、论据、论证并提供判断练习。" },
+    { "id": "english-tenses", "category": "language-structure", "prompt": "为初中生生成英语一般过去时与现在完成时对比课程，包含语境选择和反馈。" },
+    { "id": "poetry-imagery", "category": "language-reflection", "prompt": "生成古诗意象鉴赏课程，通过例句、意象关系和开放反思完成学习。" },
+    { "id": "cybersecurity-phishing", "category": "digital-literacy", "prompt": "为大学新生生成网络钓鱼识别课程，使用案例判断、选择反馈和总结清单。" },
+    { "id": "ai-literacy", "category": "digital-literacy", "prompt": "生成 AI 素养课程，解释模型局限、核验方法和负责任使用，并安排情境练习。" },
+    { "id": "project-prioritization", "category": "professional", "prompt": "生成项目优先级课程，比较影响、成本、风险并完成排序练习。" },
+    { "id": "customer-journey", "category": "professional", "prompt": "生成用户旅程基础课程，用流程和触点比较解释，并安排探索互动。" },
+    { "id": "first-aid-basics", "category": "safety-process", "prompt": "生成基础急救意识课程，明确安全边界、求助流程和情境判断，不提供超出常识的医疗诊断。" }
+  ]
+}

@@ -112,12 +112,24 @@ describe("course task store", () => {
     );
   });
 
-  it("rejects an invalid record before writing it", async () => {
+  it.each([1, 20, 120])(
+    "accepts the positive page count %i",
+    async (pageCount) => {
+      const store = createCourseTaskStore({ rootDir: await temporaryRoot() });
+      const record = taskRecord({ pageCount });
+
+      await store.save(record);
+
+      await expect(store.load(record.taskId)).resolves.toEqual(record);
+    },
+  );
+
+  it.each([0, -1, 1.5])("rejects the invalid page count %s", async (pageCount) => {
     const store = createCourseTaskStore({ rootDir: await temporaryRoot() });
     await expect(
       store.save({
         ...taskRecord(),
-        pageCount: 6,
+        pageCount,
       } as unknown as CourseTaskRecord),
     ).rejects.toThrow();
     await expect(store.list()).resolves.toEqual({
@@ -136,6 +148,18 @@ describe("course task store", () => {
 
     await Promise.all([store.save(first), store.save(second)]);
     await expect(store.load(second.taskId)).resolves.toEqual(second);
+  });
+
+  it("persists paused as a recoverable non-terminal task state", async () => {
+    const store = createCourseTaskStore({ rootDir: await temporaryRoot() });
+    const paused = taskRecord({
+      status: "paused",
+      updatedAt: "2026-07-15T03:00:01.000Z",
+    });
+
+    await store.save(paused);
+
+    await expect(store.load(paused.taskId)).resolves.toEqual(paused);
   });
 
   it("lists valid task records by update time", async () => {

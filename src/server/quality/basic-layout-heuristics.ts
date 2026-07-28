@@ -225,7 +225,10 @@ export function basicLayoutHeuristics({
           description: `素材槽位 ${slot.id}`,
         },
       );
-    } else if (slot.required && !hasUsableAssetSlot(html, slot.id)) {
+    } else if (
+      slot.required &&
+      !hasUsableAssetSlot(html, slot.id, result.asset?.uri)
+    ) {
       add(
         "ASSET_REQUIRED_SLOT_EMPTY",
         "assetUsability",
@@ -239,7 +242,14 @@ export function basicLayoutHeuristics({
       );
     }
 
-    if (result.warnings?.includes("TRANSPARENCY_UNAVAILABLE")) {
+    if (
+      result.warnings?.includes("TRANSPARENCY_UNAVAILABLE") &&
+      !hasSafelyContainedOpaqueAssetFallback(
+        html,
+        slot.id,
+        result.asset?.uri,
+      )
+    ) {
       add(
         "ASSET_TRANSPARENCY_UNAVAILABLE",
         "assetUsability",
@@ -290,6 +300,67 @@ export function basicLayoutHeuristics({
   return dedupeIssues(issues);
 }
 
+/**
+ * 透明通道缺失是 Provider 能力提示，不等同于页面缺陷。只有素材已作为唯一
+ * img 放进独立的普通流容器时才视为完成 HTML 降级；直接把不透明图用于槽位
+ * 根节点或 CSS 背景仍保留 QA issue。
+ */
+export function hasSafelyContainedOpaqueAssetFallback(
+  html: string,
+  slotId: string,
+  approvedUri?: string,
+) {
+  if (!approvedUri) return false;
+  const markers = [...html.matchAll(/<[a-z][^>]*>/gi)].filter(
+    (match) =>
+      readAttribute(match[0], "data-asset-slot-id") === slotId,
+  );
+  if (markers.length !== 1 || markers[0]?.index === undefined) return false;
+
+  const openingTag = markers[0][0];
+  const tagName = /^<\s*([a-z][a-z0-9-]*)/i.exec(openingTag)?.[1];
+  if (
+    !tagName ||
+    !["aside", "div", "figure", "picture", "section"].includes(
+      tagName.toLowerCase(),
+    )
+  ) {
+    return false;
+  }
+  const inlineStyle = readAttribute(openingTag, "style") ?? "";
+  if (/\bposition\s*:\s*(?:absolute|fixed)\b/i.test(inlineStyle)) {
+    return false;
+  }
+
+  const element = readElementHtml(
+    html,
+    markers[0].index,
+    openingTag,
+    tagName,
+  );
+  if (!element) return false;
+  const approvedImages = (element.match(/<img\b[^>]*>/gi) ?? []).filter(
+    (tag) => readAttribute(tag, "src") === approvedUri,
+  );
+  if (approvedImages.length === 1) return true;
+
+  const usesApprovedBackground =
+    backgroundDeclarationUsesUri(inlineStyle, approvedUri) ||
+    hasUniqueStylesheetBackground(
+      html,
+      openingTag,
+      slotId,
+      approvedUri,
+    );
+  if (!usesApprovedBackground) return false;
+  const innerMarkup = element
+    .slice(openingTag.length)
+    .replace(new RegExp(`</\\s*${escapeRegex(tagName)}\\s*>\\s*$`, "i"), "")
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .trim();
+  return innerMarkup.length === 0;
+}
+
 function hasAttributesOnSameTag(
   html: string,
   attributes: Record<string, string>,
@@ -314,7 +385,11 @@ function normalizeVisibleText(html: string) {
     .trim();
 }
 
-function hasUsableAssetSlot(html: string, slotId: string) {
+function hasUsableAssetSlot(
+  html: string,
+  slotId: string,
+  approvedUri?: string,
+) {
   const escaped = slotId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const paired = new RegExp(
     `<([a-z][a-z0-9-]*)\\b[^>]*data-asset-slot-id\\s*=\\s*(["'])${escaped}\\2[^>]*>[\\s\\S]*?<\\/\\1\\s*>`,
@@ -332,12 +407,158 @@ function hasUsableAssetSlot(html: string, slotId: string) {
     inlineStyle &&
       /\bbackground(?:-image)?\s*:[^;]*\burl\s*\([^)]*\)/i.test(inlineStyle),
   );
+  const stylesheetBackground = Boolean(
+    openingTag &&
+      approvedUri &&
+      hasUniqueStylesheetBackground(
+        html,
+        openingTag,
+        slotId,
+        approvedUri,
+      ),
+  );
 
   return (
     selfClosing ||
     inlineBackground ||
+    stylesheetBackground ||
     Boolean(paired && /<(?:img|svg|picture|canvas)\b/i.test(paired))
   );
+}
+
+function hasUniqueStylesheetBackground(
+  html: string,
+  openingTag: string,
+  slotId: string,
+  approvedUri: string,
+) {
+  const selectors: RegExp[] = [];
+  const classNames = readAttribute(openingTag, "class")
+    ?.split(/\s+/)
+    .filter(Boolean) ?? [];
+  for (const className of classNames) {
+    if (countClassOwners(html, className) !== 1) continue;
+    const escaped = escapeRegex(className);
+    selectors.push(
+      new RegExp(
+        `^\\.${escaped}(?::(?:before|after)|::(?:before|after))?$`,
+      ),
+    );
+  }
+
+  const id = readAttribute(openingTag, "id");
+  if (id && countAttributeOwners(html, "id", id) === 1) {
+    const escaped = escapeRegex(id);
+    selectors.push(
+      new RegExp(
+        `^#${escaped}(?::(?:before|after)|::(?:before|after))?$`,
+      ),
+    );
+  }
+
+  if (countAttributeOwners(html, "data-asset-slot-id", slotId) === 1) {
+    const escaped = escapeRegex(slotId);
+    selectors.push(
+      new RegExp(
+        `^\\[\\s*data-asset-slot-id\\s*=\\s*(?:"${escaped}"|'${escaped}'|${escaped})\\s*\\](?::(?:before|after)|::(?:before|after))?$`,
+      ),
+    );
+  }
+
+  return selectors.some((selector) =>
+    stylesheetBindsSelectorToUri(html, selector, approvedUri),
+  );
+}
+
+function stylesheetBindsSelectorToUri(
+  html: string,
+  selectorPattern: RegExp,
+  approvedUri: string,
+) {
+  for (const styleMatch of html.matchAll(
+    /<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi,
+  )) {
+    for (const rule of (styleMatch[1] ?? "").matchAll(
+      /([^{}]+)\{([^{}]*)\}/g,
+    )) {
+      const selectors = (rule[1] ?? "")
+        .split(",")
+        .map((selector) => selector.trim())
+        .filter(Boolean);
+      if (
+        selectors.length === 1 &&
+        selectorPattern.test(selectors[0]!) &&
+        backgroundDeclarationUsesUri(rule[2] ?? "", approvedUri)
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function backgroundDeclarationUsesUri(
+  declarations: string,
+  approvedUri: string,
+) {
+  const escapedUri = escapeRegex(approvedUri);
+  return new RegExp(
+    `(?:^|;)\\s*(?:background|background-image)\\s*:[^;]*url\\(\\s*(?:["'])?${escapedUri}(?:["'])?\\s*\\)`,
+    "i",
+  ).test(declarations.replace(/\/\*[\s\S]*?\*\//g, " "));
+}
+
+function countClassOwners(html: string, className: string) {
+  return (html.match(/<[a-z][^>]*>/gi) ?? []).filter((tag) =>
+    (readAttribute(tag, "class") ?? "").split(/\s+/).includes(className),
+  ).length;
+}
+
+function countAttributeOwners(
+  html: string,
+  attribute: string,
+  expectedValue: string,
+) {
+  return (html.match(/<[a-z][^>]*>/gi) ?? []).filter(
+    (tag) => readAttribute(tag, attribute) === expectedValue,
+  ).length;
+}
+
+function readAttribute(tag: string, attribute: string) {
+  const escapedAttribute = escapeRegex(attribute);
+  return new RegExp(
+    `\\b${escapedAttribute}\\s*=\\s*(["'])(.*?)\\1`,
+    "i",
+  ).exec(tag)?.[2];
+}
+
+function readElementHtml(
+  html: string,
+  index: number,
+  openingTag: string,
+  tagName: string,
+) {
+  const escapedTagName = escapeRegex(tagName);
+  const pattern = new RegExp(`<\\/?\\s*${escapedTagName}\\b[^>]*>`, "gi");
+  pattern.lastIndex = index + openingTag.length;
+  let depth = 1;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(html))) {
+    if (/^<\s*\//.test(match[0])) {
+      depth -= 1;
+    } else if (!/\/\s*>$/.test(match[0])) {
+      depth += 1;
+    }
+    if (depth === 0) {
+      return html.slice(index, match.index + match[0].length);
+    }
+  }
+  return undefined;
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function hasLowContrastPair(html: string) {

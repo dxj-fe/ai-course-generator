@@ -9,13 +9,21 @@ import { generateTextSafe } from "../../../../src/server/ai/client";
 import {
   createHtmlEngineerAgent,
   createHtmlEngineerAgentState,
+  normalizeChoiceInteractionRoot,
+  normalizeChoiceRuntimeMarkers,
+  normalizeGeneratedCanvasRoot,
   normalizeNativeInteractionMarker,
   normalizeRevealCardInteraction,
   normalizeTrustedDslMarkup,
+  normalizeVisualPrimitiveMarker,
+  removeRedundantRestoredDslMarkup,
   resolveHtmlEngineerInput,
   validateHtmlEngineerOutput,
 } from "../../../../src/server/agents/html-engineer-agent";
-import type { AssetGenerationResult } from "../../../../src/shared/course-schema";
+import type {
+  AssetGenerationResult,
+  PageContentDSL,
+} from "../../../../src/shared/course-schema";
 import { getFunctionalTemplateDslExample } from "../../../../src/shared/templates/functional/dsl-examples";
 
 vi.mock("../../../../src/server/ai/client", () => ({
@@ -146,13 +154,20 @@ function buildAssetRichHtml() {
     );
 }
 
-function getChoiceContent() {
+type ChoiceContent = Omit<PageContentDSL, "interaction"> & {
+  interaction: Extract<PageContentDSL["interaction"], { type: "choice" }>;
+};
+
+function getChoiceContent(): ChoiceContent {
   const content = getFunctionalTemplateDslExample("interactive-quiz");
   if (!content || content.interaction.type !== "choice") {
     throw new Error("interactive-quiz 测试夹具必须使用 choice interaction");
   }
 
-  return content;
+  return {
+    ...content,
+    interaction: content.interaction,
+  };
 }
 
 describe("HtmlEngineerAgent", () => {
@@ -187,6 +202,9 @@ describe("HtmlEngineerAgent", () => {
 
     expect(result.status).toBe("completed");
     expect(result.htmlOutput?.html).toContain("<!doctype html>");
+    expect(result.htmlOutput?.html).toContain(
+      'data-keya-canvas-mode="fluid"',
+    );
     expect(result.validation?.contract.valid).toBe(true);
     expect(result.events.map(({ type }) => type)).toEqual([
       "start",
@@ -205,6 +223,554 @@ describe("HtmlEngineerAgent", () => {
       }),
     );
     expect(generateHtml.mock.calls[0]?.[0]).not.toHaveProperty("userPrompt");
+  });
+
+  it("normalizes the generated document to the platform fluid canvas mode", () => {
+    const generated =
+      '<!doctype html><html data-keya-canvas-mode="fixed" style="width:1200px"><head></head><body></body></html>';
+
+    const normalized = normalizeGeneratedCanvasRoot(generated);
+
+    expect(normalized).toContain(
+      '<html style="width:1200px" data-keya-canvas-mode="fluid">',
+    );
+    expect(normalized).not.toContain('data-keya-canvas-mode="fixed"');
+    expect(String(normalized).match(/data-keya-canvas-mode=/g)).toHaveLength(1);
+  });
+
+  it("marks a uniquely named code-native visual root with the trusted primitive", () => {
+    const runtimeContent = {
+      ...pageContentDsl,
+      version: 2 as const,
+      runtime: {
+        runtimeVersion: 1 as const,
+        sceneKind: "demo" as const,
+        visualPrimitive: "concept-map" as const,
+        motionPlan: {
+          intensity: "guided" as const,
+          cuePoints: [],
+        },
+        completionRule: {
+          type: "interaction-complete" as const,
+          interactionId: `interaction-${pageContentDsl.pageId}`,
+        },
+      },
+    } satisfies PageContentDSL;
+    const generated = `<!doctype html><html><head><title>${runtimeContent.title}</title></head><body><main data-page-id="${runtimeContent.pageId}"><section class="course-concept-map"><article>${runtimeContent.blocks[0]?.heading}</article><article>${runtimeContent.blocks[1]?.heading}</article></section></main></body></html>`;
+
+    const normalized = normalizeVisualPrimitiveMarker(generated, {
+      content: runtimeContent,
+      visualBrief,
+    });
+
+    expect(normalized).toContain(
+      '<section class="course-concept-map" data-visual-primitive="concept-map">',
+    );
+  });
+
+  it("does not relabel incompatible or out-of-main visual content", () => {
+    const runtimeContent = {
+      ...pageContentDsl,
+      version: 2 as const,
+      runtime: {
+        runtimeVersion: 1 as const,
+        sceneKind: "demo" as const,
+        visualPrimitive: "concept-map" as const,
+        motionPlan: {
+          intensity: "guided" as const,
+          cuePoints: [],
+        },
+        completionRule: {
+          type: "interaction-complete" as const,
+          interactionId: `interaction-${pageContentDsl.pageId}`,
+        },
+      },
+    } satisfies PageContentDSL;
+    const incompatible = `<!doctype html><html><head><title>${runtimeContent.title}</title></head><body><main data-page-id="${runtimeContent.pageId}"><section class="course-concept-map" data-visual-primitive="timeline"><article>${runtimeContent.blocks[0]?.heading}</article><article>${runtimeContent.blocks[1]?.heading}</article></section></main></body></html>`;
+    const outsideMain = `<!doctype html><html><head><title>${runtimeContent.title}</title></head><body><section class="course-concept-map"><article>${runtimeContent.blocks[0]?.heading}</article><article>${runtimeContent.blocks[1]?.heading}</article></section><main data-page-id="${runtimeContent.pageId}"></main></body></html>`;
+
+    expect(
+      normalizeVisualPrimitiveMarker(incompatible, {
+        content: runtimeContent,
+        visualBrief,
+      }),
+    ).toBe(incompatible);
+    const normalizedOutside = normalizeVisualPrimitiveMarker(outsideMain, {
+      content: runtimeContent,
+      visualBrief,
+    });
+    if (typeof normalizedOutside !== "string") {
+      throw new Error("visual primitive normalization must return HTML");
+    }
+    expect(normalizedOutside).toContain(
+      '<section class="course-concept-map"><article>',
+    );
+    expect(normalizedOutside).toContain(
+      'data-course-contract-restored="visual-primitive"',
+    );
+    expect(normalizedOutside.match(/data-visual-primitive="concept-map"/g))
+      .toHaveLength(1);
+  });
+
+  it("adds choice runtime markers only to uniquely provable native controls", () => {
+    const choice = getChoiceContent();
+    const content = {
+      ...choice,
+      version: 2 as const,
+      runtime: {
+        runtimeVersion: 1 as const,
+        sceneKind: "practice" as const,
+        visualPrimitive: "none" as const,
+        motionPlan: {
+          intensity: "guided" as const,
+          cuePoints: [],
+        },
+        completionRule: {
+          type: "correct-answer" as const,
+          interactionId: `interaction-${choice.pageId}`,
+        },
+      },
+    } satisfies PageContentDSL;
+    const questions = content.interaction.questions
+      .map(
+        (question) =>
+          `<fieldset class="question-card"><legend>${question.prompt}</legend>${question.options
+            .map(
+              (option) =>
+                `<label><input type="radio" name="${question.id}" value="${option.id}">${option.label}</label>`,
+            )
+            .join("")}</fieldset>`,
+      )
+      .join("");
+    const generated = `<!doctype html><html><head><title>${content.title}</title></head><body><main data-page-id="${content.pageId}"><section data-interaction-type="choice" data-interaction-id="interaction-${content.pageId}">${questions}<button class="check-answer">检查答案</button><p data-feedback-kind="success" hidden>正确</p><p data-feedback-kind="retry" hidden>再试一次</p></section></main></body></html>`;
+
+    const normalized = normalizeChoiceRuntimeMarkers(generated, {
+      content,
+      visualBrief,
+    });
+
+    for (const question of content.interaction.questions) {
+      expect(normalized).toContain(
+        `data-question-id="${question.id}"`,
+      );
+    }
+    expect(normalized).toContain('data-runtime-submit="true"');
+  });
+
+  it("adds the page-level submit button when complete choice controls omit it", () => {
+    const choice = getChoiceContent();
+    const content = {
+      ...choice,
+      version: 2 as const,
+      runtime: {
+        runtimeVersion: 1 as const,
+        sceneKind: "practice" as const,
+        visualPrimitive: "none" as const,
+        motionPlan: {
+          intensity: "guided" as const,
+          cuePoints: [],
+        },
+        completionRule: {
+          type: "correct-answer" as const,
+          interactionId: `interaction-${choice.pageId}`,
+        },
+      },
+    } satisfies PageContentDSL;
+    const questions = content.interaction.questions
+      .map(
+        (question) =>
+          `<fieldset data-question-id="${question.id}"><legend>${question.prompt}</legend>${question.options
+            .map(
+              (option) =>
+                `<label><input type="radio" name="${question.id}" value="${option.id}">${option.label}</label>`,
+            )
+            .join("")}</fieldset>`,
+      )
+      .join("");
+    const generated = `<!doctype html><html><body><main data-page-id="${content.pageId}"><section data-interaction-type="choice" data-interaction-id="interaction-${content.pageId}">${questions}</section></main></body></html>`;
+
+    const normalized = normalizeChoiceRuntimeMarkers(generated, { content });
+
+    if (typeof normalized !== "string") {
+      throw new Error("choice normalization must return HTML");
+    }
+    expect(normalized.match(/data-runtime-submit="true"/g)).toHaveLength(1);
+    expect(normalized).toContain(">提交答案</button>");
+  });
+
+  it("collapses repeated per-question submit buttons into one page-level submit", () => {
+    const choice = getChoiceContent();
+    const content = {
+      ...choice,
+      version: 2 as const,
+      runtime: {
+        runtimeVersion: 1 as const,
+        sceneKind: "practice" as const,
+        visualPrimitive: "none" as const,
+        motionPlan: {
+          intensity: "guided" as const,
+          cuePoints: [],
+        },
+        completionRule: {
+          type: "correct-answer" as const,
+          interactionId: `interaction-${choice.pageId}`,
+        },
+      },
+    } satisfies PageContentDSL;
+    const questions = content.interaction.questions
+      .map(
+        (question) =>
+          `<fieldset data-question-id="${question.id}"><legend>${question.prompt}</legend>${question.options
+            .map(
+              (option) =>
+                `<label><input type="radio" name="${question.id}" value="${option.id}">${option.label}</label>`,
+            )
+            .join("")}<button type="button">提交本题</button></fieldset>`,
+      )
+      .join("");
+    const generated = `<!doctype html><html><body><main data-page-id="${content.pageId}"><section data-interaction-type="choice" data-interaction-id="interaction-${content.pageId}">${questions}</section></main></body></html>`;
+
+    const normalized = normalizeChoiceRuntimeMarkers(generated, { content });
+
+    if (typeof normalized !== "string") {
+      throw new Error("choice normalization must return HTML");
+    }
+    expect(normalized.match(/<button\b/g)).toHaveLength(1);
+    expect(normalized.match(/data-runtime-submit="true"/g)).toHaveLength(1);
+    expect(normalized).toContain(">提交答案</button>");
+  });
+
+  it("collapses already marked per-question submit buttons into one page-level submit", () => {
+    const choice = getChoiceContent();
+    const content = {
+      ...choice,
+      version: 2 as const,
+      runtime: {
+        runtimeVersion: 1 as const,
+        sceneKind: "practice" as const,
+        visualPrimitive: "none" as const,
+        motionPlan: {
+          intensity: "guided" as const,
+          cuePoints: [],
+        },
+        completionRule: {
+          type: "correct-answer" as const,
+          interactionId: `interaction-${choice.pageId}`,
+        },
+      },
+    } satisfies PageContentDSL;
+    const questions = content.interaction.questions
+      .map(
+        (question) =>
+          `<fieldset data-question-id="${question.id}"><legend>${question.prompt}</legend>${question.options
+            .map(
+              (option) =>
+                `<label><input type="radio" name="${question.id}" value="${option.id}">${option.label}</label>`,
+            )
+            .join("")}<button type="button" data-runtime-submit="true">提交本题</button></fieldset>`,
+      )
+      .join("");
+    const generated = `<!doctype html><html><body><main data-page-id="${content.pageId}"><section data-interaction-type="choice" data-interaction-id="interaction-${content.pageId}">${questions}</section></main></body></html>`;
+
+    const normalized = normalizeChoiceRuntimeMarkers(generated, { content });
+
+    if (typeof normalized !== "string") {
+      throw new Error("choice normalization must return HTML");
+    }
+    expect(normalized.match(/<button\b/g)).toHaveLength(1);
+    expect(normalized.match(/data-runtime-submit="true"/g)).toHaveLength(1);
+    expect(normalized).toContain(">提交答案</button>");
+  });
+
+  it("adds a missing choice interaction id to the uniquely bound root", () => {
+    const choice = getChoiceContent();
+    const content = {
+      ...choice,
+      version: 2 as const,
+      runtime: {
+        runtimeVersion: 1 as const,
+        sceneKind: "practice" as const,
+        visualPrimitive: "none" as const,
+        motionPlan: {
+          intensity: "guided" as const,
+          cuePoints: [],
+        },
+        completionRule: {
+          type: "correct-answer" as const,
+          interactionId: `interaction-${choice.pageId}`,
+        },
+      },
+    } satisfies PageContentDSL;
+    const questions = content.interaction.questions
+      .map(
+        (question) =>
+          `<fieldset>${question.options
+            .map(
+              (option) =>
+                `<label><input type="radio" value="${option.id}">${option.label}</label>`,
+            )
+            .join("")}</fieldset>`,
+      )
+      .join("");
+    const generated = `<!doctype html><html><body><main data-page-id="${content.pageId}"><section data-interaction-type="choice">${questions}<button>提交答案</button></section></main></body></html>`;
+
+    const normalized = normalizeChoiceInteractionRoot(generated, {
+      content,
+    });
+
+    expect(normalized).toContain(
+      `<section data-interaction-type="choice" data-interaction-id="interaction-${content.pageId}">`,
+    );
+  });
+
+  it("moves duplicated per-question choice markers to their unique common root", () => {
+    const choice = getChoiceContent();
+    const content = {
+      ...choice,
+      version: 2 as const,
+      runtime: {
+        runtimeVersion: 1 as const,
+        sceneKind: "practice" as const,
+        visualPrimitive: "none" as const,
+        motionPlan: {
+          intensity: "guided" as const,
+          cuePoints: [],
+        },
+        completionRule: {
+          type: "correct-answer" as const,
+          interactionId: `interaction-${choice.pageId}`,
+        },
+      },
+    } satisfies PageContentDSL;
+    const questions = content.interaction.questions
+      .map(
+        (question) =>
+          `<fieldset data-interaction-type="choice">${question.options
+            .map(
+              (option) =>
+                `<label><input type="radio" value="${option.id}">${option.label}</label>`,
+            )
+            .join("")}</fieldset>`,
+      )
+      .join("");
+    const generated = `<!doctype html><html><body><main data-page-id="${content.pageId}"><form>${questions}<button>提交答案</button></form></main></body></html>`;
+
+    const normalized = normalizeChoiceInteractionRoot(generated, {
+      content,
+    });
+
+    expect(normalized).toContain(
+      `<form data-interaction-type="choice" data-interaction-id="interaction-${content.pageId}">`,
+    );
+    expect(
+      String(normalized).match(/data-interaction-type="choice"/g),
+    ).toHaveLength(1);
+    expect(normalized).not.toContain(
+      '<fieldset data-interaction-type="choice">',
+    );
+  });
+
+  it("does not merge ambiguous duplicated choice roots", () => {
+    const choice = getChoiceContent();
+    const content = {
+      ...choice,
+      version: 2 as const,
+      runtime: {
+        runtimeVersion: 1 as const,
+        sceneKind: "practice" as const,
+        visualPrimitive: "none" as const,
+        motionPlan: {
+          intensity: "guided" as const,
+          cuePoints: [],
+        },
+        completionRule: {
+          type: "correct-answer" as const,
+          interactionId: `interaction-${choice.pageId}`,
+        },
+      },
+    } satisfies PageContentDSL;
+    const questions = content.interaction.questions
+      .map(
+        (question) =>
+          `<fieldset>${question.options
+            .map(
+              (option) =>
+                `<input type="radio" value="${option.id}">`,
+            )
+            .join("")}</fieldset>`,
+      )
+      .join("");
+    const root = `<form data-interaction-type="choice">${questions}<button>提交答案</button></form>`;
+    const generated = `<!doctype html><html><body><main data-page-id="${content.pageId}">${root}${root}</main></body></html>`;
+
+    expect(
+      normalizeChoiceInteractionRoot(generated, { content }),
+    ).toBe(generated);
+  });
+
+  it("does not guess a choice submit target when multiple buttons exist", () => {
+    const choice = getChoiceContent();
+    const content = {
+      ...choice,
+      version: 2 as const,
+      runtime: {
+        runtimeVersion: 1 as const,
+        sceneKind: "practice" as const,
+        visualPrimitive: "none" as const,
+        motionPlan: {
+          intensity: "guided" as const,
+          cuePoints: [],
+        },
+        completionRule: {
+          type: "correct-answer" as const,
+          interactionId: `interaction-${choice.pageId}`,
+        },
+      },
+    } satisfies PageContentDSL;
+    const generated = `<!doctype html><html><head><title>${content.title}</title></head><body><main data-page-id="${content.pageId}"><section data-interaction-type="choice" data-interaction-id="interaction-${content.pageId}"><button>上一题</button><button>提交答案</button></section></main></body></html>`;
+
+    const normalized = normalizeChoiceRuntimeMarkers(generated, {
+      content,
+      visualBrief,
+    });
+
+    expect(normalized).not.toContain('data-runtime-submit="true"');
+  });
+
+  it("moves a legacy single-question marker to the scope that contains its options", () => {
+    const choice = getChoiceContent();
+    const question = choice.interaction.questions[0];
+    const content = {
+      ...choice,
+      version: 2 as const,
+      interaction: {
+        ...choice.interaction,
+        questions: [question],
+      },
+      runtime: {
+        runtimeVersion: 1 as const,
+        sceneKind: "practice" as const,
+        visualPrimitive: "none" as const,
+        motionPlan: {
+          intensity: "guided" as const,
+          cuePoints: [],
+        },
+        completionRule: {
+          type: "correct-answer" as const,
+          interactionId: `interaction-${choice.pageId}`,
+        },
+      },
+    } satisfies PageContentDSL;
+    const options = question.options
+      .map(
+        (option) =>
+          `<li><input type="radio" value="${option.id}">${option.label}</li>`,
+      )
+      .join("");
+    const generated = `<!doctype html><html><head><title>${content.title}</title></head><body><main data-page-id="${content.pageId}"><section data-interaction-type="choice" data-interaction-id="interaction-${content.pageId}"><div data-question-id="${question.id}">${question.prompt}</div><ul>${options}</ul><button data-runtime-submit="true">提交</button><p data-feedback-kind="success" hidden>${question.feedback.success}</p><p data-feedback-kind="retry" hidden>${question.feedback.retry}</p></section></main></body></html>`;
+
+    const normalized = normalizeChoiceRuntimeMarkers(generated, {
+      content,
+      visualBrief,
+    });
+
+    expect(normalized).toContain(
+      `<section data-interaction-type="choice" data-interaction-id="interaction-${content.pageId}" data-question-id="${question.id}">`,
+    );
+    expect(normalized).not.toContain(
+      `<div data-question-id="${question.id}">`,
+    );
+  });
+
+  it("restores omitted multi-question prompts inside option-bound question scopes", () => {
+    const choice = getChoiceContent();
+    const content = {
+      ...choice,
+      version: 2 as const,
+      runtime: {
+        runtimeVersion: 1 as const,
+        sceneKind: "practice" as const,
+        visualPrimitive: "none" as const,
+        motionPlan: {
+          intensity: "guided" as const,
+          cuePoints: [],
+        },
+        completionRule: {
+          type: "correct-answer" as const,
+          interactionId: `interaction-${choice.pageId}`,
+        },
+      },
+    } satisfies PageContentDSL;
+    const questions = content.interaction.questions
+      .map(
+        (question) =>
+          `<fieldset>${question.options
+            .map(
+              (option) =>
+                `<label><input type="radio" value="${option.id}">${option.label}</label>`,
+            )
+            .join("")}</fieldset>`,
+      )
+      .join("");
+    const generated = `<!doctype html><html><head><title>${content.title}</title></head><body><main data-page-id="${content.pageId}"><section data-interaction-type="choice" data-interaction-id="interaction-${content.pageId}">${questions}<button data-runtime-submit="true">提交</button><p data-feedback-kind="success" hidden>正确</p><p data-feedback-kind="retry" hidden>再试一次</p></section></main></body></html>`;
+
+    const normalized = normalizeChoiceRuntimeMarkers(generated, {
+      content,
+      visualBrief,
+    });
+
+    for (const question of content.interaction.questions) {
+      expect(normalized).toContain(
+        `data-question-id="${question.id}"`,
+      );
+      expect(normalized).toContain(question.prompt);
+    }
+  });
+
+  it("restores missing hidden choice feedback from the trusted DSL", () => {
+    const choice = getChoiceContent();
+    const content = {
+      ...choice,
+      version: 2 as const,
+      runtime: {
+        runtimeVersion: 1 as const,
+        sceneKind: "practice" as const,
+        visualPrimitive: "none" as const,
+        motionPlan: {
+          intensity: "guided" as const,
+          cuePoints: [],
+        },
+        completionRule: {
+          type: "correct-answer" as const,
+          interactionId: `interaction-${choice.pageId}`,
+        },
+      },
+    } satisfies PageContentDSL;
+    const questions = content.interaction.questions
+      .map(
+        (question) =>
+          `<fieldset data-question-id="${question.id}"><legend>${question.prompt}</legend>${question.options
+            .map(
+              (option) =>
+                `<label><input type="radio" name="${question.id}" value="${option.id}">${option.label}</label>`,
+            )
+            .join("")}</fieldset>`,
+      )
+      .join("");
+    const generated = `<!doctype html><html><head><title>${content.title}</title></head><body><main data-page-id="${content.pageId}"><section data-interaction-type="choice" data-interaction-id="interaction-${content.pageId}">${questions}<button data-runtime-submit="true">提交答案</button><p data-feedback-kind="success">${content.interaction.questions[0].feedback.success}</p></section></main></body></html>`;
+
+    const normalized = normalizeChoiceRuntimeMarkers(generated, {
+      content,
+      visualBrief,
+    });
+
+    expect(normalized).toContain(
+      'data-feedback-kind="success" hidden="hidden"',
+    );
+    expect(normalized).toContain('data-feedback-kind="retry" hidden>');
+    expect(normalized).toContain(
+      content.interaction.questions[0].feedback.retry,
+    );
   });
 
   it("canonicalizes a uniquely bound CSS background to the approved alt text", async () => {
@@ -293,6 +859,59 @@ describe("HtmlEngineerAgent", () => {
     );
   });
 
+  it("rejects duplicate block markers even when all DSL text remains visible", () => {
+    const duplicate = `<aside data-block-id="${pageContentDsl.blocks[0]!.id}">${pageContentDsl.blocks[0]!.heading}</aside>`;
+    const html = buildValidGeneratedHtml(pageContentDsl).replace(
+      "</main>",
+      `${duplicate}</main>`,
+    );
+
+    expect(() => validateHtmlEngineerOutput(html, input)).toThrow(
+      `内容块 ${pageContentDsl.blocks[0]!.id} 必须且只能在 main 内有一个`,
+    );
+  });
+
+  it("rejects a page marker placed outside the unique main element", () => {
+    const html = buildValidGeneratedHtml(pageContentDsl)
+      .replace(
+        `<main data-page-id="${pageContentDsl.pageId}">`,
+        "<main>",
+      )
+      .replace("<body>", `<body data-page-id="${pageContentDsl.pageId}">`);
+
+    expect(() => validateHtmlEngineerOutput(html, input)).toThrow(
+      "data-page-id 必须且只能标记唯一 main 主内容区域",
+    );
+  });
+
+  it("rejects block markers whose DOM order differs from the DSL", () => {
+    const firstId = pageContentDsl.blocks[0]!.id;
+    const secondId = pageContentDsl.blocks[1]!.id;
+    const html = buildValidGeneratedHtml(pageContentDsl)
+      .replace(`data-block-id="${firstId}"`, 'data-block-id="swap-marker"')
+      .replace(`data-block-id="${secondId}"`, `data-block-id="${firstId}"`)
+      .replace('data-block-id="swap-marker"', `data-block-id="${secondId}"`);
+
+    expect(() => validateHtmlEngineerOutput(html, input)).toThrow(
+      "data-block-id 的 DOM 顺序必须与 PageContentDSL.blocks 一致",
+    );
+  });
+
+  it("rejects an empty interaction marker separated from its teaching content", () => {
+    const interactionType = pageContentDsl.interaction.type;
+    const html = buildValidGeneratedHtml(pageContentDsl).replace(
+      `data-interaction-type="${interactionType}"`,
+      `data-interaction-type="detached"`,
+    ).replace(
+      "</main>",
+      `<div data-interaction-type="${interactionType}"></div></main>`,
+    );
+
+    expect(() => validateHtmlEngineerOutput(html, input)).toThrow(
+      "真实互动区标记不能是与教学内容分离的空容器",
+    );
+  });
+
   it("does not require an interaction marker when the DSL explicitly uses none", () => {
     const content = {
       ...pageContentDsl,
@@ -378,6 +997,94 @@ describe("HtmlEngineerAgent", () => {
     expect(() =>
       validateHtmlEngineerOutput(normalized, { content, visualBrief }),
     ).not.toThrow();
+  });
+
+  it("treats Markdown inline code and rendered code tags as the same trusted text", () => {
+    const body = "变量`name`的数据类型是`str`。";
+    const supportingPoint =
+      "正确示例：`username`；错误示例：`1name`";
+    const content = {
+      ...pageContentDsl,
+      blocks: pageContentDsl.blocks.map((block, index) =>
+        index === 0
+          ? { ...block, body, supportingPoints: [supportingPoint] }
+          : block,
+      ),
+    };
+    const html = buildValidGeneratedHtml(content)
+      .replace(body, "变量<code>name</code>的数据类型是<code>str</code>。")
+      .replace(
+        supportingPoint,
+        "正确示例：<code>username</code>；错误示例：<code>1name</code>",
+      );
+
+    const normalized = normalizeTrustedDslMarkup(html, {
+      content,
+      visualBrief,
+    });
+
+    expect(normalized).not.toContain(
+      'data-course-contract-restored="block"',
+    );
+    expect(() =>
+      validateHtmlEngineerOutput(normalized, { content, visualBrief }),
+    ).not.toThrow();
+  });
+
+  it("removes stale restored block copies when rendered code already contains the DSL", () => {
+    const body = "变量`name`的数据类型是`str`。";
+    const content = {
+      ...pageContentDsl,
+      blocks: pageContentDsl.blocks.map((block, index) =>
+        index === 0 ? { ...block, body } : block,
+      ),
+    };
+    const html = buildValidGeneratedHtml(content)
+      .replace(body, "变量<code>name</code>的数据类型是<code>str</code>。")
+      .replace(
+        "</article>",
+        `<div data-course-contract-restored="block"><p>${body}</p></div></article>`,
+      );
+
+    const normalized = removeRedundantRestoredDslMarkup(html, { content });
+
+    expect(normalized).not.toContain(
+      'data-course-contract-restored="block"',
+    );
+    expect(() =>
+      validateHtmlEngineerOutput(normalized, { content, visualBrief }),
+    ).not.toThrow();
+  });
+
+  it("restores trusted reveal item text inside its unique runtime item", () => {
+    const interaction = pageContentDsl.interaction;
+    if (interaction.type !== "reveal") {
+      throw new Error("reveal fixture is required");
+    }
+    const originalInteraction = `<section data-interaction-type="reveal">${[
+      interaction.prompt,
+      ...interaction.items.flatMap((item) => [item.label, item.content]),
+    ].join(" ")}</section>`;
+    const incompleteInteraction = `<section data-interaction-type="reveal">${interaction.prompt}${interaction.items
+      .map(
+        (item) =>
+          `<div data-interaction-item-id="${item.id}">${item.label}</div>`,
+      )
+      .join("")}</section>`;
+    const html = buildValidGeneratedHtml(pageContentDsl).replace(
+      originalInteraction,
+      incompleteInteraction,
+    );
+
+    const normalized = normalizeTrustedDslMarkup(html, input);
+
+    for (const item of interaction.items) {
+      expect(normalized).toContain(item.content);
+    }
+    expect(normalized).toContain(
+      'data-course-contract-restored="interaction-item"',
+    );
+    expect(() => validateHtmlEngineerOutput(normalized, input)).not.toThrow();
   });
 
   it("does not invent a reveal marker for an incomplete native interaction", () => {
@@ -610,6 +1317,58 @@ describe("HtmlEngineerAgent", () => {
       }),
     ).toThrow(
       `页面正文缺少 DSL 文本：${mismatchedNumberContent.interaction.questions[0].prompt}`,
+    );
+  });
+
+  it("accepts input placeholder text on the unique runtime input without duplicating it in visible copy", () => {
+    const example = getFunctionalTemplateDslExample("achievement-task");
+    if (!example || example.interaction.type !== "input") {
+      throw new Error("achievement-task 测试夹具必须使用 input interaction");
+    }
+    const interaction = example.interaction;
+    const content: PageContentDSL = {
+      ...example,
+      version: 2,
+      runtime: {
+        runtimeVersion: 1,
+        sceneKind: "practice",
+        visualPrimitive: "none",
+        motionPlan: { intensity: "subtle", cuePoints: [] },
+        completionRule: {
+          type: "interaction-complete",
+          interactionId: `interaction-${example.pageId}`,
+        },
+      },
+    };
+    let html = buildValidGeneratedHtml(content)
+      .replace(
+        'data-interaction-type="input"',
+        `data-interaction-type="input" data-interaction-id="interaction-${content.pageId}"`,
+      )
+      .replace(
+        interaction.placeholder,
+        `<textarea data-runtime-input="true" placeholder="${interaction.placeholder}"></textarea><button data-runtime-submit="true">提交</button>`,
+      );
+    for (const block of content.blocks) {
+      html = html.replace(
+        `data-block-id="${block.id}"`,
+        `data-block-id="${block.id}" data-runtime-target-id="${block.id}"`,
+      );
+    }
+
+    expect(() =>
+      validateHtmlEngineerOutput(html, { content, visualBrief }),
+    ).not.toThrow();
+    expect(() =>
+      validateHtmlEngineerOutput(
+        html.replace(
+          `placeholder="${interaction.placeholder}"`,
+          'placeholder="请输入内容"',
+        ),
+        { content, visualBrief },
+      ),
+    ).toThrow(
+      `页面正文缺少 DSL 文本：${interaction.placeholder}`,
     );
   });
 

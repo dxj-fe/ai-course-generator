@@ -10,7 +10,10 @@ import {
   runCourseGenerationWorkflow,
   type CourseMvpPageCount,
 } from "@/server/workflows/course-generation-workflow";
-import { CourseIdSchema } from "@/shared/course-schema";
+import {
+  CourseIdSchema,
+  CoursePageCountSchema,
+} from "@/shared/course-schema";
 
 export const runtime = "nodejs";
 
@@ -18,7 +21,7 @@ const CourseGenerationRequestSchema = z
   .object({
     courseId: CourseIdSchema.optional(),
     userPrompt: z.string().trim().min(2).max(4_000).optional(),
-    pageCount: z.union([z.literal(3), z.literal(4), z.literal(5)]).optional(),
+    pageCount: CoursePageCountSchema.optional(),
     executionMode: z.enum(["serial", "parallel"]).optional(),
     concurrency: z.number().int().min(1).max(5).optional(),
     traceId: z.string().trim().min(1).max(120).optional(),
@@ -62,12 +65,6 @@ export async function POST(req: Request) {
     }
     if (
       existingState?.intent &&
-      !isMvpPageCount(existingState.intent.courseLength)
-    ) {
-      throw new AiRequestError("持久化课程的页面数量不属于 Day 18 的 3–5 页范围。");
-    }
-    if (
-      existingState?.intent &&
       parsed.data.pageCount &&
       parsed.data.pageCount !== existingState.intent.courseLength
     ) {
@@ -94,8 +91,4 @@ export async function POST(req: Request) {
   } catch (error) {
     return createAiErrorResponse(error, headerTraceId);
   }
-}
-
-function isMvpPageCount(value: number): value is CourseMvpPageCount {
-  return value === 3 || value === 4 || value === 5;
 }

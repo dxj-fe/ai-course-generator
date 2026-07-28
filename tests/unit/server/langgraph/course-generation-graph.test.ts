@@ -91,7 +91,7 @@ describe("production course generation graph", () => {
     ).toEqual(state.outline?.pages.map(({ id }) => id));
   });
 
-  it("finishes bounded invoke and stream runs whose valid Repair routes exceed LangGraph's default 25 steps", async () => {
+  it("finishes bounded invoke and stream runs with several parallel-page Repair routes", async () => {
     const fivePageInput = {
       ...input,
       courseId: "course-day-31-recursion-budget",
@@ -111,7 +111,7 @@ describe("production course generation graph", () => {
     );
 
     expect(state.status).toBe("completed");
-    expect(state.supervisor?.decisionCount).toBe(14);
+    expect(state.supervisor?.decisionCount).toBe(11);
     expect(state.pages.map((page) => page.repairHistory?.length ?? 0)).toEqual([
       2, 2, 2, 0, 0,
     ]);
@@ -130,7 +130,7 @@ describe("production course generation graph", () => {
     );
 
     expect(streamed.status).toBe("completed");
-    expect(streamed.supervisor?.decisionCount).toBe(14);
+    expect(streamed.supervisor?.decisionCount).toBe(11);
   });
 
   it("compiles the explicit START-to-END topology", () => {
@@ -199,12 +199,9 @@ describe("production course generation graph", () => {
     expect(failed.pages.map(({ status }) => status)).toEqual([
       "completed",
       "failed",
-      "pending",
+      "completed",
     ]);
-    expect(resumedOrder).toEqual([
-      "worker:page-02-knowledge",
-      "worker:page-03-summary",
-    ]);
+    expect(resumedOrder).toEqual(["worker:page-02-knowledge"]);
     expect(resumed.status).toBe("completed");
     expect(resumed.pages.every(({ status }) => status === "completed")).toBe(true);
     expect(resumed.updatedAt).toBe(courseRuntimeTimestamp);

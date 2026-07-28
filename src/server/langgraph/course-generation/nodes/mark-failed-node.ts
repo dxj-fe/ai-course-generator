@@ -38,6 +38,7 @@ export function createMarkFailedGraphNode(
         stage: page?.currentStage ?? state.currentStage,
         pageId: page?.pageId,
         code,
+        causeCode: page?.error?.causeCode,
         message,
       },
       context.runtime,

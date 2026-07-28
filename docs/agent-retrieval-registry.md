@@ -57,7 +57,7 @@
 
 - When to use: 课程意图已校验但尚无页面规划时
 - Input: CourseIntent、模板 Card 和可选 Reference Hit。
-- Output: 3–12 页 CoursePlan 和页面级资料引用。
+- Output: 与 CourseIntent 章节数一致的 CoursePlan 和页面级资料引用。
 - Limitations: 不生成页面正文；不能编造模板或资料 ID
 
 ### 课程专业设计 (design-course)
@@ -71,12 +71,12 @@
 
 ### 页面工作流执行 (run-page-worker)
 
-按 Writer、Assets、HTML、QA 和有限 Repair 顺序生成页面。
+按 Writer、Assets、HTML、QA 和质量优先 Repair 顺序生成页面。
 
 - When to use: 页面依赖满足且页面尚未完成时
 - Input: 页面计划、专业 brief、课程状态和引用授权。
 - Output: 页面 DSL、素材、HTML、QA 报告及修订记录。
-- Limitations: 必须遵守页面级预算；页面状态只能通过运行层合并
+- Limitations: 必须遵守安全熔断；页面状态只能通过运行层合并
 
 ### 页面内容写作 (write-page-content)
 
@@ -116,9 +116,9 @@
 
 ### 页面定向修订 (repair-page)
 
-根据可定位 QA 问题对 DSL 或 HTML 进行有限修订。
+根据可定位 QA 问题对 DSL 或 HTML 进行质量优先修订。
 
-- When to use: QualityReport 要求修订且仍有 Repair 预算时
+- When to use: QualityReport 要求修订且未触发安全熔断时
 - Input: RepairRequest、当前页面产物和可定位问题。
 - Output: 限定范围的修订候选或结构化拒绝。
-- Limitations: 最多两轮；必须重新校验并执行 re-QA
+- Limitations: 连续无进展会安全熔断；必须重新校验并执行 re-QA

@@ -40,48 +40,81 @@ export const QualityScreenshotStatusSchema = z.enum([
   "failed",
 ]);
 
-export const QualityScreenshotEvidenceSchema = z
+const QualityScreenshotViewportSchema = z
+  .object({
+    width: z.number().int().min(320).max(3840),
+    height: z.number().int().min(320).max(2160),
+  })
+  .strict();
+
+const QualityScreenshotMetricsSchema = z
+  .object({
+    documentWidth: z.number().int().nonnegative(),
+    documentHeight: z.number().int().nonnegative(),
+    horizontalOverflowPx: z.number().int().nonnegative(),
+    verticalOverflowPx: z.number().int().nonnegative().optional(),
+    nestedVerticalOverflowCount: z.number().int().nonnegative().optional(),
+    clippedElementCount: z.number().int().nonnegative(),
+    zeroSizeInteractiveCount: z.number().int().nonnegative(),
+    // 新指标保持可选，确保已有截图证据仍能直接解析。
+    touchTargetUnder24Count: z.number().int().nonnegative().optional(),
+    touchTargetUnder44Count: z.number().int().nonnegative().optional(),
+    primaryActionBelowFoldCount: z.number().int().nonnegative().optional(),
+    feedbackVisibleByDefaultCount: z.number().int().nonnegative().optional(),
+    interactionSubmitTested: z.boolean().optional(),
+    interactionFeedbackVisible: z.boolean().optional(),
+    largestVisualAreaRatio: z.number().min(0).max(1).optional(),
+    largestVisualSelector: z.string().min(1).max(240).optional(),
+    visibleContentAreaRatio: z.number().min(0).max(1).optional(),
+    mainViewportCoverageRatio: z.number().min(0).max(1).optional(),
+  })
+  .strict();
+
+const QualityScreenshotCaptureBaseSchema = z
   .object({
     status: QualityScreenshotStatusSchema,
     artifactId: z.string().min(1).max(120).optional(),
-    viewport: z
-      .object({
-        width: z.number().int().min(320).max(3840),
-        height: z.number().int().min(320).max(2160),
-      })
-      .strict(),
-    metrics: z
-      .object({
-        documentWidth: z.number().int().nonnegative(),
-        documentHeight: z.number().int().nonnegative(),
-        horizontalOverflowPx: z.number().int().nonnegative(),
-        clippedElementCount: z.number().int().nonnegative(),
-        zeroSizeInteractiveCount: z.number().int().nonnegative(),
-      })
-      .strict()
-      .optional(),
+    viewport: QualityScreenshotViewportSchema,
+    metrics: QualityScreenshotMetricsSchema.optional(),
     capturedAt: z.string().datetime({ offset: true }).optional(),
     reason: z.string().min(2).max(300).optional(),
   })
-  .strict()
-  .superRefine((evidence, context) => {
-    if (
-      evidence.status === "captured" &&
-      (!evidence.artifactId || !evidence.metrics || !evidence.capturedAt)
-    ) {
-      context.addIssue({
-        code: "custom",
-        message: "captured 截图证据必须包含 artifactId、metrics 和 capturedAt",
-      });
-    }
-    if (evidence.status !== "captured" && !evidence.reason) {
-      context.addIssue({
-        code: "custom",
-        message: "未捕获截图时必须说明 reason",
-        path: ["reason"],
-      });
-    }
-  });
+  .strict();
+
+function validateScreenshotCapture(
+  evidence: z.infer<typeof QualityScreenshotCaptureBaseSchema>,
+  context: z.RefinementCtx,
+) {
+  if (
+    evidence.status === "captured" &&
+    (!evidence.artifactId || !evidence.metrics || !evidence.capturedAt)
+  ) {
+    context.addIssue({
+      code: "custom",
+      message: "captured 截图证据必须包含 artifactId、metrics 和 capturedAt",
+    });
+  }
+  if (evidence.status !== "captured" && !evidence.reason) {
+    context.addIssue({
+      code: "custom",
+      message: "未捕获截图时必须说明 reason",
+      path: ["reason"],
+    });
+  }
+}
+
+const QualityScreenshotCaptureSchema =
+  QualityScreenshotCaptureBaseSchema.superRefine(validateScreenshotCapture);
+
+export const QualityScreenshotEvidenceSchema =
+  QualityScreenshotCaptureBaseSchema.extend({
+    /**
+     * 多视口采集明细。顶层字段继续表示 primary（桌面）证据，以兼容旧报告。
+     */
+    captures: z.array(QualityScreenshotCaptureSchema).min(1).max(6).optional(),
+  })
+    .strict()
+    .superRefine(validateScreenshotCapture);
 
 /** Repair Agent 可直接消费的问题位置；description 为无法使用 selector 时的兜底。 */
 export const QualityIssueLocationSchema = z

@@ -86,8 +86,8 @@ export function CoursePlannerPanel() {
           一句话生成课程结构
         </h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-[#64748b]">
-          Intent Agent 先把自然语言解析为 CourseIntent，Planner 再生成 3–12
-          页、带依赖关系的 CourseOutline；该阶段不会生成 HTML。
+          Intent Agent 先把自然语言解析为 CourseIntent，Planner 再按内容生成
+          对应数量、带依赖关系的 CourseOutline；该阶段不会生成 HTML。
         </p>
       </header>
 

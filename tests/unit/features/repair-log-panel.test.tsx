@@ -28,7 +28,8 @@ describe("RepairLogPanel", () => {
     );
 
     expect(markup).toContain("Repair 记录");
-    expect(markup).toContain("第 1 轮 · HTML");
+    expect(markup).toContain("质量优先迭代");
+    expect(markup).toContain("第 1 次 · HTML");
     expect(markup).toContain("LAYOUT_OVERFLOW");
     expect(markup).toContain("限制页面宽度。");
     expect(markup).not.toContain("sourceReport");

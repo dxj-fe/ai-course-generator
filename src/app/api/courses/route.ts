@@ -9,7 +9,6 @@ const CourseHistoryQuerySchema = z
   .object({
     query: z.string().trim().max(160).optional(),
     status: z.enum(["running", "completed", "failed", "cancelled"]).optional(),
-    source: z.enum(["workflow", "langgraph"]).optional(),
   })
   .strict();
 
@@ -20,7 +19,6 @@ export async function GET(request: Request) {
     const query = CourseHistoryQuerySchema.parse({
       query: url.searchParams.get("query") || undefined,
       status: url.searchParams.get("status") || undefined,
-      source: url.searchParams.get("source") || undefined,
     });
     return Response.json(await courseHistoryService.list(query), {
       headers: { "x-trace-id": traceId },

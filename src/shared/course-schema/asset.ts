@@ -108,7 +108,7 @@ export const AssetSchema = z
         height: z.number().int().positive(),
       })
       .optional(),
-    usedByPageIds: z.array(z.string().min(1).max(80)).max(30),
+    usedByPageIds: z.array(z.string().min(1).max(80)),
   })
   .superRefine((asset, context) => {
     // usedByPageIds 是反向索引，重复项没有业务意义。

@@ -3,4 +3,4 @@
 Repair 输入：
 {{repairInputJson}}
 
-只处理 request.issueCodes 和允许范围。返回修复候选不代表已经通过；运行层会重新校验并执行 re-QA。
+只处理 request.issueCodes 和允许范围。sourceReport 中没有出现的 issue code 不属于本轮任务，禁止输出。返回修复候选不代表已经通过；运行层会重新校验并执行 re-QA。

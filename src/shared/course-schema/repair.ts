@@ -5,28 +5,35 @@ import { PageContentDSLSchema } from "./page-content-dsl";
 import { QualityReportSchema } from "./quality";
 import { VisualBriefSchema } from "./visual";
 
-export const MAX_REPAIR_ROUNDS = 2;
+/** 防止实现错误形成无限循环，不作为正常质量修订预算。 */
+export const MAX_REPAIR_ATTEMPTS = 24;
+export const MAX_CONSECUTIVE_STALLED_REPAIRS = 3;
 
 export const RepairTargetArtifactSchema = z.enum(["dsl", "html"]);
+export const RepairContentFieldSchema = z.enum(["narration", "interaction"]);
 
 export const RepairFailureClassSchema = z.enum([
   "unlocatable_issue",
   "unsupported_asset_issue",
   "scope_violation",
   "candidate_invalid",
+  "safety_limit",
   "budget_exhausted",
   "agent_failed",
 ]);
+
+export const RepairQualityProgressSchema = z.enum(["improved", "stalled"]);
 
 export const RepairRequestSchema = z
   .object({
     pageId: z.string().min(1).max(80),
     targetArtifact: RepairTargetArtifactSchema,
-    round: z.number().int().min(1).max(MAX_REPAIR_ROUNDS),
-    maxRounds: z.literal(MAX_REPAIR_ROUNDS),
+    round: z.number().int().min(1).max(MAX_REPAIR_ATTEMPTS),
+    maxRounds: z.literal(MAX_REPAIR_ATTEMPTS),
     sourceReport: QualityReportSchema,
     issueCodes: z.array(z.string().min(1).max(80)).min(1).max(20),
     allowedBlockIds: z.array(z.string().min(1).max(80)).max(20),
+    allowedContentFields: z.array(RepairContentFieldSchema).max(2).default([]),
     allowedSelectors: z.array(z.string().min(1).max(240)).max(20),
     content: PageContentDSLSchema,
     html: z.string().min(1).max(200_000),
@@ -58,11 +65,12 @@ export const RepairRequestSchema = z
 
     if (
       request.targetArtifact === "dsl" &&
-      request.allowedBlockIds.length === 0
+      request.allowedBlockIds.length === 0 &&
+      request.allowedContentFields.length === 0
     ) {
       context.addIssue({
         code: "custom",
-        message: "DSL Repair 必须限定至少一个 blockId",
+        message: "DSL Repair 必须限定至少一个 blockId 或内容字段",
         path: ["allowedBlockIds"],
       });
     }
@@ -147,7 +155,7 @@ export const RepairAttemptStatusSchema = z.enum([
 /** 页面 checkpoint 中保存每轮来源报告和公开结果，不重复保存候选正文。 */
 export const RepairAttemptRecordSchema = z
   .object({
-    round: z.number().int().min(1).max(MAX_REPAIR_ROUNDS),
+    round: z.number().int().min(1).max(MAX_REPAIR_ATTEMPTS),
     sourceReport: QualityReportSchema,
     targetArtifact: RepairTargetArtifactSchema,
     issueCodes: z.array(z.string().min(1).max(80)).min(1).max(20),
@@ -155,6 +163,13 @@ export const RepairAttemptRecordSchema = z
     changeSummary: z.array(z.string().min(2).max(300)).max(10).default([]),
     failureClass: RepairFailureClassSchema.optional(),
     resultReportId: z.string().min(1).max(80).optional(),
+    qualityProgress: RepairQualityProgressSchema.optional(),
+    consecutiveNoProgress: z
+      .number()
+      .int()
+      .min(0)
+      .max(MAX_CONSECUTIVE_STALLED_REPAIRS)
+      .optional(),
     startedAt: z.string().datetime({ offset: true }),
     completedAt: z.string().datetime({ offset: true }).optional(),
   })
@@ -177,6 +192,7 @@ export const RepairAttemptRecordSchema = z
   });
 
 export type RepairTargetArtifact = z.infer<typeof RepairTargetArtifactSchema>;
+export type RepairContentField = z.infer<typeof RepairContentFieldSchema>;
 export type RepairFailureClass = z.infer<typeof RepairFailureClassSchema>;
 export type RepairRequest = z.infer<typeof RepairRequestSchema>;
 export type HtmlRepairPatch = z.infer<typeof HtmlRepairPatchSchema>;
@@ -185,4 +201,7 @@ export type HtmlRepairResult = z.infer<typeof HtmlRepairResultSchema>;
 export type DeclinedRepairResult = z.infer<typeof DeclinedRepairResultSchema>;
 export type RepairResult = z.infer<typeof RepairResultSchema>;
 export type RepairAttemptStatus = z.infer<typeof RepairAttemptStatusSchema>;
+export type RepairQualityProgress = z.infer<
+  typeof RepairQualityProgressSchema
+>;
 export type RepairAttemptRecord = z.infer<typeof RepairAttemptRecordSchema>;

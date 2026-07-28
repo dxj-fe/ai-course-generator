@@ -96,6 +96,26 @@ describe("Day 18 course generation state", () => {
     });
   });
 
+  it("preserves a bounded root cause alongside an orchestration error", () => {
+    const state = CourseGenerationStateSchema.parse({
+      ...createRunningState(),
+      status: "failed",
+      errors: [
+        {
+          stage: "page_writer",
+          code: "PAGE_WORKER_RETRY_EXHAUSTED",
+          causeCode: "SCHEMA_ERROR",
+          message: "页面内容校验未通过。",
+        },
+      ],
+    });
+
+    expect(state.errors[0]).toMatchObject({
+      code: "PAGE_WORKER_RETRY_EXHAUSTED",
+      causeCode: "SCHEMA_ERROR",
+    });
+  });
+
   it("accepts a completed three-page course with previewable HTML", () => {
     const state = createCompletedState();
 
@@ -103,6 +123,46 @@ describe("Day 18 course generation state", () => {
     expect(state.pages.every(({ status }) => status === "completed")).toBe(
       true,
     );
+  });
+
+  it("accepts a content-driven course plan longer than five sections", () => {
+    const foundation = courseDesignOutline.pages[1]!;
+    const summary = courseDesignOutline.pages[2]!;
+    const middlePages = [2, 3, 4, 5].map((order) => ({
+      ...foundation,
+      id: `page-${String(order).padStart(2, "0")}-knowledge`,
+      order,
+      title: `太阳系核心知识 ${order - 1}`,
+      learningObjective: `学习者能够解释太阳系核心知识 ${order - 1}。`,
+      contentSummary: `通过示例和互动掌握太阳系知识单元 ${order - 1}。`,
+      dependsOnPageIds: [
+        order === 2
+          ? courseDesignOutline.pages[0]!.id
+          : `page-${String(order - 1).padStart(2, "0")}-knowledge`,
+      ],
+    }));
+    const outline = {
+      ...courseDesignOutline,
+      pages: [
+        courseDesignOutline.pages[0]!,
+        ...middlePages,
+        {
+          ...summary,
+          id: "page-06-summary",
+          order: 6,
+          dependsOnPageIds: ["page-05-knowledge"],
+        },
+      ],
+    };
+
+    const result = CourseGenerationStateSchema.safeParse({
+      ...createRunningState(),
+      currentStage: "design",
+      intent: { ...courseDesignIntent, courseLength: 6 },
+      outline,
+    });
+
+    expect(result.success).toBe(true);
   });
 
   it("rejects private event data while accepting public stage metadata", () => {

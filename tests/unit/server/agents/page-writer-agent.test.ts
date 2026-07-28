@@ -9,8 +9,10 @@ import {
   visualBrief,
 } from "../../../fixtures/course-design";
 import {
+  buildLessonRuntime,
   createPageWriterAgent,
   createPageWriterAgentState,
+  materializePageWriterInteraction,
   materializeInteractionItems,
   normalizePageContentDensity,
   normalizePageNavigationDestination,
@@ -155,31 +157,111 @@ describe("PageWriterAgent", () => {
     );
   });
 
-  it("flattens nested choice options and resets the unused choice items field", () => {
+  it("distinguishes programming functions from mathematical function graphs", () => {
+    const programmingRuntime = buildLessonRuntime({
+      page: {
+        ...page,
+        title: "Python流程控制与函数",
+        learningObjective: "掌握for循环、条件控制和def函数调用",
+        contentSummary: "通过Python代码学习流程控制与函数。",
+      },
+      blocks: pageContentDsl.blocks.map((block, index) => ({
+        ...block,
+        heading: index === 0 ? "for循环遍历" : "def函数定义与调用",
+        body:
+          index === 0
+            ? "使用for循环控制程序流程。"
+            : "使用def定义函数并通过参数调用。",
+      })),
+      interaction: pageContentDsl.interaction,
+    });
+    const mathRuntime = buildLessonRuntime({
+      page: {
+        ...page,
+        title: "一次函数图像",
+        learningObjective: "理解坐标系中函数图像与斜率",
+        contentSummary: "绘制y = 2x + 1的函数曲线。",
+      },
+      blocks: pageContentDsl.blocks,
+      interaction: pageContentDsl.interaction,
+    });
+
+    expect(programmingRuntime.visualPrimitive).toBe("process");
+    expect(mathRuntime.visualPrimitive).toBe("function-graph");
+  });
+
+  it("keeps nested choice questions and resets the unused choice items field", () => {
+    const questions = [
+      {
+        prompt: "哪一项符合定义？",
+        options: ["选项一", "选项二"],
+        correctOptionIndex: 0,
+        feedbackSuccess: "选项一满足定义中的全部条件。",
+        feedbackRetry: "请重新核对定义中的必要条件。",
+        maxAttempts: 2,
+      },
+    ];
+
     expect(
       normalizePageWriterModelOutput({
         narration: [],
         interaction: {
           type: "choice",
           items: 5,
-          choiceOptions: [["选项一"], ["选项二", "选项三"]],
+          questions,
         },
       }),
     ).toMatchObject({
       interaction: {
         items: [],
-        choiceOptions: ["选项一", "选项二", "选项三"],
+        questions,
       },
     });
   });
 
-  it("does not coerce mixed choice option values", () => {
-    const choiceOptions = [["选项一"], { label: "选项二" }];
-    const normalized = normalizePageWriterModelOutput({
-      interaction: { type: "choice", items: [], choiceOptions },
-    }) as { interaction: { choiceOptions: unknown } };
-
-    expect(normalized.interaction.choiceOptions).toBe(choiceOptions);
+  it("adds stable technical IDs to each nested choice question", () => {
+    expect(
+      materializePageWriterInteraction({
+        type: "choice",
+        prompt: "完成选择题。",
+        items: [],
+        questions: [
+          {
+            prompt: "哪一项符合定义？",
+            options: ["选项一", "选项二"],
+            correctOptionIndex: 1,
+            feedbackSuccess: "选项二满足定义中的全部条件。",
+            feedbackRetry: "请重新核对定义中的必要条件。",
+            maxAttempts: 2,
+          },
+        ],
+        feedbackSuccess: [],
+        feedbackRetry: [],
+        maxAttempts: 1,
+        placeholder: "未使用",
+        evaluationCriteria: [],
+        actionLabel: "未使用",
+        destination: "next",
+      }),
+    ).toEqual({
+      type: "choice",
+      questions: [
+        {
+          id: "question-01",
+          prompt: "哪一项符合定义？",
+          options: [
+            { id: "option-01-01", label: "选项一" },
+            { id: "option-01-02", label: "选项二" },
+          ],
+          correctOptionId: "option-01-02",
+          feedback: {
+            success: "选项二满足定义中的全部条件。",
+            retry: "请重新核对定义中的必要条件。",
+          },
+          maxAttempts: 2,
+        },
+      ],
+    });
   });
 
   it("uses concise interaction content as the learner-facing item label", () => {

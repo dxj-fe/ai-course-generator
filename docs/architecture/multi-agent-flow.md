@@ -2,7 +2,7 @@
 
 > **PARTIALLY IMPLEMENTED / 按阶段校准**
 >
-> 本文最初是 Day 21 的目标架构，现已用 Days 23–29 校准：受限 Supervisor、显式全局 `WorkflowNode`、隔离 Page Worker、受控并发、两轮 QA/Repair/re-QA，以及可选的固定 LangGraph 核心图已经实现。产品任务服务仍以手写 Supervisor workflow 为默认入口；当前运行事实以 [`mvp-flow.md`](./mvp-flow.md) 为准。
+> 本文最初是 Day 21 的目标架构，当前已用 2026-07-24 的质量策略校准：受限 Supervisor、显式全局 `WorkflowNode`、隔离 Page Worker、受控并发、质量优先 QA/Repair/re-QA，以及生产 LangGraph 条件图已经实现。当前运行事实以 [`mvp-flow.md`](./mvp-flow.md) 为准。
 
 ## 设计目标
 
@@ -104,7 +104,7 @@ Supervisor 和 Page Worker 都不计入以下九名 Specialist；GenerateImage �
 | 6 | Image Prompt | 单页 DSL 素材槽 + `VisualBrief` | `AssetRequest[]` | 不直接调用 provider，不发明 asset slot，不生成页面内容 |
 | 7 | HTML Engineer | DSL、模板、视觉指导、已校验素材 | `HtmlOutput` | 不重新规划课程，不改写 DSL，不读取原始用户 Prompt |
 | 8 | QA | PagePlan、DSL、brief、HTML、素材与确定性检查结果 | `QualityReport` | 只报告证据，不修改 HTML，不自行宣布修复完成 |
-| 9 | Repair | 原始产物、限定目标、`QualityReport`、repair budget | 目标 `RepairResult` / 修复候选 | 不扩大修复范围，不改无关页面，不跳过 re-QA，不自我判定通过 |
+| 9 | Repair | 原始产物、限定目标、`QualityReport`、安全尝试序号 | 目标 `RepairResult` / 修复候选 | 不扩大修复范围，不改无关页面，不跳过 re-QA，不自我判定通过 |
 
 表中前八类已有可复用实现或协议：[`course-planner-agent.ts`](../../src/server/agents/course-planner-agent.ts)、[`pedagogy-agent.ts`](../../src/server/agents/pedagogy-agent.ts)、[`story-agent.ts`](../../src/server/agents/story-agent.ts)、[`visual-director-agent.ts`](../../src/server/agents/visual-director-agent.ts)、[`page-writer-agent.ts`](../../src/server/agents/page-writer-agent.ts)、[`image-prompt-agent.ts`](../../src/server/agents/image-prompt-agent.ts)、[`html-engineer-agent.ts`](../../src/server/agents/html-engineer-agent.ts) 和 [`page-qa-agent.ts`](../../src/server/agents/page-qa-agent.ts)。Repair 目前没有实现，文档不得把目标 `RepairResult` 当成现有 schema。
 
@@ -206,7 +206,7 @@ stateDiagram-v2
 - page/node retry budget 耗尽；
 - 安全违规或不可恢复 schema/reference 错误；
 - 用户取消；
-- 整课成本或时长预算耗尽；
+- 运行被取消、鉴权/配置不可用或质量安全熔断；
 - 修复没有减少问题集合，或连续产生同一错误 code；
 - Supervisor 决策不符合可用节点或前置输入合同。
 

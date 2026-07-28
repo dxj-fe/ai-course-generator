@@ -23,6 +23,15 @@ PageContentDSL：
 当前页面已校验素材结果（ready 使用唯一 URI；fallback 按描述降级）：
 {{assetsJson}}
 
+PageContentDSL v2 运行时标记自检（不是可选项）：
+
+- `runtime.visualPrimitive` 非 `none` 时，代码原生图示根节点必须带值完全一致的 `data-visual-primitive`。
+- 每个 block 根节点必须同时带同值 `data-block-id` 与 `data-runtime-target-id`。
+- 互动根节点必须同时带 `data-interaction-type` 与 `data-interaction-id="interaction-当前 pageId"`。
+- reveal、explore、sort 的每个互动项必须带对应 `data-interaction-item-id`。
+- choice 的每道题必须带对应 `data-question-id`，每个原生 input 的 value 必须等于对应 option.id，并且唯一提交按钮必须带 `data-runtime-submit="true"`。
+- choice 的 success/retry 反馈必须分别带对应 `data-feedback-kind` 且初始 `hidden`。
+
 同一页面上一次确定性 HTML 校验反馈；首次生成时为 null：
 {{validationFeedbackJson}}
 

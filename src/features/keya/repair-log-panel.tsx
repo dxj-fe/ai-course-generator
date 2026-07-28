@@ -24,14 +24,14 @@ export function RepairLogPanel({
         <h6 className="text-xs font-semibold text-[#3f4a40]" id="repair-log-title">
           Repair 记录
         </h6>
-        <span className="text-[11px] text-[#7a7468]">最多 2 轮</span>
+        <span className="text-[11px] text-[#7a7468]">质量优先迭代</span>
       </div>
       <ol className="mt-2 grid gap-2">
         {attempts.map((attempt) => (
           <li className="rounded-lg bg-[#f6eedc] px-3 py-2" key={attempt.round}>
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-semibold text-[#625544]">
-                第 {attempt.round} 轮 · {attempt.targetArtifact.toUpperCase()}
+                第 {attempt.round} 次 · {attempt.targetArtifact.toUpperCase()}
               </span>
               <Badge
                 className="h-auto rounded-full border-[#ded3c6] bg-[#fffcf5] px-2 py-0.5 text-[10px] text-[#6f6a60]"

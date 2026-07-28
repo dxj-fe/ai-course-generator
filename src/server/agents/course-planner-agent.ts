@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { getCoursePlannerTimeoutMs } from "@/config/env";
 import { generateStructuredObjectSafe } from "@/server/ai/client";
 import { AiSchemaValidationError } from "@/server/ai/error";
 import { buildCoursePlannerPrompts } from "@/server/prompts/course-planner";
@@ -77,7 +78,7 @@ const CoursePlannerModelPageSchema = z.object({
 const CoursePlannerModelOutputSchema = z.object({
   overview: z.string().min(5).max(500),
   learningObjectives: z.array(z.string().min(5).max(300)).min(1).max(12),
-  pages: z.array(CoursePlannerModelPageSchema).min(3).max(12),
+  pages: z.array(CoursePlannerModelPageSchema).min(1),
 });
 
 const DEFAULT_INTERACTION_BY_PAGE_TYPE: Record<
@@ -249,6 +250,7 @@ async function generateOutline(input: {
     courseIntent: input.intent,
     ...retrievalContext,
   });
+  const attemptTimeoutMs = getCoursePlannerTimeoutMs();
 
   const draft = await generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
@@ -258,16 +260,21 @@ async function generateOutline(input: {
       schemaVersion: "course-plan-content@1",
     },
     capability: "planner",
-    maxTokens: 6_000,
+    fallbackTimeoutMs: attemptTimeoutMs,
+    maxTokens: Math.max(
+      6_000,
+      1_600 + input.intent.courseLength * 700,
+    ),
     normalizeOutput: normalizeCoursePlannerModelOutput,
     prompt: prompts.userPrompt,
     promptVersion: prompts.version,
     schema: CoursePlannerModelOutputSchema,
     schemaDescription:
-      "A 3-12 page semantic course planning draft without technical IDs or generated HTML.",
+      "A semantic course planning draft with exactly one item per requested course page, without technical IDs or generated HTML.",
     schemaName: "course_plan_content",
     systemPrompt: prompts.systemPrompt,
     temperature: 0.2,
+    timeoutMs: attemptTimeoutMs,
     traceId: input.traceId,
   });
 
@@ -359,11 +366,7 @@ function materializeCoursePlan(
   intent: CourseIntent,
   styleTemplateId: string,
 ): CoursePlan {
-  const orderedPages = [...draft.pages].sort(
-    (left, right) =>
-      getLearningPhase(left.pageType) - getLearningPhase(right.pageType),
-  );
-  const pages = orderedPages.map((page, index) => {
+  const pages = draft.pages.map((page, index) => {
     const functionalTemplate = listFunctionalTemplates().find(
       (template) => template.pageType === page.pageType,
     );
@@ -375,7 +378,7 @@ function materializeCoursePlan(
     }
 
     const id = `page-${String(index + 1).padStart(2, "0")}-${page.pageType.replaceAll("_", "-")}`;
-    const previousPage = index > 0 ? orderedPages[index - 1] : undefined;
+    const previousPage = index > 0 ? draft.pages[index - 1] : undefined;
     const previousId = previousPage
       ? `page-${String(index).padStart(2, "0")}-${previousPage.pageType.replaceAll("_", "-")}`
       : undefined;
@@ -404,20 +407,4 @@ function materializeCoursePlan(
   }
 
   return CoursePlanSchema.parse({ ...draft, pages });
-}
-
-/** 将页面稳定排列为引入、讲解、互动和总结四个教学阶段。 */
-function getLearningPhase(pageType: z.infer<typeof PageTypeSchema>) {
-  const phases: Record<z.infer<typeof PageTypeSchema>, number> = {
-    cover: 0,
-    story_intro: 0,
-    knowledge_card: 1,
-    comparison: 1,
-    timeline: 1,
-    quiz: 2,
-    achievement: 2,
-    summary: 3,
-  };
-
-  return phases[pageType];
 }

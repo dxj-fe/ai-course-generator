@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildRepairModelInput,
   createRepairAgent,
   createRepairAgentState,
   normalizeRepairModelOutput,
@@ -12,6 +13,8 @@ import {
 } from "../../../fixtures/course-design";
 import { buildValidGeneratedHtml } from "../../../fixtures/generated-html";
 import { qualityReportWithIssue } from "../../../fixtures/quality-report";
+import { RepairRequestSchema } from "../../../../src/shared/course-schema";
+import { getFunctionalTemplateDslExample } from "../../../../src/shared/templates/functional/dsl-examples";
 
 function htmlRequest() {
   const request = planRepairRound({
@@ -20,7 +23,7 @@ function htmlRequest() {
     html: buildValidGeneratedHtml(pageContentDsl),
     visualBrief,
     assets: [],
-    completedRounds: 0,
+    attemptCount: 0,
     report: qualityReportWithIssue({
       code: "LAYOUT_OVERFLOW",
       dimension: "layoutQuality",
@@ -66,6 +69,31 @@ describe("RepairAgent", () => {
     });
   });
 
+  it("drops an irrelevant selector from an exact replace patch", () => {
+    expect(
+      normalizeRepairModelOutput({
+        kind: "html_patch_candidate",
+        patches: [
+          {
+            operation: "replace",
+            selector: "CONTENT_DUPLICATION",
+            search: "<div>重复内容</div>",
+            replacement: "",
+          },
+        ],
+      }),
+    ).toEqual({
+      kind: "html_patch_candidate",
+      patches: [
+        {
+          operation: "replace",
+          search: "<div>重复内容</div>",
+          replacement: "",
+        },
+      ],
+    });
+  });
+
   it("keeps class-only boundary selectors invalid instead of widening scope", () => {
     const output = {
       kind: "html_patch_candidate",
@@ -78,6 +106,57 @@ describe("RepairAgent", () => {
     };
 
     expect(normalizeRepairModelOutput(output)).toBe(output);
+  });
+
+  it("only exposes the issues authorized for the current repair round", () => {
+    const request = htmlRequest();
+    const unrelatedIssue = {
+      ...request.sourceReport.issues[0]!,
+      code: "UNRELATED_WARNING",
+      severity: "warning" as const,
+    };
+    const requestWithUnrelatedWarning = RepairRequestSchema.parse({
+      ...request,
+      sourceReport: {
+        ...request.sourceReport,
+        issues: [...request.sourceReport.issues, unrelatedIssue],
+      },
+    });
+
+    const modelInput = buildRepairModelInput(requestWithUnrelatedWarning);
+
+    expect(modelInput.sourceReport.issues.map(({ code }) => code)).toEqual(
+      request.issueCodes,
+    );
+    expect(JSON.stringify(modelInput)).not.toContain("UNRELATED_WARNING");
+  });
+
+  it("does not send HTML and visual payloads to a DSL-only repair call", () => {
+    const request = planRepairRound({
+      pageId: pageContentDsl.pageId,
+      content: pageContentDsl,
+      html: buildValidGeneratedHtml(pageContentDsl),
+      visualBrief,
+      assets: [],
+      attemptCount: 0,
+      report: qualityReportWithIssue({
+        code: "OBJECTIVE_CHECK_INCOMPLETE",
+        dimension: "courseCoherence",
+        selector: ".interaction",
+      }),
+    });
+    if ("status" in request) throw new Error(request.message);
+
+    const modelInput = buildRepairModelInput(request);
+
+    expect(modelInput).not.toHaveProperty("html");
+    expect(modelInput).not.toHaveProperty("visualBrief");
+    expect(modelInput).not.toHaveProperty("assets");
+    expect(modelInput).toMatchObject({
+      targetArtifact: "dsl",
+      allowedContentFields: ["interaction"],
+      content: pageContentDsl,
+    });
   });
 
   it("applies one exact HTML patch and preserves the original HTML contract", async () => {
@@ -111,6 +190,161 @@ describe("RepairAgent", () => {
     ]);
   });
 
+  it("repairs touch-target sizing deterministically without another model call", async () => {
+    const request = planRepairRound({
+      pageId: pageContentDsl.pageId,
+      content: pageContentDsl,
+      html: buildValidGeneratedHtml(pageContentDsl),
+      visualBrief,
+      assets: [],
+      attemptCount: 0,
+      report: qualityReportWithIssue({
+        code: "TOO_SMALL_TOUCH_TARGET",
+        dimension: "htmlRuntime",
+        selector: 'input[type="radio"], button',
+      }),
+    });
+    if ("status" in request) throw new Error(request.message);
+    const generateCandidate = vi.fn();
+    const state = await createRepairAgent({ generateCandidate }).run(
+      createRepairAgentState(request),
+      { traceId: "trace-repair-touch-target" },
+    );
+
+    expect(state.status).toBe("completed");
+    expect(generateCandidate).not.toHaveBeenCalled();
+    expect(state.repairedHtml).toContain("min-height: 44px !important");
+    expect(state.repairedHtml).toContain("min-width: 24px !important");
+    expect(state.repairedHtml).toContain(
+      "[data-interaction-type] [data-interaction-item-id]",
+    );
+    expect(state.events.map(({ type }) => type)).toEqual([
+      "start",
+      "validation",
+      "validation",
+      "finish",
+    ]);
+
+    const baseline = state.repairedHtml?.match(
+      /\/\* keya-touch-target-baseline \*\/[\s\S]*?(?=<\/style>)/,
+    )?.[0];
+    if (!state.repairedHtml || !baseline) {
+      throw new Error("deterministic touch baseline is required");
+    }
+    const duplicatedHtml = state.repairedHtml.replace(
+      "</style>",
+      `${baseline}</style>`,
+    );
+    const duplicateRequest = planRepairRound({
+      pageId: pageContentDsl.pageId,
+      content: pageContentDsl,
+      html: duplicatedHtml,
+      visualBrief,
+      assets: [],
+      attemptCount: 1,
+      report: qualityReportWithIssue({
+        code: "BROWSER_TOUCH_TARGET_UNDER_44",
+        dimension: "htmlRuntime",
+      }),
+    });
+    if ("status" in duplicateRequest) {
+      throw new Error(duplicateRequest.message);
+    }
+    const deduplicated = await createRepairAgent({
+      generateCandidate: vi.fn(),
+    }).run(createRepairAgentState(duplicateRequest), {
+      traceId: "trace-repair-touch-target-deduplicate",
+    });
+
+    expect(deduplicated.status).toBe("completed");
+    expect(
+      deduplicated.repairedHtml?.match(
+        /keya-touch-target-baseline/g,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("contains an opaque provider fallback deterministically", async () => {
+    const asset = {
+      request: {
+        assetSlotId: "asset-slot-01",
+        assetType: "character_sticker" as const,
+        usage: "展示当前知识点",
+        prompt: "A transparent educational illustration.",
+        transparentBackground: true,
+        safeArea: {
+          position: "none" as const,
+          coveragePercent: 0,
+          description: "独立插图不承载文字",
+        },
+        aspectRatio: "1:1" as const,
+      },
+      status: "ready" as const,
+      asset: {
+        id: "asset-opaque",
+        type: "illustration" as const,
+        role: "inline" as const,
+        source: "generated" as const,
+        status: "ready" as const,
+        uri: "/api/assets/asset-opaque",
+        mimeType: "image/jpeg",
+        dimensions: { width: 1024, height: 1024 },
+        generationPrompt: "A transparent educational illustration.",
+        altText: "知识点插图",
+        usedByPageIds: [pageContentDsl.pageId],
+      },
+      warnings: ["TRANSPARENCY_UNAVAILABLE" as const],
+      durationMs: 12,
+    };
+    const html = buildValidGeneratedHtml(pageContentDsl).replace(
+      "</main>",
+      '<img data-asset-slot-id="asset-slot-01" src="/api/assets/asset-opaque" alt="知识点插图"></main>',
+    );
+    const request = planRepairRound({
+      pageId: pageContentDsl.pageId,
+      content: {
+        ...pageContentDsl,
+        assetSlots: [
+          {
+            id: "asset-slot-01",
+            type: "illustration" as const,
+            role: "inline" as const,
+            purpose: "知识点插图",
+            required: true,
+            altTextGuidance: "知识点插图",
+          },
+        ],
+      },
+      html,
+      visualBrief,
+      assets: [asset],
+      attemptCount: 0,
+      report: qualityReportWithIssue({
+        code: "ASSET_TRANSPARENCY_UNAVAILABLE",
+        dimension: "assetUsability",
+        selector: '[data-asset-slot-id="asset-slot-01"]',
+      }),
+    });
+    if ("status" in request) throw new Error(request.message);
+    const generateCandidate = vi.fn();
+    const state = await createRepairAgent({ generateCandidate }).run(
+      createRepairAgentState(request),
+      { traceId: "trace-repair-opaque-fallback" },
+    );
+
+    expect(state.status).toBe("completed");
+    expect(generateCandidate).not.toHaveBeenCalled();
+    expect(state.repairedHtml).toContain(
+      '<figure data-asset-slot-id="asset-slot-01" data-course-opaque-fallback="true"',
+    );
+    expect(state.repairedHtml).toContain(
+      '<img src="/api/assets/asset-opaque" alt="知识点插图">',
+    );
+    expect(
+      state.repairedHtml?.match(/data-asset-slot-id="asset-slot-01"/g),
+    ).toHaveLength(1);
+  });
+
   it("applies a candidate when the provider returns changeSummary as a string", async () => {
     const request = htmlRequest();
     const state = await createRepairAgent({
@@ -138,6 +372,77 @@ describe("RepairAgent", () => {
     expect(state.result).toMatchObject({ changeSummary: ["限制页面宽度。"] });
   });
 
+  it("derives addressed and unresolved HTML issues from the patches that were actually supplied", async () => {
+    const base = htmlRequest();
+    const secondIssue = {
+      ...base.sourceReport.issues[0]!,
+      code: "SECOND_LAYOUT_ISSUE",
+    };
+    const request = RepairRequestSchema.parse({
+      ...base,
+      issueCodes: [base.issueCodes[0], secondIssue.code],
+      sourceReport: {
+        ...base.sourceReport,
+        issues: [...base.sourceReport.issues, secondIssue],
+      },
+    });
+    const state = await createRepairAgent({
+      generateCandidate: vi.fn().mockResolvedValue({
+        kind: "html_patch_candidate",
+        pageId: request.pageId,
+        targetArtifact: "html",
+        addressedIssueCodes: request.issueCodes,
+        unresolvedIssueCodes: ["UNRELATED_WARNING"],
+        changeSummary: ["限制页面宽度。"],
+        patches: [
+          {
+            issueCode: request.issueCodes[0],
+            search: "body { margin: 0; }",
+            replacement: "body { margin: 0; max-width: 100%; }",
+            summary: "限制 body 宽度。",
+          },
+        ],
+      }),
+    }).run(createRepairAgentState(request), {
+      traceId: "trace-repair-derived-issues",
+    });
+
+    expect(state.status).toBe("completed");
+    expect(state.result).toMatchObject({
+      addressedIssueCodes: [request.issueCodes[0]],
+      unresolvedIssueCodes: [secondIssue.code],
+    });
+  });
+
+  it("still rejects an actual HTML patch that references an unauthorized issue", async () => {
+    const request = htmlRequest();
+    const state = await createRepairAgent({
+      generateCandidate: vi.fn().mockResolvedValue({
+        kind: "html_patch_candidate",
+        pageId: request.pageId,
+        targetArtifact: "html",
+        addressedIssueCodes: request.issueCodes,
+        unresolvedIssueCodes: [],
+        changeSummary: ["错误地引用未授权问题。"],
+        patches: [
+          {
+            issueCode: "UNAUTHORIZED_ISSUE",
+            search: "body { margin: 0; }",
+            replacement: "body { margin: 0; max-width: 100%; }",
+            summary: "限制 body 宽度。",
+          },
+        ],
+      }),
+    }).run(createRepairAgentState(request), {
+      traceId: "trace-repair-unauthorized-patch",
+    });
+
+    expect(state.status).toBe("failed");
+    expect(state.error?.message).toContain(
+      "HTML patch 引用了未授权 issue UNAUTHORIZED_ISSUE",
+    );
+  });
+
   it("inserts a missing main at unique body boundaries without searching for absent markup", async () => {
     const htmlWithoutMain = buildValidGeneratedHtml(pageContentDsl)
       .replace(`<main data-page-id="${pageContentDsl.pageId}">`, "")
@@ -148,7 +453,7 @@ describe("RepairAgent", () => {
       html: htmlWithoutMain,
       visualBrief,
       assets: [],
-      completedRounds: 0,
+      attemptCount: 0,
       report: qualityReportWithIssue({
         code: "HTML_MAIN_MISSING",
         dimension: "htmlRuntime",
@@ -203,7 +508,7 @@ describe("RepairAgent", () => {
       html: htmlWithoutMain,
       visualBrief,
       assets: [],
-      completedRounds: 0,
+      attemptCount: 0,
       report: qualityReportWithIssue({
         code: "HTML_MAIN_MISSING",
         dimension: "htmlRuntime",
@@ -252,7 +557,7 @@ describe("RepairAgent", () => {
       html: buildValidGeneratedHtml(pageContentDsl),
       visualBrief,
       assets: [],
-      completedRounds: 0,
+      attemptCount: 0,
       report: qualityReportWithIssue({
         code: "CONTENT_FACT",
         dimension: "contentAccuracy",
@@ -276,6 +581,196 @@ describe("RepairAgent", () => {
 
     expect(state.status).toBe("failed");
     expect(state.error?.message).toContain("未授权 block block-02");
+  });
+
+  it("repairs only narration when a blockless cover misses its page objective", async () => {
+    const example = getFunctionalTemplateDslExample("course-cover");
+    if (!example) throw new Error("course-cover fixture is required");
+    const content = { ...example, pageId: pageContentDsl.pageId };
+    const request = planRepairRound({
+      pageId: content.pageId,
+      content,
+      html: buildValidGeneratedHtml(content),
+      visualBrief,
+      assets: [],
+      attemptCount: 0,
+      report: qualityReportWithIssue({
+        code: "OBJECTIVE_COVERAGE_GAP",
+        dimension: "courseCoherence",
+        selector: "#page-narration",
+      }),
+    });
+    if ("status" in request) throw new Error(request.message);
+    const candidate = {
+      ...content,
+      narration: [
+        "《唐诗三百首》是广为流传的唐诗选本，适合用来建立唐诗阅读的入门路径。",
+      ],
+    };
+
+    const state = await createRepairAgent({
+      generateCandidate: vi.fn().mockResolvedValue({
+        kind: "dsl_candidate",
+        pageId: request.pageId,
+        targetArtifact: "dsl",
+        addressedIssueCodes: request.issueCodes,
+        unresolvedIssueCodes: [],
+        changeSummary: ["补足选本定位与学习路径。"],
+        candidate,
+      }),
+    }).run(createRepairAgentState(request), {
+      traceId: "trace-repair-cover-narration",
+    });
+
+    expect(state.status).toBe("completed");
+    expect(state.repairedContent?.narration).toEqual(candidate.narration);
+    expect(state.repairedContent?.title).toBe(content.title);
+    expect(state.repairedContent?.blocks).toEqual([]);
+  });
+
+  it("accepts a provider DSL alias and applies only the authorized interaction change", async () => {
+    const request = planRepairRound({
+      pageId: pageContentDsl.pageId,
+      content: pageContentDsl,
+      html: buildValidGeneratedHtml(pageContentDsl),
+      visualBrief,
+      assets: [],
+      attemptCount: 0,
+      report: qualityReportWithIssue({
+        code: "OBJECTIVE_CHECK_INCOMPLETE",
+        dimension: "courseCoherence",
+        selector: ".interaction",
+      }),
+    });
+    if ("status" in request) throw new Error(request.message);
+    const candidate = {
+      ...pageContentDsl,
+      interaction: {
+        ...pageContentDsl.interaction,
+        prompt: "逐项揭示后，说出恒星与行星是否会自己发光。",
+      },
+    };
+
+    const state = await createRepairAgent({
+      generateCandidate: vi.fn().mockResolvedValue({
+        kind: "dsl_candidate",
+        pageId: request.pageId,
+        targetArtifact: "dsl",
+        addressedIssueCodes: request.issueCodes,
+        unresolvedIssueCodes: [],
+        changeSummary: ["让揭示任务直接检查本页学习目标。"],
+        dsl: candidate,
+      }),
+    }).run(createRepairAgentState(request), {
+      traceId: "trace-repair-interaction-alias",
+    });
+
+    expect(state.status).toBe("completed");
+    expect(state.repairedContent?.interaction).toEqual(candidate.interaction);
+    expect(state.repairedContent?.blocks).toEqual(pageContentDsl.blocks);
+  });
+
+  it("rejects changing the interaction type during an authorized interaction repair", async () => {
+    const request = planRepairRound({
+      pageId: pageContentDsl.pageId,
+      content: pageContentDsl,
+      html: buildValidGeneratedHtml(pageContentDsl),
+      visualBrief,
+      assets: [],
+      attemptCount: 0,
+      report: qualityReportWithIssue({
+        code: "OBJECTIVE_CHECK_INCOMPLETE",
+        dimension: "courseCoherence",
+        selector: ".interaction",
+      }),
+    });
+    if ("status" in request) throw new Error(request.message);
+    const candidate = {
+      ...pageContentDsl,
+      interaction: {
+        type: "choice" as const,
+        questions: [
+          {
+            id: "question-01",
+            prompt: "哪一个会自己发光？",
+            options: [
+              { id: "option-star", label: "恒星" },
+              { id: "option-planet", label: "行星" },
+            ],
+            correctOptionId: "option-star",
+            feedback: {
+              success: "正确，恒星能够自己发光。",
+              retry: "再比较两者的发光特点。",
+            },
+            maxAttempts: 2,
+          },
+        ],
+      },
+    };
+
+    const state = await createRepairAgent({
+      generateCandidate: vi.fn().mockResolvedValue({
+        kind: "dsl_candidate",
+        pageId: request.pageId,
+        targetArtifact: "dsl",
+        addressedIssueCodes: request.issueCodes,
+        unresolvedIssueCodes: [],
+        changeSummary: ["更换互动形式。"],
+        candidate,
+      }),
+    }).run(createRepairAgentState(request), {
+      traceId: "trace-repair-interaction-type",
+    });
+
+    expect(state.status).toBe("failed");
+    expect(state.error?.message).toContain("必须保留原互动类型");
+  });
+
+  it("rejects changing interaction technical IDs during an authorized repair", async () => {
+    const request = planRepairRound({
+      pageId: pageContentDsl.pageId,
+      content: pageContentDsl,
+      html: buildValidGeneratedHtml(pageContentDsl),
+      visualBrief,
+      assets: [],
+      attemptCount: 0,
+      report: qualityReportWithIssue({
+        code: "OBJECTIVE_CHECK_INCOMPLETE",
+        dimension: "courseCoherence",
+        selector: ".interaction",
+      }),
+    });
+    if ("status" in request) throw new Error(request.message);
+    if (pageContentDsl.interaction.type !== "reveal") {
+      throw new Error("reveal fixture is required");
+    }
+    const candidate = {
+      ...pageContentDsl,
+      interaction: {
+        ...pageContentDsl.interaction,
+        items: pageContentDsl.interaction.items.map((item, index) => ({
+          ...item,
+          id: index === 0 ? "item-renamed" : item.id,
+        })),
+      },
+    };
+
+    const state = await createRepairAgent({
+      generateCandidate: vi.fn().mockResolvedValue({
+        kind: "dsl_candidate",
+        pageId: request.pageId,
+        targetArtifact: "dsl",
+        addressedIssueCodes: request.issueCodes,
+        unresolvedIssueCodes: [],
+        changeSummary: ["错误地修改互动 ID。"],
+        candidate,
+      }),
+    }).run(createRepairAgentState(request), {
+      traceId: "trace-repair-interaction-id",
+    });
+
+    expect(state.status).toBe("failed");
+    expect(state.error?.message).toContain("必须保留原技术 ID");
   });
 
   it("rejects an HTML patch outside the authorized selector scope", async () => {
@@ -310,7 +805,7 @@ describe("RepairAgent", () => {
       html: buildValidGeneratedHtml(pageContentDsl),
       visualBrief,
       assets: [],
-      completedRounds: 0,
+      attemptCount: 0,
       report: qualityReportWithIssue({
         code: "INTERACTION_LABEL_MISMATCH",
         dimension: "courseCoherence",
@@ -346,6 +841,100 @@ describe("RepairAgent", () => {
 
     expect(state.status).toBe("completed");
     expect(state.repairedHtml).toContain(">增函数</button>");
+  });
+
+  it("applies a text-only patch inside an authorized id selector", async () => {
+    const narration = pageContentDsl.narration[0]!;
+    const htmlWithNarrationId = buildValidGeneratedHtml(pageContentDsl).replace(
+      narration,
+      `<p id="page-narration">${narration}</p>`,
+    );
+    const request = planRepairRound({
+      pageId: pageContentDsl.pageId,
+      content: pageContentDsl,
+      html: htmlWithNarrationId,
+      visualBrief,
+      assets: [],
+      attemptCount: 0,
+      report: qualityReportWithIssue({
+        code: "NARRATION_EMPHASIS",
+        dimension: "layoutQuality",
+        selector: "#page-narration",
+      }),
+    });
+    if ("status" in request) throw new Error(request.message);
+
+    const state = await createRepairAgent({
+      generateCandidate: vi.fn().mockResolvedValue({
+        kind: "html_patch_candidate",
+        pageId: request.pageId,
+        targetArtifact: "html",
+        addressedIssueCodes: request.issueCodes,
+        unresolvedIssueCodes: [],
+        changeSummary: ["突出显示页面旁白。"],
+        patches: [
+          {
+            issueCode: "NARRATION_EMPHASIS",
+            search: narration,
+            replacement: `<strong>${narration}</strong>`,
+            summary: "在旁白容器内增加语义强调。",
+          },
+        ],
+      }),
+    }).run(createRepairAgentState(request), {
+      traceId: "trace-repair-id-descendant-text",
+    });
+
+    expect(state.status).toBe("completed");
+    expect(state.repairedHtml).toContain(
+      `<p id="page-narration"><strong>${narration}</strong></p>`,
+    );
+  });
+
+  it("rejects a text-only patch outside an authorized id selector", async () => {
+    const narration = pageContentDsl.narration[0]!;
+    const htmlWithNarrationId = buildValidGeneratedHtml(pageContentDsl).replace(
+      narration,
+      `<p id="page-narration">${narration}</p>`,
+    );
+    const request = planRepairRound({
+      pageId: pageContentDsl.pageId,
+      content: pageContentDsl,
+      html: htmlWithNarrationId,
+      visualBrief,
+      assets: [],
+      attemptCount: 0,
+      report: qualityReportWithIssue({
+        code: "NARRATION_EMPHASIS",
+        dimension: "layoutQuality",
+        selector: "#page-narration",
+      }),
+    });
+    if ("status" in request) throw new Error(request.message);
+
+    const state = await createRepairAgent({
+      generateCandidate: vi.fn().mockResolvedValue({
+        kind: "html_patch_candidate",
+        pageId: request.pageId,
+        targetArtifact: "html",
+        addressedIssueCodes: request.issueCodes,
+        unresolvedIssueCodes: [],
+        changeSummary: ["错误地修改页面标题。"],
+        patches: [
+          {
+            issueCode: "NARRATION_EMPHASIS",
+            search: `<h1>${pageContentDsl.title}</h1>`,
+            replacement: `<h1><strong>${pageContentDsl.title}</strong></h1>`,
+            summary: "修改旁白容器之外的标题。",
+          },
+        ],
+      }),
+    }).run(createRepairAgentState(request), {
+      traceId: "trace-repair-id-outside-text",
+    });
+
+    expect(state.status).toBe("failed");
+    expect(state.error?.message).toContain("超出允许 selector scope");
   });
 
   it("rejects a boundary insertion outside the authorized selector scope", async () => {

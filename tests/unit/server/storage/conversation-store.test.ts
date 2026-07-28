@@ -101,4 +101,34 @@ describe("conversation store", () => {
       ],
     });
   });
+
+  it("renames, pins, and deletes a conversation without deleting twice", async () => {
+    const store = createConversationStore(await temporaryDatabase());
+    await store.save({
+      id: "conversation-manage-test",
+      title: "未命名会话",
+      messages: [
+        {
+          id: "message-manage-test",
+          role: "user",
+          content: "生成课程",
+          createdAt: "2026-07-24T01:00:00.000Z",
+        },
+      ],
+    });
+
+    await store.update("conversation-manage-test", {
+      title: "高中物理课程",
+      pinned: true,
+    });
+
+    await expect(store.load("conversation-manage-test")).resolves.toMatchObject({
+      title: "高中物理课程",
+      pinned: true,
+    });
+    await expect(store.delete("conversation-manage-test")).resolves.toBe(true);
+    await expect(store.load("conversation-manage-test")).resolves.toBeUndefined();
+    await expect(store.list()).resolves.toMatchObject({ items: [] });
+    await expect(store.delete("conversation-manage-test")).resolves.toBe(false);
+  });
 });

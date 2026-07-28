@@ -13,6 +13,7 @@ import type {
 } from "@/server/workflows/sequential-workflow";
 import { retrieveSkillCards } from "@/server/tools/retrieval-skills";
 import {
+  MAX_SUPERVISOR_DECISIONS,
   targetKey,
   type CourseGenerationState,
   type SupervisorDecision,
@@ -20,8 +21,8 @@ import {
 } from "@/shared/course-schema";
 
 const MAX_ATTEMPTS_PER_TARGET = 3;
-// 第 64 条保留给确定性停止决策，避免达到上限后无法持久化 stopReason。
-const MAX_SUPERVISOR_DECISIONS = 63;
+// 最后一条保留给确定性停止决策，避免达到上限后无法持久化 stopReason。
+const MAX_SCHEDULING_DECISIONS = MAX_SUPERVISOR_DECISIONS - 1;
 
 type NodeExecutionResult = SequentialWorkflowResult<
   CourseGenerationState,
@@ -103,11 +104,11 @@ export async function runSupervisedWorkflow({
       };
     }
 
-    if ((state.supervisor?.decisionCount ?? 0) >= MAX_SUPERVISOR_DECISIONS) {
+    if ((state.supervisor?.decisionCount ?? 0) >= MAX_SCHEDULING_DECISIONS) {
       const decision = stopDecision(
         "decision_limit",
         "Supervisor 已达到全局决策上限，停止自动执行。",
-        `最多允许 ${MAX_SUPERVISOR_DECISIONS} 次调度决策。`,
+        `最多允许 ${MAX_SCHEDULING_DECISIONS} 次调度决策。`,
         true,
       );
       state = await recordDecision(state, decision, recentFailure?.node);
@@ -405,6 +406,9 @@ function isRetryableError(code: string) {
     "AGENT_EXECUTION_ERROR",
     "AGENT_STEP_LIMIT",
     "WORKFLOW_NODE_EXECUTION_ERROR",
+    "TIMEOUT_ERROR",
+    "RATE_LIMIT_ERROR",
+    "MODEL_ERROR",
     "MODEL_TIMEOUT",
     "MODEL_RATE_LIMITED",
     "MODEL_PROVIDER_ERROR",

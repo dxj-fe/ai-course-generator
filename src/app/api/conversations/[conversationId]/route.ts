@@ -2,6 +2,7 @@ import { createAiErrorResponse, createTraceId } from "@/server/ai/error";
 import { conversationStore } from "@/server/storage/conversation-store";
 import {
   ConversationIdSchema,
+  DeleteConversationResponseSchema,
   UpdateConversationInputSchema,
 } from "@/shared/course-schema";
 
@@ -26,6 +27,30 @@ export async function PATCH(
     return Response.json(updated, {
       headers: { "x-trace-id": traceId },
     });
+  } catch (error) {
+    return createAiErrorResponse(error, traceId);
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  context: { params: Promise<{ conversationId: string }> },
+) {
+  const traceId = request.headers.get("x-trace-id")?.trim() || createTraceId();
+  try {
+    const { conversationId } = await context.params;
+    const safeId = ConversationIdSchema.parse(conversationId);
+    const deleted = await conversationStore.delete(safeId);
+    if (!deleted) {
+      return Response.json(
+        { error: "CONVERSATION_NOT_FOUND", message: "找不到该会话。" },
+        { status: 404, headers: { "x-trace-id": traceId } },
+      );
+    }
+    return Response.json(
+      DeleteConversationResponseSchema.parse({ id: safeId, deleted: true }),
+      { headers: { "x-trace-id": traceId } },
+    );
   } catch (error) {
     return createAiErrorResponse(error, traceId);
   }

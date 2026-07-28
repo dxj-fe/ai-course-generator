@@ -37,8 +37,7 @@ const StoryModelOutputSchema = z.object({
         transition: z.string().min(2).max(240),
       }),
     )
-    .min(1)
-    .max(12),
+    .min(1),
   tone: z.string().min(2).max(160),
   continuityRules: z.array(z.string().min(2).max(240)).min(1).max(10),
 });
@@ -135,7 +134,10 @@ async function generateArc(input: {
   const draft = await generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
     capability: "story",
-    maxTokens: 3_500,
+    maxTokens: Math.max(
+      6_000,
+      2_200 + input.outline.pages.length * 380,
+    ),
     normalizeOutput: (output) =>
       normalizeStoryModelOutput(output, input.outline),
     prompt: prompts.userPrompt,

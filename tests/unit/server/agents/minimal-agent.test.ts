@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { AiSchemaValidationError } from "../../../../src/server/ai/error";
 import { createMinimalAgent } from "../../../../src/server/agents/core/minimal-agent";
 import type { AgentStateBase } from "../../../../src/server/agents/core/types";
 
@@ -64,9 +65,48 @@ describe("createMinimalAgent", () => {
 
     expect(result.status).toBe("failed");
     expect(result.error).toEqual({
-      code: "AGENT_EXECUTION_ERROR",
-      message: "model failed",
+      code: "MODEL_ERROR",
+      message: "模型服务未返回有效结果，请稍后重试。",
     });
     expect(() => JSON.stringify(result)).not.toThrow();
+  });
+
+  it("preserves structured validation feedback internally but emits a safe public summary", async () => {
+    const agent = createMinimalAgent<TestState>({
+      isComplete: () => false,
+      step: async () => {
+        throw new AiSchemaValidationError(
+          "choice.prompts: expected 2 items but received 1",
+        );
+      },
+    });
+
+    const result = await agent.run(createState(), { traceId: "trace-schema" });
+
+    expect(result.error).toEqual({
+      code: "SCHEMA_ERROR",
+      message: "choice.prompts: expected 2 items but received 1",
+    });
+    expect(result.events.at(-1)).toMatchObject({
+      type: "error",
+      summary: "模型返回的内容格式不完整。",
+      data: { code: "SCHEMA_ERROR" },
+    });
+  });
+
+  it("preserves transient provider error categories", async () => {
+    const agent = createMinimalAgent<TestState>({
+      isComplete: () => false,
+      step: async () => {
+        throw { statusCode: 429, message: "too many requests" };
+      },
+    });
+
+    const result = await agent.run(createState(), { traceId: "trace-rate" });
+
+    expect(result.error).toEqual({
+      code: "RATE_LIMIT_ERROR",
+      message: "模型服务当前请求较多，请稍后重试。",
+    });
   });
 });

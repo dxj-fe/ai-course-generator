@@ -25,11 +25,12 @@ export type CourseGenerationGraphStreamObserver = (
 ) => void | Promise<void>;
 
 /**
- * One Supervisor decision and its target consume up to two LangGraph steps.
- * Keep the framework ceiling above the persisted 64-decision domain guard so
- * valid five-page Repair paths reach their explicit complete/stop branch.
+ * The persisted Supervisor owns the real, page-count-aware loop guard. LangGraph's
+ * framework ceiling stays effectively unbounded so it cannot become a second,
+ * fixed course-size limit.
  */
-export const COURSE_GENERATION_GRAPH_RECURSION_LIMIT = 130;
+export const COURSE_GENERATION_GRAPH_RECURSION_LIMIT =
+  Number.MAX_SAFE_INTEGER;
 
 /**
  * LangGraph 课程入口与手写 workflow 共享输入、依赖和最终状态合同。

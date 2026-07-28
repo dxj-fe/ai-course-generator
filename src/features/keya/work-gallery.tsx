@@ -14,6 +14,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { CourseCoverFrame } from "@/features/keya/course-cover-frame";
 import type { CourseHistoryItem } from "@/shared/course-schema";
 
 type FilterMode = "all" | "completed" | "running" | "exportable";
@@ -146,11 +147,12 @@ function CourseWorkCard({ work }: { work: CourseHistoryItem }) {
       className={`group flex min-h-[280px] min-w-0 flex-col overflow-hidden rounded-xl border border-[rgba(232,223,208,0.8)] bg-[#fffcf5] shadow-[var(--keya-card-shadow)] transition duration-150 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-12px_rgba(45,51,43,0.2)] ${focusRing}`}
       href={`/course/${work.courseId}`}
     >
-      <div className="relative flex aspect-video items-end overflow-hidden bg-[linear-gradient(135deg,#eaf3e7,#fff0c9_55%,#f3e7ce)] p-5">
-        <div className="absolute -right-8 -top-10 size-32 rounded-full border-[20px] border-white/35" />
-        <p className="relative line-clamp-2 text-xl font-semibold leading-7 text-[#2d332b]">
-          {work.title}
-        </p>
+      <div className="relative aspect-video overflow-hidden bg-[#f3eee4]">
+        <CourseCoverFrame
+          courseId={work.courseId}
+          cover={work.cover}
+          title={work.title}
+        />
       </div>
       <div className="flex flex-1 flex-col p-4">
         <div className="flex items-center justify-between gap-3">

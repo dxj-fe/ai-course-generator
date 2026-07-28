@@ -49,7 +49,7 @@ export const PedagogyPlanSchema = z
     ageAdaptation: AgeAdaptationSchema,
     learningProgression: z.array(z.string().min(5).max(300)).min(2).max(12),
     interactionCadence: InteractionCadenceSchema,
-    pageGuidance: z.array(PedagogyPageGuidanceSchema).min(1).max(12),
+    pageGuidance: z.array(PedagogyPageGuidanceSchema).min(1),
     misconceptions: z.array(MisconceptionStrategySchema).max(8),
     accessibilityStrategies: z
       .array(z.string().min(2).max(240))

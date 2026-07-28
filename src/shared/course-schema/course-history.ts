@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  CourseGenerationCauseCodeSchema,
   CourseGenerationStageSchema,
   CourseGenerationStateSchema,
   CourseGenerationStatusSchema,
@@ -24,10 +25,19 @@ export const CourseRunSummarySchema = z
     error: z
       .object({
         code: z.string().min(1).max(100),
+        causeCode: CourseGenerationCauseCodeSchema.optional(),
         message: z.string().min(1).max(1_000),
       })
       .strict()
       .optional(),
+  })
+  .strict();
+
+export const CourseHistoryCoverSchema = z
+  .object({
+    pageId: z.string().min(1).max(80),
+    version: z.number().int().positive(),
+    generatedAt: z.string().datetime({ offset: true }),
   })
   .strict();
 
@@ -38,8 +48,8 @@ export const CourseHistoryItemSchema = z
     prompt: z.string().min(2).max(4_000),
     status: CourseGenerationStatusSchema,
     currentStage: CourseGenerationStageSchema,
-    totalPages: z.number().int().nonnegative().max(5),
-    completedPages: z.number().int().nonnegative().max(5),
+    totalPages: z.number().int().nonnegative(),
+    completedPages: z.number().int().nonnegative(),
     referenceCount: z.number().int().nonnegative().max(3),
     runCount: z.number().int().nonnegative(),
     exportable: z.boolean(),
@@ -47,6 +57,7 @@ export const CourseHistoryItemSchema = z
     updatedAt: z.string().datetime({ offset: true }),
     completedAt: z.string().datetime({ offset: true }).optional(),
     latestRun: CourseRunSummarySchema.optional(),
+    cover: CourseHistoryCoverSchema.optional(),
   })
   .strict();
 
@@ -66,6 +77,7 @@ export const CourseHistoryDetailResponseSchema = z
   .strict();
 
 export type CourseRunSummary = z.infer<typeof CourseRunSummarySchema>;
+export type CourseHistoryCover = z.infer<typeof CourseHistoryCoverSchema>;
 export type CourseHistoryItem = z.infer<typeof CourseHistoryItemSchema>;
 export type CourseHistoryListResponse = z.infer<
   typeof CourseHistoryListResponseSchema

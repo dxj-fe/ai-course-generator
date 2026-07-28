@@ -6,7 +6,7 @@
 
 ## 产品入口与完整调用链
 
-`/chat` 通过类型化任务客户端创建后台任务；Route Handler 返回 `202` 后，任务服务在服务端持有任务生命周期和取消信号。兼容 facade 先让 Supervisor 调度 Intent、Planner 和 Course Design，再让页面运行层按依赖调度隔离 Worker。Worker 局部更新只有通过串行 merge/checkpoint 队列才能进入课程事实来源。SSE 继续只传输共享协议中的快照、公开事件和终态。
+`/chat` 通过类型化任务客户端创建后台任务；Route Handler 返回 `202` 后，任务服务在服务端持有任务生命周期和取消信号。兼容 facade 先让 Supervisor 调度 Intent、Planner 和 Course Design，再让页面运行层调度隔离 Worker。serial 模式按学习依赖逐页生成；parallel 模式保留依赖作为学习顺序，并独立并发生成页面。Worker 局部更新只有通过串行 merge/checkpoint 队列才能进入课程事实来源。SSE 继续只传输共享协议中的快照、公开事件和终态。
 
 ```mermaid
 flowchart TD
@@ -31,7 +31,7 @@ flowchart TD
 
   Planner --> Pedagogy
 
-  Visual --> WorkerScheduler["course-workers-workflow<br/>dependency-ready pages"]
+  Visual --> WorkerScheduler["course-workers-workflow<br/>serial dependency / parallel independent"]
   WorkerScheduler --> Mode{"serial / parallel"}
   Mode --> Pool["Promise Pool<br/>default concurrency = 2"]
 
@@ -85,7 +85,7 @@ flowchart TD
 1. `Intent` 节点只在状态缺少 `intent` 时运行入口解析；恢复时保留已有产物。
 2. `Planner` 节点消费已校验 `intent` 并生成 `CoursePlan`；确定性适配仍补齐 ID、模板和页面依赖。
 3. `Course Design` 节点复用 [`runCourseDesignWorkflow`](../../src/server/workflows/course-design-workflow.ts)，内部仍严格执行 `Pedagogy -> Story -> Visual`，再投影逐页 `PageWorkerBrief`。
-4. [`runCourseWorkersWorkflow`](../../src/server/workflows/course-workers-workflow.ts) 根据 `dependsOnPageIds` 计算就绪页面；serial 模式一次运行一页，parallel 模式通过默认并发度 2 的 [`runPromisePool`](../../src/server/workflows/promise-pool.ts) 执行。
+4. [`runCourseWorkersWorkflow`](../../src/server/workflows/course-workers-workflow.ts) 在 serial 模式根据 `dependsOnPageIds` 计算就绪页面；parallel 模式不让学习顺序依赖串行化生成，而是通过默认并发度 2 的 [`runPromisePool`](../../src/server/workflows/promise-pool.ts) 执行。
 5. 每个 [`generatePageWorker`](../../src/server/workflows/page-worker.ts) 只管理当前页，依次执行 `Page Writer -> Assets -> HTML Engineer -> Page QA`，每阶段最多执行 3 次；HTML 重试继续接收上一次安全校验反馈。
 6. 单页失败不会取消同批其他 Worker，也不会删除已完成页面；依赖失败页面的后继页保持未执行，互不依赖的页面仍可完成。
 7. 所有规划页面完成后，兼容 facade 把课程置为 `completed` 并保存最终 checkpoint。
@@ -165,14 +165,14 @@ SSE 合同由 [`course-task-event.ts`](../../src/shared/course-schema/course-tas
 - QA 结果保存到页面局部 `qualityReport` 并投影到现有六维质量面板；
 - QA 执行失败只使当前 Worker 失败，不抹掉其他成功页面；
 - `shouldRepair=false` 时页面直接完成；否则由确定性分类器选择 located DSL blocks 或 HTML patches，Repair Agent 不能自行选页面、扩大 scope 或宣布通过；
-- 每页最多两轮 Repair，每轮保存来源报告、issue、目标和公开变更摘要，候选应用后必须经过原合同和 re-QA；
-- 预算耗尽、素材 Provider 问题、无定位 issue、候选越界或校验失败都会保留最新报告并结构化停止，不会无限循环。
+- 每次 Repair 保存来源报告、issue、目标和公开变更摘要，候选应用后必须经过原合同和 re-QA；只有成功应用并完成 re-QA 才计为质量迭代；
+- 连续三次有效修订没有改善质量向量时触发 `QUALITY_STALLED`；执行失败独立重试，但相同 Schema/model 合同错误只做一次恢复重试；另有 24 次紧急安全上限防止实现错误形成无限循环。
 
 ## 当前明确不存在的能力
 
 - Supervisor 当前只调度全局课程节点，不拥有课程正文能力，也没有成本/token 计费器或人工审批队列。
 - 已有生产状态支持的固定 LangGraph StateGraph runner，但尚未成为任务服务默认入口，也没有生产 conditional edge、Graph checkpointer 或框架原生 streaming 到 SSE 的映射。
-- QA/Repair 只形成页面内部两轮闭环，尚未引入人工审批或课程发布门槛。
+- QA/Repair 形成页面内部质量闭环，尚未引入人工审批或课程发布门槛。
 - EventBus 与活动任务去重都是单进程实现，不是分布式任务队列或 lease。
 
 目标架构及其停止条件见 [`multi-agent-flow.md`](./multi-agent-flow.md)。

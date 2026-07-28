@@ -4,13 +4,11 @@ import {
   CourseHistoryListResponseSchema,
   type CourseHistoryDetailResponse,
   type CourseHistoryListResponse,
-  type CourseTaskRuntimeSource,
 } from "@/shared/course-schema";
 
 export type CourseHistoryFilters = {
   query?: string;
   status?: "running" | "completed" | "failed" | "cancelled";
-  source?: CourseTaskRuntimeSource;
 };
 
 export async function listCourseHistory(
@@ -20,7 +18,6 @@ export async function listCourseHistory(
   const query = new URLSearchParams();
   if (filters.query?.trim()) query.set("query", filters.query.trim());
   if (filters.status) query.set("status", filters.status);
-  if (filters.source) query.set("source", filters.source);
   const response = await fetch(`/api/courses?${query}`, { signal });
   const payload = await readJsonResponse(response);
   if (!response.ok) throw new Error(getErrorText(payload));

@@ -38,4 +38,29 @@ describe("HtmlPreviewFrame", () => {
     expect(markup).toContain("禁止加载外链脚本");
     expect(markup).not.toContain("<iframe");
   });
+
+  it("enables only the platform runtime for a learner preview", () => {
+    const markup = renderToStaticMarkup(
+      <HtmlPreviewFrame
+        chrome="learner"
+        html={buildValidGeneratedHtml(pageContentDsl)}
+        runtimeConfig={{
+          pageId: pageContentDsl.pageId,
+          interaction: pageContentDsl.interaction,
+          runtime: {
+            runtimeVersion: 1,
+            sceneKind: "demo",
+            visualPrimitive: "concept-map",
+            motionPlan: { intensity: "subtle", cuePoints: [] },
+            completionRule: { type: "view" },
+          },
+        }}
+        title="课程学习预览"
+      />,
+    );
+
+    expect(markup).toContain('sandbox="allow-scripts"');
+    expect(markup).toContain("keya-trusted-runtime");
+    expect(markup).not.toContain("allow-same-origin");
+  });
 });

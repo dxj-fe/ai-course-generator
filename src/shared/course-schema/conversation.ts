@@ -45,6 +45,13 @@ export const ConversationListResponseSchema = z
   })
   .strict();
 
+export const DeleteConversationResponseSchema = z
+  .object({
+    id: ConversationIdSchema,
+    deleted: z.literal(true),
+  })
+  .strict();
+
 export const SaveConversationInputSchema = z
   .object({
     id: ConversationIdSchema,
@@ -87,6 +94,9 @@ export type ConversationMessage = z.infer<
 export type ConversationRecord = z.infer<typeof ConversationRecordSchema>;
 export type ConversationListResponse = z.infer<
   typeof ConversationListResponseSchema
+>;
+export type DeleteConversationResponse = z.infer<
+  typeof DeleteConversationResponseSchema
 >;
 export type SaveConversationInput = z.infer<
   typeof SaveConversationInputSchema

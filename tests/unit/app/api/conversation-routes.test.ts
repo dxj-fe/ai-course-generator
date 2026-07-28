@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   save: vi.fn(),
   update: vi.fn(),
+  delete: vi.fn(),
 }));
 
 vi.mock("@/server/storage/conversation-store", () => ({
@@ -14,7 +15,10 @@ import {
   GET,
   POST,
 } from "../../../../src/app/api/conversations/route";
-import { PATCH } from "../../../../src/app/api/conversations/[conversationId]/route";
+import {
+  DELETE,
+  PATCH,
+} from "../../../../src/app/api/conversations/[conversationId]/route";
 
 const message = {
   id: "message-user-test",
@@ -98,6 +102,39 @@ describe("conversation Route Handlers", () => {
       context("conversation-route-missing"),
     );
     expect(missing.status).toBe(404);
+  });
+
+  it("deletes a conversation and returns an explicit 404 for a missing one", async () => {
+    mocks.delete.mockResolvedValueOnce(true);
+    const deleted = await DELETE(
+      new Request(
+        "http://localhost/api/conversations/conversation-route-test",
+        { method: "DELETE" },
+      ),
+      context("conversation-route-test"),
+    );
+
+    expect(deleted.status).toBe(200);
+    expect(mocks.delete).toHaveBeenCalledWith("conversation-route-test");
+    await expect(deleted.json()).resolves.toEqual({
+      id: "conversation-route-test",
+      deleted: true,
+    });
+
+    mocks.delete.mockResolvedValueOnce(false);
+    const missing = await DELETE(
+      new Request(
+        "http://localhost/api/conversations/conversation-route-missing",
+        { method: "DELETE" },
+      ),
+      context("conversation-route-missing"),
+    );
+
+    expect(missing.status).toBe(404);
+    await expect(missing.json()).resolves.toEqual({
+      error: "CONVERSATION_NOT_FOUND",
+      message: "找不到该会话。",
+    });
   });
 });
 

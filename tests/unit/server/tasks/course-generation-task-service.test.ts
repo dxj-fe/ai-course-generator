@@ -2,8 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { CourseStore } from "../../../../src/server/storage/course-store";
 import type { CourseTaskStore } from "../../../../src/server/storage/course-task-store";
-import { createCourseTaskEventBus } from "../../../../src/server/tasks/course-task-event-bus";
-import { createCourseGenerationTaskService } from "../../../../src/server/tasks/course-generation-task-service";
+import {
+  createCourseTaskEventBus,
+  type CourseTaskEventBus,
+} from "../../../../src/server/tasks/course-task-event-bus";
+import {
+  createCourseGenerationTaskService,
+  type CourseGenerationLogEntry,
+  type CourseGenerationLogSink,
+} from "../../../../src/server/tasks/course-generation-task-service";
 import type { streamCourseGenerationGraphWorkflow } from "../../../../src/server/langgraph/course-generation/run-course-graph";
 import type { runCourseGenerationWorkflow } from "../../../../src/server/workflows/course-generation-workflow";
 import type {
@@ -67,8 +74,23 @@ describe("course generation task service", () => {
     expect(fixture.tasks.get(taskId)).toMatchObject({
       executionMode: "parallel",
       concurrency: 2,
+      source: "langgraph",
     });
   });
+
+  it.each([1, 20, 120])(
+    "persists the positive course length %i without a fixed maximum",
+    async (pageCount) => {
+      const fixture = createFixture();
+
+      await fixture.service.create({
+        userPrompt: "系统讲清楚操作系统原理并穿插练习",
+        pageCount,
+      });
+
+      expect(fixture.tasks.get(taskId)?.pageCount).toBe(pageCount);
+    },
+  );
 
   it("persists the LangGraph source and publishes only mapped product messages", async () => {
     const running = courseState("running", 1);
@@ -102,8 +124,13 @@ describe("course generation task service", () => {
     expect(messages.map(({ type }) => type)).toEqual([
       "snapshot",
       "event",
+      "snapshot",
       "terminal",
     ]);
+    expect(messages[2]).toMatchObject({
+      type: "snapshot",
+      state: { status: "failed" },
+    });
     expect(messages.every(({ source }) => source === "langgraph")).toBe(true);
     expect(JSON.stringify(messages)).not.toContain("private");
   });
@@ -149,6 +176,7 @@ describe("course generation task service", () => {
     await fixture.service.create({
       userPrompt: "生成三页太阳系互动课程",
       pageCount: 3,
+      source: "workflow",
     });
 
     await expect(fixture.service.run(taskId)).rejects.toThrow(
@@ -157,18 +185,177 @@ describe("course generation task service", () => {
 
     expect(fixture.tasks.get(taskId)).toMatchObject({
       status: "failed",
-      error: { code: "COURSE_TASK_EXECUTION_ERROR" },
+      error: {
+        code: "COURSE_TASK_EXECUTION_ERROR",
+        causeCode: "MODEL_ERROR",
+        message: "模型服务未返回有效结果，请稍后重试。",
+      },
     });
     expect(fixture.courses.get(courseId)).toMatchObject({
       status: "failed",
       errors: [
-        expect.objectContaining({ code: "COURSE_TASK_EXECUTION_ERROR" }),
+        expect.objectContaining({
+          code: "COURSE_TASK_EXECUTION_ERROR",
+          causeCode: "MODEL_ERROR",
+        }),
       ],
     });
+    expect(JSON.stringify(fixture.courses.get(courseId))).not.toContain(
+      "workflow crashed",
+    );
     expect(messages.at(-1)).toMatchObject({
       type: "terminal",
       status: "failed",
     });
+  });
+
+  it("logs safe page and task metadata when a workflow resolves as failed", async () => {
+    const failed = courseState("failed", 2);
+    failed.currentStage = "qa";
+    failed.currentPageId = "page-03";
+    failed.pages = [
+      {
+        pageId: "page-03",
+        order: 1,
+        status: "failed",
+        currentStage: "qa",
+        assets: [],
+        attempts: [{ stage: "qa", attempts: 2 }],
+        qualityReport: {
+          issues: [{ code: "HTML_RUNTIME_ERROR" }],
+        } as CourseGenerationState["pages"][number]["qualityReport"],
+        error: {
+          code: "PAGE_QA_FAILED",
+          causeCode: "SCHEMA_ERROR",
+          message: "公开错误摘要。",
+        },
+      },
+    ];
+    failed.errors = [
+      {
+        stage: "qa",
+        pageId: "page-03",
+        code: "PAGE_QA_FAILED",
+        causeCode: "SCHEMA_ERROR",
+        message: "公开错误摘要。",
+      },
+    ];
+    const fixture = createFixture({
+      runWorkflow: vi.fn(async () => failed) as typeof runCourseGenerationWorkflow,
+      eventBus: createSilentEventBus(),
+    });
+    await fixture.service.create({
+      userPrompt: "生成三页太阳系互动课程",
+      pageCount: 3,
+      source: "workflow",
+    });
+
+    await fixture.service.run(taskId);
+
+    expect(fixture.infoLogs).toContainEqual(
+      expect.objectContaining({
+        event: "task:start",
+        traceId,
+        taskId,
+        courseId,
+        source: "workflow",
+        status: "running",
+      }),
+    );
+    expect(fixture.errorLogs).toContainEqual(
+      expect.objectContaining({
+        event: "page:failed",
+        traceId,
+        taskId,
+        courseId,
+        pageId: "page-03",
+        stage: "qa",
+        attempt: 2,
+        errorCode: "PAGE_QA_FAILED",
+        causeCode: "SCHEMA_ERROR",
+        issueCodes: ["HTML_RUNTIME_ERROR"],
+        completedPages: 0,
+        totalPages: 3,
+      }),
+    );
+    expect(fixture.errorLogs).toContainEqual(
+      expect.objectContaining({
+        event: "task:failed",
+        pageId: "page-03",
+        stage: "qa",
+        errorCode: "PAGE_QA_FAILED",
+        causeCode: "SCHEMA_ERROR",
+        status: "failed",
+      }),
+    );
+  });
+
+  it("logs catch failures without leaking the raw provider error", async () => {
+    const fixture = createFixture({
+      runWorkflow: vi.fn(async () => {
+        throw new Error("PRIVATE_PROVIDER_SECRET");
+      }) as typeof runCourseGenerationWorkflow,
+    });
+    await fixture.service.create({
+      userPrompt: "生成三页太阳系互动课程",
+      pageCount: 3,
+      source: "workflow",
+    });
+
+    await expect(fixture.service.run(taskId)).rejects.toThrow(
+      "PRIVATE_PROVIDER_SECRET",
+    );
+
+    expect(fixture.errorLogs).toContainEqual(
+      expect.objectContaining({
+        event: "task:error",
+        errorCode: "MODEL_ERROR",
+        causeCode: "MODEL_ERROR",
+        status: "failed",
+      }),
+    );
+    expect(fixture.errorLogs).toContainEqual(
+      expect.objectContaining({
+        event: "task:failed",
+        errorCode: "COURSE_TASK_EXECUTION_ERROR",
+        causeCode: "MODEL_ERROR",
+        status: "failed",
+      }),
+    );
+    expect(JSON.stringify(fixture.errorLogs)).not.toContain(
+      "PRIVATE_PROVIDER_SECRET",
+    );
+  });
+
+  it("logs task completion metadata", async () => {
+    const completed = {
+      ...courseState("running", 1),
+      status: "completed",
+      currentStage: "complete",
+      completedAt: timestamp,
+      durationMs: 0,
+    } as CourseGenerationState;
+    const fixture = createFixture({
+      runWorkflow: vi.fn(async () => completed) as typeof runCourseGenerationWorkflow,
+      eventBus: createSilentEventBus(),
+    });
+    await fixture.service.create({
+      userPrompt: "生成三页太阳系互动课程",
+      pageCount: 3,
+      source: "workflow",
+    });
+
+    await fixture.service.run(taskId);
+
+    expect(fixture.infoLogs).toContainEqual(
+      expect.objectContaining({
+        event: "task:completed",
+        status: "completed",
+        durationMs: 0,
+        completedPages: 0,
+        totalPages: 3,
+      }),
+    );
   });
 
   it("keeps an active task cancelled when its workflow rejects on abort", async () => {
@@ -194,6 +381,7 @@ describe("course generation task service", () => {
     await fixture.service.create({
       userPrompt: "生成三页太阳系互动课程",
       pageCount: 3,
+      source: "workflow",
     });
 
     const running = fixture.service.run(taskId);
@@ -209,6 +397,238 @@ describe("course generation task service", () => {
         .every((message) => message.status === "cancelled"),
     ).toBe(true);
     expect(messages.filter((message) => message.type === "terminal")).toHaveLength(1);
+  });
+
+  it("pauses an active task without turning its checkpoint into cancellation", async () => {
+    let markStarted: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const checkpoint = courseState("running", 1);
+    const runWorkflow = vi.fn(
+      async (_input, context, overrides) => {
+        await overrides.checkpoint?.(checkpoint);
+        markStarted();
+        return new Promise<CourseGenerationState>((_resolve, reject) => {
+          context.abortSignal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("paused", "AbortError")),
+            { once: true },
+          );
+        });
+      },
+    ) as typeof runCourseGenerationWorkflow;
+    const fixture = createFixture({ runWorkflow });
+    const messages: CourseTaskStreamMessage[] = [];
+    fixture.eventBus.subscribe(taskId, (message) => messages.push(message));
+    await fixture.service.create({
+      userPrompt: "生成三页太阳系互动课程",
+      pageCount: 3,
+      source: "workflow",
+    });
+
+    const running = fixture.service.run(taskId);
+    await started;
+    const paused = await fixture.service.pause(taskId);
+
+    expect(paused).toMatchObject({
+      taskId,
+      courseId,
+      status: "paused",
+      completedAt: undefined,
+      error: undefined,
+    });
+    await expect(running).resolves.toMatchObject({ status: "running" });
+    expect(fixture.courses.get(courseId)).toMatchObject({
+      status: "running",
+      errors: [],
+    });
+    expect(fixture.courses.get(courseId)).not.toHaveProperty("completedAt");
+    expect(messages).toContainEqual(
+      expect.objectContaining({
+        type: "snapshot",
+        taskId,
+        taskStatus: "paused",
+      }),
+    );
+    expect(messages.some(({ type }) => type === "terminal")).toBe(false);
+    expect(fixture.errorLogs).toEqual([]);
+  });
+
+  it("resumes the same task and course from its checkpoint with a new trace", async () => {
+    const createResumedTraceId = vi
+      .fn()
+      .mockReturnValueOnce(traceId)
+      .mockReturnValueOnce("trace-day-19-resumed");
+    const fixture = createFixture({
+      createTraceId: createResumedTraceId,
+    });
+    await fixture.service.create({
+      userPrompt: "生成三页太阳系互动课程",
+      pageCount: 3,
+      source: "workflow",
+    });
+    const checkpointBeforeResume = courseState("running", 1);
+    fixture.courses.set(courseId, checkpointBeforeResume);
+
+    await fixture.service.pause(taskId);
+    const resumed = await fixture.service.resume(taskId);
+
+    expect(resumed).toMatchObject({
+      taskId,
+      courseId,
+      traceId: "trace-day-19-resumed",
+      status: "queued",
+      completedAt: undefined,
+      error: undefined,
+    });
+    expect(fixture.courses.get(courseId)).toEqual(checkpointBeforeResume);
+  });
+
+  it("runs a resumed task from the preserved checkpoint instead of starting over", async () => {
+    let markStarted: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const checkpoint = courseState("running", 1);
+    const runWorkflowMock = vi.fn(
+      async (input, context, overrides) => {
+        if (runWorkflowMock.mock.calls.length === 1) {
+          await overrides.checkpoint?.(checkpoint);
+          markStarted();
+          return new Promise<CourseGenerationState>((_resolve, reject) => {
+            context.abortSignal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("paused", "AbortError")),
+              { once: true },
+            );
+          });
+        }
+
+        const failed = courseState("failed", 2);
+        return {
+          ...failed,
+          traceId: context.traceId,
+          events: failed.events.map((event) => ({
+            ...event,
+            traceId: context.traceId,
+          })),
+        };
+      },
+    );
+    const runWorkflow =
+      runWorkflowMock as unknown as typeof runCourseGenerationWorkflow;
+    const createResumedTraceId = vi
+      .fn()
+      .mockReturnValueOnce(traceId)
+      .mockReturnValueOnce("trace-day-19-resumed-run");
+    const fixture = createFixture({
+      runWorkflow,
+      createTraceId: createResumedTraceId,
+    });
+    await fixture.service.create({
+      userPrompt: "生成三页太阳系互动课程",
+      pageCount: 3,
+      source: "workflow",
+    });
+    const firstRun = fixture.service.run(taskId);
+    await started;
+    await fixture.service.pause(taskId);
+    await firstRun;
+    await fixture.service.resume(taskId);
+
+    await fixture.service.run(taskId);
+
+    expect(runWorkflowMock).toHaveBeenCalledTimes(2);
+    expect(runWorkflowMock.mock.calls[1]?.[0]).toMatchObject({
+      courseId,
+      existingState: checkpoint,
+    });
+    expect(runWorkflowMock.mock.calls[1]?.[1]).toMatchObject({
+      traceId: "trace-day-19-resumed-run",
+    });
+    expect(fixture.tasks.get(taskId)).toMatchObject({
+      taskId,
+      courseId,
+      traceId: "trace-day-19-resumed-run",
+      status: "failed",
+    });
+  });
+
+  it("isolates pause by taskId when two courses are running", async () => {
+    const taskIds = ["task-course-one", "task-course-two"];
+    const courseIds = ["course-course-one", "course-course-two"];
+    const traceIds = ["trace-course-one", "trace-course-two"];
+    const started = new Map<string, () => void>();
+    const startPromises = new Map(
+      courseIds.map((id) => [
+        id,
+        new Promise<void>((resolve) => {
+          started.set(id, resolve);
+        }),
+      ]),
+    );
+    const signals = new Map<string, AbortSignal | undefined>();
+    const runWorkflow = vi.fn(
+      async (input, context, overrides) => {
+        signals.set(input.courseId, context.abortSignal);
+        const checkpoint = runningCheckpoint(
+          input.courseId,
+          context.traceId,
+          input.userPrompt,
+        );
+        await overrides.checkpoint?.(checkpoint);
+        started.get(input.courseId)?.();
+        return new Promise<CourseGenerationState>((_resolve, reject) => {
+          context.abortSignal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("stopped", "AbortError")),
+            { once: true },
+          );
+        });
+      },
+    ) as typeof runCourseGenerationWorkflow;
+    const fixture = createFixture({
+      runWorkflow,
+      createTaskId: () => taskIds.shift()!,
+      createCourseId: () => courseIds.shift()!,
+      createTraceId: () => traceIds.shift()!,
+    });
+    const first = await fixture.service.create({
+      userPrompt: "生成课程一",
+      source: "workflow",
+    });
+    const second = await fixture.service.create({
+      userPrompt: "生成课程二",
+      source: "workflow",
+    });
+    const firstRun = fixture.service.run(first.taskId);
+    const secondRun = fixture.service.run(second.taskId);
+    await Promise.all([
+      startPromises.get(first.courseId),
+      startPromises.get(second.courseId),
+    ]);
+
+    await fixture.service.pause(second.taskId);
+
+    expect(fixture.tasks.get(second.taskId)?.status).toBe("paused");
+    expect(signals.get(second.courseId)?.aborted).toBe(true);
+    expect(fixture.courses.get(second.courseId)).toMatchObject({
+      courseId: second.courseId,
+      status: "running",
+      errors: [],
+    });
+    expect(fixture.tasks.get(first.taskId)?.status).toBe("running");
+    expect(signals.get(first.courseId)?.aborted).toBe(false);
+    expect(fixture.courses.get(first.courseId)).toMatchObject({
+      courseId: first.courseId,
+      status: "running",
+      errors: [],
+    });
+
+    await fixture.service.cancel(first.taskId);
+    await expect(firstRun).resolves.toMatchObject({ status: "cancelled" });
+    await expect(secondRun).resolves.toMatchObject({ status: "running" });
   });
 
   it("marks the active page failed when cancellation happens in a page stage", async () => {
@@ -254,6 +674,11 @@ function createFixture(
   overrides: {
     runWorkflow?: typeof runCourseGenerationWorkflow;
     runGraph?: typeof streamCourseGenerationGraphWorkflow;
+    logSink?: CourseGenerationLogSink;
+    eventBus?: CourseTaskEventBus;
+    createTaskId?: () => string;
+    createCourseId?: () => string;
+    createTraceId?: () => string;
   } = {},
 ) {
   const tasks = new Map<string, CourseTaskRecord>();
@@ -276,12 +701,18 @@ function createFixture(
       courses.set(state.courseId, structuredClone(state));
     },
   };
-  const eventBus = createCourseTaskEventBus();
+  const eventBus = overrides.eventBus ?? createCourseTaskEventBus();
   const runWorkflow =
     overrides.runWorkflow ??
     (vi.fn(async () => {
       throw new Error("runWorkflow should not have been called");
     }) as typeof runCourseGenerationWorkflow);
+  const infoLogs: CourseGenerationLogEntry[] = [];
+  const errorLogs: CourseGenerationLogEntry[] = [];
+  const logSink: CourseGenerationLogSink = overrides.logSink ?? {
+    info: (entry) => infoLogs.push(entry),
+    error: (entry) => errorLogs.push(entry),
+  };
   const service = createCourseGenerationTaskService({
     taskStore,
     courseStore,
@@ -289,12 +720,30 @@ function createFixture(
     runWorkflow,
     ...(overrides.runGraph ? { runGraph: overrides.runGraph } : {}),
     now: () => timestamp,
-    createTaskId: () => taskId,
-    createCourseId: () => courseId,
-    createTraceId: () => traceId,
+    createTaskId: overrides.createTaskId ?? (() => taskId),
+    createCourseId: overrides.createCourseId ?? (() => courseId),
+    createTraceId: overrides.createTraceId ?? (() => traceId),
+    logSink,
   });
 
-  return { service, taskStore, courseStore, eventBus, runWorkflow, tasks, courses };
+  return {
+    service,
+    taskStore,
+    courseStore,
+    eventBus,
+    runWorkflow,
+    tasks,
+    courses,
+    infoLogs,
+    errorLogs,
+  };
+}
+
+function createSilentEventBus(): CourseTaskEventBus {
+  return {
+    publish: () => undefined,
+    subscribe: () => () => undefined,
+  };
 }
 
 function courseState(
@@ -335,5 +784,25 @@ function courseState(
     ...(status === "failed"
       ? { completedAt: timestamp, durationMs: 0 }
       : {}),
+  };
+}
+
+function runningCheckpoint(
+  checkpointCourseId: string,
+  checkpointTraceId: string,
+  userPrompt: string,
+): CourseGenerationState {
+  return {
+    version: 1,
+    courseId: checkpointCourseId,
+    traceId: checkpointTraceId,
+    userPrompt,
+    status: "running",
+    currentStage: "intent",
+    pages: [],
+    events: [],
+    errors: [],
+    startedAt: timestamp,
+    updatedAt: timestamp,
   };
 }

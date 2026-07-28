@@ -27,6 +27,7 @@ describe("page quality rules", () => {
       modelDimensions: dimensions,
       heuristicIssues: [],
       modelIssues: [],
+      requireScreenshotEvidence: false,
     });
 
     expect(report.overallScore).toBe(95);
@@ -56,6 +57,7 @@ describe("page quality rules", () => {
       modelDimensions: dimensions,
       heuristicIssues: [issue],
       modelIssues: [],
+      requireScreenshotEvidence: false,
     });
 
     expect(report.dimensions.layoutQuality.score).toBe(69);
@@ -67,6 +69,52 @@ describe("page quality rules", () => {
     expect(report.dimensions.layoutQuality.repairHints).toEqual([
       "移除固定宽度并重新验证窄屏布局。",
     ]);
+  });
+
+  it("forces repair when teaching coherence falls below the quality gate", () => {
+    const report = buildPageQualityReport({
+      id: "quality-course-coherence",
+      createdAt: "2026-07-14T19:00:00+08:00",
+      pageId: "page-02-knowledge",
+      modelDimensions: {
+        ...dimensions,
+        courseCoherence: {
+          score: 84,
+          summary: "缺少与学习目标对齐的具体练习。",
+        },
+      },
+      heuristicIssues: [],
+      modelIssues: [],
+      requireScreenshotEvidence: false,
+    });
+
+    expect(report.shouldRepair).toBe(true);
+    expect(report.decision).toBe("revise");
+  });
+
+  it("does not pass visually weak HTML just because content and runtime are valid", () => {
+    const report = buildPageQualityReport({
+      id: "quality-visual-gate",
+      createdAt: "2026-07-24T15:00:00+08:00",
+      pageId: "page-02-knowledge",
+      modelDimensions: {
+        ...dimensions,
+        layoutQuality: {
+          score: 81,
+          summary: "播放器视口内层级拥挤，主操作不够突出。",
+        },
+        styleConsistency: {
+          score: 81,
+          summary: "页面仍接近通用卡片面板，未形成课程视觉焦点。",
+        },
+      },
+      heuristicIssues: [],
+      modelIssues: [],
+      requireScreenshotEvidence: false,
+    });
+
+    expect(report.shouldRepair).toBe(true);
+    expect(report.decision).toBe("revise");
   });
 
   it("sorts content errors before visual errors and keeps deterministic ties", () => {
@@ -95,12 +143,70 @@ describe("page quality rules", () => {
         issue("CONTENT_ERROR", "contentAccuracy", "error"),
         issue("HTML_WARNING", "htmlRuntime", "warning"),
       ],
+      requireScreenshotEvidence: false,
     });
 
     expect(report.issues.map(({ code }) => code)).toEqual([
       "CONTENT_ERROR",
       "STYLE_ERROR",
       "HTML_WARNING",
+    ]);
+  });
+
+  it("accepts browser issue codes only from deterministic browser evidence", () => {
+    const copiedBrowserIssue: QualityIssue = {
+      code: "BROWSER_VISUAL_DOMINATES_VIEWPORT",
+      dimension: "assetUsability",
+      severity: "error",
+      source: "model",
+      message: "模型重复描述了浏览器指标。",
+      location: {
+        pageId: "page-browser-code-owner",
+        description: "模型推测的首屏素材",
+      },
+      repairHint: "缩小首屏素材。",
+    };
+    const browserIssue: QualityIssue = {
+      ...copiedBrowserIssue,
+      source: "browser",
+      location: {
+        ...copiedBrowserIssue.location,
+        viewport: "922x460",
+        selector: '[data-asset-slot-id="asset-slot-01"]',
+      },
+    };
+    const report = buildPageQualityReport({
+      id: "quality-browser-code-owner",
+      createdAt: "2026-07-24T15:00:00+08:00",
+      pageId: "page-browser-code-owner",
+      modelDimensions: dimensions,
+      heuristicIssues: [],
+      browserIssues: [browserIssue],
+      modelIssues: [copiedBrowserIssue],
+      requireScreenshotEvidence: false,
+    });
+
+    expect(report.issues).toEqual([browserIssue]);
+  });
+
+  it("does not pass a page when mandatory screenshot evidence is missing", () => {
+    const report = buildPageQualityReport({
+      id: "quality-screenshot-gate",
+      createdAt: "2026-07-24T15:00:00+08:00",
+      pageId: "page-screenshot-gate",
+      modelDimensions: dimensions,
+      heuristicIssues: [],
+      modelIssues: [],
+    });
+
+    expect(report.shouldRepair).toBe(true);
+    expect(report.decision).toBe("revise");
+    expect(report.issues).toMatchObject([
+      {
+        code: "SCREENSHOT_EVIDENCE_MISSING",
+        severity: "error",
+        source: "browser",
+      },
     ]);
   });
 });

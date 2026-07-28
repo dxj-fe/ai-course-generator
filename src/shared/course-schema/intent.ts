@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+export const CoursePageCountSchema = z
+  .number()
+  .int()
+  .positive();
+
 export const VisualStyleSchema = z.enum([
   "sci-fi",
   "kids-playful",
@@ -36,7 +41,10 @@ export const AudienceAgeRangeSchema = z
 export const CourseIntentSchema = z.object({
   topic: z.string().min(2).max(120),
   audienceAgeRange: AudienceAgeRangeSchema,
-  courseLength: z.number().int().min(3).max(12),
+  courseLength: CoursePageCountSchema,
+  learningGoal: z.string().min(2).max(300).optional(),
+  priorKnowledge: z.array(z.string().min(1).max(120)).max(8).optional(),
+  successCriteria: z.array(z.string().min(2).max(240)).max(8).optional(),
   visualStyle: VisualStyleSchema,
   difficulty: CourseDifficultySchema,
   mustInclude: z.array(z.string().min(1).max(80)).max(12),
@@ -48,6 +56,7 @@ export type VisualStyle = z.infer<typeof VisualStyleSchema>;
 export type CourseDifficulty = z.infer<typeof CourseDifficultySchema>;
 export type CourseLanguage = z.infer<typeof CourseLanguageSchema>;
 export type AudienceAgeRange = z.infer<typeof AudienceAgeRangeSchema>;
+export type CoursePageCount = z.infer<typeof CoursePageCountSchema>;
 export type CourseIntent = z.infer<typeof CourseIntentSchema>;
 
 export function formatZodIssues(error: z.ZodError) {

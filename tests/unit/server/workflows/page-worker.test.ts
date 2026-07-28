@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   generatePageWorker,
+  isPageWorkerRetryableError,
   type PageWorkerDependencies,
 } from "../../../../src/server/workflows/page-worker";
 import {
@@ -218,6 +219,85 @@ describe("generatePageWorker", () => {
     });
   });
 
+  it("passes the previous Page Writer validation failure into the next attempt", async () => {
+    const order: string[] = [];
+    const dependencies = createDependencies(order, { writerFailures: 1 });
+    const result = await generatePageWorker(
+      page,
+      {
+        intent: courseDesignIntent,
+        brief,
+        visualBrief,
+        courseContext: {
+          learningObjectives: courseDesignOutline.learningObjectives,
+        },
+      },
+      {
+        runtime: { traceId: "trace-page-writer-feedback" },
+        dependencies,
+      },
+    );
+
+    expect(order.filter((stage) => stage === "writer")).toHaveLength(2);
+    expect(dependencies.runPageWriter).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ validationFeedback: undefined }),
+      expect.anything(),
+    );
+    expect(dependencies.runPageWriter).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        validationFeedback: {
+          code: "SCHEMA_ERROR",
+          issues: [
+            "PageContentDSL 结构校验失败：interaction.questions.0.correctOptionIndex 越界",
+          ],
+        },
+      }),
+      expect.anything(),
+    );
+    expect(result.state.status).toBe("completed");
+  });
+
+  it.each([
+    ["SCHEMA_ERROR", true],
+    ["TIMEOUT_ERROR", true],
+    ["RATE_LIMIT_ERROR", true],
+    ["MODEL_ERROR", true],
+    ["QUOTA_ERROR", false],
+    ["AUTH_ERROR", false],
+    ["CONFIG_ERROR", false],
+  ])("classifies %s retryability as %s", (code, expected) => {
+    expect(isPageWorkerRetryableError(code)).toBe(expected);
+  });
+
+  it("keeps the stable root cause when Page Writer retries are exhausted", async () => {
+    const order: string[] = [];
+    const dependencies = createDependencies(order, { writerFailures: 3 });
+    const result = await generatePageWorker(
+      page,
+      {
+        intent: courseDesignIntent,
+        brief,
+        visualBrief,
+        courseContext: {
+          learningObjectives: courseDesignOutline.learningObjectives,
+        },
+      },
+      {
+        runtime: { traceId: "trace-page-writer-exhausted" },
+        dependencies,
+      },
+    );
+
+    expect(result.state.error).toEqual({
+      code: "PAGE_WORKER_RETRY_EXHAUSTED",
+      causeCode: "SCHEMA_ERROR",
+      message:
+        "PageContentDSL 结构校验失败：interaction.questions.0.correctOptionIndex 越界",
+    });
+  });
+
   it("runs one targeted Repair round and re-QA before completing the page", async () => {
     const order: string[] = [];
     const dependencies = createDependencies(order, {
@@ -297,11 +377,51 @@ describe("generatePageWorker", () => {
     expect(completed.state.repairHistory).toHaveLength(1);
   });
 
-  it("classifies a Repair model timeout as a recoverable checkpoint error", async () => {
+  it("retries transient Repair execution failures without counting quality iterations", async () => {
+    const order: string[] = [];
+    const dependencies = createDependencies(order, {
+      qaReports: [repairReport, report],
+      repairFailure: "The operation was aborted due to timeout",
+      repairFailureCode: "TIMEOUT_ERROR",
+      repairFailures: 2,
+    });
+    const result = await generatePageWorker(
+      page,
+      {
+        intent: courseDesignIntent,
+        brief,
+        visualBrief,
+        courseContext: {
+          learningObjectives: courseDesignOutline.learningObjectives,
+        },
+      },
+      {
+        runtime: { traceId: "trace-page-repair-timeout-recovery" },
+        dependencies,
+      },
+    );
+
+    expect(order.filter((stage) => stage === "repair")).toHaveLength(3);
+    expect(result.state.status).toBe("completed");
+    expect(result.state.repairHistory?.map(({ status }) => status)).toEqual([
+      "failed",
+      "failed",
+      "applied",
+    ]);
+    expect(
+      result.state.repairHistory?.filter(({ resultReportId }) =>
+        Boolean(resultReportId),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("retains a recoverable checkpoint after three transient Repair failures", async () => {
     const order: string[] = [];
     const dependencies = createDependencies(order, {
       qaReports: [repairReport],
       repairFailure: "The operation was aborted due to timeout",
+      repairFailureCode: "TIMEOUT_ERROR",
+      repairFailures: 3,
     });
     const result = await generatePageWorker(
       page,
@@ -319,29 +439,40 @@ describe("generatePageWorker", () => {
       },
     );
 
-    expect(order).toEqual(["writer", "html", "qa", "repair"]);
+    expect(order).toEqual([
+      "writer",
+      "html",
+      "qa",
+      "repair",
+      "repair",
+      "repair",
+    ]);
     expect(result.state).toMatchObject({
       status: "failed",
       currentStage: "repair",
       error: {
-        code: "REPAIR_TIMEOUT",
-        message: "Repair 模型调用超时，请从断点继续重试。",
+        code: "REPAIR_EXECUTION_RETRY_EXHAUSTED",
+        causeCode: "TIMEOUT_ERROR",
       },
     });
-    expect(result.state.repairHistory?.[0]).toMatchObject({
-      status: "failed",
-      failureClass: "agent_failed",
-    });
+    expect(result.state.repairHistory).toHaveLength(3);
+    expect(
+      result.state.repairHistory?.every(
+        ({ status, failureClass, resultReportId }) =>
+          status === "failed" &&
+          failureClass === "agent_failed" &&
+          !resultReportId,
+      ),
+    ).toBe(true);
   });
 
-  it("stops after two Repair rounds and preserves the final failing report", async () => {
+  it("stops repeating the same Repair contract failure after one recovery retry", async () => {
     const order: string[] = [];
-    const finalReport = QualityReportSchema.parse({
-      ...repairReport,
-      id: "quality-page-01-final-failure",
-    });
     const dependencies = createDependencies(order, {
-      qaReports: [repairReport, repairReport, finalReport],
+      qaReports: [repairReport],
+      repairFailure: '结构化输出校验失败：root: Unrecognized key: "dsl"',
+      repairFailureCode: "SCHEMA_ERROR",
+      repairFailures: 3,
     });
     const result = await generatePageWorker(
       page,
@@ -354,7 +485,7 @@ describe("generatePageWorker", () => {
         },
       },
       {
-        runtime: { traceId: "trace-page-repair-budget" },
+        runtime: { traceId: "trace-page-repair-schema-repeat" },
         dependencies,
       },
     );
@@ -363,23 +494,151 @@ describe("generatePageWorker", () => {
     expect(result.state).toMatchObject({
       status: "failed",
       currentStage: "repair",
-      qualityReport: { id: finalReport.id },
-      error: { code: "REPAIR_BUDGET_EXHAUSTED" },
+      error: {
+        code: "REPAIR_EXECUTION_RETRY_EXHAUSTED",
+        causeCode: "SCHEMA_ERROR",
+      },
     });
+    expect(result.state.error?.message).toContain("已停止无反馈重复请求");
     expect(result.state.repairHistory).toHaveLength(2);
+  });
+
+  it("stops after three successful but non-improving quality iterations", async () => {
+    const order: string[] = [];
+    const stalledReports = [1, 2, 3].map((iteration) =>
+      QualityReportSchema.parse({
+        ...repairReport,
+        id: `quality-page-01-stalled-${iteration}`,
+      }),
+    );
+    const dependencies = createDependencies(order, {
+      qaReports: [repairReport, ...stalledReports],
+    });
+    const result = await generatePageWorker(
+      page,
+      {
+        intent: courseDesignIntent,
+        brief,
+        visualBrief,
+        courseContext: {
+          learningObjectives: courseDesignOutline.learningObjectives,
+        },
+      },
+      {
+        runtime: { traceId: "trace-page-repair-stalled" },
+        dependencies,
+      },
+    );
+
+    expect(order.filter((stage) => stage === "repair")).toHaveLength(3);
+    expect(result.state).toMatchObject({
+      status: "failed",
+      currentStage: "repair",
+      qualityReport: { id: stalledReports[2]!.id },
+      error: { code: "QUALITY_STALLED" },
+    });
+    expect(
+      result.state.repairHistory?.map(
+        ({ qualityProgress, consecutiveNoProgress }) => ({
+          qualityProgress,
+          consecutiveNoProgress,
+        }),
+      ),
+    ).toEqual([
+      { qualityProgress: "stalled", consecutiveNoProgress: 1 },
+      { qualityProgress: "stalled", consecutiveNoProgress: 2 },
+      { qualityProgress: "stalled", consecutiveNoProgress: 3 },
+    ]);
+  });
+
+  it("allows more than three improving Repair iterations before passing", async () => {
+    const order: string[] = [];
+    const improvingReports = [72, 76, 80].map((overallScore) =>
+      QualityReportSchema.parse({
+        ...repairReport,
+        id: `quality-page-01-improved-${overallScore}`,
+        overallScore,
+      }),
+    );
+    const dependencies = createDependencies(order, {
+      qaReports: [repairReport, ...improvingReports, report],
+    });
+    const result = await generatePageWorker(
+      page,
+      {
+        intent: courseDesignIntent,
+        brief,
+        visualBrief,
+        courseContext: {
+          learningObjectives: courseDesignOutline.learningObjectives,
+        },
+      },
+      {
+        runtime: { traceId: "trace-page-repair-quality-first" },
+        dependencies,
+      },
+    );
+
+    expect(order.filter((stage) => stage === "repair")).toHaveLength(4);
+    expect(result.state.status).toBe("completed");
+    expect(result.state.repairHistory).toHaveLength(4);
+    expect(
+      result.state.repairHistory?.every(
+        ({ qualityProgress, consecutiveNoProgress }) =>
+          qualityProgress === "improved" && consecutiveNoProgress === 0,
+      ),
+    ).toBe(true);
+  });
+
+  it("does not retry authentication or configuration failures", async () => {
+    const order: string[] = [];
+    const dependencies = createDependencies(order, {
+      qaReports: [repairReport],
+      repairFailure: "Repair model authentication failed.",
+      repairFailureCode: "AUTH_ERROR",
+      repairFailures: 3,
+    });
+    const result = await generatePageWorker(
+      page,
+      {
+        intent: courseDesignIntent,
+        brief,
+        visualBrief,
+        courseContext: {
+          learningObjectives: courseDesignOutline.learningObjectives,
+        },
+      },
+      {
+        runtime: { traceId: "trace-page-repair-auth" },
+        dependencies,
+      },
+    );
+
+    expect(order.filter((stage) => stage === "repair")).toHaveLength(1);
+    expect(result.state.error?.code).toBe("AUTH_ERROR");
   });
 });
 
 function createDependencies(
   order: string[],
   options: {
+    writerFailures?: number;
     htmlFailures?: number;
     qaReports?: QualityReport[];
     repairFailure?: string;
+    repairFailureCode?:
+      | "AGENT_EXECUTION_ERROR"
+      | "AUTH_ERROR"
+      | "CONFIG_ERROR"
+      | "SCHEMA_ERROR"
+      | "TIMEOUT_ERROR";
+    repairFailures?: number;
   } = {},
 ): PageWorkerDependencies {
+  let writerAttempt = 0;
   let htmlAttempt = 0;
   let qaAttempt = 0;
+  let repairAttempt = 0;
   const event = (summary: string) => ({
     id: `event-${summary}`,
     sequence: 1,
@@ -394,13 +653,22 @@ function createDependencies(
     now: () => timestamp,
     runPageWriter: vi.fn(async (input) => {
       order.push("writer");
+      writerAttempt += 1;
+      const failed = writerAttempt <= (options.writerFailures ?? 0);
       return {
-        status: "completed" as const,
+        status: failed ? ("failed" as const) : ("completed" as const),
         step: 1,
         maxSteps: 1,
-        events: [event("writer completed")],
+        events: [event(failed ? "writer failed" : "writer completed")],
         task: input,
-        content,
+        content: failed ? undefined : content,
+        error: failed
+          ? {
+              code: "SCHEMA_ERROR" as const,
+              message:
+                "PageContentDSL 结构校验失败：interaction.questions.0.correctOptionIndex 越界",
+            }
+          : undefined,
       };
     }),
     runAssets: vi.fn(async () => {
@@ -447,7 +715,11 @@ function createDependencies(
     }),
     runRepair: vi.fn(async (input) => {
       order.push("repair");
-      if (options.repairFailure) {
+      repairAttempt += 1;
+      if (
+        options.repairFailure &&
+        repairAttempt <= (options.repairFailures ?? Number.POSITIVE_INFINITY)
+      ) {
         return {
           status: "failed" as const,
           step: 1,
@@ -455,7 +727,7 @@ function createDependencies(
           events: [event("repair failed")],
           task: input,
           error: {
-            code: "AGENT_EXECUTION_ERROR" as const,
+            code: options.repairFailureCode ?? ("AGENT_EXECUTION_ERROR" as const),
             message: options.repairFailure,
           },
         };

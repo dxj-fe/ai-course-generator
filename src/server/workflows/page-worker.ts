@@ -3,16 +3,25 @@ import type { HtmlEngineerValidationFeedback } from "@/server/agents/html-engine
 import { runPageQAAgent } from "@/server/agents/page-qa-agent";
 import type { PageQACourseContext } from "@/server/agents/page-qa-agent";
 import { runRepairAgent } from "@/server/agents/repair-agent";
-import { runPageWriterAgent } from "@/server/agents/page-writer-agent";
+import {
+  PageWriterValidationFeedbackSchema,
+  runPageWriterAgent,
+} from "@/server/agents/page-writer-agent";
+import type { PageWriterValidationFeedback } from "@/server/agents/page-writer-agent";
 import type {
   AgentEvent,
   AgentRuntimeContext,
 } from "@/server/agents/core/types";
 import { runImageAssetWorkflow } from "@/server/workflows/image-asset-workflow";
-import { planRepairRound } from "@/server/workflows/qa-repair-loop";
+import {
+  didRepairQualityImprove,
+  planRepairRound,
+} from "@/server/workflows/qa-repair-loop";
 import {
   CourseIntentSchema,
+  CourseGenerationCauseCodeSchema,
   HtmlOutputSchema,
+  MAX_CONSECUTIVE_STALLED_REPAIRS,
   PageGenerationStateSchema,
   PagePlanSchema,
   PageWorkerBriefSchema,
@@ -20,6 +29,7 @@ import {
   ReferencePackSchema,
   VisualBriefSchema,
   type CourseIntent,
+  type CourseGenerationCauseCode,
   type PageGenerationError,
   type PageGenerationStage,
   type PageGenerationState,
@@ -34,6 +44,7 @@ import {
 } from "@/shared/course-schema";
 
 export const PAGE_WORKER_MAX_STAGE_ATTEMPTS = 3;
+export const REPAIR_EXECUTION_MAX_ATTEMPTS = 3;
 const HTML_VALIDATION_PREFIX = "生成 HTML 校验失败：";
 
 export type PageWorkerDependencies = {
@@ -62,7 +73,7 @@ export type GeneratePageWorkerContext = {
   runtime: AgentRuntimeContext;
   initialState?: PageGenerationState;
   dependencies?: Partial<PageWorkerDependencies>;
-  /** LangGraph 条件边每次最多推进的 Repair 轮数；省略时保持原有完整闭环。 */
+  /** LangGraph 条件边每次最多推进的成功 Repair/re-QA 次数。 */
   maxRepairRoundsPerRun?: number;
   onUpdate?(update: PageWorkerUpdate): void | Promise<void>;
 };
@@ -149,13 +160,14 @@ export async function generatePageWorker(
       "page-writer",
       `Page Writer 已开始生成第 ${page.order} 页内容。`,
       `第 ${page.order} 页 PageContentDSL 已生成。`,
-      async () => {
+      async (failure) => {
         const writerState = await dependencies.runPageWriter(
           {
             intent: briefs.intent,
             page,
             brief: briefs.brief,
             referencePacks: briefs.referencePacks,
+            validationFeedback: toPageWriterValidationFeedback(failure),
           },
           context.runtime,
         );
@@ -324,7 +336,7 @@ export async function generatePageWorker(
           "repair",
           "repair-agent",
           "validation",
-          "上一次 Repair 在 checkpoint 后中断，该轮预算已保留并标记失败。",
+          "上一次 Repair 在 checkpoint 后中断，已保留审计记录并重新尝试。",
         ),
       ],
       {
@@ -352,10 +364,14 @@ export async function generatePageWorker(
   ) {
     throw new Error("Page Worker 单次 Repair 轮数必须是非负整数。");
   }
-  let repairRoundsRun = 0;
+  let successfulRepairIterations = 0;
+  let consecutiveRepairExecutionFailures = 0;
+  let previousRepairExecutionFailure:
+    | { code: string; message: string }
+    | undefined;
 
   while (state.qualityReport?.shouldRepair) {
-    if (repairRoundsRun >= maxRepairRoundsPerRun) return result();
+    if (successfulRepairIterations >= maxRepairRoundsPerRun) return result();
 
     if (context.runtime.abortSignal?.aborted) {
       await failStage(
@@ -374,15 +390,15 @@ export async function generatePageWorker(
       visualBrief: briefs.visualBrief,
       assets: state.assets,
       report,
-      completedRounds: getRepairHistory(state).length,
+      attemptCount: getRepairHistory(state).length,
     });
 
     if ("status" in planned) {
       await failStage(
         "repair",
         "repair-agent",
-        planned.failureClass === "budget_exhausted"
-          ? "REPAIR_BUDGET_EXHAUSTED"
+        planned.failureClass === "safety_limit"
+          ? "REPAIR_SAFETY_LIMIT"
           : "REPAIR_TARGET_UNAVAILABLE",
         planned.message,
       );
@@ -407,7 +423,7 @@ export async function generatePageWorker(
           "repair",
           "repair-agent",
           "repair_attempt",
-          `第 ${planned.round} 轮 Repair 开始：定向修复 ${planned.targetArtifact.toUpperCase()}，处理 ${planned.issueCodes.join("、")}。`,
+          `第 ${planned.round} 次 Repair 尝试开始：定向修复 ${planned.targetArtifact.toUpperCase()}，处理 ${planned.issueCodes.join("、")}。`,
           planned.round,
         ),
       ],
@@ -431,23 +447,78 @@ export async function generatePageWorker(
     if (repairEvents.length > 0) await publish(repairEvents);
 
     if (repairState.status !== "completed" || !repairState.result) {
+      const repairErrorCode =
+        repairState.error?.code ?? "AGENT_EXECUTION_ERROR";
       const repairErrorMessage =
         repairState.error?.message ?? "Repair Agent 未返回有效候选。";
-      const repairTimedOut = isTimeoutMessage(repairErrorMessage);
-      await failRepairAttempt(
+      await recordFailedRepairAttempt(
         repairIndex,
         "agent_failed",
-        repairTimedOut
-          ? "Repair 模型调用超时，请从断点继续重试。"
-          : repairErrorMessage,
-        repairState.error?.code === "AGENT_ABORTED"
-          ? "WORKFLOW_ABORTED"
-          : repairTimedOut
+      );
+
+      const terminalCode = terminalRepairExecutionCode(repairErrorCode);
+      if (terminalCode) {
+        await failStage(
+          "repair",
+          "repair-agent",
+          terminalCode,
+          repairErrorMessage,
+          toCourseGenerationCauseCode(repairErrorCode),
+        );
+        return result();
+      }
+
+      consecutiveRepairExecutionFailures += 1;
+      const repeatedContractFailure =
+        isRepairContractFailure(repairErrorCode) &&
+        previousRepairExecutionFailure?.code === repairErrorCode &&
+        previousRepairExecutionFailure.message === repairErrorMessage;
+      previousRepairExecutionFailure = {
+        code: repairErrorCode,
+        message: repairErrorMessage,
+      };
+      if (
+        isRetryableRepairExecutionError(repairErrorCode) &&
+        consecutiveRepairExecutionFailures < REPAIR_EXECUTION_MAX_ATTEMPTS &&
+        !repeatedContractFailure
+      ) {
+        await publish([
+          workerEvent(
+            dependencies.now,
+            page.id,
+            "repair",
+            "repair-agent",
+            "validation",
+            `Repair 执行未完成，将重试同一质量问题（${consecutiveRepairExecutionFailures}/${REPAIR_EXECUTION_MAX_ATTEMPTS}）。`,
+          ),
+        ]);
+        continue;
+      }
+
+      const retryExhausted =
+        isRetryableRepairExecutionError(repairErrorCode) &&
+        (consecutiveRepairExecutionFailures >= REPAIR_EXECUTION_MAX_ATTEMPTS ||
+          repeatedContractFailure);
+      await failStage(
+        "repair",
+        "repair-agent",
+        retryExhausted
+          ? "REPAIR_EXECUTION_RETRY_EXHAUSTED"
+          : isTimeoutMessage(repairErrorMessage)
             ? "REPAIR_TIMEOUT"
             : "REPAIR_FAILED",
+        retryExhausted
+          ? repeatedContractFailure
+            ? `Repair 连续返回相同的结构或模型错误，已停止无反馈重复请求，可从检查点继续。最后一次：${repairErrorMessage.slice(0, 700)}`
+            : `Repair 连续 ${REPAIR_EXECUTION_MAX_ATTEMPTS} 次执行未完成，可从检查点继续。最后一次：${repairErrorMessage.slice(0, 700)}`
+          : repairErrorMessage,
+        toCourseGenerationCauseCode(repairErrorCode),
       );
       return result();
     }
+    consecutiveRepairExecutionFailures = 0;
+    previousRepairExecutionFailure = undefined;
+
     if (repairState.result.kind === "declined") {
       await failRepairAttempt(
         repairIndex,
@@ -515,7 +586,7 @@ export async function generatePageWorker(
           "repair",
           "repair-agent",
           "repair_success",
-          `第 ${planned.round} 轮 Repair 候选已应用：${changeSummary.join("；")}`,
+          `第 ${planned.round} 次 Repair 候选已应用：${changeSummary.join("；")}`,
           planned.round,
         ),
       ],
@@ -547,7 +618,7 @@ export async function generatePageWorker(
         "qa",
         "page-qa",
         "agent_start",
-        `Page QA 开始复验第 ${planned.round} 轮 Repair 结果。`,
+        `Page QA 开始复验第 ${planned.round} 次 Repair 结果。`,
       ),
     ]);
     const qaState = await dependencies.runQA(
@@ -580,6 +651,21 @@ export async function generatePageWorker(
       );
       return result();
     }
+    const improved = didRepairQualityImprove(report, qaState.report);
+    const previousNoProgress =
+      getRepairHistory(state)
+        .slice(0, repairIndex)
+        .filter(
+          (record) =>
+            record.status === "applied" && Boolean(record.resultReportId),
+        )
+        .at(-1)?.consecutiveNoProgress ?? 0;
+    const consecutiveNoProgress = improved
+      ? 0
+      : Math.min(
+          MAX_CONSECUTIVE_STALLED_REPAIRS,
+          previousNoProgress + 1,
+        );
     await publish(
       [
         workerEvent(
@@ -588,7 +674,7 @@ export async function generatePageWorker(
           "qa",
           "page-qa",
           "agent_done",
-          `第 ${planned.round} 轮 Repair 已完成重新 QA：${qaState.report.overallScore} 分。`,
+          `第 ${planned.round} 次 Repair 已完成重新 QA：${qaState.report.overallScore} 分。`,
         ),
       ],
       {
@@ -596,12 +682,32 @@ export async function generatePageWorker(
         qualityReport: qaState.report,
         repairHistory: getRepairHistory(state).map((record, index) =>
           index === repairIndex
-            ? { ...record, resultReportId: qaState.report!.id }
+            ? {
+                ...record,
+                resultReportId: qaState.report!.id,
+                qualityProgress: improved
+                  ? ("improved" as const)
+                  : ("stalled" as const),
+                consecutiveNoProgress,
+              }
             : record,
         ),
       },
     );
-    repairRoundsRun += 1;
+    successfulRepairIterations += 1;
+
+    if (
+      qaState.report.shouldRepair &&
+      consecutiveNoProgress >= MAX_CONSECUTIVE_STALLED_REPAIRS
+    ) {
+      await failStage(
+        "repair",
+        "repair-agent",
+        "QUALITY_STALLED",
+        `页面 ${page.id} 连续 ${MAX_CONSECUTIVE_STALLED_REPAIRS} 次定向修订未改善质量向量，已触发安全熔断。`,
+      );
+      return result();
+    }
   }
 
   await publish(
@@ -739,6 +845,9 @@ export async function generatePageWorker(
           ? "PAGE_WORKER_RETRY_EXHAUSTED"
           : outcome.code,
         outcome.message,
+        retryable && attempts >= PAGE_WORKER_MAX_STAGE_ATTEMPTS
+          ? toCourseGenerationCauseCode(outcome.code)
+          : undefined,
       );
       return false;
     }
@@ -757,12 +866,13 @@ export async function generatePageWorker(
     agent: string,
     code: string,
     message: string,
+    causeCode?: CourseGenerationCauseCode,
   ) {
     state = PageGenerationStateSchema.parse({
       ...state,
       status: "failed",
       currentStage: stage,
-      error: { code, message },
+      error: { code, causeCode, message },
     });
     await publish([
       workerEvent(
@@ -781,8 +891,17 @@ export async function generatePageWorker(
     failureClass: RepairFailureClass,
     message: string,
     code = "REPAIR_FAILED",
+    causeCode?: CourseGenerationCauseCode,
   ) {
-    state = PageGenerationStateSchema.parse({
+    await recordFailedRepairAttempt(index, failureClass);
+    await failStage("repair", "repair-agent", code, message, causeCode);
+  }
+
+  async function recordFailedRepairAttempt(
+    index: number,
+    failureClass: RepairFailureClass,
+  ) {
+    await publish([], {
       ...state,
       repairHistory: getRepairHistory(state).map((record, recordIndex) =>
         recordIndex === index
@@ -795,7 +914,6 @@ export async function generatePageWorker(
           : record,
       ),
     });
-    await failStage("repair", "repair-agent", code, message);
   }
 }
 
@@ -906,11 +1024,33 @@ function toHtmlValidationFeedback(
   return issues.length > 0 ? { code: failure.code, issues } : undefined;
 }
 
+function toPageWriterValidationFeedback(
+  failure: PageGenerationError | undefined,
+): PageWriterValidationFeedback | undefined {
+  if (!failure) return undefined;
+
+  const issues = failure.message
+    .split(/[；;]/u)
+    .map((issue) => issue.trim().slice(0, 500))
+    .filter(Boolean)
+    .slice(0, 12);
+  if (issues.length === 0) return undefined;
+
+  return PageWriterValidationFeedbackSchema.parse({
+    code: failure.causeCode ?? failure.code,
+    issues,
+  });
+}
+
 export function isPageWorkerRetryableError(code: string) {
   return new Set([
     "AGENT_EXECUTION_ERROR",
     "AGENT_STEP_LIMIT",
     "WORKFLOW_NODE_EXECUTION_ERROR",
+    "SCHEMA_ERROR",
+    "TIMEOUT_ERROR",
+    "RATE_LIMIT_ERROR",
+    "MODEL_ERROR",
     "MODEL_TIMEOUT",
     "MODEL_RATE_LIMITED",
     "MODEL_PROVIDER_ERROR",
@@ -919,6 +1059,41 @@ export function isPageWorkerRetryableError(code: string) {
     "HTML_ENGINEER_FAILED",
     "PAGE_QA_FAILED",
   ]).has(code);
+}
+
+function isRetryableRepairExecutionError(code: string) {
+  return new Set([
+    "AGENT_EXECUTION_ERROR",
+    "AGENT_STEP_LIMIT",
+    "SCHEMA_ERROR",
+    "TIMEOUT_ERROR",
+    "RATE_LIMIT_ERROR",
+    "MODEL_ERROR",
+  ]).has(code);
+}
+
+function isRepairContractFailure(code: string) {
+  return code === "SCHEMA_ERROR" || code === "MODEL_ERROR";
+}
+
+function terminalRepairExecutionCode(code: string) {
+  switch (code) {
+    case "AGENT_ABORTED":
+      return "WORKFLOW_ABORTED";
+    case "AUTH_ERROR":
+    case "CONFIG_ERROR":
+    case "QUOTA_ERROR":
+      return code;
+    default:
+      return undefined;
+  }
+}
+
+function toCourseGenerationCauseCode(
+  code: string,
+): CourseGenerationCauseCode | undefined {
+  const parsed = CourseGenerationCauseCodeSchema.safeParse(code);
+  return parsed.success ? parsed.data : undefined;
 }
 
 function isTimeoutMessage(message: string) {

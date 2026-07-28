@@ -1,26 +1,28 @@
 "use client";
 
-import { Download, LoaderCircle, TriangleAlert } from "lucide-react";
-import type { ReactNode } from "react";
+import { useMemo, useState } from "react";
+import {
+  Check,
+  ChevronRight,
+  CirclePause,
+  CircleX,
+  Download,
+  Eye,
+  LoaderCircle,
+  Play,
+  RotateCcw,
+} from "lucide-react";
 
 import { Alert } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { HtmlPreviewFrame } from "@/features/keya/html-preview-frame";
-import { AssetGallery } from "@/features/keya/asset-gallery";
-import { CoursePreviewGrid } from "@/features/keya/course-preview-grid";
-import { PageProgressPanel } from "@/features/keya/page-progress-panel";
-import { PageQualityPanel } from "@/features/keya/page-quality-panel";
-import { RepairLogPanel } from "@/features/keya/repair-log-panel";
-import { ReferencePanel } from "@/features/keya/reference-panel";
-import type { PageContentDSL, PagePlan } from "@/shared/course-schema";
-import type {
-  CourseRunStageStatus,
-  KeyaCourseRun,
-} from "@/types/keya";
+import type { CourseCreationBrief } from "@/features/keya/course-creation-model";
+import { getCourseFailurePresentation } from "@/features/keya/course-run-timeline";
+import type { CourseTaskStatus } from "@/shared/course-schema";
+import type { KeyaCourseRun } from "@/types/keya";
 
 type CourseWorkspacePanelProps = {
   run?: KeyaCourseRun;
+  brief?: CourseCreationBrief;
   busy?: boolean;
   onGenerateDesign(): void;
   onGenerateAssets(pageId: string): void;
@@ -28,764 +30,468 @@ type CourseWorkspacePanelProps = {
   onEvaluatePage(pageId: string): void;
   onGeneratePage(pageId: string): void;
   onOpenHtmlPreview(pageId: string): void;
+  onOpenCoursePlayer?(): void;
   onResumeCourse(): void;
   onExportCourse(): void;
   exporting?: boolean;
   exportError?: string;
+  taskStatus?: CourseTaskStatus;
 };
 
-const statusCopy: Record<CourseRunStageStatus, string> = {
-  idle: "等待生成",
-  running: "生成中",
-  completed: "已生成",
-  failed: "生成失败",
+type DraftSection = {
+  id: string;
+  order: number;
+  title: string;
+  status: "completed" | "failed" | "paused" | "running" | "pending";
+  html?: string;
 };
 
-/** 用 Keya 的暖色工作区承载已存在的课程规划、专业设计和 Page DSL 结果。 */
+/**
+ * 普通用户的课程草稿只呈现课程结构、可用内容和下一步。
+ * 设计、素材、质量与修复细节仍保留在生成状态中，但不进入此产品表面。
+ */
 export function CourseWorkspacePanel({
   run,
+  brief,
   busy = false,
-  onGenerateDesign,
-  onGenerateAssets,
-  onGenerateHtml,
-  onEvaluatePage,
-  onGeneratePage,
   onOpenHtmlPreview,
+  onOpenCoursePlayer,
   onResumeCourse,
   onExportCourse,
   exporting = false,
   exportError,
+  taskStatus,
 }: CourseWorkspacePanelProps) {
-  const plannerResult = run?.planner.data;
-  const outline = plannerResult?.state.outline;
-  const intent = plannerResult?.intent;
-  const designResult = run?.design.data;
-  const briefs = designResult?.state.briefs;
-  const designError = run?.design.error ?? designResult?.state.error?.message;
-  const canGenerateDesign = Boolean(outline && intent);
-  const generationError =
-    run?.generation?.errors.at(-1)?.message ?? run?.planner.error;
-  const canResumeCourse =
-    run?.generation?.status === "failed" ||
-    run?.generation?.status === "cancelled" ||
-    Boolean(!run?.generation && run?.courseId && run?.planner.status === "failed");
-  const previewPages =
-    outline?.pages.map((page) => {
-      const htmlStage = run?.pageHtml[page.id];
-      return {
-        id: page.id,
-        order: page.order,
-        title: page.title,
-        status: htmlStage?.status ?? ("idle" as const),
-        htmlOutput: htmlStage?.data?.state.htmlOutput?.html,
-        error: htmlStage?.error ?? htmlStage?.data?.state.error?.message,
-      };
-    }) ?? [];
+  const outline =
+    run?.generation?.outline ?? run?.planner.data?.state.outline;
+  const intent = run?.generation?.intent ?? run?.planner.data?.intent;
+  const generationStatus = run?.generation?.status;
+  const requestFailed =
+    !run?.generation && run?.planner.status === "failed";
+  const sections = useMemo(
+    () => buildDraftSections(run, taskStatus),
+    [run, taskStatus],
+  );
+  const firstReadyId = sections.find(({ status, html }) => status === "completed" && html)?.id;
+  const [selectedId, setSelectedId] = useState<string>();
+  const effectiveSelectedId =
+    sections.some(({ id, html }) => id === selectedId && html)
+      ? selectedId
+      : firstReadyId;
+  const selectedSection = sections.find(({ id }) => id === effectiveSelectedId);
+  const completedCount = sections.filter(
+    ({ status }) => status === "completed",
+  ).length;
+  const failedCount = sections.filter(
+    ({ status }) => status === "failed",
+  ).length;
+  const pausedCount = sections.filter(
+    ({ status }) => status === "paused",
+  ).length;
+  const knownSectionCount =
+    sections.length ||
+    (typeof brief?.sectionCount === "number" ? brief.sectionCount : 0);
+  const terminalStatus =
+    generationStatus === "cancelled"
+      ? "cancelled"
+      : generationStatus === "failed" || requestFailed
+        ? "failed"
+        : undefined;
+  const failure = terminalStatus
+    ? getCourseFailurePresentation(
+        terminalStatus,
+        run?.generation?.errors.at(-1),
+      )
+    : undefined;
+  const complete =
+    generationStatus === "completed" ||
+    (sections.length > 0 && completedCount === sections.length);
+  const topic = intent?.topic ?? brief?.topic ?? "新课程";
+  const summary =
+    outline?.overview ??
+    brief?.goal ??
+    "确认课程方向后，课芽会把每一节内容依次整理到这里。";
 
   return (
     <section
       aria-labelledby="course-workspace-title"
-      className="min-h-full rounded-[22px] border border-[#e9dfd3] bg-[#fffcf5] shadow-[0_12px_40px_-32px_rgba(45,51,43,0.45)]"
+      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card text-foreground"
     >
-      <header className="border-b border-[#f1e7d5] py-5 pr-12 pl-4 sm:pl-6">
-        <p className="text-xs font-semibold tracking-[0.08em] text-[#4f8f65]">
-          课程工作区
+      <header className="min-w-0 shrink-0 border-b border-border px-5 py-6">
+        <p className="text-xs font-semibold tracking-[0.08em] text-primary">
+          课程草稿
         </p>
         <h2
-          className="mt-1 text-xl font-semibold text-[#2d332b]"
+          className="mt-2 text-[22px] leading-8 font-semibold"
           id="course-workspace-title"
         >
-          {intent?.topic ?? "等待生成课程规划"}
+          {topic}
         </h2>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-[#7a7468]">
-          {outline?.overview ??
-            "课程结构、专业设计与逐页内容会按生成顺序整理在这里。"}
+        <p className="mt-2 line-clamp-3 text-sm leading-6 text-muted-foreground">
+          {summary}
         </p>
-        {intent ? (
-          <div className="mt-3 flex flex-wrap gap-2 text-xs text-[#6f6355]">
-            <WarmTag>{intent.audienceAgeRange.label}</WarmTag>
-            <WarmTag>{intent.courseLength} 页</WarmTag>
-            <WarmTag>{intent.visualStyle}</WarmTag>
-            <WarmTag>{intent.language}</WarmTag>
-          </div>
-        ) : null}
-        {run?.generation?.status === "completed" ? (
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <Button
-              className="rounded-full bg-[#397a52] px-4 text-white hover:bg-[#2f6845]"
-              disabled={exporting}
-              onClick={onExportCourse}
-              type="button"
-            >
-              {exporting ? (
-                <LoaderCircle aria-hidden="true" className="animate-spin" />
-              ) : (
-                <Download aria-hidden="true" />
-              )}
-              {exporting ? "正在导出…" : "导出课程 ZIP"}
-            </Button>
-            <span className="text-xs text-[#7a7468]">
-              包含 course.json、页面 HTML 与素材清单
+        <div className="mt-4 flex flex-wrap gap-2">
+          <MetaPill>
+            {intent?.audienceAgeRange.label ?? brief?.audience ?? "初学者"}
+          </MetaPill>
+          <MetaPill>
+            {knownSectionCount > 0
+              ? `${knownSectionCount} 节`
+              : "按内容规划章节"}
+          </MetaPill>
+          <MetaPill>
+            {brief?.learningMode === "practice"
+              ? "互动练习"
+              : brief?.learningMode === "guided"
+                ? "讲解为主"
+                : "讲解 + 互动"}
+          </MetaPill>
+          {taskStatus === "paused" ? (
+            <span className="rounded-full bg-[#f7efdf] px-3 py-1 text-xs font-medium text-[#8a672f]">
+              已暂停
             </span>
-          </div>
-        ) : null}
-        {exportError ? (
-          <Alert
-            className="mt-3 rounded-2xl border-[#edc4b9] bg-[#fff0eb] px-3 py-3 text-[#984735]"
-            variant="destructive"
-          >
-            <TriangleAlert aria-hidden="true" />
-            {exportError}
-          </Alert>
-        ) : null}
-        {canResumeCourse ? (
-          <Alert
-            className="mt-4 flex items-center justify-between gap-3 rounded-2xl border-0 bg-[#fff0eb] px-3 py-3 text-sm text-[#984735]"
-            variant="destructive"
-          >
-            <span className="min-w-0 leading-5">
-              {generationError ?? "整课生成已停止，已完成页面仍然保留。"}
-            </span>
-            <Button
-              className="h-8 shrink-0 rounded-full border border-[#dcaa9e] bg-[#fff8f5] px-3 text-xs font-semibold text-[#984735] hover:bg-white"
-              disabled={busy}
-              onClick={onResumeCourse}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              {busy ? "正在恢复…" : "从断点继续"}
-            </Button>
-          </Alert>
-        ) : null}
-      </header>
-
-      <div className="grid gap-7 px-4 py-5 sm:px-6 sm:py-6">
-        <PlannerOutput run={run} />
-
-        {run?.generation?.referencePacks?.length ? (
-          <ReferencePanel
-            packs={run.generation.referencePacks}
-            pages={outline?.pages ?? []}
-          />
-        ) : null}
-
-        <section aria-labelledby="professional-design-title">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3
-                className="text-base font-semibold text-[#493b29]"
-                id="professional-design-title"
-              >
-                专业设计
-              </h3>
-              <p className="mt-1 text-xs leading-5 text-[#7a7468]">
-                整课任务会自动生成教学、故事与视觉方案，也可在此单独重试。
-              </p>
-            </div>
-            <ActionButton
-              disabled={
-                busy || !canGenerateDesign || run?.design.status === "running"
-              }
-              onClick={onGenerateDesign}
-            >
-              {run?.design.status === "running"
-                ? "正在生成设计…"
-                : briefs
-                  ? "重新生成设计"
-                  : "生成专业设计"}
-            </ActionButton>
-          </div>
-
-          {designError ? (
-            <ErrorNotice>{designError}</ErrorNotice>
-          ) : briefs ? (
-            <div className="mt-4 grid gap-3">
-              <BriefCard
-                eyebrow="教学设计"
-                title="学习节奏"
-                description={briefs.pedagogy.audienceSummary}
-                detail={`每 ${briefs.pedagogy.interactionCadence.recommendedIntervalPages} 页安排一次互动`}
-              />
-              <BriefCard
-                eyebrow="故事设计"
-                title={briefs.story.learnerRole}
-                description={briefs.story.premise}
-                detail={briefs.story.mission}
-              />
-              <BriefCard
-                eyebrow="视觉设计"
-                title={briefs.visual.styleTemplateId}
-                description={briefs.visual.visualConcept}
-                detail={briefs.visual.motionGuidance.strategy}
-              />
-            </div>
-          ) : (
-            <PendingNotice
-              status={run?.design.status ?? "idle"}
-              idleCopy={
-                canGenerateDesign
-                  ? "课程规划已就绪，可以继续生成专业设计。"
-                  : "请先完成课程规划。"
-              }
-            />
-          )}
-        </section>
-
-        {outline && run ? <PageProgressPanel run={run} /> : null}
-
-        {outline ? <CoursePreviewGrid pages={previewPages} /> : null}
-
-        <section aria-labelledby="page-content-title">
-          <div>
-            <h3
-              className="text-base font-semibold text-[#493b29]"
-              id="page-content-title"
-            >
-              课程页面
-            </h3>
-            <p className="mt-1 text-xs leading-5 text-[#7a7468]">
-              整课按顺序生成；单页失败时可从断点继续，也可只重试当前阶段。
-            </p>
-          </div>
-
-          {run && outline?.pages.length ? (
-            <ol className="mt-4 grid gap-3">
-              {outline.pages.map((page) => (
-                <PageWorkspaceCard
-                  canGenerate={
-                    !busy && Boolean(designResult?.state.pageWorkerBriefs)
-                  }
-                  key={page.id}
-                  onGenerateHtml={() => onGenerateHtml(page.id)}
-                  onGenerateAssets={() => onGenerateAssets(page.id)}
-                  onEvaluatePage={() => onEvaluatePage(page.id)}
-                  onGenerate={() => onGeneratePage(page.id)}
-                  onOpenHtmlPreview={() => onOpenHtmlPreview(page.id)}
-                  page={page}
-                  run={run}
-                />
-              ))}
-            </ol>
-          ) : (
-            <PendingNotice
-              status={run?.planner.status ?? "idle"}
-              idleCopy="课程结构生成后，页面列表会显示在这里。"
-            />
-          )}
-        </section>
-      </div>
-    </section>
-  );
-}
-
-function PlannerOutput({ run }: { run?: KeyaCourseRun }) {
-  const result = run?.planner.data;
-  const outline = result?.state.outline;
-  const error = run?.planner.error ?? result?.state.error?.message;
-
-  return (
-    <section aria-labelledby="planner-output-title">
-      <div className="flex flex-wrap items-center gap-2">
-        <h3
-          className="text-base font-semibold text-[#493b29]"
-          id="planner-output-title"
-        >
-          课程规划
-        </h3>
-        <StatusBadge status={run?.planner.status ?? "idle"} />
-      </div>
-
-      {error ? (
-        <ErrorNotice>{error}</ErrorNotice>
-      ) : outline ? (
-        <div className="mt-4 grid gap-4 rounded-2xl bg-[#f6eedc] p-4">
-          <div>
-            <h4 className="text-sm font-semibold text-[#3f4a40]">学习目标</h4>
-            <ul className="mt-2 grid gap-2 text-sm leading-6 text-[#6f6a60]">
-              {outline.learningObjectives.map((objective) => (
-                <li className="flex gap-2" key={objective}>
-                  <span aria-hidden="true" className="text-[#4f8f65]">
-                    ✓
-                  </span>
-                  <span>{objective}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          {result?.intent ? (
-            <dl className="grid content-start grid-cols-2 gap-x-4 gap-y-3 rounded-xl bg-[#fffcf5] p-3 text-xs">
-              <MetaField label="主题" value={result.intent.topic} />
-              <MetaField
-                label="难度"
-                value={result.intent.difficulty}
-              />
-              <MetaField
-                label="页数"
-                value={`${result.intent.courseLength} 页`}
-              />
-              <MetaField
-                label="视觉风格"
-                value={result.intent.visualStyle}
-              />
-            </dl>
           ) : null}
         </div>
-      ) : (
-        <PendingNotice
-          status={run?.planner.status ?? "idle"}
-          idleCopy="发送课程需求后，Agent 会先生成课程结构。"
-        />
-      )}
-    </section>
-  );
-}
+      </header>
 
-function PageWorkspaceCard({
-  page,
-  run,
-  canGenerate,
-  onGenerate,
-  onGenerateHtml,
-  onGenerateAssets,
-  onEvaluatePage,
-  onOpenHtmlPreview,
-}: {
-  page: PagePlan;
-  run: KeyaCourseRun;
-  canGenerate: boolean;
-  onGenerate(): void;
-  onGenerateHtml(): void;
-  onGenerateAssets(): void;
-  onEvaluatePage(): void;
-  onOpenHtmlPreview(): void;
-}) {
-  const write = run.pageWrites[page.id];
-  const content = write?.data?.state.content;
-  const error = write?.error ?? write?.data?.state.error?.message;
-  const status = write?.status ?? "idle";
-  const repairHistory =
-    run.generation?.pages.find(({ pageId }) => pageId === page.id)
-      ?.repairHistory ?? [];
-
-  return (
-    <li>
-      <article className="rounded-2xl border border-[#e9dfd3] bg-[#fffefa] p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-1 gap-3">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#edf5ee] text-xs font-semibold text-[#397a52]">
-              {String(page.order).padStart(2, "0")}
-            </span>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h4 className="font-semibold text-[#3f4a40]">{page.title}</h4>
-                <StatusBadge status={status} />
-              </div>
-              <p className="mt-1 text-xs leading-5 text-[#7a7468]">
-                {page.pageType} · {page.interactionType}
-              </p>
-              <p className="mt-2 text-sm leading-6 text-[#6f6a60]">
-                {page.contentSummary}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 px-5 py-4">
+        <section
+          aria-labelledby="course-draft-sections-title"
+          className="flex min-h-0 min-w-0 flex-1 flex-col"
+        >
+          <div className="flex shrink-0 items-end justify-between gap-3">
+            <div>
+              <h3
+                className="text-base font-semibold"
+                id="course-draft-sections-title"
+              >
+                课程内容
+              </h3>
+              <p
+                aria-atomic="true"
+                aria-live="polite"
+                className="mt-1 text-xs text-muted-foreground"
+                role="status"
+              >
+                {knownSectionCount > 0
+                  ? [
+                      `已完成 ${completedCount} / ${knownSectionCount} 节`,
+                      failedCount > 0
+                        ? taskStatus === "queued" || taskStatus === "running"
+                          ? `${failedCount} 节暂未完成`
+                          : taskStatus === "paused"
+                            ? `${failedCount} 节未完成`
+                            : `${failedCount} 节待处理`
+                        : undefined,
+                      pausedCount > 0
+                        ? `${pausedCount} 节已暂停`
+                        : undefined,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")
+                  : taskStatus === "paused"
+                    ? "课程规划已暂停"
+                    : "正在确定最合适的章节结构"}
               </p>
             </div>
+            {complete ? (
+              <span className="rounded-full bg-[#e8f3ea] px-2.5 py-1 text-[11px] font-medium text-primary">
+                已完成
+              </span>
+            ) : null}
           </div>
-          <ActionButton
-            disabled={!canGenerate || status === "running"}
-            onClick={onGenerate}
-          >
-            {status === "running"
-              ? "正在生成…"
-              : content
-                ? "重新生成"
-                : "生成 Page DSL"}
-          </ActionButton>
-        </div>
 
-        {error ? (
-          <ErrorNotice>{error}</ErrorNotice>
-        ) : content ? (
-          <PageDslResult
-            canGenerateHtml={canGenerate}
-            content={content}
-            assetStage={run.pageAssets[page.id]}
-            htmlStage={run.pageHtml[page.id]}
-            qaStage={run.pageQa[page.id]}
-            repairHistory={repairHistory}
-            onGenerateHtml={onGenerateHtml}
-            onGenerateAssets={onGenerateAssets}
-            onEvaluatePage={onEvaluatePage}
-            onOpenHtmlPreview={onOpenHtmlPreview}
-          />
-        ) : null}
-      </article>
-    </li>
-  );
-}
-
-function PageDslResult({
-  canGenerateHtml,
-  content,
-  assetStage,
-  htmlStage,
-  qaStage,
-  repairHistory,
-  onGenerateHtml,
-  onGenerateAssets,
-  onEvaluatePage,
-  onOpenHtmlPreview,
-}: {
-  canGenerateHtml: boolean;
-  content: PageContentDSL;
-  assetStage?: KeyaCourseRun["pageAssets"][string];
-  htmlStage?: KeyaCourseRun["pageHtml"][string];
-  qaStage?: KeyaCourseRun["pageQa"][string];
-  repairHistory: NonNullable<
-    NonNullable<KeyaCourseRun["generation"]>["pages"][number]["repairHistory"]
-  >;
-  onGenerateHtml(): void;
-  onGenerateAssets(): void;
-  onEvaluatePage(): void;
-  onOpenHtmlPreview(): void;
-}) {
-  const htmlOutput = htmlStage?.data?.state.htmlOutput;
-  const assetResults = assetStage?.data?.state.results;
-  const assetError = assetStage?.error ?? assetStage?.data?.state.error?.message;
-  const assetStatus = assetStage?.status ?? "idle";
-  const assetsReady =
-    content.assetSlots.length === 0 ||
-    (assetStatus === "completed" && Boolean(assetResults));
-  const htmlError = htmlStage?.error ?? htmlStage?.data?.state.error?.message;
-  const htmlStatus = htmlStage?.status ?? "idle";
-  const qaReport = qaStage?.data?.state.report;
-  const qaError = qaStage?.error ?? qaStage?.data?.state.error?.message;
-  const qaStatus = qaStage?.status ?? "idle";
-
-  return (
-    <details className="mt-4 rounded-2xl bg-[#f6eedc] p-4">
-      <summary className="cursor-pointer text-sm font-semibold text-[#3f4a40] marker:text-[#4f8f65]">
-        查看页面内容与安全预览
-      </summary>
-      <div className="mt-4 grid gap-4">
-        {content.narration.length > 0 ? (
-          <p className="rounded-xl bg-[#fffcf5] p-3 text-sm leading-6 text-[#6f6a60]">
-            {content.narration.join(" ")}
-          </p>
-        ) : null}
-
-        {content.blocks.length > 0 ? (
-          <ol className="grid gap-2">
-            {content.blocks.map((block) => (
-              <li
-                className="min-w-0 rounded-xl border border-[#e8dfd0] bg-[#fffcf5] p-3"
-                key={block.id}
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge className="h-auto overflow-visible rounded-full border-0 bg-[#edf5ee] px-2 py-0.5 text-[10px] leading-normal font-semibold text-[#397a52]">
-                    {block.kind}
-                  </Badge>
-                  <h5 className="text-sm font-semibold text-[#3f4a40]">
-                    {block.heading}
-                  </h5>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-[#7a7468] [overflow-wrap:anywhere]">
-                  {block.body}
-                </p>
-              </li>
-            ))}
-          </ol>
-        ) : null}
-
-        <dl className="grid gap-3 text-xs">
-          <MetaField label="互动类型" value={content.interaction.type} />
-          <MetaField
-            label="素材位置"
-            value={`${content.assetSlots.length} 个`}
-          />
-          <MetaField
-            label="内容密度"
-            value={content.layoutHints.contentDensity}
-          />
-        </dl>
-
-        {content.assetSlots.length > 0 ? (
-          <section
-            aria-labelledby={`page-assets-${content.pageId}`}
-            className="border-t border-[#e8dfd0] pt-4"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h5
-                    className="text-sm font-semibold text-[#3f4a40]"
-                    id={`page-assets-${content.pageId}`}
+          {sections.length > 0 ? (
+            <ol
+              aria-label="课程章节列表"
+              className="scrollbar-hide mt-4 min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain rounded-2xl border border-border bg-card"
+            >
+              {sections.map((section) => {
+                const interactive =
+                  section.status === "completed" && Boolean(section.html);
+                return (
+                  <li
+                    className="border-b border-border last:border-b-0"
+                    key={section.id}
                   >
-                    页面图片素材
-                  </h5>
-                  <StatusBadge status={assetStatus} />
-                </div>
-                <p className="mt-1 text-xs leading-5 text-[#7a7468]">
-                  每个槽位独立解析；缓存未命中才生图，失败不会阻塞 HTML。
+                    <button
+                      aria-current={section.id === effectiveSelectedId ? "true" : undefined}
+                      className={`flex min-h-[70px] w-full items-center gap-3 px-3 py-3 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary disabled:cursor-not-allowed ${
+                        section.id === effectiveSelectedId
+                          ? "bg-[var(--keya-pill)]"
+                          : interactive
+                            ? "hover:bg-[#fff9ee]"
+                            : "bg-card"
+                      }`}
+                      disabled={!interactive}
+                      onClick={() => setSelectedId(section.id)}
+                      type="button"
+                    >
+                      <SectionStatusIcon
+                        order={section.order}
+                        status={section.status}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="line-clamp-2 block break-words text-sm font-medium">
+                          第 {section.order} 节 · {section.title}
+                        </span>
+                        <span className="mt-1 block text-xs text-muted-foreground">
+                          {sectionStatusCopy(section.status, taskStatus)}
+                        </span>
+                      </span>
+                      {interactive ? (
+                        <ChevronRight
+                          aria-hidden="true"
+                          className="text-primary"
+                          size={16}
+                          strokeWidth={1.8}
+                        />
+                      ) : null}
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+          ) : (
+            <div className="mt-4 rounded-2xl border border-dashed border-[#cbdccf] bg-[#f5f8f3] px-4 py-5">
+              <p className="text-sm font-medium text-foreground">
+                {taskStatus === "paused"
+                  ? "课程规划已暂停"
+                  : "课芽正在规划课程结构"}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {taskStatus === "paused"
+                  ? "继续生成后，会从已保存的位置恢复章节规划。"
+                  : "会根据知识依赖、内容深度和练习需要确定章节，规划完成后在这里展示。"}
+              </p>
+            </div>
+          )}
+        </section>
+
+        {selectedSection?.html ? (
+          <section
+            aria-labelledby="course-draft-preview-title"
+            className="min-w-0 shrink-0 rounded-[22px] border border-border bg-[#fff9ee] p-3"
+          >
+            <div className="flex items-center gap-3 px-1">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#e8f3ea] text-primary">
+                <Eye aria-hidden="true" size={17} strokeWidth={1.8} />
+              </span>
+              <div className="min-w-0">
+                <h3
+                  className="line-clamp-2 break-words text-sm font-semibold"
+                  id="course-draft-preview-title"
+                >
+                  第 {selectedSection.order} 节 · {selectedSection.title}
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  已完成，可打开查看完整互动内容
                 </p>
               </div>
-              <ActionButton
-                disabled={!canGenerateHtml || assetStatus === "running"}
-                onClick={onGenerateAssets}
+              <Button
+                className="ml-auto h-8 shrink-0 rounded-full px-3 text-xs text-primary hover:bg-[var(--keya-pill)]"
+                onClick={() => onOpenHtmlPreview(selectedSection.id)}
+                type="button"
+                variant="ghost"
               >
-                {assetStatus === "running"
-                  ? "正在解析素材…"
-                  : assetResults
-                    ? "重新解析素材"
-                    : "生成图片素材"}
-              </ActionButton>
+                <Eye aria-hidden="true" size={14} strokeWidth={1.8} />
+                查看内容
+              </Button>
             </div>
-
-            {assetError ? (
-              <ErrorNotice>{assetError}</ErrorNotice>
-            ) : assetResults ? (
-              <AssetGallery results={assetResults} />
-            ) : (
-              <PendingNotice
-                idleCopy="先生成页面图片素材，再由 HTML Engineer 完成排版。"
-                status={assetStatus}
-              />
-            )}
           </section>
         ) : null}
 
-        <section
-          aria-labelledby={`html-engineer-${content.pageId}`}
-          className="border-t border-[#e8dfd0] pt-4"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h5
-                  className="text-sm font-semibold text-[#3f4a40]"
-                  id={`html-engineer-${content.pageId}`}
-                >
-                  HTML 页面
-                </h5>
-                <StatusBadge status={htmlStatus} />
-              </div>
-              <p className="mt-1 text-xs leading-5 text-[#7a7468]">
-                HTML Engineer 只消费 DSL、模板和视觉 Brief。
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {htmlOutput ? (
-                <Button
-                  className="min-h-10 rounded-full border-[#d9cec0] bg-[#fffcf5] px-4 text-xs font-semibold text-[#3f4a40] hover:bg-[#f3ede5]"
-                  onClick={onOpenHtmlPreview}
-                  type="button"
-                  variant="outline"
-                >
-                  独立预览
-                </Button>
-              ) : null}
-              <ActionButton
-                disabled={!canGenerateHtml || !assetsReady || htmlStatus === "running"}
-                onClick={onGenerateHtml}
-              >
-                {htmlStatus === "running"
-                  ? "正在生成 HTML…"
-                  : htmlOutput
-                    ? "重新生成 HTML"
-                    : "生成 HTML 页面"}
-              </ActionButton>
-            </div>
-          </div>
-
-          {htmlError ? (
-            <ErrorNotice>{htmlError}</ErrorNotice>
-          ) : htmlOutput ? (
-            <div className="mt-4">
-              <HtmlPreviewFrame
-                html={htmlOutput.html}
-                title={`${content.title} · 课程安全预览`}
+        {failure ? (
+          <Alert className="rounded-2xl border-[#efcdbd] bg-[#fff3ec] p-4 text-[#8e4f34]">
+            <div className="flex items-start gap-3">
+              <RotateCcw
+                aria-hidden="true"
+                className="mt-0.5 shrink-0"
+                size={17}
+                strokeWidth={1.8}
               />
-            </div>
-          ) : (
-            <PendingNotice
-              idleCopy={
-                assetsReady
-                  ? "Page DSL 与素材已就绪，可以继续生成完整 HTML 页面。"
-                  : "请先生成当前页面的图片素材。"
-              }
-              status={htmlStatus}
-            />
-          )}
-
-          {htmlOutput ? (
-            <section
-              aria-labelledby={`page-qa-${content.pageId}`}
-              className="mt-4 border-t border-[#e8dfd0] pt-4"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h5
-                      className="text-sm font-semibold text-[#3f4a40]"
-                      id={`page-qa-${content.pageId}`}
-                    >
-                      页面质量评估
-                    </h5>
-                    <StatusBadge status={qaStatus} />
-                  </div>
-                  <p className="mt-1 text-xs leading-5 text-[#7a7468]">
-                    QA 只报告问题，不会修改当前 HTML。
-                  </p>
-                </div>
-                <ActionButton
-                  disabled={!canGenerateHtml || qaStatus === "running"}
-                  onClick={onEvaluatePage}
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold">{failure.title}</p>
+                <p className="mt-1 text-xs leading-5">
+                  {failure.description} 已完成的 {completedCount} 节内容不会丢失。
+                </p>
+                <Button
+                  className="mt-3 h-9 rounded-xl bg-primary px-3 text-xs font-semibold text-white hover:bg-[var(--keya-sprout-dark)]"
+                  disabled={busy}
+                  onClick={onResumeCourse}
+                  type="button"
                 >
-                  {qaStatus === "running"
-                    ? "正在评估…"
-                    : qaReport
-                      ? "重新评估"
-                      : "运行页面 QA"}
-                </ActionButton>
+                  <RotateCcw aria-hidden="true" size={14} strokeWidth={1.8} />
+                  {busy
+                    ? failedCount > 0
+                      ? "正在重新生成失败章节…"
+                      : "正在继续…"
+                    : failure.actionLabel === "重新生成" && failedCount > 0
+                      ? `重试 ${failedCount} 个失败章节`
+                      : failure.actionLabel}
+                </Button>
               </div>
+            </div>
+          </Alert>
+        ) : null}
 
-              {qaError ? (
-                <ErrorNotice>{qaError}</ErrorNotice>
-              ) : qaReport ? (
-                <>
-                  <RepairLogPanel attempts={repairHistory} />
-                  <PageQualityPanel report={qaReport} />
-                </>
-              ) : (
-                <PendingNotice
-                  idleCopy="HTML 已就绪，可以运行六维页面质量评估。"
-                  status={qaStatus}
-                />
-              )}
-            </section>
-          ) : null}
-        </section>
+        {exportError ? (
+          <Alert className="rounded-2xl border-[#efcdbd] bg-[#fff3ec] text-sm text-[#8e4f34]">
+            课程暂时无法导出，请稍后再试。
+          </Alert>
+        ) : null}
+
+        {completedCount > 0 && onOpenCoursePlayer ? (
+          <Button
+            className="h-12 w-full shrink-0 rounded-xl bg-primary text-sm font-semibold text-white shadow-sm hover:bg-[var(--keya-sprout-dark)]"
+            onClick={onOpenCoursePlayer}
+            type="button"
+          >
+            <Play aria-hidden="true" size={17} strokeWidth={1.8} />
+            {complete ? "开始学习" : "先预览课程"}
+          </Button>
+        ) : null}
+
+        {complete ? (
+          <Button
+            className="h-10 w-full shrink-0 rounded-xl border-border bg-card text-xs text-muted-foreground hover:bg-[var(--keya-pill)]"
+            disabled={exporting}
+            onClick={onExportCourse}
+            type="button"
+            variant="outline"
+          >
+            {exporting ? (
+              <LoaderCircle
+                aria-hidden="true"
+                className="motion-safe:animate-spin"
+                size={15}
+              />
+            ) : (
+              <Download aria-hidden="true" size={15} strokeWidth={1.8} />
+            )}
+            {exporting ? "正在整理课程…" : "下载课程"}
+          </Button>
+        ) : null}
       </div>
-    </details>
+    </section>
   );
 }
 
-function ActionButton({
-  children,
-  disabled,
-  onClick,
-}: {
-  children: ReactNode;
-  disabled?: boolean;
-  onClick(): void;
-}) {
-  return (
-    <Button
-      className="min-h-10 shrink-0 rounded-full bg-[#397a52] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#2f6845] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6845] disabled:pointer-events-auto disabled:cursor-not-allowed disabled:bg-[#e4ded5] disabled:text-[#9a9185] disabled:opacity-100"
-      disabled={disabled}
-      onClick={onClick}
-      type="button"
-    >
-      {children}
-    </Button>
-  );
+function buildDraftSections(
+  run?: KeyaCourseRun,
+  taskStatus?: CourseTaskStatus,
+): DraftSection[] {
+  const outline =
+    run?.generation?.outline ?? run?.planner.data?.state.outline;
+  if (outline) {
+    const generationFailed =
+      taskStatus === "failed" || run?.generation?.status === "failed";
+    return outline.pages.map((page) => {
+      const generated = run?.generation?.pages.find(
+        ({ pageId }) => pageId === page.id,
+      );
+      const htmlStage = run?.pageHtml[page.id];
+      const html =
+        generated?.htmlOutput?.html ?? htmlStage?.data?.state.htmlOutput?.html;
+      const status = generated?.status ?? htmlStage?.status ?? "idle";
+
+      return {
+        id: page.id,
+        order: page.order,
+        title: page.title,
+        html,
+        status:
+          status === "completed"
+            ? "completed"
+            : generationFailed
+              ? "failed"
+            : status === "failed"
+              ? "failed"
+              : status === "running" && taskStatus === "paused"
+                ? "paused"
+                : status === "running"
+                  ? "running"
+                  : "pending",
+      };
+    });
+  }
+
+  return [];
 }
 
-function StatusBadge({ status }: { status: CourseRunStageStatus }) {
-  const className =
-    status === "failed"
-      ? "bg-[#fff0eb] text-[#a44f3d]"
-      : status === "running"
-        ? "bg-[#fff4d9] text-[#8a6a23]"
-        : status === "completed"
-          ? "bg-[#edf5ee] text-[#397a52]"
-          : "bg-[#f0ebe4] text-[#7a7468]";
-
-  return (
-    <Badge
-      className={`h-auto overflow-visible rounded-full border-0 px-2 py-0.5 text-[10px] leading-normal font-semibold ${className}`}
-      variant="secondary"
-    >
-      {statusCopy[status]}
-    </Badge>
-  );
-}
-
-function WarmTag({ children }: { children: ReactNode }) {
-  return (
-    <Badge
-      className="h-auto overflow-visible rounded-full border border-[#e8dfd0] bg-[#f6eedc] px-3 py-1 text-xs font-normal text-[#6f6355]"
-      variant="outline"
-    >
-      {children}
-    </Badge>
-  );
-}
-
-function BriefCard({
-  eyebrow,
-  title,
-  description,
-  detail,
-}: {
-  eyebrow: string;
-  title: string;
-  description: string;
-  detail: string;
-}) {
-  return (
-    <article className="min-w-0 rounded-2xl border border-[#e9dfd3] bg-[#fffefa] p-4">
-      <p className="text-[10px] font-semibold tracking-[0.08em] text-[#4f8f65]">
-        {eyebrow}
-      </p>
-      <h4 className="mt-1.5 text-sm font-semibold text-[#3f4a40] [overflow-wrap:anywhere]">
-        {title}
-      </h4>
-      <p className="mt-2 text-xs leading-5 text-[#6f6a60]">{description}</p>
-      <p className="mt-3 border-t border-[#f1e7d5] pt-3 text-xs leading-5 text-[#7a7468]">
-        {detail}
-      </p>
-    </article>
-  );
-}
-
-function MetaField({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0 rounded-xl bg-[#fffcf5] p-3">
-      <dt className="text-[#9a9084]">{label}</dt>
-      <dd className="mt-1 font-semibold text-[#3f4a40] [overflow-wrap:anywhere]">
-        {value}
-      </dd>
-    </div>
-  );
-}
-
-function PendingNotice({
+function SectionStatusIcon({
+  order,
   status,
-  idleCopy,
 }: {
-  status: CourseRunStageStatus;
-  idleCopy: string;
+  order: number;
+  status: DraftSection["status"];
 }) {
+  if (status === "completed") {
+    return (
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-white">
+        <Check aria-hidden="true" size={14} strokeWidth={2.2} />
+      </span>
+    );
+  }
+  if (status === "running") {
+    return (
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-full border-2 border-[#e0a126] text-[#b77700]">
+        <LoaderCircle
+          aria-hidden="true"
+          className="motion-safe:animate-spin"
+          size={14}
+          strokeWidth={1.8}
+        />
+      </span>
+    );
+  }
+  if (status === "paused") {
+    return (
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#d9bd85] bg-[#fbf4e6] text-[#946f32]">
+        <CirclePause aria-hidden="true" size={14} strokeWidth={1.8} />
+      </span>
+    );
+  }
+  if (status === "failed") {
+    return (
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#d99779] text-[#a85e3c]">
+        <CircleX aria-hidden="true" size={13} strokeWidth={1.8} />
+      </span>
+    );
+  }
   return (
-    <p
-      aria-live="polite"
-      className="mt-4 rounded-2xl bg-[#f6eedc] px-4 py-4 text-sm leading-6 text-[#7a7468]"
-    >
-      {status === "running"
-        ? "Agent 正在生成，请稍候…"
-        : status === "failed"
-          ? "生成未完成，请稍后重试。"
-          : idleCopy}
-    </p>
+    <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#b6aea1] text-xs font-medium text-muted-foreground">
+      {order}
+    </span>
   );
 }
 
-function ErrorNotice({ children }: { children?: ReactNode }) {
+function MetaPill({ children }: { children: React.ReactNode }) {
   return (
-    <Alert
-      className="mt-4 rounded-2xl border border-[#edc4b9] bg-[#fff0eb] px-4 py-3 text-sm leading-6 text-[#984735]"
-      variant="destructive"
-    >
-      {children ?? "生成失败，请稍后重试。"}
-    </Alert>
+    <span className="rounded-full border border-border bg-[var(--keya-pill)] px-3 py-1 text-xs text-muted-foreground">
+      {children}
+    </span>
   );
+}
+
+function sectionStatusCopy(
+  status: DraftSection["status"],
+  taskStatus?: CourseTaskStatus,
+) {
+  switch (status) {
+    case "completed":
+      return "已完成，可查看";
+    case "running":
+      return "正在生成";
+    case "paused":
+      return "已暂停，继续后恢复";
+    case "failed":
+      return taskStatus === "queued" || taskStatus === "running"
+        ? "本节暂未完成，其余章节继续生成"
+        : taskStatus === "paused"
+          ? "本节未完成，继续后重新生成"
+          : "需要重新生成";
+    case "pending":
+      return taskStatus === "paused" ? "等待继续生成" : "稍后生成";
+  }
 }

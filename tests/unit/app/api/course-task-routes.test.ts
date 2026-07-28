@@ -18,6 +18,8 @@ const mocks = vi.hoisted(() => {
     create: vi.fn(),
     run: vi.fn(),
     loadTask: vi.fn(),
+    pause: vi.fn(),
+    resume: vi.fn(),
     cancel: vi.fn(),
     loadCourse: vi.fn(),
     subscribers,
@@ -47,6 +49,8 @@ vi.mock("@/server/tasks/course-generation-task-service", () => ({
     create: mocks.create,
     run: mocks.run,
     load: mocks.loadTask,
+    pause: mocks.pause,
+    resume: mocks.resume,
     cancel: mocks.cancel,
   },
 }));
@@ -55,7 +59,10 @@ vi.mock("@/server/tasks/course-task-event-bus", () => ({
   courseTaskEventBus: { subscribe: mocks.subscribe },
 }));
 
-import { DELETE } from "../../../../src/app/api/courses/tasks/[taskId]/route";
+import {
+  DELETE,
+  PATCH,
+} from "../../../../src/app/api/courses/tasks/[taskId]/route";
 import { GET } from "../../../../src/app/api/courses/tasks/[taskId]/events/route";
 import { POST } from "../../../../src/app/api/courses/tasks/route";
 
@@ -90,6 +97,7 @@ describe("course task Route Handlers", () => {
         body: JSON.stringify({
           userPrompt: "生成三页太阳系互动课程",
           pageCount: 3,
+          source: "workflow",
         }),
       }),
     );
@@ -105,6 +113,7 @@ describe("course task Route Handlers", () => {
     expect(mocks.create).toHaveBeenCalledWith({
       userPrompt: "生成三页太阳系互动课程",
       pageCount: 3,
+      source: "langgraph",
       traceId: "trace-from-header",
     });
     expect(mocks.run).not.toHaveBeenCalled();
@@ -151,7 +160,7 @@ describe("course task Route Handlers", () => {
     expect(mocks.subscribe).not.toHaveBeenCalled();
   });
 
-  it("GET and DELETE reject an unsafe taskId before touching storage", async () => {
+  it("GET, PATCH and DELETE reject an unsafe taskId before touching storage", async () => {
     const invalidTaskId = "../private";
     const getResponse = await GET(
       new Request("http://localhost/api/courses/tasks/invalid/events"),
@@ -163,8 +172,17 @@ describe("course task Route Handlers", () => {
       }),
       routeContext(invalidTaskId),
     );
+    const patchResponse = await PATCH(
+      new Request("http://localhost/api/courses/tasks/invalid", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "pause" }),
+      }),
+      routeContext(invalidTaskId),
+    );
 
     expect(getResponse.status).toBe(400);
+    expect(patchResponse.status).toBe(400);
     expect(deleteResponse.status).toBe(400);
     await expect(getResponse.json()).resolves.toMatchObject({
       code: "REQUEST_ERROR",
@@ -174,7 +192,13 @@ describe("course task Route Handlers", () => {
       code: "REQUEST_ERROR",
       message: "taskId 格式无效。",
     });
+    await expect(patchResponse.json()).resolves.toMatchObject({
+      code: "REQUEST_ERROR",
+      message: "taskId 格式无效。",
+    });
     expect(mocks.loadTask).not.toHaveBeenCalled();
+    expect(mocks.pause).not.toHaveBeenCalled();
+    expect(mocks.resume).not.toHaveBeenCalled();
     expect(mocks.cancel).not.toHaveBeenCalled();
   });
 
@@ -197,6 +221,7 @@ describe("course task Route Handlers", () => {
     const first = await readSseChunk(reader!);
     expect(first).toContain("id: 1\nevent: snapshot\n");
     expect(first).toContain('"type":"snapshot"');
+    expect(first).toContain('"taskStatus":"running"');
 
     publish({
       type: "event",
@@ -211,6 +236,26 @@ describe("course task Route Handlers", () => {
 
     await reader?.cancel();
     expect(mocks.subscribers.has(taskId)).toBe(false);
+  });
+
+  it("GET exposes paused as task status while preserving a running checkpoint", async () => {
+    const task = taskRecord({ status: "paused" });
+    const state = runningState({ events: [publicEvent(1)] });
+    mocks.loadTask
+      .mockResolvedValueOnce(task)
+      .mockResolvedValueOnce(task);
+    mocks.loadCourse.mockResolvedValue(state);
+
+    const response = await GET(
+      new Request(`http://localhost/api/courses/tasks/${taskId}/events`),
+      routeContext(taskId),
+    );
+    const reader = response.body?.getReader();
+    const first = await readSseChunk(reader!);
+
+    expect(first).toContain('"taskStatus":"paused"');
+    expect(first).toContain('"status":"running"');
+    await reader?.cancel();
   });
 
   it("GET replays events after Last-Event-ID and closes with the persisted terminal state", async () => {
@@ -301,6 +346,82 @@ describe("course task Route Handlers", () => {
       code: "REQUEST_ERROR",
       message: "课程任务不存在。",
     });
+  });
+
+  it("PATCH pauses without scheduling work and resumes with a new trace", async () => {
+    mocks.pause.mockResolvedValueOnce(taskRecord({ status: "paused" }));
+
+    const paused = await PATCH(
+      new Request(`http://localhost/api/courses/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "pause" }),
+      }),
+      routeContext(taskId),
+    );
+
+    expect(paused.status).toBe(200);
+    await expect(paused.json()).resolves.toEqual({
+      taskId,
+      courseId,
+      traceId,
+      status: "paused",
+      source: "workflow",
+    });
+    expect(mocks.pause).toHaveBeenCalledWith(taskId);
+    expect(mocks.after).not.toHaveBeenCalled();
+
+    const resumedTraceId = "trace-day-19-route-resumed";
+    mocks.resume.mockResolvedValueOnce(
+      taskRecord({
+        traceId: resumedTraceId,
+        status: "queued",
+      }),
+    );
+    const resumed = await PATCH(
+      new Request(`http://localhost/api/courses/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "resume" }),
+      }),
+      routeContext(taskId),
+    );
+
+    expect(resumed.status).toBe(202);
+    await expect(resumed.json()).resolves.toEqual({
+      taskId,
+      courseId,
+      traceId: resumedTraceId,
+      status: "queued",
+      source: "workflow",
+    });
+    expect(mocks.resume).toHaveBeenCalledWith(taskId);
+    expect(mocks.run).not.toHaveBeenCalled();
+
+    const scheduled = mocks.after.mock.calls[0]?.[0] as
+      | (() => Promise<void>)
+      | undefined;
+    await scheduled?.();
+    expect(mocks.run).toHaveBeenCalledWith(taskId);
+  });
+
+  it("PATCH rejects an unsupported control action", async () => {
+    const response = await PATCH(
+      new Request(`http://localhost/api/courses/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "cancel" }),
+      }),
+      routeContext(taskId),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      code: "REQUEST_ERROR",
+      message: "action 必须是 pause 或 resume。",
+    });
+    expect(mocks.pause).not.toHaveBeenCalled();
+    expect(mocks.resume).not.toHaveBeenCalled();
   });
 });
 

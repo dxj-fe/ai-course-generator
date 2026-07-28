@@ -4,8 +4,11 @@ const DEFAULT_MODEL_NAME = "xai/grok-build-0.1";
 const DEFAULT_ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
 const DEFAULT_ARK_IMAGE_MODEL_ID = "doubao-seedream-4-5-251128";
 const DEFAULT_HTML_ENGINEER_TIMEOUT_MS = 120_000;
+const DEFAULT_COURSE_PLANNER_TIMEOUT_MS = 180_000;
 const MIN_HTML_ENGINEER_TIMEOUT_MS = 30_000;
 const MAX_HTML_ENGINEER_TIMEOUT_MS = 300_000;
+const MIN_COURSE_PLANNER_TIMEOUT_MS = 60_000;
+const MAX_COURSE_PLANNER_TIMEOUT_MS = 300_000;
 
 function optionalEnv(name: string) {
   return process.env[name]?.trim() || undefined;
@@ -21,13 +24,31 @@ function requireEnv(name: string) {
   return value;
 }
 
+type LanguageModelProvider = "ark" | "generic";
+
+function resolveLanguageModelProvider(tier?: ModelTier): LanguageModelProvider {
+  const selectorName = tier
+    ? `MODEL_PROVIDER_${tier.toUpperCase()}`
+    : undefined;
+  const selector = selectorName ? optionalEnv(selectorName) : undefined;
+
+  if (selector) {
+    if (selector === "ark" || selector === "generic") {
+      return selector;
+    }
+
+    throw new Error(`${selectorName} must be either "ark" or "generic".`);
+  }
+
+  return optionalEnv("ARK_API_KEY") ? "ark" : "generic";
+}
+
 export function getModelConfig(tier?: ModelTier) {
-  const arkApiKey = optionalEnv("ARK_API_KEY");
   const suffix = tier ? `_${tier.toUpperCase()}` : "";
 
-  if (arkApiKey) {
+  if (resolveLanguageModelProvider(tier) === "ark") {
     return {
-      apiKey: arkApiKey,
+      apiKey: requireEnv("ARK_API_KEY"),
       baseURL: optionalEnv("ARK_BASE_URL") || DEFAULT_ARK_BASE_URL,
       modelName:
         optionalEnv(`ARK_MODEL_ID${suffix}`) || requireEnv("ARK_MODEL_ID"),
@@ -62,6 +83,28 @@ export function getHtmlEngineerTimeoutMs() {
   ) {
     throw new Error(
       `AI_HTML_TIMEOUT_MS must be an integer between ${MIN_HTML_ENGINEER_TIMEOUT_MS} and ${MAX_HTML_ENGINEER_TIMEOUT_MS}.`,
+    );
+  }
+
+  return timeoutMs;
+}
+
+/**
+ * Planner 一次需要生成完整课程结构。返回主模型与跨供应商 fallback
+ * 各自可用的单次超时；fallback 不再分走主模型的执行时间。
+ */
+export function getCoursePlannerTimeoutMs() {
+  const raw = optionalEnv("AI_PLANNER_TIMEOUT_MS");
+  if (!raw) return DEFAULT_COURSE_PLANNER_TIMEOUT_MS;
+
+  const timeoutMs = Number(raw);
+  if (
+    !Number.isInteger(timeoutMs) ||
+    timeoutMs < MIN_COURSE_PLANNER_TIMEOUT_MS ||
+    timeoutMs > MAX_COURSE_PLANNER_TIMEOUT_MS
+  ) {
+    throw new Error(
+      `AI_PLANNER_TIMEOUT_MS must be an integer between ${MIN_COURSE_PLANNER_TIMEOUT_MS} and ${MAX_COURSE_PLANNER_TIMEOUT_MS}.`,
     );
   }
 

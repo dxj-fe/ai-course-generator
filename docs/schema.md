@@ -62,6 +62,19 @@ Outline 校验页面 ID 唯一、`order` 从 1 连续递增，并要求页面依
 
 Day 06 的 `PagePlanDraftSchema` 继续作为 SinglePageAgent 的中间输出。它允许 Agent 先形成轻量草稿；Day 07 的 `PagePlanSchema` 则是进入多页课程流水线后的完整对象，两者不混用。
 
+## PageContentDSL v2 与 LessonRuntime
+
+`PageContentDSL` v1 继续兼容已有课程。新生成页面使用 v2，并必须包含
+`LessonRuntime`：`sceneKind` 描述讲解、演示、练习、反思或回顾场景；
+`visualPrimitive` 从概念图、函数图、Venn 图、时间线、流程和对比等代码原生
+视觉中选取；`motionPlan` 使用稳定 target ID 定义有限的揭示、强调、绘制和
+等待互动提示；`completionRule` 决定浏览页面、完成互动或答对后才能完成本节。
+
+Runtime 只表达平台与 HTML Engineer 都需要理解的语义，不包含任意 JavaScript、
+CSS 或组件树。HTML Engineer 继续输出无脚本文档和稳定 `data-*` 标记，播放器在
+安全预检后注入固定运行时。v2 若缺少 runtime，或无真实页内互动却声明互动完成
+规则，会在共享 Schema 边界直接失败。
+
 ## ReferencePackSchema
 
 Day 32 将单份 txt、md 或文本型 PDF 转换为 `ReferencePack`。`id` 是文件内容 SHA-256 的稳定短标识；`sourceName`、`sourceType` 和 `byteSize` 保存安全元数据；`chunks` 是代码确定性生成的原文片段；`summary` 和 `keyFacts` 是结构化模型输出，但每条关键事实必须引用真实 chunk ID。`truncated` 明确表示原资料超过了当前 24 × 1500 字符上下文上限。
@@ -91,15 +104,15 @@ Day 16 在领域 `Asset` 之前增加两层执行协议。`AssetRequest` 由 Ima
 
 质量报告可以指向整门课程或单页。`dimensions` 的持久化键保持内容准确性、排版质量、课程连贯性、风格一致性、HTML 可运行性和素材可用性，并分别映射到手册的内容、排版、教学、风格、HTML、素材六维；每个维度派生 `issueCodes` 和去重 `repairHints`。`issues` 是完整问题的唯一事实来源，保存维度、严重程度、静态/浏览器/模型证据来源、结构化位置和 `repairHint`；`shouldRepair` 与 `decision` 为后续工作流提供确定性分支。
 
-Day 15 的页面总分按内容 30%、排版 22%、连贯 17%、风格 13%、HTML 10%、素材 8% 加权。出现 error，或内容、排版、HTML 低于硬门槛时，程序必须设置 `shouldRepair: true`。模型只提供语义维度和候选问题，ID、时间、总分、限分和工作流决策都由代码补齐。
+Day 15 的页面总分按内容 30%、排版 22%、连贯 17%、风格 13%、HTML 10%、素材 8% 加权。当前质量优先门槛依次为内容 88、教学 88、排版 82、风格 82、HTML 92、素材 80；出现 error 或任一维度低于门槛时，程序必须设置 `shouldRepair: true`。模型只提供语义维度和候选问题，ID、时间、总分、限分和工作流决策都由代码补齐。
 
-Day 26 增加内容错误优先的服务端稳定排序，并允许报告携带可选 `screenshotEvidence`。共享证据只有状态、opaque artifact ID、固定 viewport 和几何指标；真实 PNG 路径保持在服务器内部。旧报告缺少维度问题索引或截图证据时仍能直接解析。
+Day 26 增加内容错误优先的服务端稳定排序，并允许报告携带 `screenshotEvidence`。生产 QA 现在把该证据作为强制质量闸门：缺失、跳过或任一视口采集失败都会生成 error，并进入 Repair。顶层状态、opaque artifact ID、viewport 和几何指标继续表示 primary 桌面证据；`captures` 保存真实播放器 `922×460`、平板 `712×650` 与手机 `366×500` 的逐视口状态、指标和 artifact ID。几何与运行时指标检查横向溢出、裁切、触控目标、主操作首屏位置、初始反馈泄露、选择题提交与反馈、单素材占比和首屏教学内容面积；真实 PNG 路径始终只保留在服务器内部。旧报告缺少维度问题索引、截图证据、`captures` 或新增指标时仍能直接解析，但不能作为新的生产 QA 通过证据。
 
 ## RepairRequestSchema / RepairResultSchema
 
-`RepairRequest` 把一个页面、来源 `QualityReport`、允许 issue codes、DSL block/HTML selector scope 和固定两轮预算绑定在一起。DSL 请求必须至少定位一个真实 block；所有 issue code 必须存在于来源报告。
+`RepairRequest` 把一个页面、来源 `QualityReport`、允许 issue codes 和 DSL block/content field/HTML selector scope 绑定在一起。DSL 请求必须至少定位一个真实 block，或在无 block 的稀疏页面上明确授权 `narration`；所有 issue code 必须存在于来源报告。尝试序号只服务于 24 次紧急安全上限，不是课程质量预算。
 
-`RepairResult` 是三分支联合：`dsl_candidate`、`html_patch_candidate` 或 `declined`。DSL 候选重新通过 `PageContentDSLSchema` 并拒绝未授权字段变化；HTML patches 必须唯一匹配、与 addressed issues 对应，应用后重新通过 HTML 文档、安全、DSL 文本、稳定标记和素材引用合同。`RepairAttemptRecord` 只持久化来源报告和公开审计摘要，不重复保存候选正文；旧页面 checkpoint 可以没有 `repairHistory`。
+`RepairResult` 是三分支联合：`dsl_candidate`、`html_patch_candidate` 或 `declined`。DSL 候选重新通过 `PageContentDSLSchema`，只能修改授权 block 或 `narration` / `interaction` 根字段；互动修复必须保留原 type，其余根字段保持不变。HTML patches 必须唯一匹配、与 addressed issues 对应，应用后重新通过 HTML 文档、安全、DSL 文本、稳定标记和素材引用合同。`RepairAttemptRecord` 只持久化来源报告和公开审计摘要，不重复保存候选正文；旧页面 checkpoint 可以没有 `repairHistory`。
 
 ## 关键跨实体校验
 

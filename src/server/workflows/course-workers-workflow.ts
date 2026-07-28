@@ -40,8 +40,9 @@ export type CourseWorkersWorkflowOptions = {
 };
 
 /**
- * 根据页面依赖分批调度 Worker。Worker 之间不共享可变状态；所有局部更新都
- * 经过同一个串行 merge/checkpoint 队列，保证事件序号和持久化状态不丢失。
+ * serial 模式按学习依赖逐页生成；parallel 模式把依赖仅保留为课程学习顺序，
+ * 页面产物可独立并发生成。Worker 之间不共享可变状态；所有局部更新都经过
+ * 同一个串行 merge/checkpoint 队列，保证事件序号和持久化状态不丢失。
  */
 export async function runCourseWorkersWorkflow(
   initialState: CourseGenerationState,
@@ -80,10 +81,11 @@ export async function runCourseWorkersWorkflow(
           (!options.targetPageId || page.id === options.targetPageId) &&
           pageState?.status !== "completed" &&
           !attempted.has(page.id) &&
-          page.dependsOnPageIds.every(
-            (dependencyId) =>
-              findPage(state, dependencyId)?.status === "completed",
-          )
+          (config.mode === "parallel" ||
+            page.dependsOnPageIds.every(
+              (dependencyId) =>
+                findPage(state, dependencyId)?.status === "completed",
+            ))
         );
       },
     );

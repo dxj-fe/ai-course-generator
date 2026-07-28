@@ -8,11 +8,13 @@ Day 13 established the preview boundary; Day 14 routes real model output through
 PageContentDSL
   + server-resolved FunctionalTemplate / StyleTemplate / VisualBrief
   -> HtmlEngineerAgent
-  -> GeneratedHtmlContract + DSL marker validation
+  -> GeneratedHtmlContract + DSL/runtime marker validation
   -> sanitizeHtmlLite preflight on the server
   -> optional revalidated browser preview cache
   -> contract + preflight again on the client
-  -> <iframe srcDoc sandbox="">
+  -> diagnostics: <iframe srcDoc sandbox="">
+  -> learner: inject platform-owned runtime
+  -> <iframe srcDoc sandbox="allow-scripts">
 ```
 
 ## Generated HTML contract
@@ -42,18 +44,27 @@ The function returns structured issues and never silently rewrites the document.
 
 ## iframe policy
 
-`HtmlPreviewFrame` uses `srcDoc` with an empty `sandbox` token list. No capability is opted back in.
+`HtmlPreviewFrame` has two policies. Diagnostic previews keep the original empty
+token list. The learner player may add only `allow-scripts`, after the document
+passes the generated HTML contract and security preflight, so a fixed
+platform-owned runtime can render motion and feedback. Generated HTML is still
+forbidden from containing scripts.
 
-| Capability | Day 13 policy | Reason |
+| Capability | Diagnostic preview | Learner player | Reason |
 | --- | --- | --- |
-| Scripts | blocked | Day 14 uses native static interaction patterns; executable interaction needs a later explicit policy decision. |
-| Same-origin identity | blocked | The preview receives an opaque origin instead of sharing the 课芽 application origin. |
-| Forms | blocked | Generated content must not submit learner data. |
-| Popups and downloads | blocked | Preview content must not create new browsing or download flows. |
-| Top navigation | blocked | Generated HTML cannot replace or redirect the product shell. |
-| Referrer | `no-referrer` | Preview resource requests must not receive the product URL as referrer metadata. |
+| Scripts | blocked | platform runtime only | Generated scripts fail preflight; only the audited runtime is injected afterward. |
+| Same-origin identity | blocked | blocked | The preview keeps an opaque origin and never combines `allow-scripts` with `allow-same-origin`. |
+| Forms | blocked | blocked | Learner input is handled locally; it cannot submit data. |
+| Popups and downloads | blocked | blocked | Preview content cannot create new browsing or download flows. |
+| Top navigation | blocked | blocked | Generated HTML cannot replace or redirect the product shell. |
+| External network | unavailable to generated content | unavailable to generated content | External URLs, scripts, stylesheets and frames fail preflight; browser QA aborts every request except approved internal assets. |
+| Referrer | `no-referrer` | `no-referrer` | Preview resource requests must not receive the product URL as referrer metadata. |
 
-Do not combine `allow-scripts` and `allow-same-origin` for same-origin preview content. If a later interaction requires scripts, it needs a separate threat-model review, a narrow message protocol, and preferably a dedicated preview origin.
+The runtime sends only schema-validated `section-ready`,
+`interaction-started`, `interaction-submitted`, `section-completed`, and
+`section-error` messages. The host checks the exact iframe `contentWindow`,
+channel, page ID, runtime version, event type, and payload shape before updating
+learning state.
 
 ## iframe sandbox and CSP sandbox
 
@@ -61,8 +72,10 @@ The iframe `sandbox` attribute is applied by the embedding product and is the pr
 
 ## Known limits and next steps
 
-- Remote image asset allowlisting is deferred until the real asset pipeline is introduced.
-- The preview does not yet use `postMessage`; any future message must validate origin, type, and payload shape.
 - Day 14 caps a generated document at 200,000 characters; a future QA stage should add parsed DOM-complexity limits.
 - `/preview/[previewId]` uses a 24-hour SQLite record. The record remains untrusted and is validated again on database read and render.
 - Temporary preview records are not durable course history. `/course` owns durable artifacts; random preview IDs only resolve expiring backend records.
+- The opaque sandbox origin prevents useful origin matching for `srcDoc`; the
+  host therefore validates message source identity and a strict data schema.
+- If learner content later needs broader network or storage capabilities, move
+  it to a dedicated preview origin and repeat the threat-model review first.

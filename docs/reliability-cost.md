@@ -7,10 +7,14 @@ controls provider retries.
 ## Timeout and cancellation
 
 - Text calls default to 30 seconds; structured calls default to 60 seconds.
-  HTML Engineer uses a separate 120-second budget because it returns a complete
-  self-contained document; `AI_HTML_TIMEOUT_MS` can override it from 30 to 300
-  seconds for a slower local provider. Repair keeps its explicit finite
-  120-second budget.
+  Course Planner gives both the strong primary and balanced fallback a separate
+  180-second attempt because either response must describe the complete
+  content-driven section structure; `AI_PLANNER_TIMEOUT_MS` can override each
+  attempt from 60 to 300 seconds. HTML Engineer uses a separate 120-second
+  timeout because it
+  returns a complete self-contained document; `AI_HTML_TIMEOUT_MS` can override
+  it from 30 to 300 seconds for a slower local provider. Repair gives the strong
+  primary 120 seconds and its balanced fallback 60 seconds.
 - Image generation combines the task signal with a 60-second provider timeout.
 - `DELETE /api/courses/tasks/[taskId]` is the explicit cancellation boundary.
   The task service persists the cancelled course/task terminal state before it
@@ -31,20 +35,35 @@ must call the cancellation endpoint.
 
 | Tier | Current capabilities | Transient fallback |
 | --- | --- | --- |
-| `cheap` | Intent, Supervisor, reference summary, template selector | none |
-| `balanced` | professional design, Page Writer, Image Prompt, single-page demo, general calls | `cheap` |
-| `strong` | Planner, HTML Engineer, Page QA, Repair | `balanced` |
+| `cheap` | Supervisor, reference summary, template selector | none |
+| `balanced` | Image Prompt, single-page demo, general calls | `cheap` |
+| `strong` | Intent, Planner, professional design, Page Writer, HTML Engineer, Page QA, Repair | `balanced` |
 
-Each tier may use `ARK_MODEL_ID_<TIER>` or `MODEL_NAME_<TIER>`. A missing tier
-reuses the legacy `ARK_MODEL_ID` or `MODEL_NAME`, so existing deployments keep
-working. When primary and fallback resolve to the same provider/model identity,
-the duplicate fallback call is removed.
+Each tier may select its provider with `MODEL_PROVIDER_<TIER>`. The only accepted
+values are `ark` and `generic`; any other non-empty value is a configuration
+error. Ark tiers read `ARK_MODEL_ID_<TIER>` and generic tiers read
+`MODEL_NAME_<TIER>`, with their respective legacy model variable as fallback.
+The current product route keeps every tier on Ark/Doubao:
 
-Five-page Pedagogy, Story, and Visual briefs use a finite 120-second request
+```dotenv
+MODEL_PROVIDER_STRONG=ark
+MODEL_PROVIDER_BALANCED=ark
+MODEL_PROVIDER_CHEAP=ark
+```
+
+All course capabilities therefore resolve to configured Doubao model IDs.
+Different Doubao variants can still be selected with `ARK_MODEL_ID_<TIER>`;
+when tiers resolve to the same model identity, the duplicate fallback call is
+removed. Generic provider support remains available in the configuration layer
+for compatibility, but it is not selected by the product configuration.
+
+Planner gives each primary/fallback attempt up to 180 seconds. Five-page
+Pedagogy, Story, and
+Visual briefs use a finite 120-second request
 budget. Their structured payloads are materially larger than Intent and simple
 classification results; the Day 36 fixed Demo proved the generic 60-second
-budget could terminate otherwise healthy runs at the first Pedagogy call. All
-other structured requests retain the 60-second default.
+budget could terminate otherwise healthy runs at the first Planner or Pedagogy
+call. All other structured requests retain the 60-second default.
 
 The router is deterministic. Prompts, model output and frontend state cannot
 change the tier.
@@ -52,15 +71,17 @@ change the tier.
 ## Retry and degradation
 
 The AI client permits at most one fallback call for a 429, selected 5xx, rate
-limit, or explicit timeout. It does not retry:
+limit, explicit timeout, or a structured object that remains Schema-invalid
+after its deterministic normalization. It does not retry:
 
 - task cancellation or `AbortError`;
-- structured-output/Schema validation failure;
 - business validation failure;
 - configuration or authentication failure.
 
 Schema normalization and the existing bounded Agent/Supervisor retry budgets
-remain business-layer concerns. Model fallback does not expand those budgets.
+remain business-layer concerns. A Page Worker stops an unchanged Schema/model
+Repair failure after one recovery retry instead of sending the same request a
+third time. Model fallback does not expand the quality-iteration budget.
 Cache failures are fail-open: execution continues against the model. Image
 provider failures retain the existing deterministic visual fallback unless the
 task itself was cancelled.

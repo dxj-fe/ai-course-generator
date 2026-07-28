@@ -1,16 +1,18 @@
 import { getErrorText } from "@/features/ai-playground/lib/messages";
 import {
+  CourseTaskControlResponseSchema,
   CourseTaskCreateResponseSchema,
+  type CoursePageCount,
+  type CourseTaskControlAction,
+  type CourseTaskControlResponse,
   type CourseTaskCreateResponse,
-  type CourseTaskRuntimeSource,
   type ReferencePack,
 } from "@/shared/course-schema";
 
-export type CourseTaskPageCount = 3 | 4 | 5;
+export type CourseTaskPageCount = CoursePageCount;
 type CourseTaskWorkerOptions = {
   executionMode?: "serial" | "parallel";
   concurrency?: number;
-  source?: CourseTaskRuntimeSource;
   referencePacks?: ReferencePack[];
 };
 
@@ -88,6 +90,57 @@ export async function cancelCourseTask(
   if (!response.ok) {
     throw new Error(getErrorText(await readJsonResponse(response)));
   }
+}
+
+/** 暂停或继续单个课程任务；调用方必须显式传入目标 taskId。 */
+async function controlCourseTask(
+  taskId: string,
+  action: CourseTaskControlAction,
+  options: CourseTaskRequestOptions = {},
+): Promise<CourseTaskControlResponse> {
+  const traceId = options.traceId ?? crypto.randomUUID();
+  const response = await fetch(
+    `/api/courses/tasks/${encodeURIComponent(taskId)}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "x-trace-id": traceId,
+      },
+      body: JSON.stringify({ action }),
+      signal: options.signal,
+    },
+  );
+  const payload = await readJsonResponse(response);
+
+  if (!response.ok) {
+    throw new Error(getErrorText(payload));
+  }
+
+  const parsed = CourseTaskControlResponseSchema.safeParse(payload);
+  if (!parsed.success) {
+    throw new Error(
+      `课程任务控制接口返回了无效状态：${parsed.error.issues
+        .map((issue) => `${issue.path.join(".") || "root"}: ${issue.message}`)
+        .join("; ")}`,
+    );
+  }
+
+  return parsed.data;
+}
+
+export function pauseCourseTask(
+  taskId: string,
+  options: CourseTaskRequestOptions = {},
+) {
+  return controlCourseTask(taskId, "pause", options);
+}
+
+export function resumeCourseTask(
+  taskId: string,
+  options: CourseTaskRequestOptions = {},
+) {
+  return controlCourseTask(taskId, "resume", options);
 }
 
 async function readJsonResponse(response: Response): Promise<unknown> {

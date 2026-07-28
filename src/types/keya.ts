@@ -10,6 +10,7 @@ import type {
 import type {
   CourseGenerationState,
   CourseTaskRuntimeSource,
+  CourseTaskStatus,
 } from "@/shared/course-schema";
 
 export type ChatMessageRole = "assistant" | "user";
@@ -56,6 +57,7 @@ export interface KeyaConversation {
   id: string;
   title: string;
   pinned?: boolean;
+  taskStatus?: CourseTaskStatus;
   messages: KeyaChatMessage[];
   courseRun?: KeyaCourseRun;
 }

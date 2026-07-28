@@ -62,7 +62,7 @@ describe("template skills", () => {
       {
         intent: {
           topic: "AI Agent",
-          courseLength: 30,
+          courseLength: 0,
         },
       },
       context,

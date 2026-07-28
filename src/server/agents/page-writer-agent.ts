@@ -10,7 +10,9 @@ import {
   ReferenceUsageSchema,
   validateReferenceUsages,
   type CourseIntent,
+  type LessonRuntime,
   type PageContentDSL,
+  type PageContentBlock,
   type PageContentInteraction,
   type PagePlan,
   type PageWorkerBrief,
@@ -36,14 +38,20 @@ const PageWriterBlockDraftSchema = z.object({
   supportingPoints: z.array(z.string().min(2).max(240)).max(8),
 });
 
+const PageWriterChoiceQuestionDraftSchema = z.object({
+  prompt: z.string().min(2).max(500),
+  options: z.array(z.string().min(1).max(240)).min(2).max(6),
+  correctOptionIndex: z.number().int().min(0).max(5),
+  feedbackSuccess: z.string().min(2).max(300),
+  feedbackRetry: z.string().min(2).max(300),
+  maxAttempts: z.number().int().min(1).max(5),
+});
+
 const PageWriterInteractionDraftSchema = z.object({
   type: PageInteractionTypeSchema,
   prompt: z.string().max(500),
   items: z.array(z.string().min(1).max(500)).max(8),
-  choicePrompts: z.array(z.string().min(2).max(500)).max(8),
-  choiceOptions: z.array(z.string().min(1).max(240)).max(48),
-  choiceOptionCounts: z.array(z.number().int().min(2).max(6)).max(8),
-  correctOptionIndexes: z.array(z.number().int().min(0).max(5)).max(8),
+  questions: z.array(PageWriterChoiceQuestionDraftSchema).max(8),
   feedbackSuccess: z.array(z.string().min(2).max(300)).max(8),
   feedbackRetry: z.array(z.string().min(2).max(300)).max(8),
   maxAttempts: z.number().int().min(1).max(5),
@@ -66,11 +74,23 @@ const PageWriterModelOutputSchema = z.object({
   usedReferences: z.array(ReferenceUsageSchema).max(12).default([]),
 });
 
+export const PageWriterValidationFeedbackSchema = z
+  .object({
+    code: z.string().trim().min(1).max(100),
+    issues: z.array(z.string().trim().min(1).max(500)).min(1).max(12),
+  })
+  .strict();
+
+export type PageWriterValidationFeedback = z.infer<
+  typeof PageWriterValidationFeedbackSchema
+>;
+
 export type PageWriterInput = {
   intent: CourseIntent;
   page: PagePlan;
   brief: PageWorkerBrief;
   referencePacks?: ReferencePack[];
+  validationFeedback?: PageWriterValidationFeedback;
 };
 
 export type PageWriterAgentState = AgentStateBase & {
@@ -266,6 +286,9 @@ async function generateContent(
     pageWorkerBrief: input.brief,
     functionalTemplate: template,
     referenceContext: selectPageReferenceContext(input),
+    validationFeedback: input.validationFeedback
+      ? PageWriterValidationFeedbackSchema.parse(input.validationFeedback)
+      : undefined,
   });
   const draft = await generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
@@ -290,15 +313,16 @@ async function generateContent(
     );
   }
 
+  const interaction = materializePageWriterInteraction(draft.interaction);
   return validatePageWriterOutput(
     {
-      version: 1,
+      version: 2,
       pageId: input.page.id,
       functionalTemplateId: input.page.functionalTemplateId,
       title: input.page.title,
       narration: draft.narration,
       blocks,
-      interaction: materializeInteraction(draft.interaction),
+      interaction,
       usedReferences: draft.usedReferences,
       assetSlots: input.page.assetNeeds.map((need, index) => ({
         id: `asset-slot-${String(index + 1).padStart(2, "0")}`,
@@ -317,15 +341,138 @@ async function generateContent(
         groupingStrategy: draft.groupingStrategy,
         readingOrder: blocks.map(({ id }) => id),
       },
+      runtime: buildLessonRuntime({
+        page: input.page,
+        blocks,
+        interaction,
+      }),
     },
     input,
   );
 }
 
-/**
- * 只收敛 JSON object mode 常见的多余数组层级和 choice 占位字段。
- * 未知对象、混合类型和真实业务字段仍交给严格 Schema 拒绝。
- */
+/** 将页面语义收敛为平台运行时计划，避免模型生成可执行代码。 */
+export function buildLessonRuntime(input: {
+  page: PagePlan;
+  blocks: PageContentBlock[];
+  interaction: PageContentInteraction;
+}): LessonRuntime {
+  const searchable = [
+    input.page.title,
+    input.page.learningObjective,
+    input.page.contentSummary,
+    ...input.blocks.flatMap(({ heading, body, supportingPoints }) => [
+      heading,
+      body,
+      ...supportingPoints,
+    ]),
+  ].join(" ");
+  const interactionId = `interaction-${input.page.id}`;
+  const targetIds = [
+    ...input.blocks.map(({ id }) => id),
+    ...interactionTargetIds(input.interaction),
+  ].slice(0, 8);
+  const cuePoints: LessonRuntime["motionPlan"]["cuePoints"] = targetIds.map(
+    (targetId, index) => ({
+    id: `cue-${String(index + 1).padStart(2, "0")}`,
+    action: "reveal" as const,
+    targetId,
+    delayMs: index * 120,
+    durationMs: 420,
+    }),
+  );
+
+  if (!["none", "navigate"].includes(input.interaction.type)) {
+    cuePoints.push({
+      id: "cue-wait-interaction",
+      action: "wait-for-interaction",
+      targetId: interactionId,
+      delayMs: 0,
+      durationMs: 180,
+    });
+  }
+
+  return {
+    runtimeVersion: 1,
+    sceneKind: sceneKindForPage(input.page),
+    visualPrimitive: visualPrimitiveForPage(input.page, searchable),
+    motionPlan: {
+      intensity:
+        cuePoints.length === 0
+          ? "none"
+          : input.interaction.type === "none"
+            ? "subtle"
+            : "guided",
+      cuePoints,
+    },
+    completionRule:
+      input.interaction.type === "choice"
+        ? { type: "correct-answer", interactionId }
+        : ["reveal", "sort", "input", "explore"].includes(
+              input.interaction.type,
+            )
+          ? { type: "interaction-complete", interactionId }
+          : { type: "view" },
+  };
+}
+
+function sceneKindForPage(
+  page: PagePlan,
+): LessonRuntime["sceneKind"] {
+  switch (page.pageType) {
+    case "quiz":
+      return "practice";
+    case "summary":
+      return "recap";
+    case "achievement":
+      return "reflect";
+    case "knowledge_card":
+    case "comparison":
+    case "timeline":
+      return "demo";
+    default:
+      return "explain";
+  }
+}
+
+function visualPrimitiveForPage(
+  page: PagePlan,
+  searchable: string,
+): LessonRuntime["visualPrimitive"] {
+  const programmingContext =
+    /python|javascript|typescript|java|编程|代码|程序|def\s|return\b|调用|参数|循环|变量|数据类型/i.test(
+      searchable,
+    );
+  const mathematicalFunctionContext =
+    /函数(?:图像|图象|曲线)|function\s+graph|equation\s+plot|定义域|值域|自变量|因变量|坐标(?:系|轴)|抛物线|斜率|(?:^|\s)y\s*=|f\s*\(/i.test(
+      searchable,
+    );
+  if (mathematicalFunctionContext && !programmingContext) {
+    return "function-graph";
+  }
+  if (/集合|子集|并集|交集|补集|venn/i.test(searchable)) return "venn";
+  if (page.pageType === "timeline") return "timeline";
+  if (page.pageType === "comparison") return "comparison";
+  if (/步骤|流程|过程|阶段|控制|循环|遍历|条件/.test(searchable)) {
+    return "process";
+  }
+  return page.pageType === "knowledge_card" ? "concept-map" : "none";
+}
+
+function interactionTargetIds(interaction: PageContentInteraction) {
+  switch (interaction.type) {
+    case "reveal":
+    case "explore":
+    case "sort":
+      return interaction.items.map(({ id }) => id);
+    case "choice":
+      return interaction.questions.map(({ id }) => id);
+    default:
+      return [];
+  }
+}
+
+/** 只收敛 choice 不使用的 items 占位字段，其余内容交给严格 Schema。 */
 export function normalizePageWriterModelOutput(output: unknown): unknown {
   if (!isRecord(output) || !isRecord(output.interaction)) return output;
 
@@ -338,25 +485,8 @@ export function normalizePageWriterModelOutput(output: unknown): unknown {
       ...interaction,
       // choice 不使用 items；部分 Provider 会把空数组错误压缩成 0。
       items: [],
-      choiceOptions: flattenNestedStringArray(interaction.choiceOptions),
     },
   };
-}
-
-function flattenNestedStringArray(value: unknown): unknown {
-  if (
-    !Array.isArray(value) ||
-    !value.some(Array.isArray) ||
-    !value.every(
-      (item) =>
-        typeof item === "string" ||
-        (Array.isArray(item) && item.every((part) => typeof part === "string")),
-    )
-  ) {
-    return value;
-  }
-
-  return value.flatMap((item) => (Array.isArray(item) ? item : [item]));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -458,7 +588,7 @@ function normalizeBlocks(items: unknown[]) {
 }
 
 /** 根据 interaction.type 投影必要字段，丢弃兼容草稿中的占位字段。 */
-function materializeInteraction(
+export function materializePageWriterInteraction(
   draft: z.infer<typeof PageWriterInteractionDraftSchema>,
 ): PageContentInteraction {
   const prompt = usable(draft.prompt, "请完成本页互动。");
@@ -533,59 +663,39 @@ export function materializeInteractionItems(items: string[]) {
   });
 }
 
-/** 将扁平的选择题并行数组转换为多道严格 question 协议。 */
+/** 为模型返回的选择题语义草稿补齐稳定 question/option ID。 */
 function materializeChoiceQuestions(
   draft: z.infer<typeof PageWriterInteractionDraftSchema>,
 ) {
-  const questionCount = draft.choicePrompts.length;
-
-  if (
-    questionCount === 0 ||
-    draft.choiceOptionCounts.length !== questionCount ||
-    draft.correctOptionIndexes.length !== questionCount ||
-    draft.feedbackSuccess.length !== questionCount ||
-    draft.feedbackRetry.length !== questionCount ||
-    draft.choiceOptionCounts.reduce((total, count) => total + count, 0) !==
-      draft.choiceOptions.length
-  ) {
+  if (draft.questions.length === 0) {
     throw new AiSchemaValidationError(
-      "choice 的 prompts、optionCounts、correctIndexes 和 feedback 数量必须一致。",
+      "choice 至少需要一道 questions 题目。",
     );
   }
 
-  let optionOffset = 0;
-
-  return draft.choicePrompts.map((prompt, questionIndex) => {
-    const optionCount = draft.choiceOptionCounts[questionIndex];
-    const correctIndex = draft.correctOptionIndexes[questionIndex];
-    const labels = draft.choiceOptions.slice(
-      optionOffset,
-      optionOffset + optionCount,
-    );
-    optionOffset += optionCount;
-
-    if (correctIndex >= labels.length) {
+  return draft.questions.map((question, questionIndex) => {
+    if (question.correctOptionIndex >= question.options.length) {
       throw new AiSchemaValidationError(
         `choice question ${questionIndex + 1} 的正确选项位置越界。`,
       );
     }
 
     const questionNumber = String(questionIndex + 1).padStart(2, "0");
-    const options = labels.map((label, optionIndex) => ({
+    const options = question.options.map((label, optionIndex) => ({
       id: `option-${questionNumber}-${String(optionIndex + 1).padStart(2, "0")}`,
       label,
     }));
 
     return {
       id: `question-${questionNumber}`,
-      prompt,
+      prompt: question.prompt,
       options,
-      correctOptionId: options[correctIndex]?.id ?? "",
+      correctOptionId: options[question.correctOptionIndex]?.id ?? "",
       feedback: {
-        success: draft.feedbackSuccess[questionIndex],
-        retry: draft.feedbackRetry[questionIndex],
+        success: question.feedbackSuccess,
+        retry: question.feedbackRetry,
       },
-      maxAttempts: draft.maxAttempts,
+      maxAttempts: question.maxAttempts,
     };
   });
 }

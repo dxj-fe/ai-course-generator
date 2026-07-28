@@ -41,7 +41,7 @@ export const VisualBriefSchema = z
     typographyGuidance: z.string().min(5).max(300),
     colorUsage: z.string().min(5).max(300),
     assetDirection: VisualAssetDirectionSchema,
-    pageGuidance: z.array(VisualPageGuidanceSchema).min(1).max(12),
+    pageGuidance: z.array(VisualPageGuidanceSchema).min(1),
     motionGuidance: VisualMotionGuidanceSchema,
     accessibilityRules: z.array(z.string().min(2).max(240)).min(2).max(12),
   })

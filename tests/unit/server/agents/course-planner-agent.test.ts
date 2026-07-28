@@ -1,10 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { generateStructuredObjectSafe } from "../../../../src/server/ai/client";
 import {
   createCoursePlannerAgent,
   createCoursePlannerAgentState,
   buildCoursePlannerRetrievalContext,
   normalizeCoursePlannerModelOutput,
+  runCoursePlannerAgent,
   validateCoursePlannerOutput,
 } from "../../../../src/server/agents/course-planner-agent";
 import {
@@ -15,6 +17,15 @@ import {
   type ReferencePack,
   type VisualStyle,
 } from "../../../../src/shared/course-schema";
+
+vi.mock("../../../../src/server/ai/client", () => ({
+  generateStructuredObjectSafe: vi.fn(),
+}));
+
+afterEach(() => {
+  vi.clearAllMocks();
+  vi.unstubAllEnvs();
+});
 
 type PlannerCase = {
   topic: string;
@@ -75,6 +86,41 @@ const referencePack: ReferencePack = {
 };
 
 describe("CoursePlannerAgent", () => {
+  it("uses the longer Planner timeout for a complete multi-section draft", async () => {
+    vi.stubEnv("AI_PLANNER_TIMEOUT_MS", "240000");
+    const intent = createIntent(plannerCases[0]);
+    const outline = createOutline(plannerCases[0]);
+    vi.mocked(generateStructuredObjectSafe).mockResolvedValueOnce({
+      overview: outline.overview,
+      learningObjectives: outline.learningObjectives,
+      pages: outline.pages.map((page) => ({
+        pageType: page.pageType,
+        title: page.title,
+        learningObjective: page.learningObjective,
+        contentSummary: page.contentSummary,
+        interactionType: page.interactionType,
+        assetNeeds: page.assetNeeds.map(({ purpose, required }) => ({
+          purpose,
+          required,
+        })),
+        usedReferences: page.usedReferences ?? [],
+      })),
+    });
+
+    const result = await runCoursePlannerAgent(intent, {
+      traceId: "planner-timeout-test",
+    });
+
+    expect(result.status).toBe("completed");
+    expect(generateStructuredObjectSafe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        capability: "planner",
+        fallbackTimeoutMs: 240_000,
+        timeoutMs: 240_000,
+      }),
+    );
+  });
+
   it.each(plannerCases)(
     "plans a coherent five-page course for $topic",
     async (testCase) => {
@@ -201,13 +247,13 @@ describe("CoursePlannerAgent", () => {
     expect(CoursePlanSchema.safeParse(outline).success).toBe(false);
   });
 
-  it("rejects explanation pages placed after an assessment", () => {
+  it("allows explanation and practice to alternate when the course advances", () => {
     const outline = structuredClone(createOutline(plannerCases[0]));
     outline.pages[3].pageType = "comparison";
     outline.pages[3].functionalTemplateId = "comparison-board";
     outline.pages[3].interactionType = "explore";
 
-    expect(CoursePlanSchema.safeParse(outline).success).toBe(false);
+    expect(CoursePlanSchema.safeParse(outline).success).toBe(true);
   });
 
   it("normalizes only invalid interaction values from a valid page type", () => {

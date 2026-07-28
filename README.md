@@ -83,7 +83,7 @@
 ## Day 10 交付
 
 - `PagePlanSchema` 新增 `interactionType` 和规划阶段的 `assetNeeds`。
-- 新增 `CoursePlanSchema`，约束 3–12 页、连续顺序、合法依赖和“引入—讲解—互动—总结”节奏。
+- 新增 `CoursePlanSchema`，约束正整数页数、连续顺序、合法依赖和“引入—讲解—互动—总结”节奏，不设置固定页数上限。
 - 新增版本化 Course Planner Prompt 和一步 `CoursePlannerAgent`。
 - Planner 使用 Day 08/09 Registry 校验功能模板、pageType、样式模板和全课程视觉一致性。
 - 新增 `POST /api/courses/plan`，支持一句话生成 CourseIntent 和 CoursePlan，也支持直接输入 CourseIntent。
@@ -145,7 +145,7 @@
 - 方舟模式默认复用现有 `ARK_API_KEY` 调用 `doubao-seedream-4-5-251128`；Seedream 返回 JPEG 时会保留图片并显式标注透明通道警告。
 - 图片服务未配置、调用失败、格式伪造或透明背景不满足时返回 CSS/SVG/占位降级，不阻塞 HTML Engineer。
 - HTML Engineer 只能消费当前页面批准的内部素材 URI；Page QA 会报告素材缺失、未引用和 fallback。
-- 课芽 `/chat` 学习工作区增加逐页图片素材状态、公开事件与 AssetGallery，重新生图会失效旧 HTML 与 QA。
+- 课芽 `/chat` 学习工作区增加逐页图片素材状态与公开事件，重新生图会失效旧 HTML 与 QA。
 - 素材边界、四类用例和详细面试复盘见 `notes/day-16.md`。
 
 ## Day 17 交付
@@ -156,7 +156,7 @@
 - 缓存读写是 best-effort 辅助能力，损坏索引或写入失败只产生公开警告，不会让已生成素材或 HTML 流程失败。
 - Image Assets Timeline 使用现有公开事件展示请求集、图片 hit/miss、stale 和 fallback 汇总，不把生产 Prompt、缓存键或服务端路径写入公开事件和界面。
 - HTML Engineer 继续把背景、角色贴纸与课程任务卡合成为语义 HTML；URI 和精确 altText 必须绑定到对应素材槽节点，文字和互动不会被烘焙进图片。
-- 课芽 学习工作区保持原有 AssetGallery 和两阶段生成流程，仅把重复操作表述为“重新解析素材”，不增加平行缓存控制台。
+- 课芽 学习工作区保持原有素材状态和两阶段生成流程，仅把重复操作表述为“重新解析素材”，不增加平行缓存控制台。
 - 缓存失效、素材合成边界和详细面试复盘见 `notes/day-17.md`。
 
 ## Day 18 交付
@@ -164,7 +164,7 @@
 - 新增共享 `CourseGenerationStateSchema`，统一保存整课阶段、逐页产物、公开事件、结构化错误和运行时间，持久化前后都执行 Zod 校验。
 - 新增服务端串行 Course Generation Workflow：Intent → Planner → 专业设计 → 每页 Page Writer → Assets → HTML；页面严格按依赖顺序执行，不在浏览器复制编排规则。
 - 课程检查点、任务记录、会话和消息统一保存到 `.data/keya.sqlite`；每个阶段和页面完成后保存，失败保留此前 HTML，恢复时跳过已完成页面并从失败阶段继续。旧 `.data/courses` 与 `.data/course-tasks` 的有效 JSON 会在首次启动时导入一次。
-- 新增 `POST /api/courses/generate` 批量入口。默认尊重 Intent 并收敛到 3–5 页，也可显式指定页数；传已有 `courseId` 可恢复运行。
+- 新增 `POST /api/courses/generate` 批量入口。默认由 Intent 根据内容复杂度动态规划页数，也可显式指定任意正整数页数；传已有 `courseId` 可恢复运行。
 - `/chat` composer 现在用一个提示启动整课任务并提供取消按钮；Timeline 只消费结构化公开摘要，不保存 Agent event data。
 - 右侧 learning workspace 增加统一多页预览与断点恢复入口；页面选择使用可访问 Tab 语义，并且始终只挂载当前页面的沙箱 iframe。
 - 现有逐阶段按钮继续承担单页检查和局部重试，Page QA 保持可选，不成为 Day 18 主链阻塞条件。
@@ -212,7 +212,7 @@
 
 - 新增 `RepairRequestSchema`、`RepairResultSchema` 和持久化 `RepairAttemptRecord`，旧 checkpoint 可不包含 Repair 历史。
 - 内容/教学问题只允许修改 QA 定位的 DSL blocks；排版、风格和 HTML 问题使用唯一匹配 patches，并重新通过原 HTML/DSL/asset 安全合同。
-- Page Worker 接入最多两轮 QA → Repair → re-QA；预算耗尽、无定位问题、上游素材问题或候选越界会保留最新报告并结构化停止。
+- Page Worker 接入质量优先的 QA → Repair → re-QA；有效修订持续到通过，连续三次无质量改善才熔断，执行失败与质量迭代分开记录。
 - Repair Prompt 从 draft 升级为 active `1.0.0/1.0.0`，不能读取原始用户 Prompt、扩大 scope、增加预算或自行宣布通过。
 - `repair_attempt`、`repair_success` 和错误摘要进入现有 SSE、Timeline 与 learning workspace Repair 记录，不暴露候选正文和私有推理。
 - 实现说明和面试复盘见 `notes/day-27.md`。
@@ -229,7 +229,7 @@
 
 - 生产 Graph 改为 `START → Supervisor`，由类型化条件边在 Intent、Planner、Course Design、Page Worker、Retry、Repair、Finalize 和失败终态之间路由。
 - Supervisor 使用验证后的状态事实与持久化预算做规则优先决策；条件边只读取 `SupervisorDecisionSchema`，不解析事件摘要或调用模型重复判断唯一分支。
-- Page Worker 可在初次 QA 后交还控制权；每个 Repair 节点只授权一轮既有 Repair/re-QA，失败页每次只重试一个页面，三次阶段预算或两轮 Repair 预算耗尽后确定性停止。
+- Page Worker 可在初次 QA 后交还控制权；每个 Repair 节点只推进一次 Repair/re-QA，失败页每次只重试一个页面，质量停滞或紧急安全上限才确定性停止。
 - 手写兼容入口与 LangGraph 共享 Supervisor attempts、checkpoint 和公开 decision 事件；Day 30 SSE mapper、Controller 与现有 课芽 UI 不变。
 - 实现说明、路由表和面试复盘见 `notes/day-31.md` 与 `docs/multi-agent-design.md`。
 
@@ -256,7 +256,7 @@
 - `/chat` composer 在现有 Prompt/资料上传上增加页数、串并行和并发数参数，只传递任务 API 已支持字段。
 - Course/Task Store 增加逐条 Schema 校验的列表读取；损坏记录被隔离，不会让全部历史不可用。
 - `GET /api/courses` 提供有限历史摘要，`GET /api/courses/[courseId]` 提供持久课程与关联运行记录。
-- `/course` 展示真实搜索、状态/运行源筛选、loading/empty/error/retry；`/course/[courseId]` 复用单 iframe 多页预览并可返回原检查点。
+- `/course` 展示 LangGraph 课程的真实搜索、状态筛选、loading/empty/error/retry；`/course/[courseId]` 复用单 iframe 多页预览并可返回原检查点。
 - `GET /api/courses/[courseId]/export` 为完成课程流式生成 ZIP，包含 `course.json`、`pages/*.html` 和 `assets/manifest.json`。
 - 产品化边界、演示路径和面试复盘见 `notes/day-34.md`。
 
@@ -293,11 +293,20 @@ http://localhost:3000
 
 ## 环境变量
 
-复制示例文件后填写真实模型配置。当前优先使用火山方舟 / 豆包的 OpenAI-compatible 配置：
+复制示例文件后填写真实模型配置。当前课程生成统一使用方舟豆包，
+三个档位都选择 `ark`：
 
 ```bash
 cp .env.local.example .env.local
 ```
+
+```env
+MODEL_PROVIDER_STRONG=ark
+MODEL_PROVIDER_BALANCED=ark
+MODEL_PROVIDER_CHEAP=ark
+```
+
+然后配置对应供应商：
 
 ```env
 ARK_API_KEY=your_volcengine_ark_api_key
@@ -309,7 +318,7 @@ ARK_MODEL_ID_BALANCED=your_default_model_id
 ARK_MODEL_ID_STRONG=your_high_quality_model_id
 ```
 
-如果没有设置 `ARK_API_KEY`，才会回退到通用 OpenAI-compatible 配置：
+选择 `generic` 的档位使用以下通用 OpenAI-compatible 配置：
 
 ```env
 MODEL_API_KEY=your_api_key
@@ -321,13 +330,19 @@ MODEL_NAME_BALANCED=your_default_model_name
 MODEL_NAME_STRONG=your_high_quality_model_name
 ```
 
+未设置 `MODEL_PROVIDER_<TIER>` 时保持旧行为：存在 `ARK_API_KEY` 就优先使用
+方舟，否则使用通用 OpenAI-compatible 配置。
+
 Day 35 的服务端 `ModelRouter` 按 Agent 能力选择 `cheap`、`balanced` 或
 `strong`；前端和模型都不能修改路由。完整的超时、取消、缓存、重试、降级及
 成本日志契约见 [`docs/reliability-cost.md`](./docs/reliability-cost.md)。
-HTML Engineer 因为需要返回完整文档，默认使用独立的 120 秒有限预算。本地
-模型仍无法在该时间内完成时，可在 30–300 秒范围内覆盖并重启开发服务：
+Course Planner 因为需要一次规划完整课程结构，默认由 Strong 与
+Balanced 共享 180 秒总预算（120 秒 + 60 秒）；HTML Engineer 因为需要返回
+完整文档，默认使用独立的 120 秒有限预算。本地模型仍无法在该时间内完成时，
+可以分别覆盖并重启开发服务：
 
 ```env
+AI_PLANNER_TIMEOUT_MS=240000
 AI_HTML_TIMEOUT_MS=180000
 ```
 
@@ -346,14 +361,16 @@ IMAGE_MODEL_ID=your_image_model_id
 IMAGE_PROVIDER_NAME=your_provider_label
 ```
 
-Day 26 的 Playwright 截图证据默认关闭。需要启用时先安装本机 Chromium，再增加服务端环境变量；浏览器缺失或截图失败不会阻塞 Page QA：
+Playwright 截图 QA 默认开启，并会在接近课程播放器的桌面、平板和手机视口采集证据。首次使用前安装本机 Chromium；浏览器缺失、单个视口失败或截图写盘失败都不会阻塞 Page QA：
 
 ```bash
 pnpm exec playwright install chromium
 ```
 
+需要临时关闭时显式设置：
+
 ```env
-PAGE_QA_SCREENSHOTS_ENABLED=true
+PAGE_QA_SCREENSHOTS_ENABLED=false
 ```
 
 ## API 验收
@@ -406,7 +423,7 @@ curl -X POST http://localhost:3000/api/courses/design \
   -d '{"intent": {"...": "CourseIntent"}, "outline": {"...": "CoursePlan"}}'
 ```
 
-Day 18 串行整课生成（自动收敛到 3–5 页，也可显式传 `pageCount`）：
+Day 18 串行整课生成（默认按内容动态规划，也可显式传正整数 `pageCount`）：
 
 ```bash
 curl -X POST http://localhost:3000/api/courses/generate \

@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { AiRequestError, createTraceId } from "@/server/ai/error";
+import {
+  AiRequestError,
+  createTraceId,
+  toAiErrorPayload,
+} from "@/server/ai/error";
 import { streamCourseGenerationGraphWorkflow } from "@/server/langgraph/course-generation/run-course-graph";
 import {
   createCourseStore,
@@ -20,6 +24,7 @@ import {
 } from "@/server/workflows/course-generation-workflow";
 import {
   CourseIdSchema,
+  CoursePageCountSchema,
   CourseTaskCreateResponseSchema,
   CourseTaskIdSchema,
   CourseTaskRecordSchema,
@@ -28,8 +33,10 @@ import {
   REFERENCE_MAX_PACKS,
   ReferencePackSchema,
   type CourseGenerationState,
+  type CourseGenerationCauseCode,
   type CourseTaskCreateResponse,
   type CourseTaskRecord,
+  type PageGenerationState,
 } from "@/shared/course-schema";
 
 const CourseTaskCreateInputSchema = z
@@ -37,7 +44,7 @@ const CourseTaskCreateInputSchema = z
     courseId: CourseIdSchema.optional(),
     userPrompt: z.string().trim().min(2).max(4_000).optional(),
     referencePacks: z.array(ReferencePackSchema).max(REFERENCE_MAX_PACKS).optional(),
-    pageCount: z.union([z.literal(3), z.literal(4), z.literal(5)]).optional(),
+    pageCount: CoursePageCountSchema.optional(),
     executionMode: z.enum(["serial", "parallel"]).optional(),
     concurrency: z.number().int().min(1).max(5).optional(),
     source: CourseTaskRuntimeSourceSchema.optional(),
@@ -48,15 +55,41 @@ const CourseTaskCreateInputSchema = z
     message: "userPrompt 或 courseId 至少提供一个",
   });
 
-export type CourseTaskCreateInput = z.input<
-  typeof CourseTaskCreateInputSchema
->;
-
 export type CourseGenerationTaskService = {
   create(input: unknown): Promise<CourseTaskCreateResponse>;
   run(taskId: string): Promise<CourseGenerationState | undefined>;
+  pause(taskId: string): Promise<CourseTaskRecord | undefined>;
+  resume(taskId: string): Promise<CourseTaskRecord | undefined>;
   cancel(taskId: string): Promise<CourseTaskRecord | undefined>;
   load(taskId: string): Promise<CourseTaskRecord | undefined>;
+};
+
+export type CourseGenerationLogEntry = {
+  event:
+    | "task:start"
+    | "page:failed"
+    | "task:failed"
+    | "task:completed"
+    | "task:error";
+  traceId: string;
+  taskId: string;
+  courseId: string;
+  pageId?: string;
+  stage?: CourseGenerationState["currentStage"];
+  attempt?: number;
+  errorCode?: string;
+  causeCode?: CourseGenerationCauseCode;
+  issueCodes?: string[];
+  durationMs?: number;
+  completedPages?: number;
+  totalPages?: number;
+  source?: CourseTaskRecord["source"];
+  status?: CourseTaskRecord["status"];
+};
+
+export type CourseGenerationLogSink = {
+  info(entry: CourseGenerationLogEntry): void;
+  error(entry: CourseGenerationLogEntry): void;
 };
 
 type CourseGenerationTaskServiceDependencies = {
@@ -69,11 +102,18 @@ type CourseGenerationTaskServiceDependencies = {
   createTaskId(): string;
   createCourseId(): string;
   createTraceId(): string;
+  logSink: CourseGenerationLogSink;
 };
 
 type ActiveTask = {
   controller: AbortController;
   promise: Promise<CourseGenerationState | undefined>;
+  stopIntent?: "pause" | "cancel";
+};
+
+const defaultLogSink: CourseGenerationLogSink = {
+  info: (entry) => console.info("[course-generation]", entry),
+  error: (entry) => console.error("[course-generation]", entry),
 };
 
 const defaultDependencies: CourseGenerationTaskServiceDependencies = {
@@ -86,6 +126,7 @@ const defaultDependencies: CourseGenerationTaskServiceDependencies = {
   createTaskId: () => `task-${crypto.randomUUID()}`,
   createCourseId: () => `course-${crypto.randomUUID()}`,
   createTraceId,
+  logSink: defaultLogSink,
 };
 
 /**
@@ -136,12 +177,6 @@ export function createCourseGenerationTaskService(
       }
       if (
         existingState?.intent &&
-        !isMvpPageCount(existingState.intent.courseLength)
-      ) {
-        throw new AiRequestError("持久化课程的页面数量不属于 Day 19 的 3–5 页范围。");
-      }
-      if (
-        existingState?.intent &&
         parsed.data.pageCount &&
         parsed.data.pageCount !== existingState.intent.courseLength
       ) {
@@ -178,7 +213,7 @@ export function createCourseGenerationTaskService(
           existingState?.workerConfig?.mode ?? parsed.data.executionMode,
         concurrency:
           existingState?.workerConfig?.concurrency ?? parsed.data.concurrency,
-        source: parsed.data.source ?? "workflow",
+        source: parsed.data.source ?? "langgraph",
         status: "queued",
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -200,24 +235,125 @@ export function createCourseGenerationTaskService(
       if (current) return current.promise;
 
       const controller = new AbortController();
+      const active: ActiveTask = {
+        controller,
+        promise: Promise.resolve(undefined),
+      };
       const promise = executeTask(
         safeTaskId,
         controller,
         dependencies,
+        () => active.stopIntent,
       ).finally(() => {
         if (activeTasks.get(safeTaskId)?.promise === promise) {
           activeTasks.delete(safeTaskId);
         }
       });
 
-      activeTasks.set(safeTaskId, { controller, promise });
+      active.promise = promise;
+      activeTasks.set(safeTaskId, active);
       return promise;
+    },
+
+    async pause(taskId) {
+      const safeTaskId = CourseTaskIdSchema.parse(taskId);
+      const record = await dependencies.taskStore.load(safeTaskId);
+      if (
+        !record ||
+        isTerminalStatus(record.status) ||
+        record.status === "paused"
+      ) {
+        return record;
+      }
+      const active = activeTasks.get(safeTaskId);
+      if (active) active.stopIntent = "pause";
+
+      const paused = CourseTaskRecordSchema.parse({
+        ...record,
+        status: "paused",
+        updatedAt: dependencies.now(),
+        completedAt: undefined,
+        error: undefined,
+      });
+      await dependencies.taskStore.save(paused);
+
+      const state = await dependencies.courseStore.load(paused.courseId);
+      if (state && !isCourseTerminalStatus(state.status)) {
+        publishTaskSnapshot(dependencies.eventBus, paused, state);
+      }
+
+      active?.controller.abort(
+        new DOMException("课程生成已暂停。", "AbortError"),
+      );
+      // pause 返回时当前 taskId 的 runner 已退出，随后 resume 才能安全地
+      // 以同一 checkpoint 和新的 traceId 启动，不会与旧调用并行写入。
+      await active?.promise;
+
+      const [settled, settledState] = await Promise.all([
+        dependencies.taskStore.load(safeTaskId),
+        dependencies.courseStore.load(paused.courseId),
+      ]);
+      if (!settled || isTerminalStatus(settled.status)) return settled;
+      if (settledState && isCourseTerminalStatus(settledState.status)) {
+        const terminalState = settledState as CourseGenerationState & {
+          status: "completed" | "failed" | "cancelled";
+        };
+        const terminal = createTerminalTaskRecord(
+          settled,
+          terminalState,
+          dependencies.now(),
+        );
+        await dependencies.taskStore.save(terminal);
+        dependencies.eventBus.publish({
+          type: "terminal",
+          taskId: terminal.taskId,
+          courseId: terminal.courseId,
+          source: terminal.source,
+          status: terminalState.status,
+          state: terminalState,
+        });
+        return terminal;
+      }
+      if (settled.status === "paused") return settled;
+
+      // 覆盖 run() 刚读取 queued、随后才尝试写 running 的窄竞态。
+      await dependencies.taskStore.save(paused);
+      return paused;
+    },
+
+    async resume(taskId) {
+      const safeTaskId = CourseTaskIdSchema.parse(taskId);
+      const record = await dependencies.taskStore.load(safeTaskId);
+      if (!record || isTerminalStatus(record.status)) return record;
+      if (record.status !== "paused") return record;
+
+      // 跨请求的重复 resume 仍只恢复这个 taskId。pause 正常会先等待旧
+      // runner 收敛；这里额外等待，覆盖服务内并发调用。
+      await activeTasks.get(safeTaskId)?.promise;
+
+      const queued = CourseTaskRecordSchema.parse({
+        ...record,
+        traceId: dependencies.createTraceId(),
+        status: "queued",
+        updatedAt: dependencies.now(),
+        completedAt: undefined,
+        error: undefined,
+      });
+      await dependencies.taskStore.save(queued);
+
+      const state = await dependencies.courseStore.load(queued.courseId);
+      if (state && !isCourseTerminalStatus(state.status)) {
+        publishTaskSnapshot(dependencies.eventBus, queued, state);
+      }
+      return queued;
     },
 
     async cancel(taskId) {
       const safeTaskId = CourseTaskIdSchema.parse(taskId);
       const record = await dependencies.taskStore.load(safeTaskId);
       if (!record || isTerminalStatus(record.status)) return record;
+      const active = activeTasks.get(safeTaskId);
+      if (active) active.stopIntent = "cancel";
 
       const timestamp = dependencies.now();
       const persistedState = await dependencies.courseStore.load(record.courseId);
@@ -239,7 +375,7 @@ export function createCourseGenerationTaskService(
         await dependencies.courseStore.save(state);
       }
       await dependencies.taskStore.save(cancelled);
-      activeTasks.get(safeTaskId)?.controller.abort();
+      active?.controller.abort();
       dependencies.eventBus.publish({
         type: "terminal",
         taskId: cancelled.taskId,
@@ -261,9 +397,14 @@ async function executeTask(
   taskId: string,
   controller: AbortController,
   dependencies: CourseGenerationTaskServiceDependencies,
+  stopIntent: () => ActiveTask["stopIntent"],
 ) {
   const queued = await dependencies.taskStore.load(taskId);
-  if (!queued || isTerminalStatus(queued.status)) {
+  if (
+    !queued ||
+    isTerminalStatus(queued.status) ||
+    queued.status === "paused"
+  ) {
     return queued
       ? dependencies.courseStore.load(queued.courseId)
       : undefined;
@@ -278,13 +419,60 @@ async function executeTask(
   });
   try {
     await dependencies.taskStore.save(running);
+    if (stopIntent() === "pause") {
+      const paused = CourseTaskRecordSchema.parse({
+        ...running,
+        status: "paused",
+        updatedAt: dependencies.now(),
+        completedAt: undefined,
+        error: undefined,
+      });
+      await dependencies.taskStore.save(paused);
+      return dependencies.courseStore.load(running.courseId);
+    }
 
     const existingState = await dependencies.courseStore.load(running.courseId);
+    dependencies.logSink.info(
+      createTaskLogEntry("task:start", running, existingState, {
+        status: "running",
+      }),
+    );
+    const loggedFailedPages = new Set<string>();
+    const pageStatuses = new Map(
+      existingState?.pages.map(
+        (page) => [page.pageId, page.status] as const,
+      ) ?? [],
+    );
+    const logPageFailures = (
+      checkpoint: CourseGenerationState,
+      includeExisting = false,
+    ) => {
+      for (const page of checkpoint.pages) {
+        const previousStatus = pageStatuses.get(page.pageId);
+        if (
+          page.status === "failed" &&
+          (includeExisting || previousStatus !== "failed") &&
+          !loggedFailedPages.has(page.pageId)
+        ) {
+          dependencies.logSink.error(
+            createPageFailureLogEntry(running, page, checkpoint),
+          );
+          loggedFailedPages.add(page.pageId);
+        }
+        pageStatuses.set(page.pageId, page.status);
+      }
+    };
     let lastPublishedSequence =
       existingState?.events.at(-1)?.sequence ?? 0;
     let sentSnapshot = false;
     const persistCheckpoint = async (checkpoint: CourseGenerationState) => {
       const currentTask = await dependencies.taskStore.load(running.taskId);
+      if (stopIntent() === "pause") {
+        controller.abort(
+          new DOMException("课程生成已暂停。", "AbortError"),
+        );
+        throw new DOMException("课程生成已暂停。", "AbortError");
+      }
       if (
         currentTask?.status === "cancelled" &&
         checkpoint.status !== "cancelled"
@@ -292,7 +480,14 @@ async function executeTask(
         controller.abort();
         throw new Error("课程任务已取消。");
       }
+      if (currentTask?.status === "paused") {
+        controller.abort(
+          new DOMException("课程生成已暂停。", "AbortError"),
+        );
+        throw new DOMException("课程生成已暂停。", "AbortError");
+      }
       await dependencies.courseStore.save(checkpoint);
+      logPageFailures(checkpoint);
     };
     const publishCheckpoint = (checkpoint: CourseGenerationState) => {
       const newEvents = checkpoint.events.filter(
@@ -364,9 +559,14 @@ async function executeTask(
               publishCheckpoint(checkpoint);
             },
           });
+    const latestTask = await dependencies.taskStore.load(running.taskId);
+    if (stopIntent() === "pause" || latestTask?.status === "paused") {
+      return dependencies.courseStore.load(running.courseId);
+    }
     if (!isCourseTerminalStatus(state.status)) {
       throw new Error("课程工作流返回了非终态结果。");
     }
+    logPageFailures(state, true);
     const completedAt = dependencies.now();
     const terminalRecord = CourseTaskRecordSchema.parse({
       ...running,
@@ -378,6 +578,7 @@ async function executeTask(
           ? state.errors.at(-1)
             ? {
                 code: state.errors.at(-1)!.code,
+                causeCode: state.errors.at(-1)!.causeCode,
                 message: state.errors.at(-1)!.message,
               }
             : {
@@ -388,6 +589,19 @@ async function executeTask(
     });
 
     await dependencies.taskStore.save(terminalRecord);
+    if (state.status === "completed") {
+      dependencies.logSink.info(
+        createTaskLogEntry("task:completed", running, state, {
+          status: state.status,
+        }),
+      );
+    } else if (state.status === "failed") {
+      dependencies.logSink.error(
+        createTaskLogEntry("task:failed", running, state, {
+          status: state.status,
+        }),
+      );
+    }
     dependencies.eventBus.publish({
       type: "terminal",
       taskId: running.taskId,
@@ -399,10 +613,32 @@ async function executeTask(
     return state;
   } catch (error) {
     const completedAt = dependencies.now();
-    const message =
-      error instanceof Error ? error.message : "课程任务执行失败。";
+    const classified = toAiErrorPayload(error, running.traceId);
     const currentTask = await dependencies.taskStore.load(running.taskId);
     const currentState = await dependencies.courseStore.load(running.courseId);
+    // 暂停只终止当前进程内的调用，持久化课程仍保持最近一次 running
+    // checkpoint。它不是失败/取消，不写 error/completedAt，也不发 terminal。
+    if (stopIntent() === "pause" || currentTask?.status === "paused") {
+      return currentState;
+    }
+    dependencies.logSink.error({
+      event: "task:error",
+      traceId: running.traceId,
+      taskId: running.taskId,
+      courseId: running.courseId,
+      pageId: currentState?.currentPageId,
+      stage: currentState?.currentStage,
+      errorCode: classified.code,
+      causeCode: toCourseGenerationCauseCode(classified.code),
+      durationMs: durationBetween(running.createdAt, completedAt),
+      completedPages: countCompletedPages(currentState),
+      totalPages: resolveTotalPages(running, currentState),
+      source: running.source,
+      status:
+        controller.signal.aborted || currentTask?.status === "cancelled"
+          ? "cancelled"
+          : "failed",
+    });
 
     // cancel()（或另一执行者）可能已经先完成了“课程终态 -> 任务终态”
     // 的持久化与发布。此处只收敛当前 runner，避免重复 error/terminal。
@@ -430,7 +666,12 @@ async function executeTask(
           status === "cancelled"
             ? "COURSE_TASK_CANCELLED"
             : "COURSE_TASK_EXECUTION_ERROR",
-        message: status === "cancelled" ? "课程生成已取消。" : message,
+        causeCode:
+          status === "cancelled"
+            ? undefined
+            : toCourseGenerationCauseCode(classified.code),
+        message:
+          status === "cancelled" ? "课程生成已取消。" : classified.message,
       },
     );
     const terminalRecord = createTerminalTaskRecord(
@@ -443,6 +684,13 @@ async function executeTask(
       await dependencies.courseStore.save(terminalState);
     }
     await dependencies.taskStore.save(terminalRecord);
+    if (terminalState.status === "failed") {
+      dependencies.logSink.error(
+        createTaskLogEntry("task:failed", running, terminalState, {
+          status: terminalState.status,
+        }),
+      );
+    }
     dependencies.eventBus.publish({
       type: "terminal",
       taskId: running.taskId,
@@ -455,6 +703,94 @@ async function executeTask(
     if (status === "cancelled") return terminalState;
     throw error;
   }
+}
+
+function createTaskLogEntry(
+  event: "task:start" | "task:failed" | "task:completed",
+  record: CourseTaskRecord,
+  state: CourseGenerationState | undefined,
+  overrides: Pick<CourseGenerationLogEntry, "status">,
+): CourseGenerationLogEntry {
+  const latestError = event === "task:failed" ? state?.errors.at(-1) : undefined;
+
+  return {
+    event,
+    traceId: record.traceId,
+    taskId: record.taskId,
+    courseId: record.courseId,
+    pageId: latestError?.pageId,
+    stage: latestError?.stage ?? state?.currentStage,
+    errorCode: latestError?.code,
+    causeCode: latestError?.causeCode,
+    durationMs:
+      event === "task:start"
+        ? undefined
+        : state?.durationMs ??
+          (state?.completedAt
+            ? durationBetween(record.createdAt, state.completedAt)
+            : undefined),
+    completedPages: countCompletedPages(state),
+    totalPages: resolveTotalPages(record, state),
+    source: record.source,
+    status: overrides.status,
+  };
+}
+
+function createPageFailureLogEntry(
+  record: CourseTaskRecord,
+  page: PageGenerationState,
+  state: CourseGenerationState,
+): CourseGenerationLogEntry {
+  const matchingError = [...state.errors]
+    .reverse()
+    .find((error) => error.pageId === page.pageId);
+  const issueCodes = [
+    ...(page.repairHistory?.at(-1)?.issueCodes ?? []),
+    ...(page.qualityReport?.issues.map(({ code }) => code) ?? []),
+  ].filter((code, index, codes) => codes.indexOf(code) === index);
+
+  return {
+    event: "page:failed",
+    traceId: record.traceId,
+    taskId: record.taskId,
+    courseId: record.courseId,
+    pageId: page.pageId,
+    stage: matchingError?.stage ?? page.currentStage,
+    attempt: resolvePageAttempt(page),
+    errorCode: page.error?.code ?? matchingError?.code,
+    causeCode: page.error?.causeCode ?? matchingError?.causeCode,
+    issueCodes: issueCodes.length > 0 ? issueCodes.slice(0, 20) : undefined,
+    durationMs: state.durationMs,
+    completedPages: countCompletedPages(state),
+    totalPages: resolveTotalPages(record, state),
+    source: record.source,
+    status: state.status,
+  };
+}
+
+function resolvePageAttempt(page: PageGenerationState) {
+  if (page.currentStage === "repair") {
+    return page.repairHistory?.at(-1)?.round;
+  }
+
+  return [...(page.attempts ?? [])]
+    .reverse()
+    .find(({ stage }) => stage === page.currentStage)?.attempts;
+}
+
+function countCompletedPages(state: CourseGenerationState | undefined) {
+  return state?.pages.filter(({ status }) => status === "completed").length ?? 0;
+}
+
+function resolveTotalPages(
+  record: CourseTaskRecord,
+  state: CourseGenerationState | undefined,
+) {
+  return state?.intent?.courseLength ?? record.pageCount ?? state?.pages.length;
+}
+
+function durationBetween(startedAt: string, completedAt: string) {
+  return Math.max(0, Date.parse(completedAt) - Date.parse(startedAt));
 }
 
 function createTerminalTaskRecord(
@@ -475,7 +811,11 @@ function createTerminalTaskRecord(
       state.status === "completed"
         ? undefined
         : latestError
-          ? { code: latestError.code, message: latestError.message }
+          ? {
+              code: latestError.code,
+              causeCode: latestError.causeCode,
+              message: latestError.message,
+            }
           : {
               code: "COURSE_TASK_INCOMPLETE",
               message: "课程任务未完成。",
@@ -488,7 +828,11 @@ function createTerminalCourseState(
   existingState: CourseGenerationState | undefined,
   requestedStatus: "failed" | "cancelled",
   timestamp: string,
-  error: { code: string; message: string },
+  error: {
+    code: string;
+    causeCode?: CourseGenerationCauseCode;
+    message: string;
+  },
 ): CourseGenerationState & {
   status: "completed" | "failed" | "cancelled";
 } {
@@ -515,6 +859,7 @@ function createTerminalCourseState(
     stage: base.currentStage,
     pageId: base.currentPageId,
     code: error.code,
+    causeCode: error.causeCode,
     message: error.message,
   };
   const pages =
@@ -525,7 +870,11 @@ function createTerminalCourseState(
                 ...page,
                 status: "failed" as const,
                 currentStage: base.currentStage,
-                error: { code: error.code, message: error.message },
+                error: {
+                  code: error.code,
+                  causeCode: error.causeCode,
+                  message: error.message,
+                },
               }
             : page,
         )
@@ -576,9 +925,42 @@ function shouldPublishSnapshot(
   return events.some(
     ({ type, stage }) =>
       type === "page_done" ||
+      type === "error" ||
       (type === "agent_done" &&
         (stage === "intent" || stage === "planner" || stage === "design")),
   );
+}
+
+function publishTaskSnapshot(
+  eventBus: CourseTaskEventBus,
+  task: CourseTaskRecord,
+  state: CourseGenerationState,
+) {
+  eventBus.publish({
+    type: "snapshot",
+    taskId: task.taskId,
+    courseId: task.courseId,
+    source: task.source,
+    taskStatus: task.status,
+    state,
+  });
+}
+
+function toCourseGenerationCauseCode(
+  code: string,
+): CourseGenerationCauseCode | undefined {
+  switch (code) {
+    case "SCHEMA_ERROR":
+    case "TIMEOUT_ERROR":
+    case "RATE_LIMIT_ERROR":
+    case "QUOTA_ERROR":
+    case "AUTH_ERROR":
+    case "CONFIG_ERROR":
+    case "MODEL_ERROR":
+      return code;
+    default:
+      return undefined;
+  }
 }
 
 function isTerminalStatus(status: CourseTaskRecord["status"]) {
@@ -589,10 +971,6 @@ function isCourseTerminalStatus(
   status: CourseGenerationState["status"],
 ): status is "completed" | "failed" | "cancelled" {
   return status === "completed" || status === "failed" || status === "cancelled";
-}
-
-function isMvpPageCount(value: number): value is CourseMvpPageCount {
-  return value === 3 || value === 4 || value === 5;
 }
 
 export const courseGenerationTaskService =

@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { ReferencePanel } from "../../../src/features/keya/reference-panel";
+import { PagePlanSchema } from "../../../src/shared/course-schema";
 import pagePlan from "../../../src/shared/course-schema/examples/page-plan.example.json";
 
 describe("ReferencePanel", () => {
@@ -34,7 +35,7 @@ describe("ReferencePanel", () => {
           },
         ]}
         pages={[
-          {
+          PagePlanSchema.parse({
             ...pagePlan,
             pageType: "cover",
             interactionType: "navigate",
@@ -42,7 +43,7 @@ describe("ReferencePanel", () => {
             usedReferences: [
               { referencePackId: packId, chunkIds: ["chunk-01"] },
             ],
-          },
+          }),
         ]}
       />,
     );

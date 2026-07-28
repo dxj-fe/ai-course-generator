@@ -83,6 +83,20 @@ export const CourseGenerationEventTypeSchema = z.enum([
 ]);
 
 /**
+ * 跨 Agent、工作流和任务记录保留的稳定根因。
+ * 具体供应商响应和校验详情不得进入面向用户的错误文案。
+ */
+export const CourseGenerationCauseCodeSchema = z.enum([
+  "SCHEMA_ERROR",
+  "TIMEOUT_ERROR",
+  "RATE_LIMIT_ERROR",
+  "QUOTA_ERROR",
+  "AUTH_ERROR",
+  "CONFIG_ERROR",
+  "MODEL_ERROR",
+]);
+
+/**
  * 仅保存可以出现在 Agent Timeline 的结构化公开事件。
  * 故意不接收原生 event data，避免 checkpoint 或 UI 泄露私有上下文。
  */
@@ -107,6 +121,7 @@ export const CourseGenerationErrorSchema = z
     stage: CourseGenerationStageSchema,
     pageId: z.string().min(1).max(80).optional(),
     code: z.string().min(1).max(100),
+    causeCode: CourseGenerationCauseCodeSchema.optional(),
     message: z.string().min(1).max(1_000),
   })
   .strict();
@@ -148,7 +163,7 @@ export const PageGenerationStateSchema = z
     assets: z.array(AssetGenerationResultSchema).max(12),
     htmlOutput: HtmlOutputSchema.optional(),
     qualityReport: QualityReportSchema.optional(),
-    repairHistory: z.array(RepairAttemptRecordSchema).max(2).optional(),
+    repairHistory: z.array(RepairAttemptRecordSchema).max(24).optional(),
     attempts: z.array(PageGenerationAttemptSchema).max(4).optional(),
     error: PageGenerationErrorSchema.optional(),
   })
@@ -275,7 +290,7 @@ export const PageWorkerResultSchema = z
   });
 
 /**
- * 单提示生成 3–5 页课程的持久化 checkpoint。
+ * 单提示生成内容驱动课程的持久化 checkpoint。
  * 允许保存运行中的部分结果；completed 状态则必须具备完整可预览产物。
  */
 export const CourseGenerationStateSchema = z
@@ -291,11 +306,11 @@ export const CourseGenerationStateSchema = z
     intent: CourseIntentSchema.optional(),
     outline: CoursePlanSchema.optional(),
     briefs: CourseDesignBriefsSchema.optional(),
-    pageWorkerBriefs: z.array(PageWorkerBriefSchema).max(5).optional(),
+    pageWorkerBriefs: z.array(PageWorkerBriefSchema).optional(),
     workerConfig: PageWorkerConfigSchema.optional(),
-    pages: z.array(PageGenerationStateSchema).max(5),
-    events: z.array(CourseGenerationPublicEventSchema).max(1_000),
-    errors: z.array(CourseGenerationErrorSchema).max(30),
+    pages: z.array(PageGenerationStateSchema),
+    events: z.array(CourseGenerationPublicEventSchema),
+    errors: z.array(CourseGenerationErrorSchema),
     supervisor: SupervisorRuntimeStateSchema.optional(),
     startedAt: z.string().datetime({ offset: true }),
     updatedAt: z.string().datetime({ offset: true }),
@@ -393,14 +408,6 @@ export const CourseGenerationStateSchema = z
         context.addIssue({
           code: "custom",
           message: "CoursePlan 页数必须与 CourseIntent.courseLength 一致",
-          path: ["outline", "pages"],
-        });
-      }
-
-      if (outlinePageIds.length > 5) {
-        context.addIssue({
-          code: "custom",
-          message: "Day 18 MVP 最多生成 5 个页面",
           path: ["outline", "pages"],
         });
       }
@@ -550,6 +557,9 @@ export type CourseGenerationPublicEvent = z.infer<
 >;
 export type CourseGenerationError = z.infer<
   typeof CourseGenerationErrorSchema
+>;
+export type CourseGenerationCauseCode = z.infer<
+  typeof CourseGenerationCauseCodeSchema
 >;
 export type PageGenerationError = z.infer<typeof PageGenerationErrorSchema>;
 export type PageGenerationAttempt = z.infer<

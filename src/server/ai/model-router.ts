@@ -24,12 +24,16 @@ export type ModelRoute = {
 
 const STRONG_CAPABILITIES = new Set<AiCapability>([
   "html",
+  "intent",
   "page-qa",
+  "page-writer",
+  "pedagogy",
   "planner",
   "repair",
+  "story",
+  "visual",
 ]);
 const CHEAP_CAPABILITIES = new Set<AiCapability>([
-  "intent",
   "reference-summary",
   "supervisor",
   "template-selector",
@@ -57,7 +61,11 @@ export function isRetryableModelError(error: unknown) {
 
   const record = isRecord(error) ? error : undefined;
   const status = readStatus(record);
-  if (status === 429 || (status !== undefined && status >= 500 && status <= 504)) {
+  if (
+    status === 402 ||
+    status === 429 ||
+    (status !== undefined && status >= 500 && status <= 504)
+  ) {
     return true;
   }
 
@@ -73,7 +81,9 @@ export function isRetryableModelError(error: unknown) {
     name.includes("timeout") ||
     message.includes("timed out") ||
     message.includes("timeout") ||
-    message.includes("rate limit")
+    message.includes("rate limit") ||
+    message.includes("insufficient_quota") ||
+    message.includes("quota exceeded")
   );
 }
 

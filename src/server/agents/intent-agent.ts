@@ -24,7 +24,7 @@ export async function generateCourseIntent({
     cache: {
       input: { userPrompt },
       namespace: "course-intent",
-      schemaVersion: "course-intent@1",
+      schemaVersion: "course-intent@2",
     },
     capability: "intent",
     maxTokens: 900,

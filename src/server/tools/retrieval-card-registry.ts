@@ -73,7 +73,7 @@ const skillCards = [
     agentNames: ["planner"],
     whenToUse: ["课程意图已校验但尚无页面规划时"],
     inputSchemaSummary: "CourseIntent、模板 Card 和可选 Reference Hit。",
-    outputSummary: "3–12 页 CoursePlan 和页面级资料引用。",
+    outputSummary: "与 CourseIntent 章节数一致的 CoursePlan 和页面级资料引用。",
     limitations: ["不生成页面正文", "不能编造模板或资料 ID"],
     keywords: ["规划", "页面", "课程", "模板", "资料"],
   },
@@ -93,12 +93,12 @@ const skillCards = [
     kind: "skill",
     id: "run-page-worker",
     name: "页面工作流执行",
-    description: "按 Writer、Assets、HTML、QA 和有限 Repair 顺序生成页面。",
+    description: "按 Writer、Assets、HTML、QA 和质量优先 Repair 顺序生成页面。",
     agentNames: ["page-worker"],
     whenToUse: ["页面依赖满足且页面尚未完成时"],
     inputSchemaSummary: "页面计划、专业 brief、课程状态和引用授权。",
     outputSummary: "页面 DSL、素材、HTML、QA 报告及修订记录。",
-    limitations: ["必须遵守页面级预算", "页面状态只能通过运行层合并"],
+    limitations: ["必须遵守安全熔断", "页面状态只能通过运行层合并"],
     keywords: ["页面", "worker", "dsl", "html", "qa"],
   },
   {
@@ -153,12 +153,12 @@ const skillCards = [
     kind: "skill",
     id: "repair-page",
     name: "页面定向修订",
-    description: "根据可定位 QA 问题对 DSL 或 HTML 进行有限修订。",
+    description: "根据可定位 QA 问题对 DSL 或 HTML 进行质量优先修订。",
     agentNames: ["repair"],
-    whenToUse: ["QualityReport 要求修订且仍有 Repair 预算时"],
+    whenToUse: ["QualityReport 要求修订且未触发安全熔断时"],
     inputSchemaSummary: "RepairRequest、当前页面产物和可定位问题。",
     outputSummary: "限定范围的修订候选或结构化拒绝。",
-    limitations: ["最多两轮", "必须重新校验并执行 re-QA"],
+    limitations: ["连续无进展会安全熔断", "必须重新校验并执行 re-QA"],
     keywords: ["repair", "修订", "qa", "dsl", "html"],
   },
 ] satisfies SkillCard[];
@@ -167,10 +167,6 @@ const parsedToolCards = ToolCardSchema.array().parse(toolCards);
 const parsedSkillCards = SkillCardSchema.array().parse(skillCards);
 
 validateUniqueIds([...parsedToolCards, ...parsedSkillCards]);
-
-export function listToolCards(): readonly ToolCard[] {
-  return parsedToolCards;
-}
 
 export function listSkillCards(): readonly SkillCard[] {
   return parsedSkillCards;

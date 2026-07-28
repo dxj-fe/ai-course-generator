@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   CourseGenerationPublicEventSchema,
+  CourseTaskControlRequestSchema,
+  CourseTaskControlResponseSchema,
   CourseTaskCreateResponseSchema,
   CourseTaskRecordSchema,
   CourseTaskStreamMessageSchema,
@@ -95,6 +97,24 @@ describe("Day 19 course task protocol", () => {
     });
   });
 
+  it("keeps pause as a non-terminal task control state", () => {
+    expect(
+      CourseTaskControlRequestSchema.parse({ action: "pause" }),
+    ).toEqual({ action: "pause" });
+    expect(
+      CourseTaskControlResponseSchema.parse({
+        taskId: "task-day-19",
+        courseId: "course-day-19",
+        traceId: "trace-day-19-resumed",
+        status: "paused",
+        source: "langgraph",
+      }),
+    ).toMatchObject({
+      status: "paused",
+      traceId: "trace-day-19-resumed",
+    });
+  });
+
   it("accepts snapshot, public event, and matching terminal messages", () => {
     const state = runningState();
     const event = publicEvent("agent_start");
@@ -106,6 +126,7 @@ describe("Day 19 course task protocol", () => {
         taskId: "task-day-19",
         courseId: state.courseId,
         source: "langgraph",
+        taskStatus: "paused",
         state,
       }).type,
     ).toBe("snapshot");

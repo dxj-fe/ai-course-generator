@@ -22,7 +22,7 @@ describe("Repair schemas", () => {
       pageId: pageContentDsl.pageId,
       targetArtifact: "html",
       round: 1,
-      maxRounds: 2,
+      maxRounds: 24,
       sourceReport: report,
       issueCodes: ["LAYOUT_OVERFLOW"],
       allowedBlockIds: [],
@@ -51,6 +51,31 @@ describe("Repair schemas", () => {
 
     expect(request.round).toBe(1);
     expect(result.kind).toBe("html_patch_candidate");
+  });
+
+  it("accepts later attempts and optional persisted quality progress", () => {
+    const report = qualityReportWithIssue({
+      code: "LAYOUT_OVERFLOW",
+      dimension: "layoutQuality",
+      selector: "style",
+    });
+
+    expect(
+      RepairRequestSchema.safeParse({
+        pageId: pageContentDsl.pageId,
+        targetArtifact: "html",
+        round: 4,
+        maxRounds: 24,
+        sourceReport: report,
+        issueCodes: ["LAYOUT_OVERFLOW"],
+        allowedBlockIds: [],
+        allowedSelectors: ["style"],
+        content: pageContentDsl,
+        html: buildValidGeneratedHtml(pageContentDsl),
+        visualBrief,
+        assets: [],
+      }).success,
+    ).toBe(true);
   });
 
   it("requires a selector for tag-boundary insertion patches", () => {
@@ -84,7 +109,7 @@ describe("Repair schemas", () => {
       pageId: pageContentDsl.pageId,
       targetArtifact: "dsl" as const,
       round: 1,
-      maxRounds: 2,
+      maxRounds: 24,
       sourceReport: report,
       allowedBlockIds: ["block-01"],
       allowedSelectors: [],
@@ -104,5 +129,13 @@ describe("Repair schemas", () => {
         allowedBlockIds: [],
       }).success,
     ).toBe(false);
+    expect(
+      RepairRequestSchema.safeParse({
+        ...base,
+        issueCodes: ["CONTENT_FACT"],
+        allowedBlockIds: [],
+        allowedContentFields: ["narration"],
+      }).success,
+    ).toBe(true);
   });
 });

@@ -115,6 +115,7 @@ function projectConversation(
     id: conversation.id,
     title: conversation.title,
     pinned: conversation.pinned,
+    taskStatus: task?.status,
     messages: conversation.messages,
     courseRun: course
       ? courseGenerationToKeyaRun(

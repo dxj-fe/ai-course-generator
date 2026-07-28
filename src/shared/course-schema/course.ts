@@ -38,7 +38,7 @@ export const CourseOutlineSchema = z
   .object({
     overview: z.string().min(5).max(500),
     learningObjectives: z.array(z.string().min(5).max(300)).min(1).max(12),
-    pages: z.array(PagePlanSchema).min(1).max(30),
+    pages: z.array(PagePlanSchema).min(1),
   })
   .superRefine((outline, context) => {
     const pageIds = new Set<string>();
@@ -103,8 +103,8 @@ export const CourseSchema = z
     status: CourseStatusSchema,
     outline: CourseOutlineSchema,
     theme: ThemeSchema,
-    assets: z.array(AssetSchema).max(100),
-    qualityReports: z.array(QualityReportSchema).max(100),
+    assets: z.array(AssetSchema),
+    qualityReports: z.array(QualityReportSchema),
     createdAt: z.string().datetime({ offset: true }),
     updatedAt: z.string().datetime({ offset: true }),
   })

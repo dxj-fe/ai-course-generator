@@ -71,7 +71,10 @@ describe("course design workflow", () => {
 
     expect(result.status).toBe("failed");
     expect(result.error?.agent).toBe("pedagogy");
-    expect(result.error?.message).toContain("pedagogy unavailable");
+    expect(result.error).toMatchObject({
+      code: "MODEL_ERROR",
+      message: "模型服务未返回有效结果，请稍后重试。",
+    });
     expect(runStory).not.toHaveBeenCalled();
     expect(runVisual).not.toHaveBeenCalled();
   });

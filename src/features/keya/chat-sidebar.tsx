@@ -1,20 +1,33 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ArrowLeft as ArrowLeftIcon,
   ChevronDown as ChevronDownIcon,
   ChevronLeft as ChevronLeftIcon,
+  CirclePause as PausedIcon,
   Clock as ClockIcon,
   Ellipsis as MoreIcon,
+  LoaderCircle as GeneratingIcon,
   MessageCircleMore as MessageIcon,
+  Pencil as RenameIcon,
   Pin as PinIcon,
+  PinOff as UnpinIcon,
   Plus as PlusIcon,
   Search as SearchIcon,
+  Sprout,
+  Trash2 as DeleteIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import type { KeyaConversation } from "@/types/keya";
 
@@ -25,6 +38,9 @@ interface ChatSidebarProps {
   onToggleCollapsed(): void;
   onSelectConversation(id: string): void;
   onNewConversation(): void;
+  onDeleteConversation(id: string): void;
+  onRenameConversation(id: string, title: string): void;
+  onTogglePinned(id: string, pinned: boolean): void;
   inert?: boolean;
   mobileOpen?: boolean;
   onCloseMobile?(): void;
@@ -35,6 +51,14 @@ interface ConversationRowsProps {
   collapsed: boolean;
   selectedConversationId: string | null;
   onSelectConversation(id: string): void;
+  onBeginRename(conversation: KeyaConversation): void;
+  onDeleteConversation(id: string): void;
+  onTogglePinned(id: string, pinned: boolean): void;
+  editingConversationId: string | null;
+  renameDraft: string;
+  onRenameDraftChange(value: string): void;
+  onRenameCancel(): void;
+  onRenameSubmit(conversation: KeyaConversation): void;
   onCloseMobile?(): void;
 }
 
@@ -45,14 +69,27 @@ const controlClass = `group flex h-9 w-[259px] items-center justify-start gap-3 
 function ConversationRows({
   conversations,
   collapsed,
+  editingConversationId,
+  onBeginRename,
+  onDeleteConversation,
+  onRenameCancel,
+  onRenameDraftChange,
+  onRenameSubmit,
   selectedConversationId,
   onSelectConversation,
+  onTogglePinned,
+  renameDraft,
   onCloseMobile,
 }: ConversationRowsProps) {
   return (
     <div className="pt-0.5">
       {conversations.map((conversation) => {
         const selected = conversation.id === selectedConversationId;
+        const editing = conversation.id === editingConversationId;
+        const generating =
+          conversation.taskStatus === "queued" ||
+          conversation.taskStatus === "running";
+        const paused = conversation.taskStatus === "paused";
 
         return (
           <div
@@ -61,51 +98,152 @@ function ConversationRows({
             }`}
             key={conversation.id}
           >
-            <Button
-              aria-current={selected ? "page" : undefined}
-              className={`flex h-full w-full items-center justify-start gap-3 rounded-lg border-0 bg-transparent px-2 pr-[39px] text-left font-normal hover:bg-transparent ${focusRing}`}
-              onClick={() => {
-                onSelectConversation(conversation.id);
-                onCloseMobile?.();
-              }}
-              type="button"
-              variant="ghost"
-            >
-              <MessageIcon
-                aria-hidden="true"
-                className="shrink-0 text-[#3f4a40]"
-                size={18}
-                strokeWidth={1.7}
-              />
-              <span
-                className={`min-w-0 flex-1 truncate text-base font-normal leading-6 text-[#2d332b] transition-opacity duration-150 ${
-                  collapsed ? "opacity-0" : "opacity-100"
-                }`}
+            {editing ? (
+              <form
+                aria-label={`重命名对话：${conversation.title}`}
+                className="flex h-full w-full items-center gap-2 px-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  onRenameSubmit(conversation);
+                }}
               >
-                {conversation.title}
-              </span>
-            </Button>
-            <Button
-              aria-label="更多操作"
-              className={`absolute right-[7px] top-1/2 flex size-[22px] -translate-y-1/2 items-center justify-center rounded-md border-0 bg-transparent p-0 text-[#7a7468] transition-opacity duration-150 hover:bg-[rgba(91,76,59,0.1)] ${focusRing} ${
-                collapsed
-                  ? "pointer-events-none opacity-0"
-                  : selected
-                    ? "opacity-100"
-                    : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-              }`}
-              onClick={(event) => event.stopPropagation()}
-              size="icon-xs"
-              title={`${conversation.title} · 更多操作`}
-              type="button"
-              variant="ghost"
-            >
-              <MoreIcon
-                aria-hidden="true"
-                size={18}
-                strokeWidth={1.7}
-              />
-            </Button>
+                <RenameIcon
+                  aria-hidden="true"
+                  className="size-[17px] shrink-0 text-[#397a52]"
+                  strokeWidth={1.7}
+                />
+                <Input
+                  aria-label="新的对话名称"
+                  autoFocus
+                  className="h-7 min-w-0 flex-1 rounded-md border-[#d9cfbf] bg-[#fffcf5] px-2 text-sm text-[#2d332b] focus-visible:border-[#397a52] focus-visible:ring-1 focus-visible:ring-[#397a52]"
+                  maxLength={160}
+                  onBlur={() => onRenameSubmit(conversation)}
+                  onChange={(event) =>
+                    onRenameDraftChange(event.currentTarget.value)
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      onRenameCancel();
+                    }
+                  }}
+                  value={renameDraft}
+                />
+              </form>
+            ) : (
+              <>
+                <Button
+                  aria-current={selected ? "page" : undefined}
+                  className={`flex h-full w-full items-center justify-start gap-3 rounded-lg border-0 bg-transparent px-2 pr-[39px] text-left font-normal hover:bg-transparent ${focusRing}`}
+                  onClick={() => {
+                    onSelectConversation(conversation.id);
+                    onCloseMobile?.();
+                  }}
+                  type="button"
+                  variant="ghost"
+                >
+                  {generating ? (
+                    <GeneratingIcon
+                      aria-hidden="true"
+                      className="size-[18px] shrink-0 animate-spin text-[#397a52] motion-reduce:animate-none"
+                      strokeWidth={1.8}
+                    />
+                  ) : paused ? (
+                    <PausedIcon
+                      aria-hidden="true"
+                      className="size-[18px] shrink-0 text-[#a27634]"
+                      strokeWidth={1.7}
+                    />
+                  ) : (
+                    <MessageIcon
+                      aria-hidden="true"
+                      className="shrink-0 text-[#3f4a40]"
+                      size={18}
+                      strokeWidth={1.7}
+                    />
+                  )}
+                  <span
+                    className={`flex min-w-0 flex-1 items-center gap-2 text-base leading-6 transition-opacity duration-150 ${
+                      collapsed ? "opacity-0" : "opacity-100"
+                    } ${generating ? "font-medium text-[#2f6845]" : "font-normal text-[#2d332b]"}`}
+                  >
+                    <span className="min-w-0 flex-1 truncate">
+                      {conversation.title}
+                    </span>
+                    {generating ? (
+                      <span className="shrink-0 text-[10px] leading-4 font-medium text-[#397a52]">
+                        生成中
+                      </span>
+                    ) : paused ? (
+                      <span className="shrink-0 text-[10px] leading-4 font-medium text-[#946f32]">
+                        已暂停
+                      </span>
+                    ) : null}
+                  </span>
+                </Button>
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      aria-label={`${conversation.title} · 更多操作`}
+                      className={`absolute top-1/2 right-[7px] flex size-[22px] -translate-y-1/2 items-center justify-center rounded-md border-0 bg-transparent p-0 text-[#7a7468] transition-opacity duration-150 hover:bg-[rgba(91,76,59,0.1)] ${focusRing} ${
+                        collapsed
+                          ? "pointer-events-none opacity-0"
+                          : selected
+                            ? "opacity-100"
+                            : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100"
+                      }`}
+                      size="icon-xs"
+                      title={`${conversation.title} · 更多操作`}
+                      type="button"
+                      variant="ghost"
+                    >
+                      <MoreIcon
+                        aria-hidden="true"
+                        size={18}
+                        strokeWidth={1.7}
+                      />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="end"
+                    className="w-[172px] rounded-xl border border-[#e8dfd0] bg-[#fffcf5] p-1.5 text-[#3f3428] shadow-[0_12px_32px_rgba(63,52,40,0.14)]"
+                    side="bottom"
+                    sideOffset={4}
+                  >
+                    <DropdownMenuItem
+                      className="h-9 gap-2.5 rounded-lg px-2.5 text-sm focus:bg-[#f3ede4]"
+                      onSelect={() =>
+                        onTogglePinned(conversation.id, !conversation.pinned)
+                      }
+                    >
+                      {conversation.pinned ? (
+                        <UnpinIcon aria-hidden="true" className="size-4" />
+                      ) : (
+                        <PinIcon aria-hidden="true" className="size-4" />
+                      )}
+                      {conversation.pinned ? "取消置顶" : "置顶对话"}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="h-9 gap-2.5 rounded-lg px-2.5 text-sm focus:bg-[#f3ede4]"
+                      onSelect={() => onBeginRename(conversation)}
+                    >
+                      <RenameIcon aria-hidden="true" className="size-4" />
+                      重命名
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator className="mx-1 bg-[#eee5d7]" />
+                    <DropdownMenuItem
+                      className="h-9 gap-2.5 rounded-lg px-2.5 text-sm"
+                      onSelect={() => onDeleteConversation(conversation.id)}
+                      variant="destructive"
+                    >
+                      <DeleteIcon aria-hidden="true" className="size-4" />
+                      删除对话
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </>
+            )}
           </div>
         );
       })}
@@ -120,13 +258,23 @@ export function ChatSidebar({
   onToggleCollapsed,
   onSelectConversation,
   onNewConversation,
+  onDeleteConversation,
+  onRenameConversation,
+  onTogglePinned,
   inert = false,
   mobileOpen,
   onCloseMobile,
 }: ChatSidebarProps) {
   const [query, setQuery] = useState("");
-  const [pinnedOpen, setPinnedOpen] = useState(false);
+  const [pinnedOpen, setPinnedOpen] = useState(() =>
+    conversations.some(({ pinned }) => pinned),
+  );
   const [historyOpen, setHistoryOpen] = useState(true);
+  const [editingConversationId, setEditingConversationId] = useState<
+    string | null
+  >(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const renameSubmittingRef = useRef(false);
 
   const filteredConversations = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -140,6 +288,31 @@ export function ChatSidebar({
   const pinnedConversations = filteredConversations.filter(
     (conversation) => conversation.pinned,
   );
+  const historyConversations = filteredConversations.filter(
+    (conversation) => !conversation.pinned,
+  );
+  const beginRename = (conversation: KeyaConversation) => {
+    renameSubmittingRef.current = false;
+    setEditingConversationId(conversation.id);
+    setRenameDraft(conversation.title);
+  };
+  const finishRename = () => {
+    setEditingConversationId(null);
+    setRenameDraft("");
+  };
+  const cancelRename = () => {
+    renameSubmittingRef.current = true;
+    finishRename();
+  };
+  const submitRename = (conversation: KeyaConversation) => {
+    if (renameSubmittingRef.current) return;
+    renameSubmittingRef.current = true;
+    const title = renameDraft.trim();
+    if (title && title !== conversation.title) {
+      onRenameConversation(conversation.id, title);
+    }
+    finishRename();
+  };
   const railWidth = collapsed ? 60.5625 : 300;
   const mobileTransform =
     mobileOpen === false
@@ -172,7 +345,25 @@ export function ChatSidebar({
         >
           <div className="absolute left-5 top-3.5">
             <Link
-              className={`flex h-9 w-max items-center gap-3 rounded-lg px-2 text-base leading-6 text-[#3f4a40] transition-colors duration-150 hover:bg-[rgba(91,76,59,0.07)] ${focusRing}`}
+              aria-label="返回课芽首页"
+              className={`flex h-10 w-max items-center gap-3 rounded-lg px-2 text-lg font-semibold leading-6 text-foreground transition-colors duration-150 hover:bg-[rgba(91,76,59,0.07)] ${focusRing}`}
+              href="/"
+              onClick={onCloseMobile}
+            >
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-white">
+                <Sprout aria-hidden="true" size={16} strokeWidth={2} />
+              </span>
+              <span
+                className={`whitespace-nowrap transition-opacity duration-150 ${
+                  collapsed ? "opacity-0" : "opacity-100"
+                }`}
+              >
+                课芽
+              </span>
+            </Link>
+
+            <Link
+              className={`mt-4 flex h-9 w-max items-center gap-3 rounded-lg px-2 text-base leading-6 text-[#3f4a40] transition-colors duration-150 hover:bg-[rgba(91,76,59,0.07)] ${focusRing}`}
               href="/"
               onClick={onCloseMobile}
             >
@@ -192,7 +383,7 @@ export function ChatSidebar({
             </Link>
 
             <Button
-              className={`${controlClass} mt-[18px] bg-[#f3ede4] text-[#2d332b]`}
+              className={`${controlClass} mt-4 bg-[#f3ede4] text-[#2d332b]`}
               onClick={() => {
                 onNewConversation();
                 onCloseMobile?.();
@@ -270,8 +461,19 @@ export function ChatSidebar({
               <ConversationRows
                 collapsed={collapsed}
                 conversations={pinnedConversations}
+                editingConversationId={editingConversationId}
+                onBeginRename={beginRename}
                 onCloseMobile={onCloseMobile}
+                onDeleteConversation={onDeleteConversation}
+                onRenameCancel={cancelRename}
+                onRenameDraftChange={setRenameDraft}
+                onRenameSubmit={submitRename}
                 onSelectConversation={onSelectConversation}
+                onTogglePinned={(id, pinned) => {
+                  setPinnedOpen(true);
+                  onTogglePinned(id, pinned);
+                }}
+                renameDraft={renameDraft}
                 selectedConversationId={selectedConversationId}
               />
             ) : null}
@@ -309,9 +511,20 @@ export function ChatSidebar({
             {historyOpen ? (
               <ConversationRows
                 collapsed={collapsed}
-                conversations={filteredConversations}
+                conversations={historyConversations}
+                editingConversationId={editingConversationId}
+                onBeginRename={beginRename}
                 onCloseMobile={onCloseMobile}
+                onDeleteConversation={onDeleteConversation}
+                onRenameCancel={cancelRename}
+                onRenameDraftChange={setRenameDraft}
+                onRenameSubmit={submitRename}
                 onSelectConversation={onSelectConversation}
+                onTogglePinned={(id, pinned) => {
+                  setPinnedOpen(true);
+                  onTogglePinned(id, pinned);
+                }}
+                renameDraft={renameDraft}
                 selectedConversationId={selectedConversationId}
               />
             ) : null}

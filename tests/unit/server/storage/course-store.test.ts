@@ -106,7 +106,10 @@ describe("course store", () => {
   it("rejects an invalid checkpoint before writing it", async () => {
     const store = createCourseStore({ rootDir: await temporaryRoot() });
     await expect(
-      store.save({ ...runningState(), version: 2 } as CourseGenerationState),
+      store.save({
+        ...runningState(),
+        version: 2,
+      } as unknown as CourseGenerationState),
     ).rejects.toThrow();
     await expect(store.list()).resolves.toEqual({
       items: [],

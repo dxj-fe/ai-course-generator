@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  deleteStoredConversation,
   saveConversation,
   updateStoredConversation,
 } from "../../../src/features/course-planner/lib/conversation-api";
@@ -56,5 +57,24 @@ describe("conversation API client", () => {
         },
       }),
     ).rejects.toThrow();
+  });
+
+  it("deletes a conversation through the typed endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ id: record.id, deleted: true }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(deleteStoredConversation(record.id)).resolves.toEqual({
+      id: record.id,
+      deleted: true,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/conversations/${record.id}`,
+      { method: "DELETE", signal: undefined },
+    );
   });
 });

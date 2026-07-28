@@ -27,7 +27,7 @@ export const StoryArcSchema = z
     learnerRole: z.string().min(2).max(200),
     mission: z.string().min(5).max(300),
     characters: z.array(StoryCharacterSchema).max(6),
-    pageBeats: z.array(StoryPageBeatSchema).min(1).max(12),
+    pageBeats: z.array(StoryPageBeatSchema).min(1),
     tone: z.string().min(2).max(160),
     continuityRules: z.array(z.string().min(2).max(240)).min(1).max(10),
   })

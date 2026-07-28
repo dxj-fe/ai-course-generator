@@ -16,6 +16,19 @@ export const PAGE_QUALITY_WEIGHTS = {
   assetUsability: 0.08,
 } as const satisfies Record<QualityDimensionName, number>;
 
+/**
+ * 质量优先阶段的发布门槛。成本与轮次不参与是否通过的判断；任何维度低于
+ * 门槛都应进入可定位的定向修订。
+ */
+export const PAGE_QUALITY_THRESHOLDS = {
+  contentAccuracy: 88,
+  courseCoherence: 88,
+  layoutQuality: 82,
+  styleConsistency: 82,
+  htmlRuntime: 92,
+  assetUsability: 80,
+} as const satisfies Record<QualityDimensionName, number>;
+
 type QualityDimensions = Record<
   QualityDimensionName,
   Pick<QualityDimension, "score" | "summary">
@@ -40,13 +53,24 @@ export function buildPageQualityReport(input: {
   modelIssues: QualityIssue[];
   browserIssues?: QualityIssue[];
   screenshotEvidence?: QualityScreenshotEvidence;
+  requireScreenshotEvidence?: boolean;
   id?: string;
   createdAt?: string;
 }): QualityReport {
+  const browserIssueCodes = new Set(
+    (input.browserIssues ?? []).map(({ code }) => code),
+  );
   const issues = dedupeIssues([
     ...input.heuristicIssues,
+    ...screenshotGateIssues(input),
     ...(input.browserIssues ?? []),
-    ...input.modelIssues,
+    ...input.modelIssues.filter(
+      ({ code }) =>
+        !(
+          isBrowserOwnedIssueCode(code) &&
+          browserIssueCodes.has(code)
+        ),
+    ),
   ])
     .sort(compareQualityIssues)
     .slice(0, 50);
@@ -63,9 +87,10 @@ export function buildPageQualityReport(input: {
   );
   const shouldRepair =
     issues.some(({ severity }) => severity === "error") ||
-    dimensions.contentAccuracy.score < 85 ||
-    dimensions.layoutQuality.score < 75 ||
-    dimensions.htmlRuntime.score < 90;
+    (Object.keys(PAGE_QUALITY_THRESHOLDS) as QualityDimensionName[]).some(
+      (dimension) =>
+        dimensions[dimension].score < PAGE_QUALITY_THRESHOLDS[dimension],
+    );
   const hardFailure =
     dimensions.contentAccuracy.score < 50 ||
     issues.some(
@@ -85,6 +110,60 @@ export function buildPageQualityReport(input: {
     decision: hardFailure ? "fail" : shouldRepair ? "revise" : "pass",
     createdAt: input.createdAt ?? new Date().toISOString(),
   });
+}
+
+function isBrowserOwnedIssueCode(code: string) {
+  return code.startsWith("BROWSER_") || code.startsWith("SCREENSHOT_");
+}
+
+function screenshotGateIssues(input: {
+  pageId: string;
+  screenshotEvidence?: QualityScreenshotEvidence;
+  requireScreenshotEvidence?: boolean;
+}): QualityIssue[] {
+  if (input.requireScreenshotEvidence === false) return [];
+  const evidence = input.screenshotEvidence;
+  if (!evidence) {
+    return [
+      {
+        code: "SCREENSHOT_EVIDENCE_MISSING",
+        dimension: "layoutQuality",
+        severity: "error",
+        source: "browser",
+        message: "页面缺少强制截图证据，不能通过质量闸门。",
+        location: {
+          pageId: input.pageId,
+          description: "页面视觉质量闸门",
+        },
+        repairHint: "在真实播放器、平板和移动视口完成截图后重新运行 QA。",
+      },
+    ];
+  }
+
+  const captures = evidence.captures ?? [evidence];
+  return captures.flatMap((capture) =>
+    capture.status === "captured"
+      ? []
+      : [
+          {
+            code:
+              capture.status === "skipped"
+                ? "SCREENSHOT_CAPTURE_SKIPPED"
+                : "SCREENSHOT_CAPTURE_FAILED",
+            dimension: "layoutQuality" as const,
+            severity: "error" as const,
+            source: "browser" as const,
+            message: `截图证据${capture.status === "skipped" ? "被跳过" : "采集失败"}，当前页面不能通过。`,
+            location: {
+              pageId: input.pageId,
+              viewport: `${capture.viewport.width}x${capture.viewport.height}`,
+              description: "强制截图质量证据",
+            },
+            repairHint:
+              "恢复 Playwright 与截图存储后，在全部要求视口重新采集并复验。",
+          },
+        ],
+  );
 }
 
 function applyIssueCaps(

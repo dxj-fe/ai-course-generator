@@ -16,7 +16,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     ],
     system: {
       name: "course-planner-system",
-      version: "2.2.0",
+      version: "2.4.0",
       role: "system",
       inputContract: [
         "已校验的 CourseIntent、功能模板 ID allowlist、相关 Template Cards 和 Reference Hits。",
@@ -44,7 +44,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     templateVariables: ["courseIntentJson", "coursePlanJson"],
     system: {
       name: "pedagogy-system",
-      version: "2.0.1",
+      version: "2.0.2",
       role: "system",
       inputContract: ["已校验的 CourseIntent 和 CoursePlan。"],
       outputContract: ["只返回 PedagogyPlan 内容草稿 JSON。"],
@@ -134,22 +134,23 @@ export const SPECIALIST_PROMPT_LIBRARY = [
       "pageWorkerBriefJson",
       "functionalTemplateJson",
       "referenceContextJson",
+      "validationFeedbackJson",
     ],
     system: {
       name: "page-writer-system",
-      version: "2.1.1",
+      version: "2.3.0",
       role: "system",
       inputContract: [
         "已校验的 CourseIntent、单页 PagePlan、同页 PageWorkerBrief 和唯一 FunctionalTemplate。",
       ],
       outputContract: [
-        "只返回单页内容语义草稿；技术 ID 和素材槽由代码补齐。",
+        "只返回直接满足本页 learningObjective 的内容语义草稿；技术 ID 和素材槽由代码补齐。",
       ],
       fileName: "page-writer.system.v2.md",
     },
     user: {
       name: "page-writer-user",
-      version: "2.1.0",
+      version: "2.2.0",
       role: "user",
       inputContract: ["四项单页输入的序列化 JSON。"],
       outputContract: ["返回 PageContentDSL 内容草稿 JSON object 本身。"],
@@ -165,7 +166,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     templateVariables: ["imagePromptInputJson"],
     system: {
       name: "image-prompt-system",
-      version: "2.0.0",
+      version: "2.1.0",
       role: "system",
       inputContract: [
         "已校验的 PageContentDSL 素材槽、当前页视觉指导和 StyleTemplate。",
@@ -202,7 +203,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     ],
     system: {
       name: "html-engineer-system",
-      version: "2.1.1",
+      version: "2.4.0",
       role: "system",
       inputContract: [
         "只接收 DSL、服务端模板、视觉指导和已校验素材；不接收原始用户 Prompt。",
@@ -214,7 +215,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     },
     user: {
       name: "html-engineer-user",
-      version: "2.1.0",
+      version: "2.2.0",
       role: "user",
       inputContract: ["全部变量必须来自服务端已校验数据。"],
       outputContract: ["只返回完整 HTML 文档，不返回 Markdown 或解释。"],
@@ -230,7 +231,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     templateVariables: ["pageQaInputJson"],
     system: {
       name: "page-qa-system",
-      version: "2.1.3",
+      version: "2.3.0",
       role: "system",
       inputContract: [
         "已校验的页面计划、DSL、HTML、课程上下文、brief、素材及静态/浏览器证据。",
@@ -258,10 +259,10 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     templateVariables: ["repairInputJson"],
     system: {
       name: "repair-system",
-      version: "1.0.3",
+      version: "1.4.0",
       role: "system",
       inputContract: [
-        "只接收原始页面产物、已校验 QualityReport、限定目标和两轮 repair budget。",
+        "只接收原始页面产物、已校验 QualityReport、限定目标和当前修订尝试序号。",
       ],
       outputContract: [
         "返回定向修复候选及已处理 issue 引用；必须经过同一合同和 re-QA。",
@@ -270,9 +271,11 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     },
     user: {
       name: "repair-user",
-      version: "1.0.0",
+      version: "1.0.1",
       role: "user",
-      inputContract: ["经过 RepairRequestSchema 校验的单页输入 JSON。"],
+      inputContract: [
+        "由 RepairRequestSchema 生成、仅保留本轮授权 issues 的单页输入投影。",
+      ],
       outputContract: ["返回 RepairResultSchema 修复候选或结构化拒绝。"],
       fileName: "repair.user.v1.md",
     },

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   decideCourseGraphSupervisor,
+  resolveCourseGraphSupervisorDecisionLimit,
   routeBySupervisor,
 } from "../../../../src/server/langgraph/course-generation/supervisor-routing";
 import type { CourseGenerationState } from "../../../../src/shared/course-schema";
@@ -51,17 +52,41 @@ describe("LangGraph Supervisor routing", () => {
     ).toBe("mark-failed-node");
   });
 
-  it("routes a failing QA report to Repair and stops after its budget", () => {
+  it("routes quality iteration four and stops only at the emergency guard", () => {
     const repairable = pageRoutingState({ repairRounds: 0 });
     expect(decideCourseGraphSupervisor(repairable)).toMatchObject({
       action: "run",
       nextNode: { nodeName: "repair", pageId: "page-01" },
     });
 
-    const exhausted = pageRoutingState({ repairRounds: 2 });
+    const fourth = pageRoutingState({ repairRounds: 3 });
+    expect(decideCourseGraphSupervisor(fourth)).toMatchObject({
+      action: "run",
+      nextNode: { nodeName: "repair", pageId: "page-01" },
+    });
+
+    const exhausted = pageRoutingState({ repairRounds: 24 });
     expect(decideCourseGraphSupervisor(exhausted)).toMatchObject({
       action: "stop",
-      stopReason: { code: "retry_exhausted" },
+      stopReason: { code: "decision_limit" },
+    });
+  });
+
+  it("does not automatically restart a page stopped by quality stagnation", () => {
+    const state = pageRoutingState({ repairRounds: 3 });
+    state.pages[0] = {
+      ...state.pages[0]!,
+      status: "failed",
+      currentStage: "repair",
+      error: {
+        code: "QUALITY_STALLED",
+        message: "连续三次没有改善。",
+      },
+    };
+
+    expect(decideCourseGraphSupervisor(state)).toMatchObject({
+      action: "stop",
+      stopReason: { code: "non_retryable_error" },
     });
   });
 
@@ -125,6 +150,22 @@ describe("LangGraph Supervisor routing", () => {
       expect(decision.stopReason.message).toContain("Page Writer 输出失败");
     }
   });
+
+  it("scales the loop guard with the planned course length", () => {
+    const shortCourse = {
+      ...pageRoutingState({ repairRounds: 0 }),
+      intent: { courseLength: 3 },
+    } as CourseGenerationState;
+    const longCourse = {
+      ...pageRoutingState({ repairRounds: 0 }),
+      intent: { courseLength: 120 },
+    } as CourseGenerationState;
+
+    expect(resolveCourseGraphSupervisorDecisionLimit(shortCourse)).toBe(320);
+    expect(resolveCourseGraphSupervisorDecisionLimit(longCourse)).toBeGreaterThan(
+      320,
+    );
+  });
 });
 
 function stateWithDecision(
@@ -134,7 +175,7 @@ function stateWithDecision(
 ) {
   return {
     supervisor: { decisionCount: 1, attempts: [], lastDecision: decision },
-  } as CourseGenerationState;
+  } as unknown as CourseGenerationState;
 }
 
 function pageRoutingState({ repairRounds }: { repairRounds: number }) {
@@ -160,7 +201,7 @@ function pageRoutingState({ repairRounds }: { repairRounds: number }) {
       },
     ],
     supervisor: { decisionCount: 0, attempts: [] },
-  } as CourseGenerationState;
+  } as unknown as CourseGenerationState;
 }
 
 function failedPageRoutingState({

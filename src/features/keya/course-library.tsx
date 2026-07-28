@@ -17,6 +17,7 @@ import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CourseCoverFrame } from "@/features/keya/course-cover-frame";
 import {
   NativeSelect,
   NativeSelectOption,
@@ -40,7 +41,6 @@ const statusCopy = {
 export function CourseLibrary() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<CourseHistoryFilters["status"]>();
-  const [source, setSource] = useState<CourseHistoryFilters["source"]>();
   const [result, setResult] = useState<CourseHistoryListResponse>();
   const [error, setError] = useState<string>();
   const [reloadKey, setReloadKey] = useState(0);
@@ -49,7 +49,7 @@ export function CourseLibrary() {
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setError(undefined);
-      void listCourseHistory({ query, status, source }, controller.signal)
+      void listCourseHistory({ query, status }, controller.signal)
         .then(setResult)
         .catch((loadError) => {
           if (loadError instanceof DOMException && loadError.name === "AbortError") {
@@ -64,7 +64,7 @@ export function CourseLibrary() {
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [query, reloadKey, source, status]);
+  }, [query, reloadKey, status]);
 
   return (
     <main className="min-h-[calc(100vh-64px)] bg-[#fff9ee] pb-16 text-[#2d332b]">
@@ -105,11 +105,6 @@ export function CourseLibrary() {
             <NativeSelectOption value="failed">生成失败</NativeSelectOption>
             <NativeSelectOption value="cancelled">已取消</NativeSelectOption>
           </NativeSelect>
-          <NativeSelect className="w-36" value={source ?? ""} onChange={(event) => setSource((event.target.value || undefined) as CourseHistoryFilters["source"])}>
-            <NativeSelectOption value="">全部运行源</NativeSelectOption>
-            <NativeSelectOption value="langgraph">LangGraph</NativeSelectOption>
-            <NativeSelectOption value="workflow">Workflow</NativeSelectOption>
-          </NativeSelect>
         </section>
 
         {result?.unavailableCount ? (
@@ -137,7 +132,7 @@ export function CourseLibrary() {
             <BookOpen aria-hidden="true" className="mx-auto size-9 text-[#4f8f65]" />
             <h2 className="mt-3 font-semibold">没有找到课程</h2>
             <p className="mt-2 text-sm text-[#7a7468]">
-              {query || status || source ? "调整筛选条件后再试试。" : "完成一次课程生成后，记录会出现在这里。"}
+              {query || status ? "调整筛选条件后再试试。" : "完成一次课程生成后，记录会出现在这里。"}
             </p>
           </section>
         ) : (
@@ -153,9 +148,17 @@ export function CourseLibrary() {
 function CourseHistoryCard({ course }: { course: CourseHistoryItem }) {
   return (
     <Link
-      className="group rounded-[24px] border border-[#e8dfd0] bg-[#fffcf5] p-5 shadow-[0_12px_34px_-30px_rgba(45,51,43,0.5)] outline-none transition hover:-translate-y-0.5 hover:border-[#cfe2d1] focus-visible:ring-2 focus-visible:ring-[#397a52]"
+      className="group overflow-hidden rounded-[24px] border border-[#e8dfd0] bg-[#fffcf5] shadow-[0_12px_34px_-30px_rgba(45,51,43,0.5)] outline-none transition hover:-translate-y-0.5 hover:border-[#cfe2d1] focus-visible:ring-2 focus-visible:ring-[#397a52]"
       href={`/course/${course.courseId}`}
     >
+      <div className="relative aspect-video overflow-hidden bg-[#f3eee4]">
+        <CourseCoverFrame
+          courseId={course.courseId}
+          cover={course.cover}
+          title={course.title}
+        />
+      </div>
+      <div className="p-5">
       <div className="flex items-start justify-between gap-3">
         <Badge className={`border-0 ${course.status === "completed" ? "bg-[#edf5ee] text-[#2f6845]" : course.status === "running" ? "bg-[#f4f1df] text-[#87752c]" : "bg-[#fff0eb] text-[#a44f3d]"}`}>
           {statusCopy[course.status]}
@@ -171,6 +174,7 @@ function CourseHistoryCard({ course }: { course: CourseHistoryItem }) {
       <p className="mt-5 flex items-center gap-1.5 border-t border-[#f1e7d5] pt-4 text-xs text-[#7a7468]">
         <Clock3 aria-hidden="true" className="size-3.5" /> {formatDate(course.updatedAt)}
       </p>
+      </div>
     </Link>
   );
 }

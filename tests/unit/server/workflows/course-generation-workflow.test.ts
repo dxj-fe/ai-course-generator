@@ -38,6 +38,7 @@ describe("course generation workflow", () => {
         courseId: "course-123e4567-e89b-42d3-a456-426614174000",
         userPrompt: "为 8 岁儿童生成三页太阳系课程",
         pageCount: 3,
+        executionMode: "serial",
       },
       context,
       dependencies,
@@ -92,6 +93,7 @@ describe("course generation workflow", () => {
         courseId: "course-223e4567-e89b-42d3-a456-426614174000",
         userPrompt: "生成一门可恢复的三页太阳系课程",
         pageCount: 3,
+        executionMode: "serial",
       },
       context,
       dependencies,
@@ -117,7 +119,7 @@ describe("course generation workflow", () => {
     expect(checkpoints.at(-1)?.status).toBe("failed");
   });
 
-  it("runs independent page workers with a configurable concurrency of two", async () => {
+  it("parallelizes page generation while preserving learning-order dependencies", async () => {
     let maxActiveWriters = 0;
     const state = await runCourseGenerationWorkflow(
       {
@@ -129,7 +131,6 @@ describe("course generation workflow", () => {
       },
       context,
       createDependencies([], [], {
-        independentPages: true,
         onWriterConcurrency: (active) => {
           maxActiveWriters = Math.max(maxActiveWriters, active);
         },
@@ -203,6 +204,22 @@ describe("course generation workflow", () => {
       code: "AGENT_EXECUTION_ERROR",
       issues: ["页面正文缺少 DSL 文本：课程总结与后续展望"],
     });
+  });
+
+  it("retries the stable timeout code used by classified model failures", async () => {
+    const order: string[] = [];
+    const state = await runCourseGenerationWorkflow(
+      {
+        courseId: "course-b23e4567-e89b-42d3-a456-426614174000",
+        userPrompt: "生成一门允许 Planner 超时重试的三页太阳系课程",
+        pageCount: 3,
+      },
+      context,
+      createDependencies(order, [], { transientPlannerFailures: 1 }),
+    );
+
+    expect(state.status).toBe("completed");
+    expect(order.filter((entry) => entry === "planner")).toHaveLength(2);
   });
 
   it("stops after exhausting two retries for the same page and node", async () => {
@@ -305,6 +322,7 @@ describe("course generation workflow", () => {
         courseId: "course-323e4567-e89b-42d3-a456-426614174000",
         userPrompt: "生成一门可以断点续跑的太阳系课程",
         pageCount: 3,
+        executionMode: "serial",
       },
       context,
       createDependencies(firstOrder, [], {
@@ -385,6 +403,7 @@ function createDependencies(
   options: {
     failHtmlPageId?: string;
     transientHtmlFailures?: { pageId: string; count: number };
+    transientPlannerFailures?: number;
     invalidSupervisorTarget?: boolean;
     abortWriterPageId?: string;
     assetPageId?: string;
@@ -394,6 +413,7 @@ function createDependencies(
 ): Partial<CourseGenerationWorkflowDependencies> {
   let eventSequence = 0;
   const htmlAttempts = new Map<string, number>();
+  let plannerAttempts = 0;
   let activeWriters = 0;
   const nextEvent = (summary: string): AgentEvent => ({
     id: `event-${++eventSequence}`,
@@ -519,6 +539,20 @@ function createDependencies(
     },
     runPlanner: async (intent) => {
       order.push("planner");
+      plannerAttempts += 1;
+      if (plannerAttempts <= (options.transientPlannerFailures ?? 0)) {
+        return {
+          status: "failed",
+          step: 1,
+          maxSteps: 1,
+          events: [nextEvent("planner timed out")],
+          task: { intent },
+          error: {
+            code: "TIMEOUT_ERROR" as const,
+            message: "模型调用超时，请稍后重试。",
+          },
+        };
+      }
       return {
         status: "completed",
         step: 1,

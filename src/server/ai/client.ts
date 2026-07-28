@@ -36,6 +36,7 @@ type AiCacheRequest = {
 export type AiClientRequest = {
   abortSignal?: AbortSignal;
   capability?: AiCapability;
+  fallbackTimeoutMs?: number;
   maxTokens?: number;
   messages: UIMessage[];
   model?: LanguageModel;
@@ -50,6 +51,7 @@ export type StructuredAiClientRequest<T> = {
   abortSignal?: AbortSignal;
   cache?: AiCacheRequest;
   capability?: AiCapability;
+  fallbackTimeoutMs?: number;
   maxTokens?: number;
   model?: LanguageModel;
   normalizeOutput?: (output: unknown) => unknown;
@@ -80,14 +82,19 @@ export async function generateTextSafe(request: AiClientRequest) {
     const messages = await convertToModelMessages(request.messages);
     const { result, selected } = await executeWithFallback(
       request,
-      (model) =>
+      (model, candidateIndex) =>
         generateText({
           model,
           messages,
           instructions: request.systemPrompt,
           temperature: request.temperature,
           maxOutputTokens: request.maxTokens,
-          timeout: request.timeoutMs ?? DEFAULT_TEXT_TIMEOUT_MS,
+          timeout:
+            candidateIndex > 0
+              ? request.fallbackTimeoutMs ??
+                request.timeoutMs ??
+                DEFAULT_TEXT_TIMEOUT_MS
+              : request.timeoutMs ?? DEFAULT_TEXT_TIMEOUT_MS,
           abortSignal: request.abortSignal,
         }),
     );
@@ -162,8 +169,8 @@ export async function generateStructuredObjectSafe<T>(
 
     const { result, selected } = await executeWithFallback(
       request,
-      (model) =>
-        generateText({
+      async (model, candidateIndex) => {
+        const generated = await generateText({
           model,
           instructions: request.systemPrompt,
           prompt: request.prompt,
@@ -174,26 +181,37 @@ export async function generateStructuredObjectSafe<T>(
           temperature: request.temperature,
           maxOutputTokens: request.maxTokens,
           // 课程规划类结构化响应比普通文本更长，30 秒会在模型仍正常输出时误杀请求。
-          timeout: request.timeoutMs ?? DEFAULT_STRUCTURED_TIMEOUT_MS,
+          timeout:
+            candidateIndex > 0
+              ? request.fallbackTimeoutMs ??
+                request.timeoutMs ??
+                DEFAULT_STRUCTURED_TIMEOUT_MS
+              : request.timeoutMs ?? DEFAULT_STRUCTURED_TIMEOUT_MS,
           abortSignal: request.abortSignal,
-        }),
-      candidates,
-    );
-    const normalizedOutput = request.normalizeOutput
-      ? request.normalizeOutput(result.output)
-      : result.output;
-    const parsed = request.schema.safeParse(normalizedOutput);
+        });
+        const normalizedOutput = request.normalizeOutput
+          ? request.normalizeOutput(generated.output)
+          : generated.output;
+        const parsed = request.schema.safeParse(normalizedOutput);
 
-    if (!parsed.success) {
-      throw new AiSchemaValidationError(
-        `结构化输出校验失败：${formatZodIssues(parsed.error)}`,
-      );
-    }
+        if (!parsed.success) {
+          throw new AiSchemaValidationError(
+            `结构化输出校验失败：${formatZodIssues(parsed.error)}`,
+          );
+        }
+
+        return { data: parsed.data, usage: generated.usage };
+      },
+      candidates,
+      (error) =>
+        error instanceof AiSchemaValidationError ||
+        isRetryableModelError(error),
+    );
 
     throwIfAborted(request.abortSignal);
     const storedCacheKey = createRequestCacheKey(request, selected);
     const cacheStored = storedCacheKey
-      ? aiResultCache.store(storedCacheKey, parsed.data, request.schema)
+      ? aiResultCache.store(storedCacheKey, result.data, request.schema)
       : false;
     logAiFinish("generate-object:finish", traceId, startedAt, {
       cacheStatus: cacheStored ? "stored" : request.cache ? "skipped" : "bypassed",
@@ -201,7 +219,7 @@ export async function generateStructuredObjectSafe<T>(
       modelTier: selected.tier,
       usage: result.usage,
     });
-    return parsed.data;
+    return result.data;
   } catch (error) {
     logAiError("generate-object:error", error, traceId, startedAt);
     throw error;
@@ -210,8 +228,9 @@ export async function generateStructuredObjectSafe<T>(
 
 async function executeWithFallback<T>(
   request: Pick<AiClientRequest, "abortSignal" | "capability" | "model" | "traceId">,
-  execute: (model: LanguageModel) => Promise<T>,
+  execute: (model: LanguageModel, candidateIndex: number) => Promise<T>,
   resolvedCandidates?: ModelCandidate[],
+  canFallback: (error: unknown) => boolean = isRetryableModelError,
 ) {
   const candidates = resolvedCandidates ?? resolveModelCandidates(request);
   let latestError: unknown;
@@ -221,7 +240,7 @@ async function executeWithFallback<T>(
       throw request.abortSignal.reason ?? new DOMException("aborted", "AbortError");
     }
     try {
-      const result = await execute(candidate.model);
+      const result = await execute(candidate.model, index);
       throwIfAborted(request.abortSignal);
       return { result, selected: candidate };
     } catch (error) {
@@ -230,7 +249,7 @@ async function executeWithFallback<T>(
       if (
         !fallback ||
         request.abortSignal?.aborted ||
-        !isRetryableModelError(error)
+        !canFallback(error)
       ) {
         throw error;
       }
@@ -319,6 +338,7 @@ function logAiEvent(event: string, request: AiClientRequest) {
     maxTokens: request.maxTokens,
     promptVersion: request.promptVersion,
     timeoutMs: request.timeoutMs ?? DEFAULT_TEXT_TIMEOUT_MS,
+    fallbackTimeoutMs: request.fallbackTimeoutMs,
   });
 }
 
@@ -337,6 +357,7 @@ function logStructuredAiEvent<T>(
     temperature: request.temperature,
     maxTokens: request.maxTokens,
     timeoutMs: request.timeoutMs ?? DEFAULT_STRUCTURED_TIMEOUT_MS,
+    fallbackTimeoutMs: request.fallbackTimeoutMs,
   });
 }
 

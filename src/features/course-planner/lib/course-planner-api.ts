@@ -5,6 +5,7 @@ import type {
   AssetGenerationResult,
   AssetRequest,
   CourseIntent,
+  CoursePageCount,
   CoursePlan,
   HtmlOutput,
   PageContentDSL,
@@ -116,7 +117,7 @@ export type PageQAResponse = {
   };
 };
 
-export type CourseMvpPageCount = 3 | 4 | 5;
+export type CourseMvpPageCount = CoursePageCount;
 
 export type CourseGenerationResponse = {
   courseId: string;
@@ -132,7 +133,7 @@ const CourseGenerationResponseSchema = z
   })
   .strict();
 
-/** 一次请求以可配置 Page Worker 生成 3–5 页课程；传 courseId 时恢复。 */
+/** 一次请求以可配置 Page Worker 生成内容驱动的课程；传 courseId 时恢复。 */
 export async function generateCourseMvp(
   input:
     | (CourseWorkerOptions & {

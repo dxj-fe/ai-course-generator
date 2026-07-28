@@ -19,8 +19,14 @@ import {
   type QualityScreenshotEvidence,
   type VisualBrief,
 } from "@/shared/course-schema";
-import { basicLayoutHeuristics } from "@/server/quality/basic-layout-heuristics";
-import { buildPageQualityReport } from "@/server/quality/page-quality";
+import {
+  basicLayoutHeuristics,
+  hasSafelyContainedOpaqueAssetFallback,
+} from "@/server/quality/basic-layout-heuristics";
+import {
+  buildPageQualityReport,
+  PAGE_QUALITY_THRESHOLDS,
+} from "@/server/quality/page-quality";
 import {
   capturePageScreenshot,
   type PageScreenshotResult,
@@ -100,8 +106,13 @@ const MODEL_SEVERITY_ALIASES = {
 const CONTRACT_OWNED_MODEL_ISSUE_CODES = new Set([
   "ASSET_ALT_TEXT_INVALID",
   "INTERACTION_FEEDBACK_VISIBLE_BY_DEFAULT",
+  "INTERACTION_CONTENT_NOT_HIDDEN",
+  "INTERACTION_ITEM_VISIBILITY",
 ]);
-
+const UNLOCATABLE_MODEL_WARNING_CODES = new Set([
+  "CONTENT_REDUNDANCY",
+  "CONTENT_REDUNDANT",
+]);
 export type PageQACourseContext = {
   courseOverview?: string;
   learningObjectives: string[];
@@ -134,6 +145,7 @@ export type PageQAAgentDependencies = {
   captureScreenshot(input: {
     pageId: string;
     html: string;
+    content?: PageContentDSL;
     abortSignal?: AbortSignal;
   }): Promise<PageScreenshotResult>;
 };
@@ -170,6 +182,7 @@ export function createPageQAAgent(
       const screenshot = await dependencies.captureScreenshot({
         pageId: state.task.page.id,
         html: state.task.html,
+        content: state.task.content,
         abortSignal: context.abortSignal,
       });
       emit({
@@ -177,7 +190,7 @@ export function createPageQAAgent(
         summary:
           screenshot.evidence.status === "captured"
             ? `Playwright 截图检查完成，发现 ${screenshot.issues.length} 个浏览器问题。`
-            : `Playwright 截图检查${screenshot.evidence.status === "skipped" ? "已跳过" : "失败"}，QA 主流程继续。`,
+            : `Playwright 截图检查${screenshot.evidence.status === "skipped" ? "已跳过" : "失败"}，页面将进入质量修复。`,
         data: {
           pageId: state.task.page.id,
           screenshotStatus: screenshot.evidence.status,
@@ -187,6 +200,7 @@ export function createPageQAAgent(
 
       const modelOutput = await dependencies.evaluate({
         ...state.task,
+        assets: assetsForPageQAModel(state.task),
         heuristicIssues,
         browserIssues: screenshot.issues,
         screenshotEvidence: screenshot.evidence,
@@ -301,8 +315,25 @@ export function validatePageQAOutput(
   }
 
   const blockIds = new Set(input.content.blocks.map(({ id }) => id));
-  const modelIssues: QualityIssue[] = parsed.data.issues
-    .filter((issue) => shouldKeepModelIssue(issue, input))
+  const safelyContainedTransparencyFallbacks =
+    hasOnlySafelyContainedTransparencyFallbacks(input);
+  const modelIssueDecisions = parsed.data.issues.map((issue) => ({
+    issue,
+    keep:
+      shouldKeepModelIssue(issue, input) &&
+      !(
+        safelyContainedTransparencyFallbacks &&
+        issue.code === "ASSET_TRANSPARENCY_UNAVAILABLE"
+      ),
+  }));
+  const ignoredModelIssueDimensions = new Set(
+    modelIssueDecisions
+      .filter(({ keep }) => !keep)
+      .map(({ issue }) => issue.dimension),
+  );
+  const modelIssues: QualityIssue[] = modelIssueDecisions
+    .filter(({ keep }) => keep)
+    .map(({ issue }) => issue)
     .map((issue) => ({
       ...issue,
       source: "model",
@@ -315,15 +346,93 @@ export function validatePageQAOutput(
             : undefined,
       },
     }));
+  const effectiveHeuristicIssues = safelyContainedTransparencyFallbacks
+    ? heuristicIssues.filter(
+        ({ code }) => code !== "ASSET_TRANSPARENCY_UNAVAILABLE",
+      )
+    : heuristicIssues;
+  const browserIssues = screenshot?.issues ?? [];
+  const hasOtherAssetIssue = [
+    ...effectiveHeuristicIssues,
+    ...browserIssues,
+    ...modelIssues,
+  ].some(({ dimension }) => dimension === "assetUsability");
+  let modelDimensions =
+    safelyContainedTransparencyFallbacks && !hasOtherAssetIssue
+      ? {
+          ...parsed.data.dimensions,
+          assetUsability: {
+            ...parsed.data.dimensions.assetUsability,
+            score: Math.max(
+              parsed.data.dimensions.assetUsability.score,
+              PAGE_QUALITY_THRESHOLDS.assetUsability,
+            ),
+          },
+        }
+      : parsed.data.dimensions;
+  const retainedIssues = [
+    ...effectiveHeuristicIssues,
+    ...browserIssues,
+    ...modelIssues,
+  ];
+  for (const dimension of ignoredModelIssueDimensions) {
+    if (retainedIssues.some((issue) => issue.dimension === dimension)) {
+      continue;
+    }
+    modelDimensions = {
+      ...modelDimensions,
+      [dimension]: {
+        ...modelDimensions[dimension],
+        score: Math.max(
+          modelDimensions[dimension].score,
+          PAGE_QUALITY_THRESHOLDS[dimension],
+        ),
+      },
+    };
+  }
 
   return buildPageQualityReport({
     pageId: input.page.id,
-    modelDimensions: parsed.data.dimensions,
-    heuristicIssues,
-    browserIssues: screenshot?.issues,
+    modelDimensions,
+    heuristicIssues: effectiveHeuristicIssues,
+    browserIssues,
     modelIssues,
     screenshotEvidence: screenshot?.evidence,
   });
+}
+
+function assetsForPageQAModel(input: PageQAInput) {
+  return input.assets?.map((result) =>
+    result.warnings?.includes("TRANSPARENCY_UNAVAILABLE") &&
+    hasSafelyContainedOpaqueAssetFallback(
+      input.html,
+      result.request.assetSlotId,
+      result.asset?.uri,
+    )
+      ? {
+          ...result,
+          warnings: result.warnings.filter(
+            (warning) => warning !== "TRANSPARENCY_UNAVAILABLE",
+          ),
+        }
+      : result,
+  );
+}
+
+function hasOnlySafelyContainedTransparencyFallbacks(input: PageQAInput) {
+  const affected = (input.assets ?? []).filter(({ warnings }) =>
+    warnings?.includes("TRANSPARENCY_UNAVAILABLE"),
+  );
+  return (
+    affected.length > 0 &&
+    affected.every((result) =>
+      hasSafelyContainedOpaqueAssetFallback(
+        input.html,
+        result.request.assetSlotId,
+        result.asset?.uri,
+      ),
+    )
+  );
 }
 
 /**
@@ -402,6 +511,17 @@ function shouldKeepModelIssue(
   input: PageQAInput,
 ) {
   if (CONTRACT_OWNED_MODEL_ISSUE_CODES.has(issue.code)) return false;
+  const validBlockId =
+    issue.location.blockId &&
+    input.content.blocks.some(({ id }) => id === issue.location.blockId);
+  if (
+    issue.severity !== "error" &&
+    UNLOCATABLE_MODEL_WARNING_CODES.has(issue.code) &&
+    !validBlockId &&
+    !issue.location.selector
+  ) {
+    return false;
+  }
   if (
     issue.code === "LAYOUT_READING_ORDER_MISMATCH" &&
     followsDeclaredBlockOrder(input.html, input.content.layoutHints.readingOrder)

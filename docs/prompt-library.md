@@ -23,17 +23,17 @@ User Prompt 只负责把服务端数据装入模板。即使某个字段包含�
 
 | Specialist | 状态 | Prompt 版本 | 最小输入 | 输出合同 | 关键禁止项 |
 | --- | --- | --- | --- | --- | --- |
-| Planner | active | 2.2.0/2.2.0 | CourseIntent、模板 allowlist、相关 Template Cards、Reference Hits | CoursePlanSchema | 不写正文、HTML、素材 URI、原始 chunks 或运行状态 |
+| Planner | active | 2.4.0/2.2.0 | CourseIntent、模板 allowlist、相关 Template Cards、Reference Hits | CoursePlanSchema | 不写正文、HTML、素材 URI、原始 chunks 或运行状态 |
 | Pedagogy | active | 2.0.1/2.0.0 | CourseIntent、CoursePlan | PedagogyPlanSchema | 不决定故事、视觉或 HTML |
 | Story | active | 2.0.1/2.0.0 | Intent、Plan、Pedagogy | StoryArcSchema | 不覆盖教学目标或虚构冲突事实 |
 | Visual | active | 2.0.0/2.0.0 | 课程 briefs、StyleTemplate | VisualBriefSchema | 不生成图片、DSL、HTML 或新 Token |
-| Page Writer | active | 2.1.1/2.1.0 | 单页 Plan、brief、模板 | PageContentDSLSchema | 不读取整课私有状态或输出 HTML |
-| Image Prompt | active | 2.0.0/2.0.0 | 素材槽、视觉指导、样式 | AssetRequestSchema[] | 不调用 Provider，不发明槽位 |
-| HTML Engineer | active | 2.1.1/2.1.0 | DSL、模板、brief、批准素材、同页校验反馈 | HtmlOutputSchema | 不改 DSL，不读取原始用户 Prompt |
-| QA | active | 2.1.2/2.1.0 | 页面产物、课程上下文、静态与浏览器证据 | QualityReportSchema | 内容错误优先；report-only，不修改页面或宣布通过 |
-| Repair | active | 1.0.1/1.0.0 | 当前页产物、来源 QA、授权 scope、两轮预算 | RepairResultSchema | 只返回 DSL block 候选、HTML patches 或拒绝；不自判通过 |
+| Page Writer | active | 2.3.0/2.2.0 | 单页 Plan、brief、模板、授权资料、同页校验反馈 | PageContentDSLSchema | 必须直接满足本页目标；不读取整课私有状态或输出 HTML |
+| Image Prompt | active | 2.1.0/2.0.0 | 素材槽、视觉指导、样式 | AssetRequestSchema[] | 不调用 Provider，不发明槽位 |
+| HTML Engineer | active | 2.4.0/2.2.0 | DSL、模板、brief、批准素材、同页校验反馈 | HtmlOutputSchema | 不改 DSL，不读取原始用户 Prompt |
+| QA | active | 2.3.0/2.1.0 | 页面产物、课程上下文、静态与浏览器证据 | QualityReportSchema | 内容错误优先；report-only，不修改页面或宣布通过 |
+| Repair | active | 1.4.0/1.0.1 | 当前页产物、来源 QA、授权 block/content field/selector、尝试序号 | RepairResultSchema | 只返回受限 DSL 候选、HTML patches 或拒绝；不自判通过 |
 
-Day 27 已激活 Repair，并由 Page Worker 的确定性 `qa-repair-loop` 约束范围、预算、候选应用和 re-QA。Prompt 不能选择其他页面、修改预算或决定最终质量状态。
+Day 27 已激活 Repair；当前由 Page Worker 的确定性 `qa-repair-loop` 约束范围、候选应用、re-QA、质量停滞与紧急安全熔断。Prompt 不能选择其他页面、修改熔断条件或决定最终质量状态。
 
 ## 版本规则
 

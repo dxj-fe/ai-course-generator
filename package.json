@@ -10,6 +10,7 @@
     "build": "next build",
     "demo:check": "node --import tsx scripts/check-course.ts",
     "demo:run": "node --import tsx scripts/run-demo.ts",
+    "quality:compare": "node --import tsx scripts/compare-course-quality.ts",
     "start": "next start",
     "lint": "eslint",
     "prompt:lint": "node --experimental-strip-types scripts/prompt-lint.ts",

@@ -1,6 +1,8 @@
 import { getErrorText } from "@/features/ai-playground/lib/messages";
 import {
   ConversationRecordSchema,
+  DeleteConversationResponseSchema,
+  type DeleteConversationResponse,
   type ConversationRecord,
   type SaveConversationInput,
   type UpdateConversationInput,
@@ -30,6 +32,19 @@ export async function updateStoredConversation(
       signal,
     },
   );
+}
+
+export async function deleteStoredConversation(
+  conversationId: string,
+  signal?: AbortSignal,
+): Promise<DeleteConversationResponse> {
+  const response = await fetch(
+    `/api/conversations/${encodeURIComponent(conversationId)}`,
+    { method: "DELETE", signal },
+  );
+  const payload = await response.json().catch(() => undefined);
+  if (!response.ok) throw new Error(getErrorText(payload));
+  return DeleteConversationResponseSchema.parse(payload);
 }
 
 async function requestConversation(url: string, init: RequestInit) {

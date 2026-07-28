@@ -46,12 +46,46 @@ describe("AI client", () => {
     await expect(
       generateStructuredObjectSafe({
         capability: "planner",
+        fallbackTimeoutMs: 60_000,
         prompt: "Generate a course plan",
         schema: z.object({ value: z.string() }),
         schemaName: "course_plan",
+        timeoutMs: 120_000,
         traceId: "model-fallback-test",
       }),
     ).resolves.toEqual({ value: "ok" });
+
+    expect(generateTextMock).toHaveBeenCalledTimes(2);
+    expect(generateTextMock.mock.calls.map(([input]) => input.model)).toEqual([
+      { tier: "strong" },
+      { tier: "balanced" },
+    ]);
+    expect(generateTextMock.mock.calls.map(([input]) => input.timeout)).toEqual([
+      120_000,
+      60_000,
+    ]);
+  });
+
+  it("falls back when the primary model returns a schema-invalid structured object", async () => {
+    generateTextMock
+      .mockResolvedValueOnce({
+        output: { unexpected: "shape" },
+        usage: { outputTokens: 10 },
+      })
+      .mockResolvedValueOnce({
+        output: { value: "valid fallback" },
+        usage: { outputTokens: 12 },
+      });
+
+    await expect(
+      generateStructuredObjectSafe({
+        capability: "repair",
+        prompt: "Repair one course page",
+        schema: z.object({ value: z.string() }).strict(),
+        schemaName: "page_repair_result",
+        traceId: "schema-fallback-test",
+      }),
+    ).resolves.toEqual({ value: "valid fallback" });
 
     expect(generateTextMock).toHaveBeenCalledTimes(2);
     expect(generateTextMock.mock.calls.map(([input]) => input.model)).toEqual([

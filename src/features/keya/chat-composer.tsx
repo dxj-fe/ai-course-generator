@@ -15,12 +15,12 @@ import {
   Lightbulb,
   LoaderCircle,
   Mic as MicIcon,
+  Pause,
+  Play,
   Plus as PlusIcon,
   Presentation,
   RefreshCw,
-  Settings2,
   Sparkles,
-  Square,
   TriangleAlert,
   X,
 } from "lucide-react";
@@ -28,10 +28,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
 
 interface ChatComposerProps {
   attachments?: ReferenceAttachment[];
@@ -40,15 +36,15 @@ interface ChatComposerProps {
   compact?: boolean;
   contextLabel?: string;
   onDraftChange(value: string): void;
-  onCancel?(): void;
   onFilesSelected?(files: File[]): void;
+  onPause?(): void;
   onRemoveAttachment?(id: string): void;
+  onResume?(): void;
   onRetryAttachment?(id: string): void;
   onSubmit(value: string): void;
   onSelectSuggestion?(value: string): void;
-  taskOptions?: CourseCreationOptions;
-  onTaskOptionsChange?(options: CourseCreationOptions): void;
   showSuggestions: boolean;
+  taskStatus?: "paused" | "queued" | "running";
 }
 
 export type ReferenceAttachment = {
@@ -58,12 +54,6 @@ export type ReferenceAttachment = {
   error?: string;
   summary?: string;
   keyFacts?: string[];
-};
-
-export type CourseCreationOptions = {
-  pageCount: "auto" | 3 | 4 | 5;
-  executionMode: "serial" | "parallel";
-  concurrency: 1 | 2 | 3 | 4 | 5;
 };
 
 const suggestions = [
@@ -97,15 +87,15 @@ export function ChatComposer({
   compact = false,
   contextLabel,
   onDraftChange,
-  onCancel,
   onFilesSelected,
+  onPause,
   onRemoveAttachment,
+  onResume,
   onRetryAttachment,
   onSelectSuggestion,
-  taskOptions,
-  onTaskOptionsChange,
   onSubmit,
   showSuggestions,
+  taskStatus,
 }: ChatComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -113,13 +103,17 @@ export function ChatComposer({
   const hasReadyAttachments = attachments.some(({ status }) => status === "ready");
   const hasAttachmentError = attachments.some(({ status }) => status === "error");
   const canSubmit = draft.trim().length > 0 && !busy && !attachmentsBlocked;
+  const taskRunning = taskStatus === "queued" || taskStatus === "running";
+  const taskPaused = taskStatus === "paused";
   const placeholder = hasAttachmentError
     ? "请先重试或移除解析失败的资料..."
     : attachmentsBlocked
       ? "可以先描述任务，资料解析完成后即可发送..."
       : hasReadyAttachments
-        ? "描述要基于资料生成的课程，例如：生成 5 页太阳风入门课..."
-        : "想学点什么？慢慢找也可以...";
+        ? "描述要基于资料生成的课程，例如：生成一门系统的太阳风入门课..."
+        : contextLabel
+          ? "补充要求，或者告诉课芽怎么调整..."
+          : "想学点什么？慢慢找也可以...";
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -165,45 +159,6 @@ export function ChatComposer({
         className="relative mx-auto w-full max-w-[750px]"
         onSubmit={handleSubmit}
       >
-        {taskOptions && onTaskOptionsChange ? (
-          <details className="mb-2 rounded-2xl border border-[#e8dfd0] bg-[#fffcf5] px-3 py-2 text-xs text-[#6f6355] shadow-sm">
-            <summary className="flex cursor-pointer list-none items-center gap-2 rounded outline-none focus-visible:ring-2 focus-visible:ring-[#397a52] [&::-webkit-details-marker]:hidden">
-              <Settings2 aria-hidden="true" className="size-4 text-[#4f8f65]" />
-              <span className="font-medium text-[#3f4a40]">生成参数</span>
-              <span className="ml-auto text-[#7a7468]">
-                {taskOptions.pageCount === "auto"
-                  ? "自动页数"
-                  : `${taskOptions.pageCount} 页`}
-                · {taskOptions.executionMode === "parallel" ? "并行" : "串行"}
-              </span>
-            </summary>
-            <div className="mt-3 grid gap-3 border-t border-[#f1e7d5] pt-3 sm:grid-cols-3">
-              <label className="grid gap-1">
-                <span>课程页数</span>
-                <NativeSelect className="w-full" disabled={busy} value={taskOptions.pageCount} onChange={(event) => onTaskOptionsChange({ ...taskOptions, pageCount: event.target.value === "auto" ? "auto" : Number(event.target.value) as 3 | 4 | 5 })}>
-                  <NativeSelectOption value="auto">自动（3–5 页）</NativeSelectOption>
-                  <NativeSelectOption value="3">3 页</NativeSelectOption>
-                  <NativeSelectOption value="4">4 页</NativeSelectOption>
-                  <NativeSelectOption value="5">5 页</NativeSelectOption>
-                </NativeSelect>
-              </label>
-              <label className="grid gap-1">
-                <span>执行方式</span>
-                <NativeSelect className="w-full" disabled={busy} value={taskOptions.executionMode} onChange={(event) => onTaskOptionsChange({ ...taskOptions, executionMode: event.target.value as "serial" | "parallel" })}>
-                  <NativeSelectOption value="parallel">并行生成</NativeSelectOption>
-                  <NativeSelectOption value="serial">串行生成</NativeSelectOption>
-                </NativeSelect>
-              </label>
-              <label className="grid gap-1">
-                <span>最大并发</span>
-                <NativeSelect className="w-full" disabled={busy || taskOptions.executionMode === "serial"} value={taskOptions.executionMode === "serial" ? 1 : taskOptions.concurrency} onChange={(event) => onTaskOptionsChange({ ...taskOptions, concurrency: Number(event.target.value) as 1 | 2 | 3 | 4 | 5 })}>
-                  {[1, 2, 3, 4, 5].map((value) => <NativeSelectOption key={value} value={value}>{value}</NativeSelectOption>)}
-                </NativeSelect>
-              </label>
-            </div>
-          </details>
-        ) : null}
-
         {attachments.length > 0 ? (
           <ul
             aria-label="已选参考资料"
@@ -427,20 +382,42 @@ export function ChatComposer({
           </Button>
 
           <Button
-            aria-label={busy ? "取消生成" : "发送"}
+            aria-label={
+              taskRunning ? "暂停生成" : taskPaused ? "继续生成" : "发送"
+            }
             className="flex size-8 shrink-0 items-center justify-center rounded-full border-0 p-0 text-white transition enabled:bg-[#397a52] enabled:hover:scale-[1.04] enabled:hover:bg-[#2f6845] enabled:focus-visible:outline-2 enabled:focus-visible:outline-offset-2 enabled:focus-visible:outline-[#397a52] disabled:pointer-events-auto disabled:cursor-not-allowed disabled:bg-[rgba(91,76,59,0.18)] disabled:opacity-100 disabled:hover:bg-[rgba(91,76,59,0.18)]"
-            disabled={busy ? !onCancel : !canSubmit}
-            onClick={busy ? onCancel : undefined}
+            disabled={
+              taskRunning
+                ? !onPause
+                : taskPaused
+                  ? !onResume
+                  : !canSubmit
+            }
+            onClick={
+              taskRunning
+                ? onPause
+                : taskPaused
+                  ? onResume
+                  : undefined
+            }
             size="icon"
-            type={busy ? "button" : "submit"}
+            type={taskRunning || taskPaused ? "button" : "submit"}
             variant="ghost"
           >
-            {busy ? (
-              <Square
+            {taskRunning ? (
+              <Pause
                 aria-hidden="true"
-                className="size-3"
+                className="size-3.5"
                 fill="currentColor"
-                size={12}
+                size={14}
+                strokeWidth={1.7}
+              />
+            ) : taskPaused ? (
+              <Play
+                aria-hidden="true"
+                className="size-3.5"
+                fill="currentColor"
+                size={14}
                 strokeWidth={1.7}
               />
             ) : (

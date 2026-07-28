@@ -48,4 +48,34 @@ describe("Day 11 course design schemas", () => {
       StoryArcSchema.safeParse({ ...storyArc, narrativeMode: "none" }).success,
     ).toBe(false);
   });
+
+  it("accepts aligned professional guidance for more than twelve pages", () => {
+    const pageIds = Array.from(
+      { length: 20 },
+      (_, index) => `page-${String(index + 1).padStart(2, "0")}`,
+    );
+    const pedagogyGuidance = pageIds.map((pageId) => ({
+      ...pedagogyPlan.pageGuidance[0],
+      pageId,
+    }));
+    const storyBeats = pageIds.map((pageId) => ({
+      ...storyArc.pageBeats[0],
+      pageId,
+    }));
+    const visualGuidance = pageIds.map((pageId) => ({
+      ...visualBrief.pageGuidance[0],
+      pageId,
+    }));
+
+    expect(
+      CourseDesignBriefsSchema.safeParse({
+        pedagogy: {
+          ...pedagogyPlan,
+          pageGuidance: pedagogyGuidance,
+        },
+        story: { ...storyArc, pageBeats: storyBeats },
+        visual: { ...visualBrief, pageGuidance: visualGuidance },
+      }).success,
+    ).toBe(true);
+  });
 });

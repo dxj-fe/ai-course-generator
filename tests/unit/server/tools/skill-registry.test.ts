@@ -59,7 +59,8 @@ describe("SkillRegistry", () => {
     const eventSink = vi.fn();
     const registry = new SkillRegistry(eventSink).register({
       ...validSkill,
-      execute: () => ({ value: "invalid" }),
+      execute: () =>
+        ({ value: "invalid" }) as unknown as { value: number },
     });
 
     await expect(

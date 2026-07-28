@@ -1,11 +1,19 @@
 import type { AgentRuntimeContext } from "@/server/agents/core/types";
 import { runCoursePlannerAgent } from "@/server/agents/course-planner-agent";
-import { runHtmlEngineerAgent } from "@/server/agents/html-engineer-agent";
+import {
+  normalizeChoiceRuntimeMarkers,
+  removeRedundantRestoredDslMarkup,
+  runHtmlEngineerAgent,
+} from "@/server/agents/html-engineer-agent";
 import { generateCourseIntent } from "@/server/agents/intent-agent";
 import { runPageQAAgent } from "@/server/agents/page-qa-agent";
-import { runPageWriterAgent } from "@/server/agents/page-writer-agent";
+import {
+  buildLessonRuntime,
+  runPageWriterAgent,
+} from "@/server/agents/page-writer-agent";
 import { runRepairAgent } from "@/server/agents/repair-agent";
 import { runSupervisorAgent } from "@/server/agents/supervisor-agent";
+import { hasSafelyContainedOpaqueAssetFallback } from "@/server/quality/basic-layout-heuristics";
 import { createCourseStore } from "@/server/storage/course-store";
 import { runCourseDesignWorkflow } from "@/server/workflows/course-design-workflow";
 import {
@@ -26,12 +34,14 @@ import {
 } from "@/server/workflows/sequential-workflow";
 import {
   CourseGenerationStateSchema,
+  MAX_REPAIR_ATTEMPTS,
   PageGenerationStateSchema,
   PageWorkerConfigSchema,
   type CourseGenerationError,
   type CourseGenerationPublicEvent,
   type CourseGenerationStage,
   type CourseGenerationState,
+  type PagePlan,
   type PageGenerationState,
   type PageWorkerMode,
   type ReferencePack,
@@ -107,6 +117,103 @@ export function initializeCourseGenerationState(
     if (existing.status === "completed") return existing;
 
     const workerConfig = resolveWorkerConfig(input, existing.workerConfig);
+    const resetSupervisorPageIds = new Set<string>();
+    const pages = existing.pages.map((page) => {
+      const pagePlan = existing.outline?.pages.find(
+        ({ id }) => id === page.pageId,
+      );
+      const disabledChoiceRecovered =
+        recoverLegacyDisabledChoiceRepairFailure(page);
+      const recovered =
+        recoverLegacyUnauthorizedIssueCodeRepairFailure(
+          disabledChoiceRecovered,
+        );
+      const choiceScopeRecovered =
+        recoverLegacyChoiceQuestionScopeFailure(recovered);
+      const visualDominanceRecovered =
+        recoverUnlocatableVisualDominanceFailure(
+          choiceScopeRecovered,
+        );
+      const transparencyRecovered =
+        recoverStaleTransparencyCapabilityFailure(
+          visualDominanceRecovered,
+        );
+      const modelQaRecovered =
+        recoverStaleUnlocatableModelQaFailure(
+          transparencyRecovered,
+        );
+      const restoredDuplicationRecovered =
+        recoverStaleRestoredContentDuplication(modelQaRecovered);
+      const visualPrimitiveRecovered =
+        recoverStaleProgrammingVisualPrimitiveFailure(
+          restoredDuplicationRecovered,
+          pagePlan,
+        );
+      const viewportFitRecovered =
+        recoverPreViewportFitLayoutCheckpoint(visualPrimitiveRecovered);
+      const rearmed = rearmRecoverableRepairExecutionFailure(
+        viewportFitRecovered,
+      );
+      if (
+        recovered !== disabledChoiceRecovered ||
+        choiceScopeRecovered !== recovered ||
+        visualDominanceRecovered !== choiceScopeRecovered ||
+        transparencyRecovered !== visualDominanceRecovered ||
+        modelQaRecovered !== transparencyRecovered ||
+        restoredDuplicationRecovered !== modelQaRecovered ||
+        visualPrimitiveRecovered !== restoredDuplicationRecovered ||
+        viewportFitRecovered !== visualPrimitiveRecovered ||
+        rearmed !== viewportFitRecovered
+      ) {
+        resetSupervisorPageIds.add(rearmed.pageId);
+      }
+      /**
+       * 进入这里代表用户已经显式创建了一次检查点恢复任务。自动重试仍由
+       * Page Worker 的错误分类和单次预算限制；显式恢复则必须重新开放所有
+       * 非 Repair 失败页，才能在额度、认证或配置恢复后真正继续。
+       */
+      if (rearmed.status === "failed" && rearmed.currentStage !== "repair") {
+        resetSupervisorPageIds.add(rearmed.pageId);
+        const failureCode =
+          rearmed.error?.causeCode ?? rearmed.error?.code ?? "";
+        const clearExternalFailure = [
+          "QUOTA_ERROR",
+          "AUTH_ERROR",
+          "CONFIG_ERROR",
+        ].includes(failureCode);
+        return {
+          ...rearmed,
+          status: "running" as const,
+          attempts: rearmed.attempts?.filter(
+            ({ stage }) => stage !== rearmed.currentStage,
+          ),
+          error: clearExternalFailure ? undefined : rearmed.error,
+        };
+      }
+      return rearmed.status === "failed"
+        ? {
+            ...rearmed,
+            attempts: rearmed.attempts?.filter(
+              ({ stage }) => stage !== rearmed.currentStage,
+            ),
+          }
+        : rearmed;
+    });
+    const persistedSupervisor = existing.supervisor ?? {
+      decisionCount: 0,
+      attempts: [],
+    };
+    const supervisor =
+      resetSupervisorPageIds.size === 0
+        ? persistedSupervisor
+        : {
+            ...persistedSupervisor,
+            attempts: persistedSupervisor.attempts.filter(
+              ({ pageId }) =>
+                !pageId || !resetSupervisorPageIds.has(pageId),
+            ),
+            lastDecision: undefined,
+          };
     return CourseGenerationStateSchema.parse({
       ...existing,
       status: "running",
@@ -114,36 +221,9 @@ export function initializeCourseGenerationState(
       errors: [],
       completedAt: undefined,
       durationMs: undefined,
-      supervisor: existing.supervisor ?? {
-        decisionCount: 0,
-        attempts: [],
-      },
+      supervisor,
       workerConfig,
-      pages: existing.pages.map((page) => {
-        const recovered = recoverLegacyDisabledChoiceRepairFailure(page);
-        if (
-          recovered.status === "failed" &&
-          recovered.currentStage !== "repair" &&
-          (recovered.error?.code === "PAGE_WORKER_RETRY_EXHAUSTED" ||
-            isLegacySupervisorReasonSummaryFailure(recovered.error))
-        ) {
-          return {
-            ...recovered,
-            status: "running" as const,
-            attempts: recovered.attempts?.filter(
-              ({ stage }) => stage !== recovered.currentStage,
-            ),
-          };
-        }
-        return recovered.status === "failed"
-          ? {
-              ...recovered,
-              attempts: recovered.attempts?.filter(
-                ({ stage }) => stage !== recovered.currentStage,
-              ),
-            }
-          : recovered;
-      }),
+      pages,
       updatedAt: now(),
     });
   }
@@ -165,17 +245,6 @@ export function initializeCourseGenerationState(
     startedAt: timestamp,
     updatedAt: timestamp,
   });
-}
-
-/** Supervisor 曾把完整页面错误复制到 300 字符摘要，导致错误处理本身失败。 */
-function isLegacySupervisorReasonSummaryFailure(
-  error: PageGenerationState["error"],
-) {
-  return (
-    error?.code === "COURSE_TASK_EXECUTION_ERROR" &&
-    error.message.includes('"path": [\n      "reasonSummary"') &&
-    error.message.includes("expected string to have <=300 characters")
-  );
 }
 
 /**
@@ -215,6 +284,364 @@ function recoverLegacyDisabledChoiceRepairFailure(
       message:
         "生成 HTML 校验失败：页面必须包含且只能包含一个 main 主内容区域；choice 互动的单选或复选控件不得包含 disabled 属性。",
     },
+  });
+}
+
+/**
+ * Repair 旧实现会把模型候选合同错误也计入两轮质量修订预算。该精确签名下
+ * 页面产物并未改变，因此丢弃失败轮次并从已有 HTML 重新执行 QA。
+ */
+function recoverLegacyUnauthorizedIssueCodeRepairFailure(
+  page: PageGenerationState,
+): PageGenerationState {
+  const history = page.repairHistory ?? [];
+  const isKnownFailure =
+    page.status === "failed" &&
+    page.currentStage === "repair" &&
+    page.error?.code === "REPAIR_FAILED" &&
+    page.error.message.includes(
+      "RepairResult 引用了未授权的 issue code",
+    ) &&
+    history.length === 2 &&
+    history.every(
+      (attempt) =>
+        attempt.status === "failed" &&
+        attempt.failureClass === "agent_failed",
+    );
+
+  if (!isKnownFailure) return page;
+
+  return PageGenerationStateSchema.parse({
+    ...page,
+    status: "running",
+    currentStage: "qa",
+    qualityReport: undefined,
+    repairHistory: [],
+    error: undefined,
+  });
+}
+
+/**
+ * 旧 choice HTML 曾把 data-question-id 放在只有题干的节点上，而选项是相邻
+ * 兄弟节点。当前可信运行时要求题目 scope 同时包含其 option value；恢复时
+ * 只对这一精确失败机械移动标记并重新 QA，不重新请求模型。
+ */
+function recoverLegacyChoiceQuestionScopeFailure(
+  page: PageGenerationState,
+): PageGenerationState {
+  const isKnownFailure =
+    page.status === "failed" &&
+    page.currentStage === "repair" &&
+    page.error?.code === "REPAIR_EXECUTION_RETRY_EXHAUSTED" &&
+    page.error.message.includes("必须绑定唯一 input value") &&
+    page.content?.version === 2 &&
+    page.content.interaction.type === "choice" &&
+    Boolean(page.htmlOutput);
+  if (!isKnownFailure || !page.content || !page.htmlOutput) return page;
+
+  const html = normalizeChoiceRuntimeMarkers(page.htmlOutput.html, {
+    content: page.content,
+  });
+  if (typeof html !== "string" || html === page.htmlOutput.html) return page;
+
+  return PageGenerationStateSchema.parse({
+    ...page,
+    status: "running",
+    currentStage: "qa",
+    htmlOutput: {
+      ...page.htmlOutput,
+      html,
+      version: page.htmlOutput.version + 1,
+    },
+    qualityReport: undefined,
+    error: undefined,
+  });
+}
+
+/**
+ * 旧截图指标会把低透明、负层级的全屏装饰背景按裸矩形面积判为主视觉，
+ * 且没有提供 selector。显式恢复时丢弃这份旧 QA，保留页面产物并重新采证。
+ */
+function recoverUnlocatableVisualDominanceFailure(
+  page: PageGenerationState,
+): PageGenerationState {
+  const issues = page.qualityReport?.issues ?? [];
+  const isKnownFailure =
+    page.status === "failed" &&
+    page.currentStage === "repair" &&
+    page.error?.code === "REPAIR_TARGET_UNAVAILABLE" &&
+    issues.length > 0 &&
+    issues.every(
+      ({ code }) => code === "BROWSER_VISUAL_DOMINATES_VIEWPORT",
+    );
+
+  if (!isKnownFailure) return page;
+
+  return PageGenerationStateSchema.parse({
+    ...page,
+    status: "running",
+    currentStage: "qa",
+    qualityReport: undefined,
+    error: undefined,
+  });
+}
+
+/**
+ * 旧 QA 把素材 Provider 的透明通道能力提示当成不可修复页面缺陷。显式恢复
+ * 时迁移仅含该提示的旧报告；若页面已经完成可证明的独立容器降级，也迁移
+ * 与其他 Repair 执行错误共存的旧报告，重新用当前 HTML 与截图证据评估。
+ */
+function recoverStaleTransparencyCapabilityFailure(
+  page: PageGenerationState,
+): PageGenerationState {
+  const issues = page.qualityReport?.issues ?? [];
+  const transparencyOnly =
+    issues.length > 0 &&
+    issues.every(
+      ({ code }) => code === "ASSET_TRANSPARENCY_UNAVAILABLE",
+    );
+  const affectedAssets = page.assets.filter(({ warnings }) =>
+    warnings?.includes("TRANSPARENCY_UNAVAILABLE"),
+  );
+  const safelyContained =
+    affectedAssets.length > 0 &&
+    Boolean(page.htmlOutput) &&
+    affectedAssets.every((result) =>
+      hasSafelyContainedOpaqueAssetFallback(
+        page.htmlOutput!.html,
+        result.request.assetSlotId,
+        result.asset?.uri,
+      ),
+    );
+  const recoverableFailureCode = new Set([
+    "REPAIR_EXECUTION_RETRY_EXHAUSTED",
+    "REPAIR_FAILED",
+    "REPAIR_TARGET_UNAVAILABLE",
+    "REPAIR_TIMEOUT",
+  ]);
+  const isKnownFailure =
+    page.status === "failed" &&
+    page.currentStage === "repair" &&
+    recoverableFailureCode.has(page.error?.code ?? "") &&
+    issues.some(
+      ({ code }) => code === "ASSET_TRANSPARENCY_UNAVAILABLE",
+    ) &&
+    (transparencyOnly || safelyContained);
+
+  if (!isKnownFailure) return page;
+
+  return PageGenerationStateSchema.parse({
+    ...page,
+    status: "running",
+    currentStage: "qa",
+    qualityReport: undefined,
+    error: undefined,
+  });
+}
+
+/**
+ * 旧 QA 曾把可信 reveal runtime 的可见互动项误判为“必须初始隐藏”，并把
+ * 无定位的模型语义 warning 当成修订条件。两者都没有可授权 Repair 目标，
+ * 显式恢复时保留页面与修订审计，只丢弃旧报告并用当前合同重新 QA。
+ */
+function recoverStaleUnlocatableModelQaFailure(
+  page: PageGenerationState,
+): PageGenerationState {
+  const issues = page.qualityReport?.issues ?? [];
+  const staleRevealCodes = new Set([
+    "INTERACTION_CONTENT_NOT_HIDDEN",
+    "INTERACTION_ITEM_VISIBILITY",
+  ]);
+  const hasStaleRevealIssue = issues.some(
+    ({ code }) => staleRevealCodes.has(code),
+  );
+  const onlyStaleModelIssues =
+    issues.length > 0 &&
+    issues.every(
+      (issue) =>
+        issue.source === "model" &&
+        (staleRevealCodes.has(issue.code) ||
+          (issue.severity !== "error" &&
+            ["contentAccuracy", "courseCoherence"].includes(
+              issue.dimension,
+            ) &&
+            !issue.location.blockId &&
+            !issue.location.selector)),
+    );
+  const isKnownFailure =
+    page.status === "failed" &&
+    page.currentStage === "repair" &&
+    page.error?.code === "REPAIR_TARGET_UNAVAILABLE" &&
+    hasStaleRevealIssue &&
+    onlyStaleModelIssues;
+
+  if (!isKnownFailure) return page;
+
+  return PageGenerationStateSchema.parse({
+    ...page,
+    status: "running",
+    currentStage: "qa",
+    qualityReport: undefined,
+    error: undefined,
+  });
+}
+
+/**
+ * 旧版 HTML 正文恢复把 Markdown 反引号与等价的 <code> 展示误判为缺失，
+ * 随后插入重复 block。恢复时只删除可证明冗余的恢复节点，并重新 QA。
+ */
+function recoverStaleRestoredContentDuplication(
+  page: PageGenerationState,
+): PageGenerationState {
+  const isKnownFailure =
+    page.status === "failed" &&
+    page.currentStage === "repair" &&
+    ["REPAIR_EXECUTION_RETRY_EXHAUSTED", "REPAIR_FAILED"].includes(
+      page.error?.code ?? "",
+    ) &&
+    page.qualityReport?.issues.some(
+      ({ code }) => code === "CONTENT_DUPLICATION",
+    ) &&
+    page.content !== undefined &&
+    page.htmlOutput?.html.includes(
+      'data-course-contract-restored="block"',
+    );
+  if (!isKnownFailure || !page.content || !page.htmlOutput) return page;
+
+  const html = removeRedundantRestoredDslMarkup(page.htmlOutput.html, {
+    content: page.content,
+  });
+  if (typeof html !== "string" || html === page.htmlOutput.html) return page;
+
+  return PageGenerationStateSchema.parse({
+    ...page,
+    status: "running",
+    currentStage: "qa",
+    htmlOutput: {
+      ...page.htmlOutput,
+      html,
+      version: page.htmlOutput.version + 1,
+    },
+    qualityReport: undefined,
+    error: undefined,
+  });
+}
+
+/**
+ * 旧运行时只要正文出现“函数”就选择 function-graph，导致 Python 函数被当成
+ * 数学函数图。迁移尚无 HTML 产物、准备继续 HTML 阶段的检查点。
+ */
+function recoverStaleProgrammingVisualPrimitiveFailure(
+  page: PageGenerationState,
+  pagePlan: PagePlan | undefined,
+): PageGenerationState {
+  const content = page.content;
+  const shouldRecompute =
+    (page.status === "failed" || page.status === "running") &&
+    page.currentStage === "html" &&
+    content?.version === 2 &&
+    content.runtime?.visualPrimitive === "function-graph" &&
+    !page.htmlOutput &&
+    pagePlan !== undefined;
+  if (
+    !shouldRecompute ||
+    !content ||
+    content.version !== 2 ||
+    !content.runtime ||
+    !pagePlan
+  ) {
+    return page;
+  }
+  const runtime = content.runtime;
+
+  const visualPrimitive = buildLessonRuntime({
+    page: pagePlan,
+    blocks: content.blocks,
+    interaction: content.interaction,
+  }).visualPrimitive;
+  if (visualPrimitive === runtime.visualPrimitive) return page;
+
+  return PageGenerationStateSchema.parse({
+    ...page,
+    status: "running",
+    content: {
+      ...content,
+      runtime: {
+        ...runtime,
+        visualPrimitive,
+      },
+    },
+    attempts: page.attempts?.filter(({ stage }) => stage !== "html"),
+    error: undefined,
+  });
+}
+
+/**
+ * 旧 QA 截图曾关闭播放器的 contain-fit 运行时，却用未缩放文档的 scroll
+ * size 判定最终学习画布，导致 fluid 页面在多个视口反复 Repair。显式恢复
+ * 时保留 HTML/DSL/素材，只清理这类旧报告和已耗尽的局部修订记录，再按
+ * 当前播放器运行时重新 QA。
+ */
+function recoverPreViewportFitLayoutCheckpoint(
+  page: PageGenerationState,
+): PageGenerationState {
+  const fitOwnedIssueCodes = new Set([
+    "BROWSER_CANVAS_NOT_FILLED",
+    "BROWSER_NESTED_VERTICAL_OVERFLOW",
+    "BROWSER_PRIMARY_ACTION_BELOW_FOLD",
+    "BROWSER_VERTICAL_OVERFLOW",
+    "LAYOUT_CANVAS_COVERAGE",
+    "LAYOUT_VERTICAL_OVERFLOW",
+  ]);
+  const isAffected =
+    page.status !== "completed" &&
+    page.htmlOutput?.html.includes('data-keya-canvas-mode="fluid"') &&
+    page.qualityReport?.shouldRepair === true &&
+    page.qualityReport.issues.some(({ code }) =>
+      fitOwnedIssueCodes.has(code),
+    );
+  if (!isAffected) return page;
+
+  return PageGenerationStateSchema.parse({
+    ...page,
+    status: "running",
+    currentStage: "qa",
+    qualityReport: undefined,
+    repairHistory: [],
+    attempts: page.attempts?.filter(({ stage }) => stage !== "qa"),
+    error: undefined,
+  });
+}
+
+/**
+ * 用户显式恢复时重新开放可重试的 Repair 执行/候选失败，以及用户已经
+ * 处理过的额度、认证或配置失败。失败记录继续保留审计；质量停滞与紧急
+ * 上限仍不重置。
+ */
+function rearmRecoverableRepairExecutionFailure(
+  page: PageGenerationState,
+): PageGenerationState {
+  const recoverableCodes = new Set([
+    "AUTH_ERROR",
+    "CONFIG_ERROR",
+    "QUOTA_ERROR",
+    "REPAIR_EXECUTION_RETRY_EXHAUSTED",
+    "REPAIR_FAILED",
+    "REPAIR_TIMEOUT",
+  ]);
+  if (
+    page.status !== "failed" ||
+    page.currentStage !== "repair" ||
+    !recoverableCodes.has(page.error?.code ?? "") ||
+    (page.repairHistory?.length ?? 0) >= MAX_REPAIR_ATTEMPTS
+  ) {
+    return page;
+  }
+
+  return PageGenerationStateSchema.parse({
+    ...page,
+    status: "running",
+    error: undefined,
   });
 }
 
@@ -406,7 +833,11 @@ export async function failCourseGeneration(
       ...page,
       status: "failed",
       currentStage: pageStage,
-      error: { code: error.code, message: error.message },
+      error: {
+        code: error.code,
+        causeCode: error.causeCode,
+        message: error.message,
+      },
     }));
   }
 

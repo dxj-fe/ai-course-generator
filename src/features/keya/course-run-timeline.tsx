@@ -1,601 +1,430 @@
 "use client";
 
-import { type ReactNode, useEffect, useState } from "react";
 import {
-  Clock3 as ClockIcon,
-  RefreshCcw as ResumeIcon,
-  Wifi as ConnectedIcon,
-  WifiOff as DisconnectedIcon,
+  Check,
+  CirclePause,
+  CircleX,
+  Eye,
+  LoaderCircle,
+  Play,
+  RotateCcw,
+  Sprout,
 } from "lucide-react";
 
-import { Alert } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import type { CourseTaskConnectionStatus } from "@/features/course-planner/hooks/use-sse-task";
 import {
-  buildCourseRunTimelineModel,
-  type CourseRunTimelineConnectionStatus,
-  type CourseRunTimelinePage,
-  type CourseRunTimelineStage,
-} from "@/features/keya/course-run-timeline-model";
-import { GenerationLogDrawer } from "@/features/keya/generation-log-drawer";
+  CourseBriefCard,
+  CourseJourney,
+} from "@/features/keya/course-creation-cards";
+import {
+  createCourseCreationBrief,
+  type CourseCreationBrief,
+} from "@/features/keya/course-creation-model";
 import type { CourseTaskStatus } from "@/shared/course-schema";
-import type { CourseRunStageStatus, KeyaCourseRun } from "@/types/keya";
+import type { CourseGenerationError } from "@/shared/course-schema";
+import type { KeyaCourseRun } from "@/types/keya";
 
-type CourseRunTimelineProps = {
+interface CourseRunTimelineProps {
   busy?: boolean;
-  connectionStatus?: CourseRunTimelineConnectionStatus;
+  connectionStatus?: CourseTaskConnectionStatus;
   nowMs?: number;
+  onOpenCoursePlayer?(): void;
   onResumeCourse?(): void;
-  run?: KeyaCourseRun;
+  run: KeyaCourseRun;
   taskStatus?: CourseTaskStatus;
-};
+}
 
-const stageStatusCopy: Record<CourseRunStageStatus, string> = {
-  idle: "等待中",
-  running: "进行中",
-  completed: "已完成",
-  failed: "未完成",
-};
-
-const taskStatusCopy: Record<CourseTaskStatus, string> = {
-  queued: "排队中",
-  running: "生成中",
-  completed: "已完成",
-  failed: "生成失败",
-  cancelled: "已取消",
-};
-
-const connectionStatusCopy: Record<
-  CourseRunTimelineConnectionStatus,
-  string
-> = {
-  idle: "未连接",
-  connecting: "连接中",
-  open: "实时连接",
-  reconnecting: "正在重连",
-  closed: "连接已关闭",
-};
-
-const agentCopy: Record<string, string> = {
-  intent: "Intent Agent",
-  planner: "Course Planner",
-  "course-design": "专业设计 Agent",
-  "page-writer": "Page Writer",
-  "image-assets": "Image Assets",
-  "html-engineer": "HTML Engineer",
-  "page-qa": "Page QA",
-  "repair-agent": "Repair Agent",
-  supervisor: "Supervisor",
-  Workflow: "Workflow",
+export type CourseFailurePresentation = {
+  actionLabel: string;
+  description: string;
+  title: string;
 };
 
 /**
- * 把任务、Agent 与页面三个层级放回现有 /chat thread。
- * 原生流数据在 Hook 边界已经消失；这里仅消费类型化状态和公开摘要。
+ * 只依据稳定错误码返回有限公开文案。
+ * 持久化错误中的供应商响应、Schema 路径和内部阶段名不进入产品界面。
+ */
+export function getCourseFailurePresentation(
+  status: "cancelled" | "failed",
+  error?: Pick<CourseGenerationError, "causeCode" | "code">,
+): CourseFailurePresentation {
+  if (status === "cancelled") {
+    return {
+      actionLabel: "继续生成",
+      description: "已完成的课程内容已经保存，需要时可以继续。",
+      title: "课程生成已取消",
+    };
+  }
+
+  if (
+    error?.causeCode === "SCHEMA_ERROR" &&
+    error.code === "PAGE_WORKER_RETRY_EXHAUSTED"
+  ) {
+    return {
+      actionLabel: "重新生成",
+      description:
+        "部分页面没有通过内容或互动结构校验，重新生成时会从失败页面继续修正。",
+      title: "页面结构校验未通过",
+    };
+  }
+  if (
+    error?.causeCode === "SCHEMA_ERROR" &&
+    ["REPAIR_EXECUTION_RETRY_EXHAUSTED", "REPAIR_FAILED"].includes(
+      error.code,
+    )
+  ) {
+    return {
+      actionLabel: "重新生成",
+      description:
+        "页面修订结果没有通过授权范围或结构校验，重新生成时会从检查点重新评估。",
+      title: "页面修复未通过",
+    };
+  }
+
+  switch (error?.causeCode ?? error?.code) {
+    case "SCHEMA_ERROR":
+    case "COURSE_DESIGN_VALIDATION_ERROR":
+      return {
+        actionLabel: "重新生成",
+        description: "这次返回的课程内容格式不完整，重新生成时会修正这一部分。",
+        title: "课程内容需要重新生成",
+      };
+    case "RATE_LIMIT_ERROR":
+    case "MODEL_RATE_LIMITED":
+      return {
+        actionLabel: "稍后继续",
+        description: "模型服务当前请求较多，请稍等片刻后继续。",
+        title: "模型服务繁忙",
+      };
+    case "TIMEOUT_ERROR":
+    case "MODEL_TIMEOUT":
+    case "REPAIR_TIMEOUT":
+      return {
+        actionLabel: "重新生成",
+        description: "本次生成等待时间过长，可以重新继续未完成的部分。",
+        title: "课程生成超时",
+      };
+    case "QUOTA_ERROR":
+      return {
+        actionLabel: "额度恢复后继续",
+        description: "请检查模型服务账户的额度或计费状态，然后继续生成。",
+        title: "模型服务额度不足",
+      };
+    case "AUTH_ERROR":
+      return {
+        actionLabel: "配置完成后继续",
+        description: "请检查模型服务的 API Key 和访问权限，然后继续生成。",
+        title: "模型服务认证失败",
+      };
+    case "CONFIG_ERROR":
+      return {
+        actionLabel: "配置完成后继续",
+        description: "请先完成模型服务配置，然后继续生成。",
+        title: "模型服务尚未配置",
+      };
+    case "MODEL_ERROR":
+    case "MODEL_PROVIDER_ERROR":
+      return {
+        actionLabel: "重新生成",
+        description: "模型服务这次没有返回有效结果，请稍后继续。",
+        title: "模型服务调用失败",
+      };
+    default:
+      return {
+        actionLabel: "重新生成",
+        description: "未完成的课程内容可以从已保存的位置重新生成。",
+        title: "课程生成失败",
+      };
+  }
+}
+
+/**
+ * 将内部任务投影为用户可理解的单一课程状态。
+ * Agent、工作流、连接、重试与原始错误继续保留在服务端诊断中。
  */
 export function CourseRunTimeline({
   busy = false,
-  connectionStatus,
-  nowMs,
+  onOpenCoursePlayer,
   onResumeCourse,
   run,
   taskStatus,
 }: CourseRunTimelineProps) {
-  const isLive = Boolean(
-    run &&
-      (taskStatus === "queued" ||
-        taskStatus === "running" ||
-        run.generation?.status === "running" ||
-        run.planner.status === "running" ||
-        run.design.status === "running" ||
-        Object.values(run.pageWrites).some(
-          ({ status }) => status === "running",
-        ) ||
-        Object.values(run.pageAssets).some(
-          ({ status }) => status === "running",
-        ) ||
-        Object.values(run.pageHtml).some(
-          ({ status }) => status === "running",
-        )),
-  );
-  const [clockMs, setClockMs] = useState(() => nowMs ?? Date.now());
-
-  useEffect(() => {
-    if (nowMs !== undefined || !isLive) return;
-
-    const updateClock = () => setClockMs(Date.now());
-    updateClock();
-    const timer = window.setInterval(updateClock, 1_000);
-    return () => window.clearInterval(timer);
-  }, [isLive, nowMs]);
-
-  if (!run) {
-    return (
-      <section
-        aria-labelledby="course-run-timeline-title"
-        className="rounded-[20px] border border-[#e8dfd0] bg-[#fffcf5] p-4 shadow-[0_8px_28px_-24px_rgba(45,51,43,0.35)] sm:p-5"
-      >
-        <TimelineHeading />
-        <p className="mt-4 rounded-2xl bg-[#f6eedc] px-4 py-5 text-center text-sm text-[#7a7468]">
-          发送课程需求后，这里会按任务、Agent 与页面显示公开执行进度。
-        </p>
-      </section>
+  const outline =
+    run.generation?.outline ?? run.planner.data?.state.outline;
+  const intent = run.generation?.intent ?? run.planner.data?.intent;
+  const pages = outline?.pages ?? [];
+  const pageProgress = pages.map((page) => {
+    const generated = run.generation?.pages.find(
+      ({ pageId }) => pageId === page.id,
     );
-  }
-
-  const model = buildCourseRunTimelineModel(run, {
-    connectionStatus,
-    nowMs: nowMs ?? clockMs,
-    taskStatus,
+    const htmlStage = run.pageHtml[page.id];
+    const html =
+      generated?.htmlOutput?.html ?? htmlStage?.data?.state.htmlOutput?.html;
+    const status = generated?.status ?? htmlStage?.status ?? "idle";
+    return { html, page, status };
   });
-  const currentPage = model.pages.find(
-    ({ pageId }) => pageId === model.task.currentPageId,
-  );
-  const liveStatus =
-    model.task.status === "running"
-      ? `课程正在生成，当前 ${displayAgent(model.task.currentAgent)}${
-          currentPage ? `，第 ${currentPage.order} 页` : ""
-        }`
-      : `课程任务${taskStatusCopy[model.task.status]}`;
-  const canResume =
-    Boolean(onResumeCourse) &&
-    (model.task.status === "failed" || model.task.status === "cancelled");
+  const completedPages = pageProgress
+    .filter(({ html, status }) => status === "completed" && Boolean(html))
+    .map(({ page }) => page);
+  const runningPages = pageProgress
+    .filter(({ status }) => status === "running")
+    .map(({ page }) => page);
+  const totalPages =
+    pages.length ||
+    intent?.courseLength ||
+    resolveDisplayedSectionCount(createCourseCreationBrief(run.prompt));
+  const completedCount = completedPages.length;
+  const currentPageFromState = pageProgress.find(
+    ({ page, status }) =>
+      page.id === run.generation?.currentPageId &&
+      status !== "completed" &&
+      status !== "failed",
+  )?.page;
+  const activePages =
+    runningPages.length > 0
+      ? runningPages
+      : [
+          currentPageFromState ??
+            pageProgress.find(
+              ({ status }) =>
+                status !== "completed" && status !== "failed",
+            )?.page,
+        ].filter((page): page is (typeof pages)[number] => Boolean(page));
+  const generationStatus = run.generation?.status;
+  const requestFailed =
+    !run.generation && run.planner.status === "failed";
+  const completed =
+    generationStatus === "completed" ||
+    (totalPages > 0 && completedCount === totalPages);
+  const terminalStatus =
+    generationStatus === "cancelled" || taskStatus === "cancelled"
+      ? "cancelled"
+      : generationStatus === "failed" || taskStatus === "failed" || requestFailed
+        ? "failed"
+        : undefined;
+  const failure = terminalStatus
+    ? getCourseFailurePresentation(
+        terminalStatus,
+        run.generation?.errors.at(-1),
+      )
+    : undefined;
+  const paused = taskStatus === "paused";
+  const canResume = Boolean((paused || failure) && onResumeCourse);
+  const firstPage = pages[0];
+  const firstPageReady = firstPage
+    ? completedPages.some(({ id }) => id === firstPage.id)
+    : false;
+  const brief = briefFromRun(run, totalPages);
+  const statusTitle = completed
+    ? "课程已经准备好了"
+    : paused
+      ? "课程生成已暂停"
+      : failure
+      ? failure.title
+      : completedCount > 0
+        ? `课程已生成 ${completedCount} / ${totalPages} 节`
+        : "正在规划课程结构";
+  const statusDescription = completed
+    ? `全部 ${totalPages} 节内容已经完成，可以开始学习。`
+    : paused
+      ? totalPages > 0
+        ? `当前进度已保存，已完成 ${completedCount} / ${totalPages} 节，可以随时继续。`
+        : "当前进度已保存，可以随时继续生成。"
+      : failure
+      ? totalPages > 0
+        ? `${failure.description} 已完成 ${completedCount} / ${totalPages} 节。`
+        : failure.description
+      : activePages.length > 1
+        ? `正在并行生成第 ${activePages.map(({ order }) => order).join("、")} 节`
+        : activePages[0]
+          ? `正在生成第 ${activePages[0].order} 节：${activePages[0].title}`
+        : "课芽正在把课程方向整理成清晰的学习路径。";
 
   return (
     <section
-      aria-labelledby="course-run-timeline-title"
-      className="rounded-[20px] border border-[#e8dfd0] bg-[#fffcf5] p-4 shadow-[0_8px_28px_-24px_rgba(45,51,43,0.35)] sm:p-5"
+      aria-labelledby="course-generation-title"
+      className="grid gap-6"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <TimelineHeading />
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {model.task.resumed ? (
-            <Badge
-              className="h-auto rounded-full border-[#d7c9b9] bg-[#fffaf2] px-2.5 py-1 text-[11px] font-semibold text-[#7c674e]"
-              variant="outline"
-            >
-              已从断点恢复
-            </Badge>
-          ) : null}
-          <Badge
-            className="h-auto rounded-full border-[#d7c9b9] bg-[#fffaf2] px-2.5 py-1 text-[11px] font-semibold text-[#7c674e]"
-            variant="outline"
-          >
-            来源 · {model.task.source === "langgraph" ? "LangGraph" : "Workflow"}
-          </Badge>
-          {connectionStatus ? (
-            <ConnectionBadge status={model.task.connectionStatus} />
-          ) : null}
-          <TaskStatusBadge status={model.task.status} />
-        </div>
+      <div className="flex items-start gap-3">
+        <span className="mt-1 flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-sm">
+          <Sprout aria-hidden="true" size={20} strokeWidth={1.8} />
+        </span>
+        <CourseBriefCard brief={brief} />
       </div>
 
-      <p aria-live="polite" className="sr-only">
-        {liveStatus}
-      </p>
+      <CourseJourney activeStep={completed ? 3 : 2} />
 
-      <div className="mt-4 rounded-2xl bg-[#f6eedc] p-3.5 sm:p-4">
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
-          <SummaryField
-            label="页面进度"
-            value={
-              model.task.totalPages > 0
-                ? `${model.task.completedPages} / ${model.task.totalPages}`
-                : "等待规划"
-            }
-          />
-          <SummaryField
-            label="当前 Agent"
-            value={displayAgent(model.task.currentAgent)}
-          />
-          <SummaryField
-            label="当前页面"
-            value={
-              currentPage
-                ? `第 ${currentPage.order} 页`
-                : model.task.currentPageId ?? "整课阶段"
-            }
-          />
-          <SummaryField
-            icon={<ClockIcon aria-hidden="true" size={13} strokeWidth={1.8} />}
-            label="任务耗时"
-            value={formatDuration(model.task.durationMs)}
-          />
-        </dl>
+      <section className="ml-[52px] rounded-[22px] border border-border bg-card p-5 shadow-[var(--keya-card-shadow)]">
+        <div className="flex items-start gap-3">
+          <span
+            className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full ${
+              completed
+                ? "bg-[#e6f3e8] text-primary"
+                : paused
+                  ? "bg-[#f7efdf] text-[#946f32]"
+                : failure
+                  ? "bg-[#fff0e8] text-[#b2643f]"
+                  : "bg-[var(--keya-pill)] text-primary"
+            }`}
+          >
+            {completed ? (
+              <Check aria-hidden="true" size={17} strokeWidth={2.2} />
+            ) : paused ? (
+              <CirclePause aria-hidden="true" size={16} strokeWidth={1.8} />
+            ) : failure ? (
+              <CircleX aria-hidden="true" size={16} strokeWidth={1.8} />
+            ) : (
+              <LoaderCircle
+                aria-hidden="true"
+                className="motion-safe:animate-spin"
+                size={17}
+                strokeWidth={1.8}
+              />
+            )}
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2
+              className="text-base font-semibold text-foreground"
+              id="course-generation-title"
+            >
+              {statusTitle}
+            </h2>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              {statusDescription}
+            </p>
+          </div>
+        </div>
 
-        {model.task.totalPages > 0 ? (
-          <div className="mt-3">
+        {totalPages > 0 ? (
+          <div className="mt-5">
+            <div className="mb-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+              <span>课程内容</span>
+              <span className="font-medium text-foreground">
+                {completedCount} / {totalPages} 节
+              </span>
+            </div>
             <div
-              aria-label={`课程页面已完成 ${model.task.completedPages} / ${model.task.totalPages}`}
-              aria-valuemax={model.task.totalPages}
+              aria-label={`课程已生成 ${completedCount} / ${totalPages} 节`}
+              aria-valuemax={totalPages}
               aria-valuemin={0}
-              aria-valuenow={model.task.completedPages}
-              className="h-1.5 overflow-hidden rounded-full bg-[#e7ded2]"
+              aria-valuenow={completedCount}
+              className="h-2 overflow-hidden rounded-full bg-[var(--keya-pill)]"
               role="progressbar"
             >
               <span
-                className="block h-full rounded-full bg-[#397a52] transition-[width] duration-300"
+                className="block h-full rounded-full bg-primary transition-[width] duration-300 motion-reduce:transition-none"
                 style={{
-                  width: `${Math.round(
-                    (model.task.completedPages / model.task.totalPages) * 100,
-                  )}%`,
+                  width: `${(completedCount / totalPages) * 100}%`,
                 }}
               />
             </div>
           </div>
-        ) : null}
+        ) : paused ? (
+          <div
+            aria-live="polite"
+            className="mt-5 flex items-center gap-2 rounded-xl bg-[#fbf4e6] px-3 py-2.5 text-xs text-[#806334]"
+          >
+            <CirclePause
+              aria-hidden="true"
+              size={15}
+              strokeWidth={1.8}
+            />
+            章节规划已暂停，已保存当前进度
+          </div>
+        ) : (
+          <div
+            aria-live="polite"
+            className="mt-5 flex items-center gap-2 rounded-xl bg-[#f2f7f2] px-3 py-2.5 text-xs text-muted-foreground"
+          >
+            <LoaderCircle
+              aria-hidden="true"
+              className="text-primary motion-safe:animate-spin"
+              size={15}
+              strokeWidth={1.8}
+            />
+            正在根据内容深度规划章节结构
+          </div>
+        )}
 
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#e8ded2] pt-3">
-          <p className="min-w-0 text-[11px] leading-5 text-[#7a7468] [overflow-wrap:anywhere]">
-            trace · {model.task.traceId}
-          </p>
+        <div className="mt-5 flex flex-wrap gap-3">
           {canResume ? (
             <Button
-              className="h-8 rounded-full border border-[#dcaa9e] bg-[#fff8f5] px-3 text-xs font-semibold text-[#984735] hover:bg-white"
+              className="h-10 rounded-xl bg-primary px-4 text-sm font-semibold text-white hover:bg-[var(--keya-sprout-dark)]"
               disabled={busy}
               onClick={onResumeCourse}
-              size="sm"
               type="button"
-              variant="outline"
             >
-              <ResumeIcon aria-hidden="true" size={13} strokeWidth={1.8} />
-              {busy ? "正在恢复…" : "从断点继续"}
+              {paused ? (
+                <Play aria-hidden="true" size={16} strokeWidth={1.8} />
+              ) : (
+                <RotateCcw aria-hidden="true" size={16} strokeWidth={1.8} />
+              )}
+              {busy
+                ? "正在继续…"
+                : paused
+                  ? "继续生成"
+                  : failure?.actionLabel}
+            </Button>
+          ) : null}
+          {(completed || firstPageReady) && onOpenCoursePlayer ? (
+            <Button
+              className={
+                completed
+                  ? "h-10 rounded-xl bg-primary px-4 text-sm font-semibold text-white hover:bg-[var(--keya-sprout-dark)]"
+                  : "h-10 rounded-xl border-primary bg-card px-4 text-sm font-semibold text-primary hover:bg-[var(--keya-pill)]"
+              }
+              onClick={onOpenCoursePlayer}
+              type="button"
+              variant={completed ? "default" : "outline"}
+            >
+              {completed ? (
+                <Play aria-hidden="true" size={16} strokeWidth={1.8} />
+              ) : (
+                <Eye aria-hidden="true" size={16} strokeWidth={1.8} />
+              )}
+              {completed ? "开始学习" : "先预览课程"}
             </Button>
           ) : null}
         </div>
-      </div>
-
-      {model.supervisorDecisions.length > 0 ? (
-        <section
-          aria-labelledby="supervisor-decisions-title"
-          className="mt-5 rounded-2xl border border-[#dceadf] bg-[#edf5ee] p-3.5"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h4
-              className="text-sm font-semibold text-[#3f4a40]"
-              id="supervisor-decisions-title"
-            >
-              Supervisor 调度
-            </h4>
-            <span className="text-[11px] text-[#7d9273]">
-              仅展示公开决策摘要
-            </span>
-          </div>
-          <ol className="mt-3 grid gap-2">
-            {model.supervisorDecisions.slice(-3).map((decision) => (
-              <li
-                className="rounded-xl bg-white px-3 py-2.5"
-                key={decision.id}
-              >
-                <p className="text-xs leading-5 font-medium text-[#55634f]">
-                  {decision.summary}
-                </p>
-                <p className="mt-1 text-[11px] text-[#8a9784]">
-                  {decision.pageId
-                    ? `${decision.stage} · ${decision.pageId}`
-                    : `${decision.stage} · 整课阶段`}
-                </p>
-              </li>
-            ))}
-          </ol>
-        </section>
-      ) : null}
-
-      <section aria-labelledby="global-agent-progress-title" className="mt-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h4
-            className="text-sm font-semibold text-[#3f4a40]"
-            id="global-agent-progress-title"
-          >
-            全局 Agent
-          </h4>
-          <span className="text-[11px] text-[#9a8e7c]">
-            需求理解 · 课程规划 · 专业设计
-          </span>
-        </div>
-        <ol className="mt-3 grid gap-2">
-          {model.globalStages.map((stage) => (
-            <StageRow key={stage.id} stage={stage} />
-          ))}
-        </ol>
       </section>
-
-      <section aria-labelledby="page-agent-progress-title" className="mt-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h4
-            className="text-sm font-semibold text-[#3f4a40]"
-            id="page-agent-progress-title"
-          >
-            页面执行
-          </h4>
-          <span className="text-[11px] text-[#9a8e7c]">
-            {run.generation?.workerConfig
-              ? "按页面定位 DSL、素材、HTML、QA 与定向 Repair"
-              : "按页面定位 DSL、素材、HTML 与可选 QA"}
-          </span>
-        </div>
-        {model.pages.length > 0 ? (
-          <ol className="mt-3 grid gap-3">
-            {model.pages.map((page) => (
-              <PageGroup key={page.pageId} page={page} />
-            ))}
-          </ol>
-        ) : (
-          <p className="mt-3 rounded-2xl bg-[#f6eedc] px-4 py-4 text-center text-sm text-[#7a7468]">
-            课程结构生成后，这里会按页面展开 Agent 进度。
-          </p>
-        )}
-      </section>
-
-      <div className="mt-5">
-        <GenerationLogDrawer run={run} />
-      </div>
     </section>
   );
 }
 
-function TimelineHeading() {
-  return (
-    <div>
-      <p className="text-xs font-semibold tracking-[0.08em] text-[#4f8f65]">
-        AGENT 进度
-      </p>
-      <h3
-        className="mt-1 text-base font-semibold text-[#2d332b]"
-        id="course-run-timeline-title"
-      >
-        课程生成时间线
-      </h3>
-    </div>
+function briefFromRun(
+  run: KeyaCourseRun,
+  totalPages: number,
+): CourseCreationBrief {
+  const base = createCourseCreationBrief(run.prompt);
+  const intent = run.generation?.intent ?? run.planner.data?.intent;
+  const outline =
+    run.generation?.outline ?? run.planner.data?.state.outline;
+  const interactionTypes = new Set(
+    outline?.pages.map(({ interactionType }) => interactionType) ?? [],
   );
+  const learningMode =
+    interactionTypes.size === 0 ||
+    [...interactionTypes].every((type) => type === "none" || type === "navigate")
+      ? "guided"
+      : "mixed";
+
+  return {
+    ...base,
+    audience: intent?.audienceAgeRange.label ?? base.audience,
+    goal:
+      outline?.learningObjectives[0] ??
+      outline?.overview ??
+      base.goal ??
+      "掌握课程核心内容",
+    language: intent?.language ?? base.language,
+    learningMode,
+    sectionCount:
+      totalPages > 0 ? totalPages : "auto",
+    topic: intent?.topic ?? base.topic,
+  };
 }
 
-function PageGroup({ page }: { page: CourseRunTimelinePage }) {
-  const stages = [
-    page.stages.writer,
-    page.stages.assets,
-    page.stages.html,
-    ...(page.stages.qa ? [page.stages.qa] : []),
-    ...(page.stages.repair ? [page.stages.repair] : []),
-  ];
-
-  return (
-    <li className="rounded-2xl border border-[#f1e7d5] bg-[#fdfaf5] p-3.5">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="flex min-w-0 items-start gap-2.5">
-          <span
-            aria-hidden="true"
-            className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#edf5ee] text-xs font-semibold text-[#397a52]"
-          >
-            {String(page.order).padStart(2, "0")}
-          </span>
-          <div className="min-w-0">
-            <h5 className="text-sm leading-5 font-semibold text-[#3f4a40]">
-              {page.title ?? `页面 ${page.pageId}`}
-            </h5>
-            <p className="mt-0.5 text-[11px] text-[#9a8e7c]">
-              {page.pageId} · {pageProgressCopy[page.status]}
-            </p>
-          </div>
-        </div>
-        <StageStatusBadge status={page.status} />
-      </div>
-
-      <ol className="mt-3 grid gap-2 border-l border-[#e8dfd0] pl-3">
-        {stages.map((stage) => (
-          <StageRow compact key={stage.id} stage={stage} />
-        ))}
-      </ol>
-    </li>
-  );
+function resolveDisplayedSectionCount(brief: CourseCreationBrief) {
+  return typeof brief.sectionCount === "number" ? brief.sectionCount : 0;
 }
-
-function StageRow({
-  compact = false,
-  stage,
-}: {
-  compact?: boolean;
-  stage: CourseRunTimelineStage;
-}) {
-  return (
-    <li className="min-w-0 rounded-xl bg-white px-3 py-2.5">
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <span
-          aria-hidden="true"
-          className={`block size-2.5 shrink-0 rounded-full ${dotClasses[stage.status]}`}
-        />
-        <div className="min-w-0 flex-1">
-          <p className="text-xs leading-5 font-semibold text-[#3f4a40]">
-            {stage.label}
-            {!compact ? (
-              <span className="ml-1 font-normal text-[#7a7468]">
-                · {displayAgent(stage.agent)}
-              </span>
-            ) : null}
-          </p>
-        </div>
-        {stage.optional ? (
-          <Badge
-            className="h-auto rounded-full border-[#e3dbd1] bg-[#faf7f2] px-2 py-0.5 text-[10px] font-semibold text-[#94897c]"
-            variant="outline"
-          >
-            可选
-          </Badge>
-        ) : null}
-        {stage.attemptCount > 1 ? (
-          <Badge
-            className="h-auto rounded-full border-[#d7c9b9] bg-[#fffaf2] px-2 py-0.5 text-[10px] font-semibold text-[#7c674e]"
-            variant="outline"
-          >
-            第 {stage.attemptCount} 次执行
-          </Badge>
-        ) : null}
-        {stage.durationMs !== undefined ? (
-          <span className="text-[11px] tabular-nums text-[#7a7468]">
-            {formatDuration(stage.durationMs)}
-          </span>
-        ) : null}
-        <StageStatusBadge status={stage.status} />
-      </div>
-
-      {stage.summaries?.length ? (
-        <ul className="mt-2 grid gap-1">
-          {stage.summaries.slice(-3).map((summary, index) => (
-            <li
-              className="flex gap-2 text-[11px] leading-5 text-[#6f6a60]"
-              key={`${stage.id}-summary-${index}`}
-            >
-              <span aria-hidden="true" className="text-[#397a52]">
-                ·
-              </span>
-              <span className="min-w-0 [overflow-wrap:anywhere]">
-                {summary}
-              </span>
-            </li>
-          ))}
-        </ul>
-      ) : stage.status === "idle" ? (
-        <p className="mt-1 text-[11px] leading-5 text-[#9a8e7c]">
-          等待上一阶段完成
-        </p>
-      ) : null}
-
-      {stage.error ? (
-        <Alert
-          className="mt-2 rounded-xl border-0 bg-[#fff0eb] px-3 py-2 text-xs leading-5 text-[#984735]"
-          variant="destructive"
-        >
-          <p className="font-semibold [overflow-wrap:anywhere]">
-            {displayAgent(stage.error.agent)} · {stage.error.pageId ?? "整课"} ·{" "}
-            {stage.error.code}
-          </p>
-          <p className="mt-0.5 [overflow-wrap:anywhere]">
-            {stage.error.message}
-          </p>
-        </Alert>
-      ) : null}
-    </li>
-  );
-}
-
-function SummaryField({
-  icon,
-  label,
-  value,
-}: {
-  icon?: ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="min-w-0">
-      <dt className="flex items-center gap-1 text-[11px] text-[#7a7468]">
-        {icon}
-        {label}
-      </dt>
-      <dd className="mt-1 min-w-0 text-xs font-semibold text-[#3f4a40] [overflow-wrap:anywhere]">
-        {value}
-      </dd>
-    </div>
-  );
-}
-
-function StageStatusBadge({ status }: { status: CourseRunStageStatus }) {
-  return (
-    <Badge
-      className={`h-auto rounded-full border px-2 py-0.5 text-[10px] leading-normal font-semibold ${stageStatusClasses[status]}`}
-      data-status={status}
-      variant="outline"
-    >
-      {stageStatusCopy[status]}
-    </Badge>
-  );
-}
-
-function TaskStatusBadge({ status }: { status: CourseTaskStatus }) {
-  return (
-    <Badge
-      className={`h-auto rounded-full border px-2.5 py-1 text-[11px] font-semibold ${taskStatusClasses[status]}`}
-      data-task-status={status}
-      variant="outline"
-    >
-      {taskStatusCopy[status]}
-    </Badge>
-  );
-}
-
-function ConnectionBadge({
-  status,
-}: {
-  status: CourseRunTimelineConnectionStatus;
-}) {
-  const Icon = status === "open" ? ConnectedIcon : DisconnectedIcon;
-
-  return (
-    <Badge
-      className={`h-auto rounded-full border px-2.5 py-1 text-[11px] font-semibold ${connectionStatusClasses[status]}`}
-      data-connection-status={status}
-      variant="outline"
-    >
-      <Icon aria-hidden="true" size={11} strokeWidth={1.8} />
-      {connectionStatusCopy[status]}
-    </Badge>
-  );
-}
-
-function displayAgent(agent?: string) {
-  if (!agent) return "等待调度";
-  return agentCopy[agent] ?? agent;
-}
-
-function formatDuration(durationMs: number) {
-  if (durationMs < 1_000) return "< 1 秒";
-  const seconds = Math.floor(durationMs / 1_000);
-  if (seconds < 60) return `${seconds} 秒`;
-  const minutes = Math.floor(seconds / 60);
-  const restSeconds = seconds % 60;
-  if (minutes < 60) return `${minutes} 分 ${restSeconds} 秒`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours} 时 ${minutes % 60} 分`;
-}
-
-const dotClasses: Record<CourseRunStageStatus, string> = {
-  idle: "bg-[#cfc5b8]",
-  running:
-    "bg-[#397a52] motion-safe:animate-[keya-soft-pulse_1.4s_ease-in-out_infinite]",
-  completed: "bg-[#397a52]",
-  failed: "bg-[#cf745f]",
-};
-
-const stageStatusClasses: Record<CourseRunStageStatus, string> = {
-  idle: "border-[#dfd5c5] bg-[#faf2e2] text-[#7a7468]",
-  running: "border-[#cfe2d1] bg-[#edf5ee] text-[#2f6845]",
-  completed: "border-[#cfe2d1] bg-[#edf5ee] text-[#2f6845]",
-  failed: "border-[#e4b6aa] bg-[#fff0eb] text-[#a44f3d]",
-};
-
-const pageProgressCopy: Record<CourseRunStageStatus, string> = {
-  idle: "等待生成",
-  running: "生成中",
-  completed: "3 / 3 必需阶段",
-  failed: "必需阶段失败",
-};
-
-const taskStatusClasses: Record<CourseTaskStatus, string> = {
-  queued: "border-[#dfd5c5] bg-[#faf2e2] text-[#7a7468]",
-  running: "border-[#cfe2d1] bg-[#edf5ee] text-[#2f6845]",
-  completed: "border-[#cfe2d1] bg-[#edf5ee] text-[#2f6845]",
-  failed: "border-[#e4b6aa] bg-[#fff0eb] text-[#a44f3d]",
-  cancelled: "border-[#d7c9b9] bg-[#faf2e2] text-[#7c674e]",
-};
-
-const connectionStatusClasses: Record<
-  CourseRunTimelineConnectionStatus,
-  string
-> = {
-  idle: "border-[#dfd5c5] bg-[#faf2e2] text-[#7a7468]",
-  connecting: "border-[#dfd5c5] bg-[#fffaf2] text-[#7c674e]",
-  open: "border-[#cfe2d1] bg-[#edf5ee] text-[#2f6845]",
-  reconnecting: "border-[#e8cf9d] bg-[#fff8e8] text-[#936e24]",
-  closed: "border-[#dfd5c5] bg-[#faf2e2] text-[#7a7468]",
-};

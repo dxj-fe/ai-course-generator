@@ -4,9 +4,9 @@ source_doc: `.agentdocs/prd/AI_Agent_Frontend_Training_Handbook_V5.docx`
 timezone: `Asia/Shanghai`
 daily_run_time: `09:30`
 start_date: `2026-07-09`
-last_delivered_day: `36`
-last_delivered_date: `2026-07-23`
-next_training_day: `37`
+last_delivered_day: `38`
+last_delivered_date: `2026-07-28`
+next_training_day: `39`
 
 ## Notes
 
@@ -83,3 +83,5 @@ next_training_day: `37`
 - 2026-07-23: Added the missing Day 35 implementation notes with architecture, reliability boundaries, acceptance evidence, and interview review answers.
 - 2026-07-23: Delivered Day 36 plan for fixed Demo prompts, expected-outline baselines, one-command local runs, course contract checks, quality scoring, export verification, and curated evidence.
 - 2026-07-23: Fixed the local HTML Engineer timeout exhaustion with a bounded 120-second default, a validated 30–300-second environment override, regression coverage, and unchanged checkpoint recovery.
+- 2026-07-27: Delivered Day 37 plan for a five-minute README, current architecture documentation, multi-Agent rationale, interview narratives, and evidence-path verification.
+- 2026-07-28: Delivered Day 38 plan for evidence-backed resume positioning, seven technical contribution bullets, interview deep dives, current product screenshots, and GitHub/README linkage.

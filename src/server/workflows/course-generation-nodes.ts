@@ -19,14 +19,17 @@ import {
 } from "@/server/workflows/sequential-workflow";
 import {
   CourseIntentSchema,
+  CoursePageCountSchema,
   type CourseGenerationNodeName,
   type CourseGenerationPublicEvent,
   type CourseGenerationStage,
   type CourseGenerationState,
   type PageGenerationState,
+  type CoursePageCount,
 } from "@/shared/course-schema";
 
-export type CourseMvpPageCount = 3 | 4 | 5;
+/** @deprecated 保留旧导出名以兼容现有调用方，合法性由共享正整数 Schema 统一校验。 */
+export type CourseMvpPageCount = CoursePageCount;
 
 export type { CourseGenerationNodeName } from "@/shared/course-schema";
 
@@ -121,12 +124,9 @@ export function createIntentNode(): CourseGenerationNode {
           traceId: context.runtime.traceId,
           userPrompt: state.userPrompt,
         });
-        const courseLength =
-          context.pageCount ??
-          (Math.min(
-            5,
-            Math.max(3, generatedIntent.courseLength),
-          ) as CourseMvpPageCount);
+        const courseLength = CoursePageCountSchema.parse(
+          context.pageCount ?? generatedIntent.courseLength,
+        );
         const intent = CourseIntentSchema.parse({
           ...generatedIntent,
           courseLength,
@@ -137,7 +137,7 @@ export function createIntentNode(): CourseGenerationNode {
           events: [
             {
               type: "validation" as const,
-              summary: `课程意图已校验，MVP 固定生成 ${intent.courseLength} 页。`,
+              summary: `课程意图已校验，将按内容生成 ${intent.courseLength} 节。`,
             },
           ],
         };

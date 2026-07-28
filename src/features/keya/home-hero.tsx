@@ -25,6 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { CourseCoverFrame } from "@/features/keya/course-cover-frame";
 import type { CourseHistoryItem } from "@/shared/course-schema";
 
 const promptChips = [
@@ -129,27 +130,22 @@ export function HomeHero({
               </span>
             </span>
           </Link>
-        ) : featuredWorks.map((work, index) => (
+        ) : featuredWorks.map((work) => (
           <Button
             aria-label={`进入${work.title}`}
-            className="group relative h-[216px] min-w-0 overflow-hidden rounded-xl border-0 bg-[linear-gradient(135deg,#eaf3e7,#fff0c9_55%,#f3e7ce)] p-6 text-left font-normal whitespace-normal hover:brightness-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#397a52]"
+            className="group relative h-[216px] min-w-0 overflow-hidden rounded-xl border border-[#e8dfd0] bg-[#fffcf5] p-0 text-left font-normal whitespace-normal shadow-[0_12px_30px_-24px_rgba(45,51,43,0.65)] hover:brightness-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#397a52]"
             key={work.courseId}
             onClick={() => router.push(`/course/${work.courseId}`)}
             title={work.title}
             type="button"
             variant="ghost"
           >
-            <span className="absolute -right-10 -top-12 size-36 rounded-full border-[22px] border-white/30" />
-            <span className="relative block text-xs font-semibold tracking-[0.18em] text-[#397a52]">
-              COURSE {String(index + 1).padStart(2, "0")}
-            </span>
-            <strong className="relative mt-7 line-clamp-2 block max-w-[82%] text-xl leading-7 text-[#2d332b]">
-              {work.title}
-            </strong>
-            <span className="relative mt-3 block text-xs text-[#7a7468]">
-              {work.completedPages}/{work.totalPages} 页 ·{" "}
-              {work.status === "completed" ? "已完成" : "最近更新"}
-            </span>
+            <CourseCoverFrame
+              courseId={work.courseId}
+              cover={work.cover}
+              loading="eager"
+              title={work.title}
+            />
             <span
               aria-hidden="true"
               className="absolute bottom-2 right-2 flex size-10 items-center justify-center rounded-full border-4 border-[#fff9ee] bg-[#397a52] text-white transition-transform duration-150 group-hover:scale-105"

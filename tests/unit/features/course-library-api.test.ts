@@ -23,11 +23,10 @@ describe("course library API client", () => {
       listCourseHistory({
         query: "太阳系",
         status: "completed",
-        source: "langgraph",
       }),
     ).resolves.toEqual(payload);
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      "/api/courses?query=%E5%A4%AA%E9%98%B3%E7%B3%BB&status=completed&source=langgraph",
+      "/api/courses?query=%E5%A4%AA%E9%98%B3%E7%B3%BB&status=completed",
     );
   });
 
