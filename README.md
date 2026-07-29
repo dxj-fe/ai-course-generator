@@ -6,6 +6,8 @@
 
 > 当前定位：用于展示 AI 应用工程、复杂前端交互和 Node.js Agent 编排能力的本地项目。它还不是带账号、权限、分布式队列和商业计费的生产 SaaS。
 
+[GitHub 仓库](https://github.com/dxj-fe/ai-course-generator) · [简历项目亮点](docs/resume/project-bullets.md) · [逐条面试深挖](docs/resume/interview-deep-dive.md) · [截图与证据](docs/resume/screenshots.md)
+
 ## 五分钟了解项目
 
 ### 用户能做什么
@@ -245,6 +247,9 @@ pnpm demo:check -- \
 - [可靠性与成本](docs/reliability-cost.md)
 - [HTML 预览安全](docs/html-preview-security.md)
 - [3 / 8 / 15 分钟项目讲解](docs/interview-story.md)
+- [简历项目亮点与源码证据](docs/resume/project-bullets.md)
+- [七条亮点逐条面试深挖](docs/resume/interview-deep-dive.md)
+- [截图与 Demo 证据清单](docs/resume/screenshots.md)
 - [训练历程](docs/training-log.md)
 
 ## 当前边界与下一步

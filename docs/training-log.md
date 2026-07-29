@@ -33,12 +33,13 @@
 - **Day 32**：接入 txt/md/pdf 资料解析、Reference Pack、页面级授权引用与 Prompt Injection 边界。
 - **Day 33**：建立 Tool/Skill/Template/Reference Card 与有界检索，让 Agent 只接收短小、相关、可验证的上下文。
 
-## 阶段六：产品化、可靠性与交付（Days 34–37）
+## 阶段六：产品化、可靠性与交付（Days 34–38）
 
 - **Day 34**：完成课程历史、持久详情、断点返回、搜索筛选和 ZIP 导出。
 - **Day 35**：补齐取消传播、有限超时、分级模型路由、结构化缓存、成本 telemetry 和有界降级。
 - **Day 36**：建立三个固定 Demo、语义基线、CLI runner、Schema/HTML/QA/export checker 和人工评分方法。
 - **Day 37**：把 README、架构入口、多 Agent 取舍和 3/8/15 分钟项目讲解整理为可复核的项目文档。
+- **Day 38**：形成面向 AI 全栈重前端岗位的一句话定位、七条证据化简历亮点、逐条面试深挖以及截图/GitHub 证据清单。
 
 ## 相关入口
 
@@ -46,4 +47,7 @@
 - [固定 Demo](demo/prompts.md)
 - [多 Agent 取舍](why-multi-agent.md)
 - [项目讲解](interview-story.md)
+- [简历亮点](resume/project-bullets.md)
+- [面试深挖](resume/interview-deep-dive.md)
+- [截图证据](resume/screenshots.md)
 - [训练进度](../.agentdocs/progress/frontend-training-progress.md)
