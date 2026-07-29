@@ -1,529 +1,254 @@
-# 课芽
+# 课芽 · AI 个性化课程生成器
 
-课芽是一款 AI 个性化课程生成产品：用一句话或一份不超过 5 MB 的 txt/md/pdf 参考资料，生成一门由多页关联 HTML 组成的课程。当前 Day 35 版本在产品化课程链路之上补齐严格取消传播、有限超时、结构化结果缓存、模型路由、一次瞬时降级和安全成本 telemetry。严格公开事件、SSE 和 checkpoint 仍是任务、Agent、页面进度与错误的唯一前端数据边界。
+课芽把一句自然语言需求或一组参考资料，转化为一门有教学顺序、统一视觉和互动练习的多章节 HTML 课程。
 
-## Day 01 交付
+它不是“让一个模型一次性写完整课程”的演示：系统先确认学习目标，再由受约束的多 Agent 流程完成课程规划、教学与视觉设计、逐页内容生成、图片素材、HTML 工程、浏览器质量检查和定向修复。生成过程可暂停、恢复和取消，完成课程可以在安全沙箱中学习并导出 ZIP。
 
-- Next.js + React + TypeScript 项目已创建。
-- 模型供应商通过 `MODEL_BASE_URL`、`MODEL_API_KEY`、`MODEL_NAME` 配置，不在业务代码里硬编码。
-- `POST /api/ai/generate` 返回普通文本。
-- `POST /api/ai/stream` 返回 AI SDK UI message stream。
-- 首页可以输入 prompt，并分别验证普通生成与流式输出。
-- 项目已迁移到 `src/` 分层架构，目录规范见 `docs/architecture/directory-structure.md`。
+> 当前定位：用于展示 AI 应用工程、复杂前端交互和 Node.js Agent 编排能力的本地项目。它还不是带账号、权限、分布式队列和商业计费的生产 SaaS。
 
-## Day 02 交付
+## 五分钟了解项目
 
-- AI 调用已抽到 `src/server/ai/client.ts`，提供 `generateTextSafe` 和 `streamTextSafe`。
-- API 请求支持 `systemPrompt`、`temperature`、`maxTokens` 和 `traceId`。
-- 错误响应统一为 `{ code, message, traceId }`，用于前端展示和服务端日志定位。
-- Playground 支持编辑 system prompt、切换 temperature、调整 max tokens。
-- Day 02 复盘记录见 `notes/day-02.md`。
+### 用户能做什么
 
-## Day 03 交付
+1. 在 `/chat` 输入课程主题、受众和目标，也可以上传最多 3 个不超过 5 MB 的 `txt`、`md` 或 `pdf` 参考文件。
+2. 确认课程简报后创建异步任务；页面可关闭或刷新，生成状态从持久化 checkpoint 恢复。
+3. 在对话线程查看公开阶段状态，在右侧学习空间查看已完成章节。
+4. 生成完成后进入 `/course/[courseId]` 学习，保留本地进度、互动结果和朗读偏好。
+5. 从 `/course` 搜索历史课程，或导出包含课程状态、页面 HTML 和素材清单的 ZIP。
 
-- 新增 `CourseIntentSchema`，约束 `topic`、`audienceAgeRange`、`courseLength`、`visualStyle`、`difficulty`、`mustInclude`、`avoid` 和 `language`。
-- AI Client 新增 `generateStructuredObjectSafe`，通过 AI SDK structured output 生成并校验对象。
-- 新增 `POST /api/agents/intent`，把 `userPrompt` 解析为结构化 CourseIntent。
-- Playground 增加 CourseIntent JSON 展示，便于观察结构化输出和 schema 错误。
-- Day 03 复盘记录见 `notes/day-03.md`。
+![课芽课程创建界面](docs/product/assets/course-creation-chat-guided-v1.png)
 
-## Day 04 交付
+![课芽互动课程播放器](docs/product/assets/interactive-course-player-course-map-v1.png)
 
-- Intent Agent 的 system/user Prompt 已迁移到带版本号的 Markdown 模板。
-- 新增 `PromptTemplate` 契约与服务端 Prompt Loader，校验缺失变量和未知变量。
-- 用户原始需求通过 JSON string 注入，Prompt 明确隔离不可信输入并拒绝角色越权。
-- 新增 Prompt Review Checklist、5 个固定 bad case 与 Prompt Loader 单元测试。
-- AI 日志只记录 Prompt 长度、版本、traceId、耗时和错误，不记录 Prompt 正文或私有推理过程。
+### 一条课程如何生成
 
-## Day 05 交付
+```mermaid
+flowchart LR
+  Input["提示词或参考资料"] --> Brief["课程简报"]
+  Brief --> Task["异步任务 API"]
+  Task --> Graph["LangGraph + 规则型 Supervisor"]
+  Graph --> Plan["Intent + Planner + 专业设计"]
+  Plan --> Worker["隔离 Page Worker"]
+  Worker --> DSL["PageContentDSL"]
+  DSL --> Assets["图片 Skill / 缓存 / fallback"]
+  Assets --> HTML["HTML Engineer"]
+  HTML --> QA["确定性检查 + Playwright + 模型 QA"]
+  QA --> Decision{"需要修复？"}
+  Decision -->|"是"| Repair["定向 Repair + re-QA"]
+  Repair --> QA
+  Decision -->|"否"| Persist["SQLite checkpoint"]
+  Persist --> SSE["公开 SSE"]
+  SSE --> UI["/chat 与 /course"]
+```
 
-- 新增 Skill 契约和 Skill Registry，执行前后分别校验输入与输出。
-- 新增功能模板搜索、样式模板搜索和 CourseIntent 校验三个 Skill。
-- 新增 `POST /api/demo/tool-call`，由模型选择工具、后端执行并返回 Tool Result。
-- 工具调用日志记录 `toolName`、输入、输出、耗时、成功状态和 `traceId`。
-- Day 05 面试复盘见 `notes/day-05.md`。
+当前 `/chat` 新任务使用 LangGraph 运行源。规则型 Supervisor 只从后端计算出的合法节点中选择下一步；它不生成课程正文，也不能扩大重试预算。手写 Workflow 仍作为兼容批量入口和底层执行原语保留。
 
-## Day 06 交付
+完整链路见[架构入口](docs/architecture/README.md)和[从提示词到最终 HTML](docs/architecture/prompt-to-html-current-flow.md)。
 
-- 新增最小 `Agent<State>`、AgentState、AgentEvent 和手写循环引擎。
-- SinglePageAgent 先调用 Day 5 模板 Tool，再生成结构化 PagePlan 草稿。
-- AgentState 包含步骤预算、模板选择、PagePlan、事件和可序列化错误。
-- 新增 `POST /api/agents/single-page`，返回最终状态与 Timeline 事件数组。
-- Day 06 面试复盘见 `notes/day-06.md`。
+### 核心技术亮点
 
-## Day 07 交付
+- **结构化 AI 输出**：Intent、CoursePlan、PageContentDSL、QualityReport、RepairResult 等共享 Zod Schema 是前后端、Agent 与持久化之间的合同。
+- **受约束的多 Agent 编排**：Planner、Pedagogy、Story、Visual、Page Writer、HTML Engineer、QA 和 Repair 各自只负责一个可验证产物；Supervisor 只负责路由。
+- **功能模板与样式模板分离**：功能模板约束教学结构，样式模板提供 Design Tokens，同一内容结构可以组合不同视觉方向。
+- **内容与页面实现分离**：Page Writer 生成语义 DSL；HTML Engineer 只实现已确认内容，避免在写页面时重新规划课程。
+- **质量闭环**：确定性合同、三视口 Playwright 证据和模型 QA 共同产出六维报告；Repair 只能修改授权范围，并在 re-QA 后决定是否继续。
+- **可恢复的长任务**：任务、课程、会话和 checkpoint 持久化到 SQLite；SSE 断开不会取消任务，暂停和失败恢复不会重跑已完成页面。
+- **安全 HTML 交付**：生成 HTML 必须通过服务端合同与安全预检；诊断预览使用空权限 sandbox，学习器只注入平台拥有的受限运行时。
+- **模型与素材可靠性**：有限超时、AbortSignal、分级模型路由、一次瞬时降级、结构化结果缓存，以及图片生成失败时的类型化 fallback。
 
-- 新增 `Course`、`CourseOutline`、`PagePlan`、`Asset`、`Theme` 和 `QualityReport` Zod Schema。
-- `pageType` 明确覆盖封面、故事导入、知识卡、问答、对比、时间线、总结和成就页。
-- 核心 Schema 与 TypeScript 类型从 `src/shared/course-schema` 统一导出，前后端共享。
-- 为每个核心 Schema 提供受测试保护的 example JSON。
-- Course 聚合校验页面顺序与依赖、素材引用和质量报告目标。
-- 字段设计与 DSL 边界说明见 `docs/schema.md`，面试复盘见 `notes/day-07.md`。
+## 为什么这样设计
 
-## Day 08 交付
+### 为什么不用一个超级 Prompt
 
-- 新增共享 `FunctionalTemplateSchema`、五种教学槽位和 Functional Template Registry。
-- 实现封面、故事导入、知识卡、对比、时间线、选择题、任务成就和总结 8 个模板。
-- 每个 Day 07 `pageType` 都有对应模板和通过 `PagePlanSchema` 的 mock。
-- Day 05 `searchFunctionalTemplateSkill` 改为查询共享 Registry，并返回候选、分数和匹配理由。
-- 新增 `/templates` TemplateGallery，前端可查看槽位、适用场景、约束和 PagePlan 示例。
-- 设计说明见 `docs/templates-functional.md`，面试复盘见 `notes/day-08.md`。
+课程规划、教学设计、页面内容、HTML 实现和质量评估需要不同输入、输出和失败处理。把它们放进一次模型调用会产生职责冲突、上下文膨胀、输出截断和错误无法定位等问题。课芽让每一步先通过 Schema，再把最小必要结果交给下一步；单页失败时也不必重跑整门课程。
 
-## Day 09 交付
+### 为什么需要模板系统
 
-- 新增共享 `StyleTemplateSchema`，覆盖颜色、排版、间距、表面、装饰、动效、密度和素材指导。
-- 实现科幻、童趣、极简、自然、黑板和游戏任务六套样式模板。
-- 新增 Style Registry，并将 `professional` CourseIntent 兼容映射到 `minimal`。
-- 新增 StyleTemplate 到 CSS Variables、CSS 文本和 Day 07 Theme 的转换器。
-- Day 05 `searchStyleTemplateSkill` 改为查询共享 Registry 并返回候选、分数和理由。
-- 通过测试验证全部 48 种功能模板和样式模板组合。
-- `/templates` 新增六张由真实 CSS Variables 驱动的风格预览卡。
-- 设计说明见 `docs/templates-style.md`，面试复盘见 `notes/day-09.md`。
+模型擅长根据主题生成内容，但不天然保证每一页承担明确教学职责，也不保证整门课视觉一致。功能模板固定教学槽位和互动目标；样式模板固定颜色、排版、间距和素材指导。模板负责稳定性，DSL 与 HTML Engineer 保留表达空间。
 
-## Day 10 交付
+### 为什么图片只作为素材
 
-- `PagePlanSchema` 新增 `interactionType` 和规划阶段的 `assetNeeds`。
-- 新增 `CoursePlanSchema`，约束正整数页数、连续顺序、合法依赖和“引入—讲解—互动—总结”节奏，不设置固定页数上限。
-- 新增版本化 Course Planner Prompt 和一步 `CoursePlannerAgent`。
-- Planner 使用 Day 08/09 Registry 校验功能模板、pageType、样式模板和全课程视觉一致性。
-- 新增 `POST /api/courses/plan`，支持一句话生成 CourseIntent 和 CoursePlan，也支持直接输入 CourseIntent。
-- 首页新增 CourseOutlinePanel、PagePlanList、Agent Timeline 和五个固定测试主题。
-- 设计决策和八道详细面试题见 `notes/day-10.md`。
+课程标题、正文、按钮和练习不能烘焙到图片中，否则会失去可访问性、响应式布局、文本选择和互动能力。图片 Agent 只生成背景、角色贴纸、图标或纹理，HTML Engineer 将批准素材绑定到语义节点，供应商失败时仍可使用 CSS、SVG 或占位 fallback 完成页面。
 
-## Day 11 交付
+更完整的取舍见[为什么采用多 Agent](docs/why-multi-agent.md)。
 
-- 新增 `PedagogyPlanSchema`、`StoryArcSchema`、`VisualBriefSchema` 和逐页 `PageWorkerBriefSchema`。
-- 实现单一职责的 PedagogyAgent、StoryAgent 和 VisualDirectorAgent，并使用独立版本化 Prompt。
-- 新增串行 Course Design Workflow，支持失败短路、公开事件聚合、pageId 对齐和 HTML 越界校验。
-- Visual Director 引用 Day 09 的真实 StyleTemplate，不复制颜色 Token。
-- 新增 `POST /api/courses/design`，消费已完成的 CourseIntent 与 CoursePlan。
-- 首页新增教学、故事、视觉三个 Tab、Professional Agent Timeline 和 Page Worker 交接协议检查器。
-- 实现说明和八道详细面试题见 `notes/day-11.md`。
+## 产品表面
 
-## Day 12 交付
+| 路由 | 职责 |
+| --- | --- |
+| `/` | 发现示例课程和进入课程创建 |
+| `/chat` | 课程简报、资料上传、任务创建、公开进度和生成中的学习空间 |
+| `/course` | 持久化课程、运行状态、搜索与筛选 |
+| `/course/[courseId]` | 可恢复的课程详情、互动学习和 ZIP 导出 |
+| `/templates` | 功能模板、样式模板、Design Tokens 和 PagePlan 示例 |
+| `/preview/[previewId]` | 有时效的诊断预览，不承担持久课程历史 |
 
-- 新增 `PageContentDSLSchema`，覆盖语义 blocks、七类 interaction、assetSlots 和弱 layoutHints。
-- 技术 ID、素材槽位和 readingOrder 由确定性代码从 PagePlan 补齐。
-- 实现一步 `PageWriterAgent`、版本化 Prompt 和 `POST /api/pages/write`。
-- Page Writer 校验 PagePlan、PageWorkerBrief、FunctionalTemplate、互动类型和素材需求的一致性。
-- 为八个 FunctionalTemplate 分别提供一份合法 DSL example。
-- 首页新增 PageDSLViewer，可选择任一页面生成并检查 DSL，并明确区分未来 HTML 输出。
-- 边界设计见 `docs/dsl-boundary.md`，实现说明和八道详细面试题见 `notes/day-12.md`。
+展示组件不直接调用业务 API，也不消费 LangGraph 原生 chunk。API 客户端把 HTTP/SSE 转换为共享任务类型，`ChatApp` 作为 Task Controller，再将状态投影给对话和学习空间。
 
-## Day 13 交付
+## 技术栈
 
-- 新增完整文档 `GeneratedHtmlContract`，校验 doctype、html/head/body、viewport 和内联 style。
-- 新增 `sanitizeHtmlLite`，拒绝外链脚本、外链 iframe、事件属性、危险 URL、跳转和主动嵌入内容。
-- 新增确定性 Day 13 demo builder，从已校验的 PageContentDSL 生成自包含静态 HTML，不提前实现 HtmlEngineerAgent。
-- 课芽 `/chat` 右侧学习工作区使用 `srcDoc` 和空权限 `sandbox` 展示页面，生成 HTML 不进入主应用 DOM。
-- 安全策略见 `docs/html-preview-security.md`，实现说明和详细面试题见 `notes/day-13.md`。
+| 层 | 主要技术 |
+| --- | --- |
+| Web | Next.js 16、React 19、TypeScript、Tailwind CSS |
+| UI | 本地 shadcn/ui primitives、Radix UI、Lucide React |
+| AI | Vercel AI SDK、OpenAI-compatible Provider、Volcengine Ark / Doubao |
+| 编排 | LangGraph、规则型 Supervisor、手写兼容 Workflow |
+| 合同 | Zod 4、版本化 Prompt、严格公共事件 Schema |
+| 质量 | Playwright、确定性 HTML/布局检查、模型 QA、Repair/re-QA |
+| 存储 | SQLite、本地生成素材与 QA 证据 |
+| 测试 | Vitest、ESLint、Next.js production build、固定 Demo runner |
 
-## Day 14 交付
+## 本地启动
 
-- 新增一步 `HtmlEngineerAgent` 和版本化 Prompt，只消费 PageContentDSL、服务端 Registry 模板与 VisualBrief，不读取原始用户 Prompt。
-- 新增 `POST /api/pages/generate-html`，返回完整 `HtmlOutput` 与公开 Agent 事件。
-- 模型 HTML 在服务端立即执行完整文档合同、无脚本安全预检和 DSL 稳定标记检查。
-- 课芽 `/chat` 支持逐页生成、失败重试、上游失效和空权限 iframe 快速预览。
-- 新增 `/preview/[previewId]` 独立预览路由；HTML 通过随机 ID 存入重新校验的浏览器临时缓存，不进入 URL。
-- 同一 DSL 的 sci-fi、kids-playful、minimal 三风格用例和详细面试复盘见 `notes/day-14.md`。
+### 1. 环境要求
 
-## Day 15 交付
+- Node.js `>=22.5.0`
+- pnpm
+- 至少一个 OpenAI-compatible 文本模型
+- 可选：图片生成 Provider
+- 可选：Playwright Chromium，用于浏览器截图 QA 和完整 Demo
 
-- 在现有 `QualityReportSchema` 上增加六维评分、结构化问题位置、证据来源、`repairHint` 与确定性 `shouldRepair`。
-- 新增 `basicLayoutHeuristics`，检查 HTML 合同、安全、文本过载、固定宽度、裁切风险、低对比度和素材可用性。
-- 新增只读 `PageQAAgent`、版本化 Prompt 和 `POST /api/pages/qa`，语义模型不会修改 HTML。
-- 总分采用 30/22/17/13/10/8 权重，error 和关键低分通过程序硬门槛触发修复。
-- 课芽 `/chat` 增加逐页 QA 状态、公开事件、六维评分和可执行问题列表；重新生成上游产物时旧报告自动失效。
-- 独立预览缓存可携带经过 Schema 校验且指向当前页面的质量报告，并在顶部显示评分状态。
-- 十类固定失败分类、实现边界和详细面试复盘见 `notes/day-15.md`。
-
-## Day 16 交付
-
-- 新增 `AssetRequestSchema` 与 `AssetGenerationResultSchema`，明确素材用途、比例、透明背景、安全区、真实素材和 fallback。
-- 新增 `ImagePromptAgent`，把 Page DSL 素材槽编译为背景、角色贴纸、图标与纹理四类无文字生图请求。
-- 新增真实生图 Skill 和 `POST /api/pages/generate-assets`；服务端校验 PNG/JPEG/WebP 后写入 `.data/generated-assets`，通过随机 ID 路由读取。
-- 方舟模式默认复用现有 `ARK_API_KEY` 调用 `doubao-seedream-4-5-251128`；Seedream 返回 JPEG 时会保留图片并显式标注透明通道警告。
-- 图片服务未配置、调用失败、格式伪造或透明背景不满足时返回 CSS/SVG/占位降级，不阻塞 HTML Engineer。
-- HTML Engineer 只能消费当前页面批准的内部素材 URI；Page QA 会报告素材缺失、未引用和 fallback。
-- 课芽 `/chat` 学习工作区增加逐页图片素材状态与公开事件，重新生图会失效旧 HTML 与 QA。
-- 素材边界、四类用例和详细面试复盘见 `notes/day-16.md`。
-
-## Day 17 交付
-
-- 页面素材解析先按 Page DSL、VisualBrief 与 Image Prompt 版本复用结构化请求集，再按 prompt、style、aspectRatio 和图片模型查询 ready 素材；同一页复跑不会因模型措辞漂移重复生图。
-- 缓存只保存通过 Schema 校验的 ready 结果；fallback 不做长期负缓存，下一次解析仍可重试真实图片供应商。
-- 命中缓存时会检查内部 URI 的图片文件仍然存在；索引存在但文件缺失会作为 stale miss 重新生成。
-- 缓存读写是 best-effort 辅助能力，损坏索引或写入失败只产生公开警告，不会让已生成素材或 HTML 流程失败。
-- Image Assets Timeline 使用现有公开事件展示请求集、图片 hit/miss、stale 和 fallback 汇总，不把生产 Prompt、缓存键或服务端路径写入公开事件和界面。
-- HTML Engineer 继续把背景、角色贴纸与课程任务卡合成为语义 HTML；URI 和精确 altText 必须绑定到对应素材槽节点，文字和互动不会被烘焙进图片。
-- 课芽 学习工作区保持原有素材状态和两阶段生成流程，仅把重复操作表述为“重新解析素材”，不增加平行缓存控制台。
-- 缓存失效、素材合成边界和详细面试复盘见 `notes/day-17.md`。
-
-## Day 18 交付
-
-- 新增共享 `CourseGenerationStateSchema`，统一保存整课阶段、逐页产物、公开事件、结构化错误和运行时间，持久化前后都执行 Zod 校验。
-- 新增服务端串行 Course Generation Workflow：Intent → Planner → 专业设计 → 每页 Page Writer → Assets → HTML；页面严格按依赖顺序执行，不在浏览器复制编排规则。
-- 课程检查点、任务记录、会话和消息统一保存到 `.data/keya.sqlite`；每个阶段和页面完成后保存，失败保留此前 HTML，恢复时跳过已完成页面并从失败阶段继续。旧 `.data/courses` 与 `.data/course-tasks` 的有效 JSON 会在首次启动时导入一次。
-- 新增 `POST /api/courses/generate` 批量入口。默认由 Intent 根据内容复杂度动态规划页数，也可显式指定任意正整数页数；传已有 `courseId` 可恢复运行。
-- `/chat` composer 现在用一个提示启动整课任务并提供取消按钮；Timeline 只消费结构化公开摘要，不保存 Agent event data。
-- 右侧 learning workspace 增加统一多页预览与断点恢复入口；页面选择使用可访问 Tab 语义，并且始终只挂载当前页面的沙箱 iframe。
-- 现有逐阶段按钮继续承担单页检查和局部重试，Page QA 保持可选，不成为 Day 18 主链阻塞条件。
-- 状态边界、恢复语义、验证策略和面试复盘见 `notes/day-18.md`。
-
-## Day 19 交付
-
-- 新增严格的课程任务与 SSE Schema；流中只允许 `snapshot`、公开 `event` 和 `terminal`，不存在任意私有 `data` 或模型原始 chunk 通道。
-- 新增持久化 task store 与单进程 EventBus。课程 checkpoint 成功写入后才发布实时消息，任务记录负责映射 `taskId`、`courseId`、`traceId` 和运行状态。
-- 新增 `POST /api/courses/tasks`、`GET /api/courses/tasks/[taskId]/events` 与 `DELETE /api/courses/tasks/[taskId]`，分别负责创建、SSE 订阅和显式取消。
-- SSE 使用公开事件 sequence 作为 `id`，支持 `Last-Event-ID` 增量重放、初始快照、订阅竞态缓冲、心跳和终态关闭。
-- 新增 `useSSETask`，在 Controller 数据层完成 EventSource 生命周期、Schema 校验、顺序检查、重连去重和终态归并。
-- 课芽 `/chat` 继续使用现有 Composer、Agent Timeline 和 learning workspace；整课生成从批量 JSON 切换为实时任务流，没有重做 UI 或增加平行控制台。
-- 协议、取消语义、单进程限制、验证策略和八道详细面试题见 `notes/day-19.md`。
-
-## Day 20 交付
-
-- 新增纯 `CourseRunTimeline` 投影模型，将已持久化任务状态投影为任务摘要、全局 Agent 和逐页 Writer/Assets/HTML/可选 QA 三层视图，不在组件中复制工作流规则。
-- Timeline 展示任务与 SSE 连接的独立状态、完成页数、当前 Agent/页面、总耗时、阶段耗时、断点恢复和尝试次数。
-- 阶段耗时仅由结构化 `agent_start` 与 `agent_done/error` 边界推导；恢复尝试仅由不同 `traceId` 证明，不解析面向用户的 summary 字符串。
-- 失败卡同时显示 Agent/Workflow、`pageId`、错误码和公开错误信息；失败或取消的整课任务可在 Timeline 中直接从检查点继续。
-- 右侧 learning workspace 新增逐页 Page DSL、图片素材、HTML 与 QA 状态面板；未运行 QA 明确标记为可选，不阻断页面交付。
-- 新增原生可折叠结构化日志抽屉，只读取严格公开事件白名单，不序列化 Prompt、DSL/HTML 正文、snapshot、私有 event data 或 chain-of-thought。
-- 实现边界、时间/恢复语义、验证策略与面试复盘见 `notes/day-20.md`。
-
-## Day 21 交付
-
-- 完成当前固定多 Specialist 工作流的架构评审，明确它由 TypeScript 决定执行顺序，并不是已经实现的 Supervisor Agent。
-- 新增当前 MVP 与目标 Supervisor + Specialist 两张架构图，区分已实现能力、目标角色、Page Worker 执行范围、Generate Image Skill 和确定性基础设施。
-- 为 Planner、Pedagogy、Story、Visual、Page Writer、Image Prompt、HTML Engineer、QA 与未来 Repair 建立输入、输出、校验和禁止职责契约。
-- 记录单一超级 Agent 的具体失败模式、当前固定工作流的局限、Supervisor 与 LangGraph 的关系，以及什么时候不应该使用多 Agent。
-- Day 21 只交付架构文档和面试讲解，不修改现有业务工作流、共享 Schema、SSE 协议或 课芽 产品 UI。
-- 总设计见 `docs/multi-agent-design.md`，当前/目标流程见 `docs/architecture/mvp-flow.md` 与 `docs/architecture/multi-agent-flow.md`，角色索引见 `src/server/agents/README.md`，复盘见 `notes/day-21.md`。
-
-## Day 22 交付
-
-- 保留 `runCourseGenerationWorkflow` 作为兼容 facade，任务服务、Route Handler 与既有调用方不需要改入口。
-- 新增声明式串行运行层：`WorkflowNode` 通过 `requiredInputs` 与 `produces` 描述 handoff，`runSequentialWorkflow` 按节点列表执行、集中合并并把失败定位为带 `nodeName` 的 `WorkflowNodeError`。
-- 新增课程节点装配：Intent、Planner、Course Design，以及每页 Writer、Assets、HTML 都被包装为聚焦节点；现有 Agent、素材子流程和专业设计子流程继续复用。
-- API、SSE、公开事件 Schema、`CourseGenerationState`、checkpoint 时机、取消与断点恢复语义、课芽 `/chat` Timeline 和 learning workspace 均保持不变。
-- 本日没有实现 Supervisor、Repair、自动 QA、独立 Page Worker、页面并发或 LangGraph；固定顺序仍由服务端 TypeScript 节点列表决定。
-- 重构前后对比、节点合同、失败语义和详细面试复盘见 `notes/day-22.md`；当前/目标图与角色边界见 `docs/architecture/mvp-flow.md`、`docs/architecture/multi-agent-flow.md`、`docs/multi-agent-design.md` 和 `src/server/agents/README.md`。
-
-## Day 27 交付
-
-- 新增 `RepairRequestSchema`、`RepairResultSchema` 和持久化 `RepairAttemptRecord`，旧 checkpoint 可不包含 Repair 历史。
-- 内容/教学问题只允许修改 QA 定位的 DSL blocks；排版、风格和 HTML 问题使用唯一匹配 patches，并重新通过原 HTML/DSL/asset 安全合同。
-- Page Worker 接入质量优先的 QA → Repair → re-QA；有效修订持续到通过，连续三次无质量改善才熔断，执行失败与质量迭代分开记录。
-- Repair Prompt 从 draft 升级为 active `1.0.0/1.0.0`，不能读取原始用户 Prompt、扩大 scope、增加预算或自行宣布通过。
-- `repair_attempt`、`repair_success` 和错误摘要进入现有 SSE、Timeline 与 learning workspace Repair 记录，不暴露候选正文和私有推理。
-- 实现说明和面试复盘见 `notes/day-27.md`。
-
-## Day 29 交付
-
-- 从手写课程 facade 中提取共享运行时，统一初始化、恢复、节点生命周期、公开事件、失败、完成与 checkpoint；原手写 Supervisor workflow 行为保持不变。
-- 新增复用 `CourseGenerationStateSchema.shape` 的生产 LangGraph State，以及独立 Intent、Planner、Briefs、Page Workers、Finalize 节点。
-- 固定拓扑为 `START → intent-node → planner-node → briefs-node → page-workers-node → finalize-node → END`；Page Worker 内部依赖、并发、QA/Repair 不重复实现。
-- 新增 `runCourseGenerationGraphWorkflow`，它与手写入口共享输入、依赖和最终状态合同；调用方显式选择运行时，Graph 失败不会自动双跑 fallback。
-- 产品任务 API、SSE、Controller 与 课芽 UI 未改变，Graph streaming 映射留到 Day 30；迁移说明与面试复盘见 `notes/langgraph-migration.md` 和 `notes/day-29.md`。
-
-## Day 31 交付
-
-- 生产 Graph 改为 `START → Supervisor`，由类型化条件边在 Intent、Planner、Course Design、Page Worker、Retry、Repair、Finalize 和失败终态之间路由。
-- Supervisor 使用验证后的状态事实与持久化预算做规则优先决策；条件边只读取 `SupervisorDecisionSchema`，不解析事件摘要或调用模型重复判断唯一分支。
-- Page Worker 可在初次 QA 后交还控制权；每个 Repair 节点只推进一次 Repair/re-QA，失败页每次只重试一个页面，质量停滞或紧急安全上限才确定性停止。
-- 手写兼容入口与 LangGraph 共享 Supervisor attempts、checkpoint 和公开 decision 事件；Day 30 SSE mapper、Controller 与现有 课芽 UI 不变。
-- 实现说明、路由表和面试复盘见 `notes/day-31.md` 与 `docs/multi-agent-design.md`。
-
-## Day 32 交付
-
-- `/chat` composer 的既有上传按钮支持 txt、md、pdf，提供解析中、成功、失败、重试和移除状态；展示组件只发出文件事件，HTTP 与状态归 Controller 所有。
-- `POST /api/references/parse` 在 Node runtime 中执行 5 MB、扩展名/MIME/PDF 文件头、UTF-8 和空文本检查；扫描 PDF 明确提示暂不支持 OCR。
-- `parseUploadedFileSkill` 使用 `pdf-parse` 2.x 提取 PDF 文本，由代码生成最多 24 个稳定 chunks；模型只生成带真实 chunk 证据的摘要和关键事实。
-- Reference Pack 随 task/checkpoint 持久化；Planner 输出逐页 `usedReferences`，Page Writer 只接收并记录 PagePlan 授权的 chunk 子集，workflow 与 LangGraph 复用同一合同。
-- 右侧 learning workspace 的 Reference Panel 展示资料摘要、关键事实、截断提示和引用页面；公开 Timeline 不包含原文 chunks、文件路径、Prompt 或私有推理。
-- 当天不引入 OCR、embedding、pgvector、Day 33 检索或新产品路由。实现说明和面试复盘见 `notes/day-32.md`。
-
-## Day 33 交付
-
-- 新增严格的 ToolCard、SkillCard、TemplateCard、ReferenceHit 及限量检索结果 Schema。
-- 实现 `retrieveSkillDocsSkill`、`retrieveTemplateCardsSkill`、任务范围内的 `retrieveReferenceSkill`，并提供 AI SDK Tool 适配器。
-- Planner 只接收功能模板 allowlist、相关模板 Cards 和资料 Hits；原始 chunks 留在服务端，Page Writer 继续按授权 ID 解析。
-- 手写 Supervisor 的合法节点携带 Skill 摘要；规则优先的 LangGraph Supervisor 仅将匹配能力用于公开解释，不改变节点、预算和终止规则。
-- Registry JSON/Markdown 由运行时定义驱动并受同步测试保护；`/chat`、`/templates`、SSE、Controller 和 课芽 视觉系统保持不变。
-- 实现边界与结构化检索/向量检索取舍见 `notes/day-33.md`，能力目录见 `docs/agent-retrieval-registry.md`。
-
-## Day 34 交付
-
-- `/chat` composer 在现有 Prompt/资料上传上增加页数、串并行和并发数参数，只传递任务 API 已支持字段。
-- Course/Task Store 增加逐条 Schema 校验的列表读取；损坏记录被隔离，不会让全部历史不可用。
-- `GET /api/courses` 提供有限历史摘要，`GET /api/courses/[courseId]` 提供持久课程与关联运行记录。
-- `/course` 展示 LangGraph 课程的真实搜索、状态筛选、loading/empty/error/retry；`/course/[courseId]` 复用单 iframe 多页预览并可返回原检查点。
-- `GET /api/courses/[courseId]/export` 为完成课程流式生成 ZIP，包含 `course.json`、`pages/*.html` 和 `assets/manifest.json`。
-- 产品化边界、演示路径和面试复盘见 `notes/day-34.md`。
-
-## Day 35 交付
-
-- 任务 AbortSignal 贯穿 Workflow、Agent、Tool、语言模型与图片 Provider；取消后不会继续下一素材、HTML 或 QA。
-- AI Client 按 capability 使用 `cheap`、`balanced`、`strong`，只对 429、有限 5xx 和明确 timeout 执行一次降级。
-- Intent、Planner 与当前 Template Card 查询使用 128 项、15 分钟 TTL 的 Schema 校验缓存；键包含输入、Prompt/Registry、模型和 Schema 版本。
-- 完成日志记录 tier/model、usage、duration、cache 和 fallback 分类，不公开 Prompt、资料原文或私有推理。
-- 稳定性合同见 `docs/reliability-cost.md`，实现说明与面试复盘见 `notes/day-35.md`。
-
-## Day 36 交付
-
-- 固定火星探险、太阳系和 AI 素养三个五页 Demo，以语义大纲而非逐字符模型文本作为稳定基线。
-- `pnpm demo:run` 启动独立本地 Next.js 服务，通过正式 Task API/SSE 依次生成课程并保存 checkpoint、ZIP 和产品截图。
-- `pnpm demo:check` 复用 Course Schema、HTML Engineer 合同和 QA 报告，检查页面职责、知识覆盖、素材引用、质量分数及导出目录。
-- 自动测试只使用确定性 fixture；真实模型、图片与 Playwright 验收通过显式 Demo 命令执行。
-- Demo Prompt、阈值、人工六维评分和结果留存规则见 `docs/demo/prompts.md`，实现复盘见 `notes/day-36.md`。
-
-## 启动
+### 2. 安装与配置
 
 ```bash
 pnpm install
-pnpm dev
-```
-
-默认访问地址：
-
-```text
-http://localhost:3000
-```
-
-如果 `3000` 端口已被占用，Next.js 会提示新的本地端口。
-
-## 环境变量
-
-复制示例文件后填写真实模型配置。当前课程生成统一使用方舟豆包，
-三个档位都选择 `ark`：
-
-```bash
 cp .env.local.example .env.local
 ```
+
+方舟 / 豆包示例：
 
 ```env
 MODEL_PROVIDER_STRONG=ark
 MODEL_PROVIDER_BALANCED=ark
 MODEL_PROVIDER_CHEAP=ark
-```
 
-然后配置对应供应商：
-
-```env
 ARK_API_KEY=your_volcengine_ark_api_key
 ARK_MODEL_ID=your_doubao_model_id
 ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
-# 可选；未设置的档位继续使用 ARK_MODEL_ID
-ARK_MODEL_ID_CHEAP=your_low_cost_model_id
-ARK_MODEL_ID_BALANCED=your_default_model_id
-ARK_MODEL_ID_STRONG=your_high_quality_model_id
 ```
 
-选择 `generic` 的档位使用以下通用 OpenAI-compatible 配置：
+通用 OpenAI-compatible 示例：
 
 ```env
+MODEL_PROVIDER_STRONG=generic
+MODEL_PROVIDER_BALANCED=generic
+MODEL_PROVIDER_CHEAP=generic
+
 MODEL_API_KEY=your_api_key
 MODEL_BASE_URL=https://your-openai-compatible-endpoint/v1
 MODEL_NAME=your_model_name
-# 可选；未设置的档位继续使用 MODEL_NAME
-MODEL_NAME_CHEAP=your_low_cost_model_name
-MODEL_NAME_BALANCED=your_default_model_name
-MODEL_NAME_STRONG=your_high_quality_model_name
 ```
 
-未设置 `MODEL_PROVIDER_<TIER>` 时保持旧行为：存在 `ARK_API_KEY` 就优先使用
-方舟，否则使用通用 OpenAI-compatible 配置。
-
-Day 35 的服务端 `ModelRouter` 按 Agent 能力选择 `cheap`、`balanced` 或
-`strong`；前端和模型都不能修改路由。完整的超时、取消、缓存、重试、降级及
-成本日志契约见 [`docs/reliability-cost.md`](./docs/reliability-cost.md)。
-Course Planner 因为需要一次规划完整课程结构，默认由 Strong 与
-Balanced 共享 180 秒总预算（120 秒 + 60 秒）；HTML Engineer 因为需要返回
-完整文档，默认使用独立的 120 秒有限预算。本地模型仍无法在该时间内完成时，
-可以分别覆盖并重启开发服务：
+每个档位可以分别覆盖模型：
 
 ```env
-AI_PLANNER_TIMEOUT_MS=240000
-AI_HTML_TIMEOUT_MS=180000
+ARK_MODEL_ID_CHEAP=
+ARK_MODEL_ID_BALANCED=
+ARK_MODEL_ID_STRONG=
+
+MODEL_NAME_CHEAP=
+MODEL_NAME_BALANCED=
+MODEL_NAME_STRONG=
 ```
 
-真实图片生成默认复用现有 `ARK_API_KEY` 与 `ARK_BASE_URL`，使用 Seedream 4.5。只需在需要切换方舟图片模型时增加：
+图片生成默认可以复用方舟凭据：
 
 ```env
 ARK_IMAGE_MODEL_ID=doubao-seedream-4-5-251128
 ```
 
-如果要使用独立图片供应商，再配置以下覆盖项；所有 key 都只存在服务端，不要暴露给浏览器：
+也可以使用独立图片 Provider：
 
 ```env
 IMAGE_API_KEY=your_image_api_key
-IMAGE_BASE_URL=https://your-openai-compatible-image-endpoint/v1
+IMAGE_BASE_URL=https://your-image-provider-endpoint/v1
 IMAGE_MODEL_ID=your_image_model_id
-IMAGE_PROVIDER_NAME=your_provider_label
+IMAGE_PROVIDER_NAME=image-provider
 ```
 
-Playwright 截图 QA 默认开启，并会在接近课程播放器的桌面、平板和手机视口采集证据。首次使用前安装本机 Chromium；浏览器缺失、单个视口失败或截图写盘失败都不会阻塞 Page QA：
+可选超时与浏览器 QA 配置：
+
+```env
+AI_PLANNER_TIMEOUT_MS=180000
+AI_HTML_TIMEOUT_MS=120000
+# PAGE_QA_SCREENSHOTS_ENABLED=false
+```
+
+服务端密钥不要使用 `NEXT_PUBLIC_` 前缀。完整示例见[`.env.local.example`](.env.local.example)，路由和降级规则见[可靠性与成本合同](docs/reliability-cost.md)。
+
+### 3. 启动
+
+```bash
+pnpm dev
+```
+
+默认访问 `http://localhost:3000`。若端口被占用，Next.js 会在终端显示实际地址。
+
+首次使用浏览器 QA 或完整 Demo 时安装 Chromium：
 
 ```bash
 pnpm exec playwright install chromium
 ```
 
-需要临时关闭时显式设置：
+## 验证与 Demo
 
-```env
-PAGE_QA_SCREENSHOTS_ENABLED=false
-```
-
-## API 验收
-
-普通文本接口：
+### 自动检查
 
 ```bash
-curl -X POST http://localhost:3000/api/ai/generate \
-  -H "Content-Type: application/json" \
-  -d '{"prompt":"用三句话介绍什么是 AI Agent。"}'
-```
-
-Intent Agent 接口：
-
-```bash
-curl -X POST http://localhost:3000/api/agents/intent \
-  -H "Content-Type: application/json" \
-  -d '{"userPrompt":"给 8 岁小朋友做一门太阳系入门课，要有互动问答。"}'
-```
-
-Tool Calling Demo：
-
-```bash
-curl -X POST http://localhost:3000/api/demo/tool-call \
-  -H "Content-Type: application/json" \
-  -d '{"pagePurpose":"为 8 岁儿童设计一个互动问答页面"}'
-```
-
-SinglePageAgent：
-
-```bash
-curl -X POST http://localhost:3000/api/agents/single-page \
-  -H "Content-Type: application/json" \
-  -d '{"pageGoal":"设计一个太阳系互动问答页面","audience":"8 岁儿童"}'
-```
-
-Course Planner Agent：
-
-```bash
-curl -X POST http://localhost:3000/api/courses/plan \
-  -H "Content-Type: application/json" \
-  -d '{"userPrompt":"为 8 岁儿童设计一门 5 页太阳系入门课，包含互动问答，使用科幻风格。"}'
-```
-
-Day 11 专业设计工作流（`intent` 与 `outline` 使用 Planner 的真实返回值）：
-
-```bash
-curl -X POST http://localhost:3000/api/courses/design \
-  -H "Content-Type: application/json" \
-  -d '{"intent": {"...": "CourseIntent"}, "outline": {"...": "CoursePlan"}}'
-```
-
-Day 18 串行整课生成（默认按内容动态规划，也可显式传正整数 `pageCount`）：
-
-```bash
-curl -X POST http://localhost:3000/api/courses/generate \
-  -H "Content-Type: application/json" \
-  -d '{"userPrompt":"为 8 岁儿童生成一门太阳系互动课程","pageCount":3}'
-```
-
-失败或取消后使用响应里的 `courseId` 从服务端检查点继续：
-
-```bash
-curl -X POST http://localhost:3000/api/courses/generate \
-  -H "Content-Type: application/json" \
-  -d '{"courseId":"course-..."}'
-```
-
-Day 19 创建异步整课任务（响应为 HTTP 202，并返回 `taskId`、`courseId` 与 `traceId`）：
-
-```bash
-curl -i -X POST http://localhost:3000/api/courses/tasks \
-  -H "Content-Type: application/json" \
-  -d '{"userPrompt":"为 8 岁儿童生成一门三页太阳系互动课程","pageCount":3}'
-```
-
-使用返回的 `taskId` 订阅实时进度；浏览器会自动维护 Last-Event-ID，curl 可手动验证从指定 sequence 重放：
-
-```bash
-curl -N http://localhost:3000/api/courses/tasks/task-.../events
-
-curl -N http://localhost:3000/api/courses/tasks/task-.../events \
-  -H "Last-Event-ID: 12"
-```
-
-只有显式 DELETE 才取消后台生成，关闭上面的 SSE 连接不会取消任务：
-
-```bash
-curl -X DELETE http://localhost:3000/api/courses/tasks/task-...
-```
-
-Day 12 单页 Page Writer（使用 Planner 和 Day 11 的真实返回值）：
-
-```bash
-curl -X POST http://localhost:3000/api/pages/write \
-  -H "Content-Type: application/json" \
-  -d '{"intent": {"...": "CourseIntent"}, "page": {"...": "PagePlan"}, "brief": {"...": "PageWorkerBrief"}}'
-```
-
-Day 16 单页图片素材（使用 Page Writer 与 Visual Director 的真实返回值）：
-
-```bash
-curl -X POST http://localhost:3000/api/pages/generate-assets \
-  -H "Content-Type: application/json" \
-  -d '{"content": {"...": "PageContentDSL"}, "visualBrief": {"...": "VisualBrief"}}'
-```
-
-Day 14/16 单页 HTML Engineer（同时传入素材工作流的 ready/fallback 结果）：
-
-```bash
-curl -X POST http://localhost:3000/api/pages/generate-html \
-  -H "Content-Type: application/json" \
-  -d '{"content": {"...": "PageContentDSL"}, "visualBrief": {"...": "VisualBrief"}, "assets": [{"...": "AssetGenerationResult"}]}'
-```
-
-Day 15 单页 Page QA（使用 Planner、Page Writer、HTML Engineer 与 Visual Director 的真实返回值）：
-
-```bash
-curl -X POST http://localhost:3000/api/pages/qa \
-  -H "Content-Type: application/json" \
-  -d '{"page": {"...": "PagePlan"}, "content": {"...": "PageContentDSL"}, "html": "<!doctype html>...", "visualBrief": {"...": "VisualBrief"}, "assets": [{"...": "AssetGenerationResult"}], "courseContext": {"learningObjectives": ["..."]}}'
-```
-
-流式接口：
-
-```bash
-curl -N -X POST http://localhost:3000/api/ai/stream \
-  -H "Content-Type: application/json" \
-  -d '{"prompt":"用三句话介绍什么是 AI Agent。"}'
-```
-
-接口也兼容 AI SDK UI messages：
-
-```json
-{
-  "messages": [
-    {
-      "id": "1",
-      "role": "user",
-      "parts": [{ "type": "text", "text": "生成一段课程简介。" }]
-    }
-  ]
-}
-```
-
-## 今日截图
-
-![Day 01 homepage](.agentdocs/day-01-home.png)
-
-## 验证命令
-
-```bash
-pnpm test
 pnpm lint
+pnpm prompt:lint
+pnpm test
 pnpm build
 ```
+
+### 固定 Demo
+
+三个固定案例分别覆盖火星探险、太阳系和 AI 素养：
+
+```bash
+pnpm demo:run
+pnpm demo:run -- --record
+```
+
+`--record` 会把聚合报告和成功生成的桌面/移动截图复制到 `docs/demo/results/<runId>`；原始课程 JSON、ZIP、日志和截图保留在被 Git 忽略的 `.data/demo-runs`。
+
+也可以复核已有产物：
+
+```bash
+pnpm demo:check -- \
+  --course .data/demo-runs/<runId>/<case>/course.json \
+  --baseline docs/demo/baselines/<case>.json \
+  --archive .data/demo-runs/<runId>/<case>/<courseId>.zip
+```
+
+固定 Prompt、质量阈值和人工评分方法见[Demo 验收说明](docs/demo/prompts.md)。
+
+> 仓库中现有两次 2026-07-23 记录均未通过完整验收，也没有生成产品截图或 ZIP。它们是失败诊断证据，不代表当前版本已经通过真实模型 Demo。对外展示成功结果前必须重新执行 `pnpm demo:run -- --record`。
+
+## 数据与安全边界
+
+- `.data/keya.sqlite` 保存本地课程、任务、会话和预览记录。
+- `.data/generated-assets`、`.data/quality-screenshots` 和 `.data/demo-runs` 保存本地生成证据并被 Git 忽略。
+- SSE 只允许 `snapshot`、公开 `event` 和 `terminal`；不会传输 Prompt、参考资料原文、框架内部状态或 chain-of-thought。
+- 模型生成 HTML 不进入主应用 DOM；所有预览都经过服务端校验并运行在 sandbox iframe。
+- 扫描 PDF 暂不支持 OCR；资料解析也不包含向量数据库。
+- 当前任务执行、EventBus 和取消控制是单进程实现，不是分布式队列。
+
+## 文档导航
+
+- [架构入口](docs/architecture/README.md)
+- [从提示词到最终 HTML](docs/architecture/prompt-to-html-current-flow.md)
+- [为什么采用多 Agent](docs/why-multi-agent.md)
+- [多 Agent 深度设计](docs/multi-agent-design.md)
+- [共享 Schema](docs/schema.md)
+- [产品 UI 集成合同](docs/ui-integration.md)
+- [可靠性与成本](docs/reliability-cost.md)
+- [HTML 预览安全](docs/html-preview-security.md)
+- [3 / 8 / 15 分钟项目讲解](docs/interview-story.md)
+- [训练历程](docs/training-log.md)
+
+## 当前边界与下一步
+
+当前版本没有用户账号、团队权限、分布式 Worker、对象存储、向量检索、人工发布审批、商业计费或线上 SLA。真实模型效果和耗时仍受 Provider 账号、模型质量和本地运行环境影响。
+
+如果继续生产化，优先级应是：耐久任务队列与租约、对象存储、权限隔离、可观测成本账本、人工发布门槛，以及基于真实用户反馈的课程编辑能力。

@@ -1,14 +1,14 @@
-# Supervisor + Specialist 多 Agent 流程与后续目标
+# Supervisor + Specialist 多 Agent 当前流程
 
-> **PARTIALLY IMPLEMENTED / 按阶段校准**
+> **IMPLEMENTED / 当前事实**
 >
-> 本文最初是 Day 21 的目标架构，当前已用 2026-07-24 的质量策略校准：受限 Supervisor、显式全局 `WorkflowNode`、隔离 Page Worker、受控并发、质量优先 QA/Repair/re-QA，以及生产 LangGraph 条件图已经实现。当前运行事实以 [`mvp-flow.md`](./mvp-flow.md) 为准。
+> 本文最初是 Day 21 的目标架构，现已按当前源码校准：受限 Supervisor、显式全局 `WorkflowNode`、隔离 Page Worker、受控并发、质量优先 QA/Repair/re-QA、生产 LangGraph 条件图和严格 stream mapper 均已实现。完整运行事实以[从提示词到最终 HTML](./prompt-to-html-current-flow.md)为准。
 
 ## 设计目标
 
 目标不是增加更多模型调用，而是把调度、专业产出、工具执行、确定性校验和持久化分开：
 
-- Supervisor 只根据类型化状态决定下一节点、重试、停止或人工升级。
+- Supervisor 只根据类型化状态决定下一节点、重试、修复或停止；人工升级仍是后续能力。
 - Specialist 只产出自己负责的专业协议，不控制全局流程。
 - Page Worker 隔离单页执行范围，但它不是第十名 Specialist。
 - GenerateImage Skill 是 Image Prompt 之后的工具执行，不是 Agent。
@@ -16,7 +16,7 @@
 - checkpoint 和公开事件由运行层统一写入，Specialist 不直接修改全局状态或推送 UI。
 - QA 与 Repair 构成有预算、有停止条件、可审计的闭环，而不是无限自我修正。
 
-## 目标流程
+## 当前流程
 
 ```mermaid
 flowchart TD
@@ -56,21 +56,18 @@ flowchart TD
   WorkerCheckpoint --> Supervisor
   Supervisor -->|"all pages terminal"| Finalize["finalize course"]
   Supervisor -->|"cancel / global budget / unrecoverable"| Stop["controlled stop"]
-  Supervisor -->|"needs a person"| Human["human escalation"]
-
   Finalize --> Transport["shared snapshots / events / terminal"]
   Stop --> Transport
-  Human --> Transport
   Transport --> SSE["SSE transport"]
   SSE --> Controller["Task Controller"]
   Controller --> UI["/chat thread + learning workspace"]
 ```
 
-图中的边代表目标路由策略，不代表已经存在的 Route Handler 或源码文件。
+图中的主链已实现；“人工接受当前页面/人工发布”不在当前运行图内。
 
 ## Supervisor 边界
 
-Supervisor 是状态驱动的调度者，不是“万能课程 Agent”。目标输入应限制为：
+Supervisor 是状态驱动的调度者，不是“万能课程 Agent”。当前输入限制为：
 
 - 当前已校验的 `CourseGenerationState` 摘要；
 - 可执行节点清单及其 `requiredInputs / produces`；
@@ -78,7 +75,7 @@ Supervisor 是状态驱动的调度者，不是“万能课程 Agent”。目标
 - page/node 级 attempt 计数；
 - retry、成本、时长和取消预算。
 
-目标决策至少包含 `nextNode`、目标 `pageId`、公开 `reasonSummary`、可选 `retryTarget` 和 `stopReason`。无论由规则还是模型提出决策，都必须经过确定性路由规则校验。
+决策使用 `run / retry / complete / stop` 等结构化动作，并携带目标、公开 `reasonSummary` 和停止原因。无论决策如何产生，都必须经过确定性路由规则校验。
 
 Supervisor **不负责**：
 
@@ -106,11 +103,11 @@ Supervisor 和 Page Worker 都不计入以下九名 Specialist；GenerateImage �
 | 8 | QA | PagePlan、DSL、brief、HTML、素材与确定性检查结果 | `QualityReport` | 只报告证据，不修改 HTML，不自行宣布修复完成 |
 | 9 | Repair | 原始产物、限定目标、`QualityReport`、安全尝试序号 | 目标 `RepairResult` / 修复候选 | 不扩大修复范围，不改无关页面，不跳过 re-QA，不自我判定通过 |
 
-表中前八类已有可复用实现或协议：[`course-planner-agent.ts`](../../src/server/agents/course-planner-agent.ts)、[`pedagogy-agent.ts`](../../src/server/agents/pedagogy-agent.ts)、[`story-agent.ts`](../../src/server/agents/story-agent.ts)、[`visual-director-agent.ts`](../../src/server/agents/visual-director-agent.ts)、[`page-writer-agent.ts`](../../src/server/agents/page-writer-agent.ts)、[`image-prompt-agent.ts`](../../src/server/agents/image-prompt-agent.ts)、[`html-engineer-agent.ts`](../../src/server/agents/html-engineer-agent.ts) 和 [`page-qa-agent.ts`](../../src/server/agents/page-qa-agent.ts)。Repair 目前没有实现，文档不得把目标 `RepairResult` 当成现有 schema。
+九类 Specialist 均有当前实现或生产协议：前八类对应各 Agent 文件，Repair 使用 [`repair-agent.ts`](../../src/server/agents/repair-agent.ts) 和共享 [`RepairResultSchema`](../../src/shared/course-schema/repair.ts)。Supervisor、Page Worker 与 GenerateImage Skill 仍不计入九名 Specialist。
 
 ## Page Worker 是执行边界，不是 Specialist
 
-目标 Page Worker 接收一个已准备好的页面任务，只管理该页局部状态：
+Page Worker 接收一个已准备好的页面任务，只管理该页局部状态：
 
 ```text
 PagePlan + PageWorkerBrief
@@ -146,7 +143,7 @@ Page Worker 应遵守以下边界：
 
 ## Validators、状态合并与 checkpoint
 
-每个 Specialist 的输出必须先经过确定性 validator，再由运行层合并到共享状态。Day 22 的固定串行运行层已经实现其中的 `requiredInputs` 前置检查、`produces` patch 白名单、合并后完整状态复验和 `WorkflowNodeError.nodeName` 定位；目标运行时继续复用这些边界：
+每个 Specialist 的输出必须先经过确定性 validator，再由运行层合并到共享状态。固定串行运行层与 Graph 均复用 `requiredInputs` 前置检查、`produces` patch 白名单、合并后完整状态复验和结构化错误定位：
 
 ```text
 specialist candidate
@@ -157,7 +154,7 @@ specialist candidate
   → public event projection
 ```
 
-目标架构继续复用现有事实来源：
+当前架构复用以下事实来源：
 
 - [`shared/course-schema`](../../src/shared/course-schema)：Agent handoff 和持久化状态合同；
 - [`CourseGenerationStateSchema`](../../src/shared/course-schema/course-generation-state.ts)：课程、页面、公开事件和失败状态；
@@ -170,7 +167,7 @@ Specialist 不获得 `courseStore.save`，也不能直接发布 SSE。当前 `ru
 
 ## 公开事件边界
 
-目标节点事件应继续投影为当前共享的 [`CourseGenerationPublicEvent`](../../src/shared/course-schema/course-generation-state.ts)，可以增加未来明确设计的新事件类型，但不能把框架事件原样透传。公开信息只包含：
+节点事件投影为共享的 [`CourseGenerationPublicEvent`](../../src/shared/course-schema/course-generation-state.ts)。未来可以增加明确设计的新事件类型，但不能把框架事件原样透传。公开信息只包含：
 
 - node/Agent、pageId、阶段、attempt 和状态；
 - 可展示的 `reasonSummary`、错误 code 和停止原因；
@@ -181,53 +178,51 @@ Specialist 不获得 `courseStore.save`，也不能直接发布 SSE。当前 `ru
 
 ## 有界 QA、Repair 与 re-QA
 
-质量循环由代码预算约束。Day 27 已把页面 Repair 上限固定为两轮并写入类型化请求、checkpoint 和自动化测试，而不是把预算藏在 Prompt 中。
+质量循环由代码状态约束。执行失败和有效质量迭代分别计数；连续三次有效候选没有改善质量向量时触发 `QUALITY_STALLED`，另有 24 次紧急上限防止实现错误形成无限循环。预算与停止条件不藏在 Prompt 中。
 
 ```mermaid
 stateDiagram-v2
   [*] --> QA
   QA --> Passed: quality gate passed
-  QA --> Repair: repairable and retryBudget remains
+  QA --> Repair: repairable and safety guard remains
   Repair --> ValidateRepair
   ValidateRepair --> QA: valid candidate / re-QA
   ValidateRepair --> RetryDecision: invalid candidate
-  QA --> RetryDecision: fatal issue or budget exhausted
-  RetryDecision --> Repair: retryable and budget remains
-  RetryDecision --> HumanEscalation: needs human decision
-  RetryDecision --> Failed: fatal / cancelled / budget exhausted
+  QA --> RetryDecision: fatal issue or quality stalled
+  RetryDecision --> Repair: retryable and guard remains
+  RetryDecision --> Failed: fatal / cancelled / quality stalled
   Passed --> [*]
-  HumanEscalation --> [*]
   Failed --> [*]
 ```
 
 强制停止条件至少包括：
 
 - QA 已通过；
-- page/node retry budget 耗尽；
+- page/node retry budget 耗尽或质量连续不改善；
 - 安全违规或不可恢复 schema/reference 错误；
 - 用户取消；
 - 运行被取消、鉴权/配置不可用或质量安全熔断；
-- 修复没有减少问题集合，或连续产生同一错误 code；
+- 三次有效修订没有改善质量向量；
 - Supervisor 决策不符合可用节点或前置输入合同。
 
-人工升级必须保存最后一个有效 checkpoint、QA 证据、已用 attempts 和公开停止原因。UI 可以提供“重新运行目标节点”或“接受当前页面”的产品决策，但不能让展示组件复制 Supervisor 规则。
+停止时必须保存最后一个有效 checkpoint、QA 证据、已用 attempts 和公开原因。当前 UI 可以从 checkpoint 重试失败章节，但没有“人工接受不合格页面”的发布绕过。
 
 ## LangGraph 的当前位置
 
-LangGraph 是可替换的运行工具，不是多 Agent 架构本身。Day 29 已完成第一阶段映射：
+LangGraph 是可替换的运行工具，不是多 Agent 架构本身。当前实现包括：
 
 - `CourseGenerationStateSchema.shape` 直接成为 graph state 字段来源；
-- Intent、Planner、Briefs、Page Workers 与 Finalize 成为固定 graph nodes；
+- Supervisor、全局 Specialist、Page Workers、Retry、Repair、Finalize 和失败终态成为 graph nodes；
 - 既有 validator、公开事件和 checkpoint 继续由共享运行时持有；
 - Page Worker 内部的依赖、并发、QA/Repair 和页面合并保持不变。
 
-Supervisor 决策到 conditional edges、Graph checkpointer、原生 streaming 映射和生产默认切换仍未实施。顶层 Graph 当前串行返回完整已校验数组快照，不为尚未存在的顶层并行提前设计 `pages/events/errors` Reducer。
+`POST /api/courses/tasks` 已默认选择 LangGraph。Graph 以 `updates/custom` streaming，严格 mapper 只接受已知节点、当前 trace、连续 sequence 和通过 `CourseGenerationStateSchema` 的 checkpoint。项目领域 checkpoint 仍由 Task Service 持久化；LangGraph 内部状态不会进入前端。
 
 但是业务合同仍由本项目的共享 schemas 和 Route Handler/workflow 规则拥有。LangGraph 原生 chunks、内部 node state 或 checkpoint 格式不能进入前端。
 
 ```mermaid
 flowchart LR
-  Runtime["handwritten workflow or optional LangGraph"] --> Adapter["transport/state adapter"]
+  Runtime["LangGraph default or handwritten compatibility"] --> Adapter["strict graph/state adapter"]
   Adapter --> Shared["CourseGenerationState<br/>CourseGenerationPublicEvent"]
   Shared --> SSE["SSE"]
   SSE --> Controller["Task Controller"]
@@ -236,13 +231,13 @@ flowchart LR
 
 因此从手写 workflow 迁移到 LangGraph 时，只替换服务端执行和状态更新方式；[`useSSETask`](../../src/features/course-planner/hooks/use-sse-task.ts)、[`ChatApp`](../../src/features/keya/chat-app.tsx)、Timeline 和 learning workspace 不应重新设计，也不应依赖 LangGraph。
 
-## Day 21 之后的实施顺序
+## 演进记录
 
 1. **Day 22 已完成：** 把现有固定流程包装为声明式、可测试的 `WorkflowNode` 接口和集中串行运行层；兼容 facade、API、SSE、Schema、checkpoint、恢复和 UI 语义保持不变。
 2. **Day 23 已完成：** 加入只负责结构化调度的 Supervisor、持久化有限重试、确定性停止规则和公开决策摘要。
 3. **Day 24 已完成：** 收紧九名 Specialist 的 Prompt、输入输出和禁止项。
 4. **Day 25 已完成：** 实现隔离 Page Worker、页面局部重试、自动 QA、依赖感知调度和默认并发度 2 的 Promise Pool。
-5. **Day 26–27 已完成：** 深化六维 QA，并接入定向 Repair 候选、原合同校验、两轮预算与 re-QA。
+5. **Day 26–27 已完成：** 深化六维 QA，并接入定向 Repair、原合同校验与 re-QA；后续升级为质量停滞熔断。
 6. **Day 28 已完成：** 用独立 `START → Planner → END` Demo 验证 State、Node、Edge、Reducer 与 updates stream。
-7. **Day 29 已完成：** 实现复用生产状态、Agent、Page Worker 和 checkpoint 的固定 StateGraph runner，并用确定性测试证明与手写版本的领域产物兼容；手写入口仍是显式 fallback。
-8. **后续目标：** 把 Graph updates/custom stream 映射为现有公开事件与 SSE，再评估生产默认切换；前端合同保持不变。
+7. **Day 29 已完成：** 实现复用生产状态、Agent、Page Worker 和 checkpoint 的 StateGraph runner。
+8. **Days 30–31 已完成：** 映射 `updates/custom` 到公共事件，并接入规则型 Supervisor 条件边、Retry、Repair 和生产默认运行源。

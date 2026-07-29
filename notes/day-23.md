@@ -336,7 +336,7 @@ Day 23 继续使用现有 `/chat` 产品壳：
 
 - [`course-run-timeline-model.ts`](../src/features/keya/course-run-timeline-model.ts) 从 checkpoint 事件中投影 `supervisorDecisions`；
 - [`course-run-timeline.tsx`](../src/features/keya/course-run-timeline.tsx) 在任务摘要与 Agent 进度之间展示最近三条公开调度摘要；
-- [`generation-log-drawer.tsx`](../src/features/keya/generation-log-drawer.tsx) 保留全部 `supervisor_decision` 结构化日志；
+- 当时的 `generation-log-drawer.tsx` 保留全部 `supervisor_decision` 结构化日志；该调试抽屉已在后续产品精简中移除，公开事件仍保存在 checkpoint；
 - learning workspace 继续只展示课程规划、DSL、素材、HTML、预览和 QA 产物。
 
 没有新增 `/supervisor`、`/workflow` 或 `/generate` 页面，也没有把旧 `AiPlayground` 挂回产品路由。

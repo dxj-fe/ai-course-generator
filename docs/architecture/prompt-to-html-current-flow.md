@@ -1673,7 +1673,7 @@ POST /api/courses/tasks
   + SSE /api/courses/tasks/:taskId/events
 ```
 
-另外，旧的 [`docs/architecture/mvp-flow.md`](./mvp-flow.md) 中仍有“任务服务默认走手写 workflow”“LangGraph 尚未成为默认入口”等过时描述。判断当前行为应以本文件列出的代码路径为准。
+手写兼容路径见 [`mvp-flow.md`](./mvp-flow.md)。它只描述批量接口和历史 `source: "workflow"` 任务，不覆盖本文件所述的 `/chat` 默认 LangGraph 路径。
 
 ## 31. “最终 HTML”在本项目里的准确含义
 

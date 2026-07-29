@@ -124,9 +124,9 @@ Workflow 先 checkpoint `agent_start`，再等待 Agent 完整返回，之后才
 
 活动任务 Map、AbortController 和 EventBus 都在当前进程。加入 Supervisor 不会自动获得耐久 Worker、course 级租约或跨实例 Pub/Sub；这些是独立基础设施问题，不能被包装成多 Agent 自动带来的能力。
 
-## 6. 目标 Supervisor 边界
+## 6. 当前 Supervisor 边界
 
-目标图见[多 Agent 目标流程](./architecture/multi-agent-flow.md)。Supervisor 是控制面角色，只能从有限动作集合中选择下一步，不生成课程产物。
+当前图见[Supervisor + Specialist 多 Agent 流程](./architecture/multi-agent-flow.md)。Supervisor 是控制面角色，只能从有限动作集合中选择下一步，不生成课程产物。
 
 ### 6.1 允许读取的输入
 
@@ -138,22 +138,19 @@ Supervisor 只应读取调度所需的验证事实：
 - 页面依赖完成情况；
 - execution attempt、质量进展与安全熔断；
 - 取消状态；
-- 必要时的人工批准或拒绝。
 
 它不应读取 chain-of-thought、任意原始模型事件或浏览器根据文本猜测出的状态。
 
 ### 6.2 有限决策集合
 
-后续实现应将决策约束为类似以下动作：
+当前决策被约束为类似以下动作：
 
 - 调度一个当前可执行的 Specialist；
 - 在预算内重试失败 Specialist；
 - 把经过校验的 QA issue 路由给相应 Repair 能力；
 - 跳过明确可选的阶段；
 - 以 completed 或 failed 停止；
-- 请求人工介入。
-
-这些只是 Day 21 的设计动作，不是已经存在的 TypeScript 类型。
+- 以结构化失败终态保存不可恢复原因。
 
 ### 6.3 禁止职责
 
@@ -176,7 +173,7 @@ Supervisor 不得：
 - cancellation 必须停止继续调度；
 - 旧 checkpoint 没有 QA report 时保持兼容；Day 25 新建 Page Worker 会自动执行 report-only QA。
 
-只有“下一步取决于无法被可靠规则表达的语义分类”时，才值得引入模型判断。简单分支保持确定性，成本更低，也更容易测试。
+只有“下一步取决于无法被可靠规则表达的语义分类”时，才值得引入模型判断。当前生产 Graph 的普通路由保持规则优先，成本更低，也更容易测试。
 
 ## 7. Specialist 分类与边界
 
@@ -295,7 +292,7 @@ flowchart TD
 2. **Day 22（已完成）：** 把固定顺序表达为显式手写 Specialist Workflow，同时保持 API、SSE、Schema、checkpoint、恢复和 UI 合同；
 3. **Day 23 已完成：** 引入有限 Supervisor 路由、重试、停止和可解释决策；
 4. **Days 24–26（已完成）：** 强化 Specialist Prompt，实现 Page Worker、自动 report-only QA、受控并发和多证据六维 QA；
-5. **Day 27（已完成）：** 实现受限 Repair/re-QA、两轮预算、失败分类和公开事件；
+5. **Day 27（已完成）：** 实现受限 Repair/re-QA、失败分类和公开事件；后续把固定轮次升级为质量停滞熔断；
 6. **Days 28–30（已完成）：** 学习 LangGraph、迁移生产状态图，并把 Graph stream 映射到既有公开 SSE；
 7. **Day 31（已完成）：** 用条件边接入规则优先 Supervisor、单页重试和有界 QA/Repair 回路，不重做前端。
 
