@@ -12,6 +12,7 @@ The 课芽 interface is the product shell. Training-day features extend its beha
 | Inspect course and page artifacts | `/chat` right learning workspace | Course, page, preview, asset, QA, and export views |
 | Browse generated/history items | `/course` | Persisted course/run queries and filters |
 | Inspect functional/style templates | `/templates` | Template registry and preview data |
+| Diagnose the prompt-to-course pipeline | `/analysis/course-generation` | Read-only architecture map and source-backed failure analysis |
 
 The removed `AiPlayground` and older course-planner panels are historical training artifacts only. Their reusable client logic remains behind the Keya surfaces; do not restore the panels or use them as the visual foundation for new tasks.
 
@@ -24,6 +25,7 @@ The removed `AiPlayground` and older course-planner panels are historical traini
 
 ## Handbook capability map
 
+- Course generation flow inspector (2026-07-28): `/analysis/course-generation` is a read-only engineering artifact with a pan/zoom node canvas and source-backed node inspector. It documents the existing `/chat` → task API → LangGraph → Page Worker → QA/Repair → SSE/player chain without owning product state, calling business APIs, exposing private reasoning, or creating an alternative course-generation entry.
 - Days 1–6: model calls, tool calls, and Agent events feed the `/chat` controller and public event timeline.
 - Days 7–12: `CourseIntent`, `CoursePlan`, professional briefs, and `PageContentDSL` render in the learning workspace.
 - Days 13–20: sandboxed HTML previews, assets, multi-page results, typed real-time task progress, and a task/Agent/page observability projection extend the learning workspace; generated HTML stays outside long-lived React UI state when persistence is available.
