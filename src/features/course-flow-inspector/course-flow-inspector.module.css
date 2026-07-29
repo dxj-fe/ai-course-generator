@@ -1,0 +1,965 @@
+.shell {
+  --ink: #293128;
+  --muted: #7d776c;
+  --paper: #fffaf0;
+  --canvas: #f7f1e5;
+  --line: #ded5c4;
+  background: var(--paper);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  height: 100svh;
+  min-height: 640px;
+  overflow: hidden;
+}
+
+.header {
+  align-items: flex-end;
+  background: rgb(255 250 240 / 94%);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: space-between;
+  min-height: 154px;
+  padding: 22px 30px 24px;
+  position: relative;
+  z-index: 20;
+}
+
+.brandBlock {
+  max-width: 720px;
+}
+
+.backLink {
+  align-items: center;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 12px;
+  gap: 6px;
+  margin-bottom: 13px;
+  transition: color 150ms ease;
+}
+
+.backLink:hover {
+  color: var(--ink);
+}
+
+.eyebrow,
+.nodeOrdinal,
+.riskPanelHeader span {
+  color: #397a52;
+  font-family: var(--app-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+}
+
+.brandBlock h1 {
+  font-size: clamp(28px, 3vw, 43px);
+  font-weight: 670;
+  letter-spacing: -0.045em;
+  line-height: 1.04;
+  margin: 5px 0 7px;
+}
+
+.brandBlock p {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+.headerActions {
+  align-items: center;
+  display: flex;
+  gap: 9px;
+}
+
+.headerActions button,
+.sourceLink {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 12px;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 14px;
+}
+
+.summaryButton {
+  color: #94552f;
+}
+
+.summaryButton span {
+  align-items: center;
+  background: #f5dfcc;
+  border-radius: 50%;
+  display: inline-flex;
+  font-family: var(--app-font-mono);
+  height: 19px;
+  justify-content: center;
+  width: 19px;
+}
+
+.sourceLink {
+  color: var(--muted);
+}
+
+.workspace {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+}
+
+.canvasColumn {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  position: relative;
+}
+
+.toolbar {
+  align-items: center;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex: 0 0 51px;
+  justify-content: space-between;
+  overflow: hidden;
+  padding: 7px 14px;
+  position: relative;
+  z-index: 14;
+}
+
+.filters {
+  align-items: center;
+  display: flex;
+  gap: 3px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.filters::-webkit-scrollbar {
+  display: none;
+}
+
+.filters button,
+.toolbarActions button {
+  align-items: center;
+  background: transparent;
+  border-radius: 7px;
+  color: var(--muted);
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 11px;
+  gap: 6px;
+  height: 33px;
+  padding: 0 10px;
+  transition:
+    background 150ms ease,
+    color 150ms ease;
+}
+
+.filters button:hover,
+.toolbarActions button:hover,
+.filters .filterActive,
+.toolbarActions .toolActive {
+  background: #eee6d8;
+  color: var(--ink);
+}
+
+.filters i {
+  border-radius: 50%;
+  height: 7px;
+  width: 7px;
+}
+
+.toolbarActions {
+  align-items: center;
+  border-left: 1px solid var(--line);
+  display: flex;
+  margin-left: 10px;
+  padding-left: 10px;
+}
+
+.toolbarActions button {
+  justify-content: center;
+  padding: 0;
+  width: 33px;
+}
+
+.canvasViewport {
+  background-color: var(--canvas);
+  background-image:
+    linear-gradient(rgb(65 82 65 / 4%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(65 82 65 / 4%) 1px, transparent 1px),
+    radial-gradient(circle, rgb(57 122 82 / 16%) 1px, transparent 1.2px);
+  background-position: 0 0, 0 0, 0 0;
+  background-size: 80px 80px, 80px 80px, 16px 16px;
+  cursor: grab;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  touch-action: none;
+}
+
+.canvasViewport[data-dragging="true"] {
+  cursor: grabbing;
+}
+
+.canvasWorld {
+  left: 0;
+  position: absolute;
+  top: 0;
+  transform-origin: 0 0;
+  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.canvasViewport[data-dragging="true"] .canvasWorld {
+  transition: none;
+}
+
+.stageBand {
+  border: 1px dashed;
+  border-radius: 24px;
+  bottom: 28px;
+  position: absolute;
+  top: 28px;
+}
+
+.stageBand > span {
+  background: var(--canvas);
+  font-family: var(--app-font-mono);
+  font-size: 12px;
+  font-weight: 750;
+  left: 22px;
+  letter-spacing: 0.12em;
+  padding: 0 9px;
+  position: absolute;
+  top: -9px;
+}
+
+.edges {
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+}
+
+.edge,
+.loopEdge {
+  fill: none;
+  stroke-width: 1.8;
+  vector-effect: non-scaling-stroke;
+}
+
+.loopEdge {
+  stroke-dasharray: 7 6;
+}
+
+.edgeDimmed {
+  opacity: 0.1;
+}
+
+.flowNode {
+  --node-accent: #397a52;
+  background: #fffdf7;
+  border: 1px solid #d8d0c1;
+  border-radius: 15px;
+  box-shadow:
+    0 1px 0 rgb(45 51 43 / 7%),
+    0 11px 26px -20px rgb(45 51 43 / 38%);
+  height: 132px;
+  padding: 26px 20px 15px;
+  position: absolute;
+  text-align: left;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    opacity 180ms ease,
+    transform 150ms ease;
+}
+
+.flowNode::before {
+  background: var(--node-accent);
+  border-radius: 15px 15px 0 0;
+  content: "";
+  height: 4px;
+  left: -1px;
+  position: absolute;
+  right: -1px;
+  top: -1px;
+}
+
+.flowNode:hover {
+  border-color: var(--node-accent);
+  box-shadow: 0 14px 30px -19px rgb(45 51 43 / 55%);
+  transform: translateY(-3px);
+}
+
+.flowNode:focus-visible {
+  outline: 3px solid rgb(57 122 82 / 22%);
+  outline-offset: 3px;
+}
+
+.nodeSelected {
+  border-color: var(--node-accent);
+  box-shadow:
+    0 0 0 3px rgb(57 122 82 / 12%),
+    0 16px 30px -18px rgb(45 51 43 / 55%);
+}
+
+.nodeDimmed {
+  opacity: 0.16;
+}
+
+.nodeIndex {
+  color: #989083;
+  font-family: var(--app-font-mono);
+  font-size: 10px;
+  left: 20px;
+  position: absolute;
+  top: 13px;
+}
+
+.nodeRiskDot {
+  border-radius: 50%;
+  height: 8px;
+  position: absolute;
+  right: 16px;
+  top: 14px;
+  width: 8px;
+}
+
+.flowNode strong,
+.flowNode small,
+.nodeModel {
+  display: block;
+}
+
+.flowNode strong {
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 680;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+
+.flowNode small {
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.nodeModel {
+  align-items: center;
+  bottom: 14px;
+  color: #696f65;
+  display: flex;
+  font-family: var(--app-font-mono);
+  font-size: 9px;
+  gap: 5px;
+  left: 20px;
+  max-width: calc(100% - 40px);
+  overflow: hidden;
+  position: absolute;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.risk_low {
+  background: #4e9667;
+}
+
+.risk_medium {
+  background: #d79a45;
+}
+
+.risk_high {
+  background: #c85d49;
+}
+
+.canvasHint {
+  align-items: center;
+  background: rgb(255 250 240 / 88%);
+  border: 1px solid rgb(222 213 196 / 80%);
+  border-radius: 999px;
+  bottom: 15px;
+  color: var(--muted);
+  display: flex;
+  font-size: 10px;
+  gap: 6px;
+  left: 15px;
+  padding: 8px 11px;
+  pointer-events: none;
+  position: absolute;
+}
+
+.zoomControls {
+  align-items: center;
+  background: rgb(255 250 240 / 94%);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  bottom: 15px;
+  display: flex;
+  overflow: hidden;
+  position: absolute;
+  right: 15px;
+}
+
+.zoomControls button {
+  align-items: center;
+  background: transparent;
+  color: var(--muted);
+  display: flex;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.zoomControls button:hover {
+  background: #eee6d8;
+  color: var(--ink);
+}
+
+.zoomControls span {
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  color: var(--muted);
+  font-family: var(--app-font-mono);
+  font-size: 9px;
+  min-width: 48px;
+  text-align: center;
+}
+
+.inspector {
+  background: #fffcf5;
+  border-left: 1px solid var(--line);
+  flex: 0 0 388px;
+  min-width: 0;
+  position: relative;
+  transition:
+    flex-basis 220ms ease,
+    transform 220ms ease;
+  z-index: 15;
+}
+
+.inspector:not(.inspectorOpen) {
+  flex-basis: 0;
+}
+
+.inspectorToggle {
+  align-items: center;
+  background: #fffcf5;
+  border: 1px solid var(--line);
+  border-radius: 9px 0 0 9px;
+  color: var(--muted);
+  display: flex;
+  height: 38px;
+  justify-content: center;
+  left: -38px;
+  position: absolute;
+  top: 64px;
+  width: 38px;
+}
+
+.inspectorScroll {
+  height: 100%;
+  min-width: 388px;
+  overflow-y: auto;
+  padding: 28px 26px 46px;
+}
+
+.inspectorTop {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 24px;
+  position: relative;
+}
+
+.nodeOrdinal {
+  margin-bottom: 17px;
+}
+
+.riskBadge {
+  align-items: center;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  color: #8b7564;
+  display: inline-flex;
+  font-size: 10px;
+  gap: 6px;
+  padding: 5px 8px;
+  position: absolute;
+  right: 0;
+  top: -5px;
+}
+
+.riskBadge span {
+  background: currentColor;
+  border-radius: 50%;
+  height: 6px;
+  width: 6px;
+}
+
+.riskBadge.risk_low {
+  color: #397a52;
+}
+
+.riskBadge.risk_medium {
+  color: #a46c29;
+}
+
+.riskBadge.risk_high {
+  color: #b64d3b;
+}
+
+.inspectorTop h2 {
+  font-size: 29px;
+  font-weight: 680;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  margin: 0;
+}
+
+.inspectorSubtitle {
+  color: #397a52;
+  font-family: var(--app-font-mono);
+  font-size: 11px;
+  margin: 7px 0 17px;
+}
+
+.purpose {
+  color: #54584f;
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 0;
+}
+
+.modelCallout {
+  align-items: center;
+  background: #edf3e9;
+  border-left: 3px solid #397a52;
+  display: flex;
+  gap: 12px;
+  margin: 20px 0 3px;
+  padding: 13px 14px;
+}
+
+.modelCallout svg {
+  color: #397a52;
+}
+
+.modelCallout span,
+.modelCallout strong {
+  display: block;
+}
+
+.modelCallout span {
+  color: var(--muted);
+  font-size: 9px;
+  margin-bottom: 3px;
+}
+
+.modelCallout strong {
+  font-family: var(--app-font-mono);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.detailSection,
+.files {
+  border-bottom: 1px solid var(--line);
+  padding: 20px 0;
+}
+
+.sectionTitle {
+  align-items: center;
+  color: #657064;
+  display: flex;
+  gap: 8px;
+  margin-bottom: 11px;
+}
+
+.sectionTitle h3 {
+  font-size: 11px;
+  font-weight: 720;
+  letter-spacing: 0.045em;
+  margin: 0;
+}
+
+.detailSection ul,
+.detailSection ol {
+  color: #585c54;
+  display: grid;
+  font-size: 12px;
+  gap: 8px;
+  line-height: 1.55;
+  margin: 0;
+  padding-left: 19px;
+}
+
+.detailSection li::marker {
+  color: #9a9488;
+  font-family: var(--app-font-mono);
+  font-size: 9px;
+}
+
+.danger .sectionTitle,
+.danger li::marker {
+  color: #b64d3b;
+}
+
+.danger {
+  background: linear-gradient(90deg, rgb(200 93 73 / 5%), transparent);
+  margin-left: -12px;
+  margin-right: -12px;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.note {
+  align-items: flex-start;
+  background: #f3eee3;
+  color: #71695e;
+  display: flex;
+  font-size: 11px;
+  gap: 9px;
+  line-height: 1.55;
+  margin-top: 15px;
+  padding: 12px;
+}
+
+.note svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.note p {
+  margin: 0;
+}
+
+.files code {
+  background: #f3eee3;
+  color: #5d6259;
+  display: block;
+  font-family: var(--app-font-mono);
+  font-size: 9px;
+  line-height: 1.45;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+  padding: 8px 9px;
+}
+
+.searchPanel,
+.riskPanel {
+  background: #fffcf5;
+  border: 1px solid var(--line);
+  box-shadow: 0 22px 50px -28px rgb(45 51 43 / 42%);
+  position: absolute;
+  z-index: 30;
+}
+
+.searchPanel {
+  align-items: center;
+  display: grid;
+  gap: 9px;
+  grid-template-columns: auto 1fr auto auto;
+  left: 14px;
+  padding: 10px 12px;
+  top: 59px;
+  width: min(520px, calc(100% - 28px));
+}
+
+.searchPanel > svg {
+  color: var(--muted);
+}
+
+.searchPanel input {
+  background: transparent;
+  border: 0;
+  font-size: 12px;
+  min-width: 0;
+  outline: 0;
+}
+
+.searchPanel > span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.searchPanel > button,
+.riskPanelHeader button {
+  align-items: center;
+  background: transparent;
+  color: var(--muted);
+  display: flex;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
+.searchResults {
+  border-top: 1px solid var(--line);
+  display: grid;
+  grid-column: 1 / -1;
+  margin: 2px -12px -10px;
+  max-height: 310px;
+  overflow-y: auto;
+}
+
+.searchResults button {
+  align-items: center;
+  background: transparent;
+  border-bottom: 1px solid #eee6d8;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 26px minmax(110px, auto) 1fr;
+  min-height: 44px;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.searchResults button:hover {
+  background: #f4eee2;
+}
+
+.searchResults span,
+.searchResults small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.searchResults span {
+  font-family: var(--app-font-mono);
+}
+
+.searchResults strong {
+  font-size: 11px;
+}
+
+.riskPanel {
+  right: 18px;
+  top: 59px;
+  width: min(600px, calc(100% - 36px));
+}
+
+.riskPanelHeader {
+  align-items: flex-start;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  padding: 19px 20px 15px;
+}
+
+.riskPanelHeader h2 {
+  font-size: 22px;
+  letter-spacing: -0.035em;
+  margin: 4px 0 0;
+}
+
+.riskList {
+  display: grid;
+}
+
+.riskList button {
+  align-items: flex-start;
+  background: transparent;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 13px;
+  grid-template-columns: 32px 1fr auto;
+  padding: 15px 20px;
+  text-align: left;
+}
+
+.riskList button:last-child {
+  border-bottom: 0;
+}
+
+.riskList button:hover {
+  background: #f5eee2;
+}
+
+.riskList button > span {
+  color: #b64d3b;
+  font-family: var(--app-font-mono);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.riskList strong {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.riskList p {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.riskList svg {
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.mobileClose {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .header {
+    align-items: flex-start;
+    min-height: 128px;
+    padding: 16px 18px 18px;
+  }
+
+  .brandBlock h1 {
+    font-size: 29px;
+  }
+
+  .brandBlock p {
+    font-size: 11px;
+  }
+
+  .backLink {
+    margin-bottom: 8px;
+  }
+
+  .sourceLink {
+    display: none;
+  }
+
+  .summaryButton {
+    font-size: 0 !important;
+    height: 38px;
+    justify-content: center;
+    padding: 0 !important;
+    width: 38px;
+  }
+
+  .summaryButton span {
+    display: none;
+  }
+
+  .inspector {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    bottom: 0;
+    box-shadow: 0 -22px 50px -30px rgb(45 51 43 / 50%);
+    flex-basis: auto;
+    height: min(72svh, 680px);
+    left: 0;
+    position: fixed;
+    right: 0;
+    transform: translateY(105%);
+    width: 100%;
+    z-index: 60;
+  }
+
+  .inspector.inspectorOpen {
+    transform: translateY(0);
+  }
+
+  .inspector:not(.inspectorOpen) {
+    flex-basis: auto;
+  }
+
+  .inspectorScroll {
+    min-width: 0;
+    padding: 24px 22px 40px;
+  }
+
+  .inspectorToggle {
+    border-radius: 9px 9px 0 0;
+    left: auto;
+    right: 14px;
+    top: -38px;
+  }
+
+  .mobileClose {
+    align-items: center;
+    background: transparent;
+    color: var(--muted);
+    display: flex;
+    height: 34px;
+    justify-content: center;
+    position: absolute;
+    right: -6px;
+    top: -10px;
+    width: 34px;
+  }
+
+  .riskBadge {
+    right: 34px;
+  }
+}
+
+@media (max-width: 560px) {
+  .shell {
+    min-height: 560px;
+  }
+
+  .header {
+    min-height: 118px;
+  }
+
+  .eyebrow {
+    display: none;
+  }
+
+  .brandBlock h1 {
+    font-size: 25px;
+    margin-top: 0;
+  }
+
+  .headerActions {
+    padding-top: 4px;
+  }
+
+  .toolbar {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .filters button {
+    padding: 0 8px;
+  }
+
+  .canvasHint {
+    display: none;
+  }
+
+  .zoomControls {
+    bottom: 10px;
+    right: 10px;
+  }
+
+  .riskPanel {
+    left: 8px;
+    right: 8px;
+    top: 57px;
+    width: auto;
+  }
+
+  .riskList button {
+    padding: 12px 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvasWorld,
+  .flowNode,
+  .inspector {
+    transition: none;
+  }
+}
