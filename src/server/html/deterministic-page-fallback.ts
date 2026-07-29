@@ -13,7 +13,7 @@ export type DeterministicPageFallbackInput = {
   styleTemplate: StyleTemplate;
 };
 
-export const DETERMINISTIC_PAGE_RENDERER_VERSION = 3;
+export const DETERMINISTIC_PAGE_RENDERER_VERSION = 4;
 
 /**
  * 当模型 HTML 没有通过合同校验时，用已经通过 Schema 校验的服务端事实生成
@@ -426,11 +426,24 @@ ${styleTemplateToCssText(styleTemplate)}
       transform: rotate(6deg);
       transform-origin: center;
     }
-    main[data-template="learning-timeline"] .lesson-card:nth-of-type(1) {
-      transform: translateY(clamp(-48px, -6vh, -24px));
+    main[data-template="learning-timeline"] .lesson-card {
+      transform: none;
     }
-    main[data-template="learning-timeline"] .lesson-card:nth-of-type(3) {
-      transform: translateY(clamp(24px, 6vh, 48px));
+    main[data-template="learning-timeline"] .explore-item {
+      min-height: 44px;
+      display: grid;
+      align-content: center;
+      padding: .45rem .65rem;
+    }
+    main[data-template="learning-timeline"] .explore-item h3 {
+      margin: 0;
+    }
+    main[data-template="learning-timeline"] .explore-item p {
+      display: none;
+      margin: .35em 0 0;
+    }
+    main[data-template="learning-timeline"] .explore-item:is(:hover, :focus, :focus-within) p {
+      display: block;
     }
     main[data-template="knowledge-card-grid"] .lesson-card:nth-of-type(2) {
       transform: translateY(clamp(-32px, -4vh, -16px));
@@ -835,7 +848,7 @@ function renderInteraction(content: PageContentDSL, mergeChoiceBlocks: boolean) 
         ${renderPrompt(interaction.prompt, content)}
         <div class="interaction-items">${interaction.items
           .map(
-            (item) => `<article class="explore-item" tabindex="0" data-interaction-item-id="${escapeHtmlAttribute(item.id)}">
+            (item) => `<article class="explore-item" role="button" tabindex="0" data-interaction-item-id="${escapeHtmlAttribute(item.id)}">
               <h3>${escapeHtmlText(item.label)}</h3>
               ${renderItemContent(item.label, item.content)}
             </article>`,

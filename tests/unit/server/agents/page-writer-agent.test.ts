@@ -12,15 +12,19 @@ import {
   buildLessonRuntime,
   createPageWriterAgent,
   createPageWriterAgentState,
+  estimateFixedCanvasVisibleTextWidth,
   exceedsFixedCanvasCapacity,
   materializePageWriterInteraction,
   materializeInteractionItems,
   normalizePageContentDensity,
   normalizePageNavigationDestination,
   normalizePageWriterModelOutput,
+  PageWriterNarrationDraftSchema,
   validatePageWriterOutput,
+  type PageWriterInput,
 } from "../../../../src/server/agents/page-writer-agent";
 import type {
+  PageContentDSL,
   PageWorkerBrief,
   ReferencePack,
 } from "../../../../src/shared/course-schema";
@@ -128,6 +132,21 @@ describe("PageWriterAgent", () => {
         input,
       ),
     ).toThrow("content 必须解释标签");
+  });
+
+  it("accepts concise narration when its semantic content is sufficient", () => {
+    const conciseNarration = "比较石猴行动后的选择。";
+
+    expect(conciseNarration.length).toBe(11);
+    expect(PageWriterNarrationDraftSchema.parse([conciseNarration])).toEqual([
+      conciseNarration,
+    ]);
+    expect(() =>
+      validatePageWriterOutput(
+        { ...pageContentDsl, narration: [conciseNarration] },
+        input,
+      ),
+    ).not.toThrow();
   });
 
   it("limits newly written quiz pages to one focused question and one block", () => {
@@ -353,6 +372,353 @@ describe("PageWriterAgent", () => {
     ).not.toThrow();
   });
 
+  it("accepts the measured 273-width achievement boundary and rejects text beyond 280", () => {
+    const boundary = createAchievementCapacityBoundaryContent();
+    const achievementInput = pageWriterInputFor(boundary, "achievement");
+
+    expect(estimateFixedCanvasVisibleTextWidth(boundary)).toBe(273);
+    expect(exceedsFixedCanvasCapacity(boundary)).toBe(false);
+    expect(() =>
+      validatePageWriterOutput(boundary, achievementInput),
+    ).not.toThrow();
+
+    if (boundary.interaction.type !== "input") {
+      throw new Error("achievement boundary must use input");
+    }
+    const overCapacity = {
+      ...boundary,
+      interaction: {
+        ...boundary.interaction,
+        prompt: `${boundary.interaction.prompt}请再补充画面证据`,
+      },
+    };
+
+    expect(estimateFixedCanvasVisibleTextWidth(overCapacity)).toBe(281);
+    expect(exceedsFixedCanvasCapacity(overCapacity)).toBe(true);
+    expect(() =>
+      validatePageWriterOutput(overCapacity, achievementInput),
+    ).toThrow("可见文本约 280 个汉字宽度");
+  });
+
+  it("counts an optional timeline illustration as real fixed-canvas capacity", () => {
+    const timeline = structuredClone(
+      getFunctionalTemplateDslExample("learning-timeline"),
+    );
+    if (!timeline || timeline.interaction.type !== "explore") {
+      throw new Error("learning-timeline fixture is required");
+    }
+    timeline.assetSlots = [
+      {
+        id: "asset-slot-01",
+        type: "illustration",
+        role: "inline",
+        purpose: "展示时间线流程示意",
+        required: false,
+        altTextGuidance: "展示时间线的阶段顺序。",
+      },
+    ];
+    const denseTimeline = {
+      ...timeline,
+      blocks: [
+        ...timeline.blocks,
+        {
+          ...timeline.blocks[0]!,
+          id: "block-04",
+          heading: "第四阶段",
+        },
+        {
+          ...timeline.blocks[1]!,
+          id: "block-05",
+          heading: "第五阶段",
+        },
+      ],
+      interaction: {
+        ...timeline.interaction,
+        items: [
+          ...timeline.interaction.items,
+          {
+            ...timeline.interaction.items[0]!,
+            id: "item-04",
+            label: "第四阶段",
+          },
+          {
+            ...timeline.interaction.items[1]!,
+            id: "item-05",
+            label: "第五阶段",
+          },
+        ],
+      },
+      layoutHints: {
+        ...timeline.layoutHints,
+        readingOrder: [
+          ...timeline.layoutHints.readingOrder,
+          "block-04",
+          "block-05",
+        ],
+      },
+    };
+
+    expect(timeline.assetSlots[0]?.required).toBe(false);
+    expect(exceedsFixedCanvasCapacity(timeline)).toBe(false);
+    expect(exceedsFixedCanvasCapacity(denseTimeline)).toBe(true);
+    expect(() =>
+      validatePageWriterOutput(
+        denseTimeline,
+        pageWriterInputFor(denseTimeline, "timeline"),
+      ),
+    ).toThrow("learning-timeline/explore");
+  });
+
+  it("rewrites real dense card and comparison pages when a required visual shares the canvas", () => {
+    const knowledge = getFunctionalTemplateDslExample(
+      "knowledge-card-grid",
+    );
+    const comparison = getFunctionalTemplateDslExample("comparison-board");
+    if (
+      !knowledge ||
+      knowledge.interaction.type !== "reveal" ||
+      !comparison ||
+      comparison.interaction.type !== "explore"
+    ) {
+      throw new Error("card and comparison fixtures are required");
+    }
+
+    const knowledgeWithVisual = withRequiredVisual({
+      ...knowledge,
+      blocks: knowledge.blocks.map((block, index) => ({
+        ...block,
+        body: [
+          "水星离太阳最近，因此公转轨道位于八颗行星最内侧。",
+          "地球表面拥有大量液态水，为已知生命提供了生存条件。",
+          "木星体积最大，大红斑是帮助辨认它的显著外观特征。",
+        ][index]!,
+      })),
+    });
+    if (knowledgeWithVisual.interaction.type !== "reveal") {
+      throw new Error("reveal fixture is required");
+    }
+    const denseKnowledge = {
+      ...knowledgeWithVisual,
+      title: "毕加索核心创作时期划分",
+      narration: [
+        "本页通过3张知识卡梳理毕加索的三大核心创作时期，点击卡片可查看对应时期的详细风格特点。",
+      ],
+      blocks: knowledgeWithVisual.blocks.map((block, index) => ({
+        ...block,
+        label: ["蓝色时期", "玫瑰时期", "立体主义时期"][index]!,
+        heading: [
+          "蓝色时期（1901-1904）",
+          "玫瑰时期（1904-1906）",
+          "立体主义时期（1907-1917）",
+        ][index]!,
+        body: [
+          "毕加索因好友自杀陷入忧郁，这一时期作品以冷色调蓝色为主，主题多为贫困、孤独的底层人物，风格偏向写实且充满悲伤氛围。",
+          "毕加索情绪逐渐缓和，作品转向暖色调玫瑰色，主题多为马戏团演员、小丑等温情角色，风格仍偏向写实但更具柔和感。",
+          "毕加索与布拉克共同创立立体主义，打破传统透视规则，将物体拆解为几何碎片并重新组合，强调多视角同时呈现，是现代艺术的重要转折点。",
+        ][index]!,
+      })),
+      interaction: {
+        ...knowledgeWithVisual.interaction,
+        items: knowledgeWithVisual.interaction.items.map((item, index) => ({
+          ...item,
+          content: [
+            "冷色调蓝色为主，主题围绕贫困与孤独，充满忧郁氛围",
+            "暖色调玫瑰色为主，主题转向温情的马戏团人物，风格更柔和",
+            "拆解物体为几何碎片，多视角组合，打破传统透视规则",
+          ][index]!,
+        })),
+      },
+    };
+
+    expect(exceedsFixedCanvasCapacity(denseKnowledge)).toBe(true);
+    expect(() =>
+      validatePageWriterOutput(
+        denseKnowledge,
+        pageWriterInputFor(knowledgeWithVisual, "knowledge_card"),
+      ),
+    ).toThrow("knowledge-card-grid/reveal");
+    expect(exceedsFixedCanvasCapacity(knowledgeWithVisual)).toBe(false);
+    expect(() =>
+      validatePageWriterOutput(
+        knowledgeWithVisual,
+        pageWriterInputFor(knowledgeWithVisual, "knowledge_card"),
+      ),
+    ).not.toThrow();
+
+    const comparisonWithVisual = withRequiredVisual(comparison);
+    if (comparisonWithVisual.interaction.type !== "explore") {
+      throw new Error("explore fixture is required");
+    }
+    const denseComparison = {
+      ...comparisonWithVisual,
+      title: "不同时期作品风格对比",
+      narration: [
+        "本页将对比毕加索三个核心创作时期的代表作品，重点观察色调、线条和造型的差异，帮助你快速识别不同阶段的风格变化。",
+      ],
+      blocks: [
+        ...comparisonWithVisual.blocks.map((block, index) => ({
+          ...block,
+          label: ["蓝色时期", "玫瑰时期"][index]!,
+          heading: [
+            "蓝色时期（1901-1904）",
+            "玫瑰时期（1904-1906）",
+          ][index]!,
+          body: [
+            "毕加索蓝色时期的作品以冷蓝色调为主，多描绘贫困、孤独的底层人物，线条柔和细腻，造型偏向写实，整体传递出忧郁、压抑的氛围。",
+            "玫瑰时期的作品转为暖粉色、玫瑰色的色调，题材多为马戏团演员、舞者等角色，线条更流畅，造型略带夸张但仍偏向写实，氛围更加温暖。",
+          ][index]!,
+          supportingPoints: [],
+        })),
+        {
+          id: "block-cubism",
+          kind: "concept" as const,
+          label: "立体主义时期",
+          heading: "立体主义时期（1907-1917）",
+          body: "立体主义时期的作品打破传统透视规则，用几何块面分解物体，色调不再局限于单一色系，造型抽象且强调多视角同时呈现，是毕加索最具实验性的创作阶段。",
+          supportingPoints: [],
+        },
+      ],
+      interaction: {
+        ...comparisonWithVisual.interaction,
+        prompt: "点击下方的时期标签，查看对应时期作品的风格细节。",
+        items: comparisonWithVisual.interaction.items.map((item, index) => ({
+          ...item,
+          label: ["蓝色时期", "玫瑰时期", "立体主义时期"][index]!,
+          content: [
+            "冷蓝色调，题材多为底层人物，线条柔和写实",
+            "暖粉色调，题材偏向马戏团角色，线条流畅略带夸张",
+            "几何块面造型，多视角呈现物体，色调多元丰富",
+          ][index]!,
+        })),
+      },
+      layoutHints: {
+        ...comparisonWithVisual.layoutHints,
+        readingOrder: [
+          ...comparisonWithVisual.layoutHints.readingOrder,
+          "block-cubism",
+        ],
+      },
+    };
+    const compactComparison = {
+      ...comparisonWithVisual,
+      blocks: comparisonWithVisual.blocks.map((block) => ({
+        ...block,
+        supportingPoints: block.supportingPoints.slice(0, 1),
+      })),
+    };
+
+    expect(exceedsFixedCanvasCapacity(denseComparison)).toBe(true);
+    expect(() =>
+      validatePageWriterOutput(
+        denseComparison,
+        pageWriterInputFor(denseComparison, "comparison"),
+      ),
+    ).toThrow("comparison-board/explore");
+    expect(exceedsFixedCanvasCapacity(compactComparison)).toBe(false);
+    expect(() =>
+      validatePageWriterOutput(
+        compactComparison,
+        pageWriterInputFor(compactComparison, "comparison"),
+      ),
+    ).not.toThrow();
+  });
+
+  it("keeps required-visual quiz and summary pages to three choices or cards", () => {
+    const quiz = getFunctionalTemplateDslExample("interactive-quiz");
+    const summary = getFunctionalTemplateDslExample("recap-summary");
+    if (
+      !quiz ||
+      quiz.interaction.type !== "choice" ||
+      !summary ||
+      summary.interaction.type !== "navigate"
+    ) {
+      throw new Error("quiz and summary fixtures are required");
+    }
+
+    const compactQuiz = withRequiredVisual({
+      ...quiz,
+      interaction: {
+        ...quiz.interaction,
+        questions: quiz.interaction.questions.slice(0, 1),
+      },
+    });
+    if (compactQuiz.interaction.type !== "choice") {
+      throw new Error("choice fixture is required");
+    }
+    const question = compactQuiz.interaction.questions[0]!;
+    const denseQuiz = {
+      ...compactQuiz,
+      interaction: {
+        ...compactQuiz.interaction,
+        questions: [
+          {
+            ...question,
+            options: [
+              ...question.options,
+              {
+                id: "option-01-04",
+                label: "新古典主义时期",
+              },
+            ],
+          },
+        ],
+      },
+    };
+
+    expect(exceedsFixedCanvasCapacity(denseQuiz)).toBe(true);
+    expect(() =>
+      validatePageWriterOutput(
+        denseQuiz,
+        pageWriterInputFor(denseQuiz, "quiz"),
+      ),
+    ).toThrow("interactive-quiz/choice");
+    expect(exceedsFixedCanvasCapacity(compactQuiz)).toBe(false);
+    expect(() =>
+      validatePageWriterOutput(
+        compactQuiz,
+        pageWriterInputFor(compactQuiz, "quiz"),
+      ),
+    ).not.toThrow();
+
+    const compactSummary = withRequiredVisual(summary);
+    const denseSummary = {
+      ...compactSummary,
+      blocks: [
+        ...compactSummary.blocks,
+        {
+          id: "block-framework",
+          kind: "recap" as const,
+          label: "赏析方法",
+          heading: "使用时期特征赏析作品",
+          body: "先判断创作时期，再用色调、线条与造型证据说明风格。",
+          supportingPoints: [],
+        },
+      ],
+      layoutHints: {
+        ...compactSummary.layoutHints,
+        readingOrder: [
+          ...compactSummary.layoutHints.readingOrder,
+          "block-framework",
+        ],
+      },
+    };
+
+    expect(exceedsFixedCanvasCapacity(denseSummary)).toBe(true);
+    expect(() =>
+      validatePageWriterOutput(
+        denseSummary,
+        pageWriterInputFor(denseSummary, "summary"),
+      ),
+    ).toThrow("recap-summary/navigate");
+    expect(exceedsFixedCanvasCapacity(compactSummary)).toBe(false);
+    expect(() =>
+      validatePageWriterOutput(
+        compactSummary,
+        pageWriterInputFor(compactSummary, "summary"),
+      ),
+    ).not.toThrow();
+  });
+
   it("rejects generic input feedback that does not address the criteria", () => {
     const achievement = getFunctionalTemplateDslExample("achievement-task");
     if (!achievement || achievement.interaction.type !== "input") {
@@ -573,6 +939,27 @@ describe("PageWriterAgent", () => {
     });
   });
 
+  it("restores a compressed single narration string without changing arrays", () => {
+    const narration = "比较三个时期的色彩与造型差异。";
+    const existingNarration = [
+      "先观察作品中的色彩变化。",
+      "再比较人物造型的处理方式。",
+    ];
+
+    expect(
+      normalizePageWriterModelOutput({
+        narration,
+        interaction: { type: "none" },
+      }),
+    ).toMatchObject({ narration: [narration] });
+    expect(
+      normalizePageWriterModelOutput({
+        narration: existingNarration,
+        interaction: { type: "none" },
+      }),
+    ).toMatchObject({ narration: existingNarration });
+  });
+
   it("leaves unknown interaction feedback shapes for strict schema rejection", () => {
     expect(
       normalizePageWriterModelOutput({
@@ -681,3 +1068,103 @@ describe("PageWriterAgent", () => {
     },
   );
 });
+
+function withRequiredVisual<T extends PageContentDSL>(
+  dsl: T,
+): T & { assetSlots: PageContentDSL["assetSlots"] } {
+  return {
+    ...dsl,
+    assetSlots: [
+      {
+        id: "asset-slot-01",
+        type: "illustration",
+        role: "inline",
+        purpose: "展示本页核心知识所需的解释性插图",
+        required: true,
+        altTextGuidance: "描述支持本页核心知识的主要视觉线索。",
+      },
+    ],
+  };
+}
+
+function createAchievementCapacityBoundaryContent(): PageContentDSL {
+  const achievement = getFunctionalTemplateDslExample("achievement-task");
+  if (!achievement || achievement.interaction.type !== "input") {
+    throw new Error("achievement-task fixture is required");
+  }
+
+  return withRequiredVisual({
+    ...achievement,
+    title: "独立赏析毕加索《亚维农少女》",
+    narration: ["观察人物空间与视角完成有画面依据的赏析"],
+    blocks: [
+      {
+        id: "block-period",
+        kind: "instruction",
+        heading: "判断时期与创作背景",
+        body: "说明作品创作于立体主义形成前夕，并联系毕加索对传统透视与人体造型的突破。",
+        supportingPoints: ["用作品年代和艺术转折作为判断依据。"],
+      },
+      {
+        id: "block-method",
+        kind: "instruction",
+        heading: "分析立体主义表现手法",
+        body: "指出人物被几何化处理、多个视角并置，以及空间被压缩切割的具体画面证据。",
+        supportingPoints: ["至少引用两个能在画面中直接观察到的特征。"],
+      },
+    ],
+    interaction: {
+      type: "input",
+      prompt: "写出作品所属时期，并结合画面说明两种立体主义表现手法。",
+      placeholder: "例如：作品处于……时期；画面通过……与……表现……",
+      evaluationCriteria: [
+        "准确说明作品所处时期或艺术转折位置",
+        "结合画面证据分析至少两种立体主义表现手法",
+      ],
+      feedback: {
+        success:
+          "你已准确判断时期，并用可观察的画面证据说明了两种立体主义手法。",
+        retry:
+          "请补充作品所处时期，并从几何化造型、多视角或压缩空间中选择两项结合画面说明。",
+      },
+    },
+    layoutHints: {
+      ...achievement.layoutHints,
+      readingOrder: ["block-period", "block-method"],
+    },
+  });
+}
+
+function pageWriterInputFor(
+  dsl: PageContentDSL,
+  pageType: PageWriterInput["page"]["pageType"],
+): PageWriterInput {
+  const targetPage: PageWriterInput["page"] = {
+    ...page,
+    id: dsl.pageId,
+    title: dsl.title,
+    pageType,
+    functionalTemplateId: dsl.functionalTemplateId,
+    interactionType: dsl.interaction.type,
+    assetNeeds: dsl.assetSlots.map(
+      ({ type, role, purpose, required }) => ({
+        type,
+        role,
+        purpose,
+        required,
+      }),
+    ),
+  };
+
+  return {
+    ...input,
+    page: targetPage,
+    brief: {
+      ...brief,
+      pageId: dsl.pageId,
+      pedagogy: { ...brief.pedagogy, pageId: dsl.pageId },
+      story: { ...brief.story, pageId: dsl.pageId },
+      visual: { ...brief.visual, pageId: dsl.pageId },
+    },
+  };
+}

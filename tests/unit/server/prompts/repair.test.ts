@@ -6,7 +6,7 @@ describe("Repair prompts", () => {
   it("uses the active bounded and report-only Repair contract", async () => {
     const prompts = await buildRepairPrompts({ pageId: "page-02" });
 
-    expect(prompts.version).toBe("1.6.0/1.0.1");
+    expect(prompts.version).toBe("1.6.1/1.0.1");
     expect(prompts.systemPrompt).toContain("安全熔断");
     expect(prompts.systemPrompt).not.toContain("最多两轮");
     expect(prompts.systemPrompt).toContain("禁止返回完整重写文档");
@@ -41,6 +41,9 @@ describe("Repair prompts", () => {
     );
     expect(prompts.systemPrompt).toContain(
       "禁止继续只增大按钮",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "严禁设置 `overflow:auto` / `overflow:scroll`",
     );
     expect(prompts.userPrompt).toContain(
       "sourceReport 中没有出现的 issue code 不属于本轮任务",

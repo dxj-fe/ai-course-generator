@@ -73,7 +73,7 @@ describe("RepairAgent", () => {
             operation: "insert_before_close_tag",
             selector: "html, body",
             replacement:
-              "\nhtml, body { overflow: auto; }\n.course-stage { min-height: 0; }\n",
+              "\nhtml, body { width: 100%; height: 100%; }\n.course-stage { min-height: 0; }\n",
           },
         ],
       }),
@@ -84,7 +84,7 @@ describe("RepairAgent", () => {
           operation: "insert_before_close_tag",
           selector: "style",
           replacement:
-            "\nhtml, body { overflow: auto; }\n.course-stage { min-height: 0; }\n",
+            "\nhtml, body { width: 100%; height: 100%; }\n.course-stage { min-height: 0; }\n",
         },
       ],
     });
@@ -114,7 +114,7 @@ describe("RepairAgent", () => {
             issueCode: "LAYOUT_CLIPPING_RISK",
             operation: "insert_before_close_tag",
             selector: "style",
-            replacement: "html, body { overflow: auto; }",
+            replacement: "html, body { box-sizing: border-box; }",
           },
         ],
       }),
@@ -125,7 +125,7 @@ describe("RepairAgent", () => {
           issueCode: "LAYOUT_CLIPPING_RISK",
           operation: "insert_before_close_tag",
           selector: "style",
-          replacement: "html, body { overflow: auto; }",
+          replacement: "html, body { box-sizing: border-box; }",
           summary:
             "针对 LAYOUT_CLIPPING_RISK 在授权标签边界插入修复。",
         },
@@ -309,7 +309,8 @@ describe("RepairAgent", () => {
           issueCode: request.issueCodes[0],
           operation: "insert_before_close_tag",
           selector: "html, body",
-          replacement: "\nhtml, body { overflow: auto; }\n",
+          replacement:
+            "\nhtml, body { width: 100%; height: 100%; box-sizing: border-box; }\n",
         },
       ],
     });
@@ -322,7 +323,7 @@ describe("RepairAgent", () => {
     expect(generateCandidate).toHaveBeenCalledTimes(1);
     expect(state.status).toBe("completed");
     expect(state.repairedHtml).toContain(
-      "html, body { overflow: auto; }\n</style>",
+      "html, body { width: 100%; height: 100%; box-sizing: border-box; }\n</style>",
     );
     expect(state.result).toMatchObject({
       kind: "html_patch_candidate",
@@ -333,6 +334,75 @@ describe("RepairAgent", () => {
         },
       ],
     });
+  });
+
+  it.each([
+    "html, body { overflow: auto; }",
+    ".course-content { overflow-y: scroll; }",
+    "[data-interaction-type] { overflow-x: auto; }",
+  ])(
+    "rejects a Repair candidate that makes a lesson container scroll: %s",
+    async (replacement) => {
+      const request = htmlRequest();
+      const state = await createRepairAgent({
+        generateCandidate: vi.fn().mockResolvedValue({
+          kind: "html_patch_candidate",
+          pageId: request.pageId,
+          targetArtifact: "html",
+          addressedIssueCodes: request.issueCodes,
+          unresolvedIssueCodes: [],
+          changeSummary: ["尝试通过滚动容纳内容。"],
+          patches: [
+            {
+              issueCode: request.issueCodes[0],
+              operation: "insert_before_close_tag",
+              selector: "style",
+              replacement: `\n${replacement}\n`,
+              summary: "尝试建立滚动区。",
+            },
+          ],
+        }),
+      }).run(createRepairAgentState(request), {
+        traceId: "trace-repair-scroll-rejected",
+      });
+
+      expect(state.status).toBe("failed");
+      expect(state.error).toMatchObject({
+        code: "SCHEMA_ERROR",
+        message: expect.stringContaining("不得在课程根、正文或互动容器"),
+      });
+      expect(state.repairedHtml).toBeUndefined();
+    },
+  );
+
+  it("does not reject overflow on a pure decorative region", async () => {
+    const request = htmlRequest();
+    const state = await createRepairAgent({
+      generateCandidate: vi.fn().mockResolvedValue({
+        kind: "html_patch_candidate",
+        pageId: request.pageId,
+        targetArtifact: "html",
+        addressedIssueCodes: request.issueCodes,
+        unresolvedIssueCodes: [],
+        changeSummary: ["限制装饰胶片的内部视觉区域。"],
+        patches: [
+          {
+            issueCode: request.issueCodes[0],
+            operation: "insert_before_close_tag",
+            selector: "style",
+            replacement: "\nmain .decorative-filmstrip { overflow-x: auto; }\n",
+            summary: "仅调整纯装饰胶片区域。",
+          },
+        ],
+      }),
+    }).run(createRepairAgentState(request), {
+      traceId: "trace-repair-decorative-overflow",
+    });
+
+    expect(state.status).toBe("completed");
+    expect(state.repairedHtml).toContain(
+      "main .decorative-filmstrip { overflow-x: auto; }",
+    );
   });
 
   it("repairs touch-target sizing deterministically without another model call", async () => {

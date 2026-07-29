@@ -1077,6 +1077,92 @@ describe("initializeCourseGenerationState", () => {
     expect(resumed.pages[0]?.error).toBeUndefined();
   });
 
+  it("rewrites a stalled five-node timeline when its optional visual consumes canvas space", () => {
+    const existing = legacyRepairFailure();
+    const timeline = structuredClone(
+      getFunctionalTemplateDslExample("learning-timeline"),
+    );
+    if (!timeline || timeline.interaction.type !== "explore") {
+      throw new Error("learning-timeline fixture is required");
+    }
+    const page = existing.pages[0]!;
+    const content = {
+      ...timeline,
+      pageId: page.pageId,
+      assetSlots: [
+        {
+          id: "asset-slot-01",
+          type: "illustration" as const,
+          role: "inline" as const,
+          purpose: "展示时间线流程示意",
+          required: false,
+          altTextGuidance: "展示时间线的阶段顺序。",
+        },
+      ],
+      blocks: [
+        ...timeline.blocks,
+        { ...timeline.blocks[0]!, id: "block-04", heading: "第四阶段" },
+        { ...timeline.blocks[1]!, id: "block-05", heading: "第五阶段" },
+      ],
+      interaction: {
+        ...timeline.interaction,
+        items: [
+          ...timeline.interaction.items,
+          {
+            ...timeline.interaction.items[0]!,
+            id: "item-04",
+            label: "第四阶段",
+          },
+          {
+            ...timeline.interaction.items[1]!,
+            id: "item-05",
+            label: "第五阶段",
+          },
+        ],
+      },
+      layoutHints: {
+        ...timeline.layoutHints,
+        readingOrder: [
+          ...timeline.layoutHints.readingOrder,
+          "block-04",
+          "block-05",
+        ],
+      },
+    };
+    page.content = content;
+    page.htmlOutput = {
+      html: buildValidGeneratedHtml(content),
+      generatedAt: timestamp,
+      version: 1,
+    };
+    page.error = {
+      code: "QUALITY_STALLED",
+      message: "五节点时间线在固定画布中连续修订仍无法完整呈现。",
+    };
+
+    const resumed = initializeCourseGenerationState(
+      {
+        courseId: existing.courseId,
+        userPrompt: existing.userPrompt,
+        existingState: existing,
+      },
+      { traceId: "trace-resume-optional-visual-timeline" },
+      () => timestamp,
+    );
+
+    expect(resumed.pages[0]).toMatchObject({
+      status: "running",
+      currentStage: "page_writer",
+      assets: [],
+      repairHistory: [],
+      attempts: [],
+    });
+    expect(resumed.pages[0]?.content).toBeUndefined();
+    expect(resumed.pages[0]?.htmlOutput).toBeUndefined();
+    expect(resumed.pages[0]?.qualityReport).toBeUndefined();
+    expect(resumed.pages[0]?.error).toBeUndefined();
+  });
+
   it("restarts an interrupted running Repair from a clean HTML checkpoint", () => {
     const existing = legacyRepairFailure();
     const page = existing.pages[0]!;
@@ -1497,6 +1583,93 @@ describe("initializeCourseGenerationState", () => {
         existingState: existing,
       },
       { traceId: "trace-resume-over-capacity-story" },
+      () => timestamp,
+    );
+
+    expect(resumed.pages[0]).toMatchObject({
+      status: "running",
+      currentStage: "page_writer",
+      assets: [],
+      repairHistory: [],
+      attempts: [],
+    });
+    expect(resumed.pages[0]?.content).toBeUndefined();
+    expect(resumed.pages[0]?.htmlOutput).toBeUndefined();
+    expect(resumed.pages[0]?.qualityReport).toBeUndefined();
+    expect(resumed.pages[0]?.error).toBeUndefined();
+  });
+
+  it("rewrites a live required-visual QA page with four cards from the Page Writer checkpoint", () => {
+    const existing = legacyRepairFailure();
+    const summary = getFunctionalTemplateDslExample("recap-summary");
+    if (!summary || summary.interaction.type !== "navigate") {
+      throw new Error("recap-summary fixture is required");
+    }
+    const page = existing.pages[0]!;
+    const content = {
+      ...summary,
+      pageId: page.pageId,
+      blocks: [
+        ...summary.blocks,
+        {
+          id: "block-framework",
+          kind: "recap" as const,
+          label: "赏析方法",
+          heading: "使用时期特征赏析作品",
+          body: "先判断创作时期，再用色调、线条与造型证据说明风格。",
+          supportingPoints: [],
+        },
+      ],
+      assetSlots: [
+        {
+          id: "asset-slot-01",
+          type: "illustration" as const,
+          role: "inline" as const,
+          purpose: "展示课程核心知识点的思维导图。",
+          required: true,
+          altTextGuidance: "描述课程核心知识之间的连接关系。",
+        },
+      ],
+      layoutHints: {
+        ...summary.layoutHints,
+        readingOrder: [
+          ...summary.layoutHints.readingOrder,
+          "block-framework",
+        ],
+      },
+    };
+    page.content = content;
+    page.status = "running";
+    page.currentStage = "qa";
+    page.htmlOutput = {
+      html: buildValidGeneratedHtml(content),
+      generatedAt: timestamp,
+      version: 1,
+    };
+    page.qualityReport = qualityReportWithIssue({
+      code: "BROWSER_CONTENT_CLIPPED",
+      dimension: "layoutQuality",
+    });
+    page.repairHistory = [];
+    page.attempts = [
+      { stage: "page_writer", attempts: 1 },
+      { stage: "assets", attempts: 1 },
+      { stage: "html", attempts: 1 },
+      { stage: "qa", attempts: 1 },
+    ];
+    page.error = undefined;
+    existing.status = "running";
+    existing.currentStage = "qa";
+    existing.errors = [];
+    existing.completedAt = undefined;
+
+    const resumed = initializeCourseGenerationState(
+      {
+        courseId: existing.courseId,
+        userPrompt: existing.userPrompt,
+        existingState: existing,
+      },
+      { traceId: "trace-resume-over-capacity-summary" },
       () => timestamp,
     );
 

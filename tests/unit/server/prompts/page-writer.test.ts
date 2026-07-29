@@ -36,9 +36,15 @@ describe("Page Writer prompts", () => {
       },
     });
 
-    expect(prompts.version).toBe("2.8.0/2.2.0");
+    expect(prompts.version).toBe("2.10.2/2.2.0");
     expect(prompts.systemPrompt).toContain(
       "contentDensity 只能是 sparse、balanced、dense",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "去除标点后至少包含 10 个有效字符",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "每个 body 压到 40 字内",
     );
     expect(prompts.systemPrompt).toContain(
       "每道题只包含 prompt、options、correctOptionIndex",
@@ -65,10 +71,19 @@ describe("Page Writer prompts", () => {
       "`dense` 只表示紧凑分组",
     );
     expect(prompts.systemPrompt).toContain(
+      "只要页面声明任何 assetSlots",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "互动只提供短标签和一条不同于 block 正文的因果衔接、证据或后续影响",
+    );
+    expect(prompts.systemPrompt).toContain(
       "禁止同时生成“3 个长故事块 + 4 个选项 + 必需插图”",
     );
     expect(prompts.systemPrompt).toContain(
       "禁止同时生成“3 个任务块 + 长输入说明 + 必需插图”",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "可见中文总量不超过约 280 个汉字",
     );
     expect(prompts.systemPrompt).toContain(
       "questions 必须且只能包含 1 道完整题目",

@@ -256,6 +256,162 @@ function createFixedCanvasRegressionContents(): PageContentDSL[] {
   return [knowledge, comparison, quiz, recap];
 }
 
+function createAchievementCapacityBoundaryContent(): PageContentDSL {
+  const achievement = structuredClone(getExample("achievement-task"));
+  if (achievement.interaction.type !== "input") {
+    throw new Error("achievement-task 示例必须使用 input interaction");
+  }
+
+  achievement.title = "独立赏析毕加索《亚维农少女》";
+  achievement.narration = ["观察人物空间与视角完成有画面依据的赏析"];
+  achievement.blocks = [
+    {
+      id: "block-period",
+      kind: "instruction",
+      heading: "判断时期与创作背景",
+      body: "说明作品创作于立体主义形成前夕，并联系毕加索对传统透视与人体造型的突破。",
+      supportingPoints: ["用作品年代和艺术转折作为判断依据。"],
+    },
+    {
+      id: "block-method",
+      kind: "instruction",
+      heading: "分析立体主义表现手法",
+      body: "指出人物被几何化处理、多个视角并置，以及空间被压缩切割的具体画面证据。",
+      supportingPoints: ["至少引用两个能在画面中直接观察到的特征。"],
+    },
+  ];
+  achievement.interaction = {
+    type: "input",
+    prompt: "写出作品所属时期，并结合画面说明两种立体主义表现手法。",
+    placeholder: "例如：作品处于……时期；画面通过……与……表现……",
+    evaluationCriteria: [
+      "准确说明作品所处时期或艺术转折位置",
+      "结合画面证据分析至少两种立体主义表现手法",
+    ],
+    feedback: {
+      success:
+        "你已准确判断时期，并用可观察的画面证据说明了两种立体主义手法。",
+      retry:
+        "请补充作品所处时期，并从几何化造型、多视角或压缩空间中选择两项结合画面说明。",
+    },
+  };
+  achievement.assetSlots = [
+    {
+      id: "asset-slot-01",
+      type: "illustration",
+      role: "inline",
+      purpose: "展示《亚维农少女》的构图与造型示意",
+      required: true,
+      altTextGuidance: "展示作品人物造型、视角和空间结构的示意图。",
+    },
+  ];
+  achievement.layoutHints = {
+    ...achievement.layoutHints,
+    readingOrder: ["block-period", "block-method"],
+  };
+
+  return achievement;
+}
+
+function createFiveNodeTimelineContent(): PageContentDSL {
+  const timeline = structuredClone(getExample("learning-timeline"));
+  if (timeline.interaction.type !== "explore") {
+    throw new Error("learning-timeline 示例必须使用 explore interaction");
+  }
+
+  timeline.title = "猴王出世时间线";
+  timeline.narration = ["按情节顺序观察石猴如何一步步被众猴推举为王。"];
+  timeline.blocks = [
+    {
+      id: "block-01",
+      kind: "fact",
+      label: "仙石孕育",
+      heading: "花果山仙石孕育石猴",
+      body: "仙石吸收天地精华，裂开后化作一只五官俱备的石猴。",
+      supportingPoints: [],
+    },
+    {
+      id: "block-02",
+      kind: "fact",
+      label: "初识群猴",
+      heading: "石猴融入花果山猴群",
+      body: "石猴与群猴一起生活嬉戏，凭胆识逐渐获得伙伴的信任。",
+      supportingPoints: [],
+    },
+    {
+      id: "block-03",
+      kind: "fact",
+      label: "发现瀑布",
+      heading: "群猴寻找涧水源头",
+      body: "群猴顺着涧水来到瀑布前，约定谁敢进入就拜谁为王。",
+      supportingPoints: [],
+    },
+    {
+      id: "block-04",
+      kind: "fact",
+      label: "探入水帘",
+      heading: "石猴纵身跃入瀑布",
+      body: "石猴率先穿过水帘，发现可供猴群安居的水帘洞。",
+      supportingPoints: [],
+    },
+    {
+      id: "block-05",
+      kind: "fact",
+      label: "推举为王",
+      heading: "石猴兑现约定成为猴王",
+      body: "群猴进入水帘洞后遵守承诺，共同推举石猴为美猴王。",
+      supportingPoints: [],
+    },
+  ];
+  timeline.interaction = {
+    type: "explore",
+    prompt: "聚焦一个节点，查看它怎样推动下一段情节。",
+    items: [
+      {
+        id: "item-01",
+        label: "仙石孕育",
+        content: "奇异身世为石猴后续的不凡表现埋下伏笔。",
+      },
+      {
+        id: "item-02",
+        label: "初识群猴",
+        content: "融入猴群让石猴有机会在共同挑战中证明自己。",
+      },
+      {
+        id: "item-03",
+        label: "发现瀑布",
+        content: "群猴的约定把寻找源头转化为一次勇气考验。",
+      },
+      {
+        id: "item-04",
+        label: "探入水帘",
+        content: "率先行动既解决了住处问题，也证明了石猴的胆识。",
+      },
+      {
+        id: "item-05",
+        label: "推举为王",
+        content: "群猴兑现承诺，完成石猴从伙伴到首领的身份变化。",
+      },
+    ],
+  };
+  timeline.assetSlots = [
+    {
+      id: "asset-slot-01",
+      type: "illustration",
+      role: "inline",
+      purpose: "展示石猴穿过水帘并发现洞穴的情节插图",
+      required: false,
+      altTextGuidance: "石猴穿过瀑布，发现水帘洞内部空间。",
+    },
+  ];
+  timeline.layoutHints = {
+    ...timeline.layoutHints,
+    readingOrder: timeline.blocks.map((block) => block.id),
+  };
+
+  return timeline;
+}
+
 describe("renderDeterministicPageFallback advanced layout", () => {
   it("marks generated HTML with the current deterministic renderer version", () => {
     const html = renderDeterministicPageFallback({
@@ -557,5 +713,250 @@ describe("renderDeterministicPageFallback advanced layout", () => {
       }
     },
     20_000,
+  );
+
+  it(
+    "keeps the 273-width achievement boundary readable at the production canvas sizes",
+    async () => {
+      const content = createAchievementCapacityBoundaryContent();
+      const html = buildFittedLessonSrcDoc(
+        renderDeterministicPageFallback({
+          assets: [createReadyAsset(content, { assetType: "background" })],
+          content,
+          styleTemplate,
+        }),
+      );
+      const browser = await chromium.launch({ headless: true });
+
+      try {
+        for (const viewport of [
+          { width: 366, height: 500 },
+          { width: 768, height: 432 },
+          { width: 1365, height: 768 },
+        ]) {
+          const page = await browser.newPage({ viewport });
+          await page.route("**/*", (route) => route.abort());
+          await page.setContent(html, { waitUntil: "domcontentloaded" });
+          await page.waitForFunction(
+            () =>
+              document.documentElement.dataset.keyaViewportFitScale !==
+              undefined,
+          );
+          await page.evaluate(() => {
+            const feedback =
+              document.querySelector<HTMLElement>(".interaction-panel .feedback");
+            if (feedback) {
+              feedback.textContent =
+                "请补充作品所处时期，并从几何化造型、多视角或压缩空间中选择两项结合画面说明。";
+              feedback.hidden = false;
+            }
+            window.dispatchEvent(new Event("keya:viewport-fit"));
+          });
+          await page.waitForTimeout(32);
+
+          const metrics = await page.evaluate(() => {
+            const root = document.documentElement;
+            const body = document.body;
+            const requiredCopy = Array.from(
+              document.querySelectorAll<HTMLElement>(
+                "h1, .course-block-summary, .course-block-body, .interaction-panel",
+              ),
+            );
+            const clippedElementCount = [
+              root,
+              body,
+              ...body.querySelectorAll<HTMLElement>("*"),
+            ].filter((element) => {
+              if (
+                element === root ||
+                element === body ||
+                element.dataset.keyaFitExpanded === "true"
+              ) {
+                return false;
+              }
+              const style = getComputedStyle(element);
+              const clipsX = ["hidden", "clip"].includes(style.overflowX);
+              const clipsY = ["hidden", "clip"].includes(style.overflowY);
+              return (
+                (clipsX && element.scrollWidth > element.clientWidth + 1) ||
+                (clipsY && element.scrollHeight > element.clientHeight + 1)
+              );
+            }).length;
+
+            return {
+              scale: Number(root.dataset.keyaViewportFitScale ?? "0"),
+              clippedElementCount,
+              requiredCopyVisible: requiredCopy.every((element) => {
+                const style = getComputedStyle(element);
+                const rect = element.getBoundingClientRect();
+                return (
+                  style.display !== "none" &&
+                  style.visibility !== "hidden" &&
+                  rect.width > 0 &&
+                  rect.height > 0 &&
+                  rect.left >= -1 &&
+                  rect.top >= -1 &&
+                  rect.right <= window.innerWidth + 1 &&
+                  rect.bottom <= window.innerHeight + 1
+                );
+              }),
+              textareaHeight:
+                document
+                  .querySelector<HTMLTextAreaElement>("textarea")
+                  ?.getBoundingClientRect().height ?? 0,
+              submitHeight:
+                document
+                  .querySelector<HTMLButtonElement>(
+                    "button[data-runtime-submit='true']",
+                  )
+                  ?.getBoundingClientRect().height ?? 0,
+            };
+          });
+
+          expect(metrics, `${viewport.width}x${viewport.height}`).toMatchObject({
+            clippedElementCount: 0,
+            requiredCopyVisible: true,
+          });
+          expect(
+            metrics.scale,
+            `${viewport.width}x${viewport.height}`,
+          ).toBeGreaterThanOrEqual(0.9);
+          expect(
+            metrics.textareaHeight,
+            `${viewport.width}x${viewport.height}`,
+          ).toBeGreaterThanOrEqual(43.5);
+          expect(
+            metrics.submitHeight,
+            `${viewport.width}x${viewport.height}`,
+          ).toBeGreaterThanOrEqual(43.5);
+          await page.close();
+        }
+      } finally {
+        await browser.close();
+      }
+    },
+    15_000,
+  );
+
+  it(
+    "keeps a five-node illustrated timeline at native scale with progressive detail disclosure",
+    async () => {
+      const content = createFiveNodeTimelineContent();
+      const html = buildFittedLessonSrcDoc(
+        renderDeterministicPageFallback({
+          assets: [createReadyAsset(content, { assetType: "background" })],
+          content,
+          styleTemplate,
+        }),
+      );
+      const browser = await chromium.launch({ headless: true });
+
+      try {
+        for (const viewport of [
+          { width: 922, height: 460 },
+          { width: 712, height: 650 },
+          { width: 366, height: 500 },
+        ]) {
+          const page = await browser.newPage({ viewport });
+          await page.route("**/*", (route) => route.abort());
+          await page.setContent(html, { waitUntil: "domcontentloaded" });
+          await page.waitForFunction(
+            () =>
+              document.documentElement.dataset.keyaViewportFitScale !==
+              undefined,
+          );
+          await page.waitForTimeout(32);
+
+          const collapsed = await page.evaluate(() => {
+            const root = document.documentElement;
+            const items = Array.from(
+              document.querySelectorAll<HTMLElement>(".explore-item"),
+            );
+            const details = items
+              .map((item) => item.querySelector<HTMLElement>("p"))
+              .filter((detail): detail is HTMLElement => detail !== null);
+
+            return {
+              scale: Number(root.dataset.keyaViewportFitScale ?? "0"),
+              visibleItemCount: items.filter((item) => {
+                const rect = item.getBoundingClientRect();
+                return (
+                  rect.width > 0 &&
+                  rect.height >= 43.5 &&
+                  rect.left >= -1 &&
+                  rect.top >= -1 &&
+                  rect.right <= window.innerWidth + 1 &&
+                  rect.bottom <= window.innerHeight + 1
+                );
+              }).length,
+              visibleDetailCount: details.filter(
+                (detail) => getComputedStyle(detail).display !== "none",
+              ).length,
+            };
+          });
+
+          expect(
+            collapsed,
+            `collapsed ${viewport.width}x${viewport.height}`,
+          ).toMatchObject({
+            visibleItemCount: 5,
+            visibleDetailCount: 0,
+          });
+          expect(
+            collapsed.scale,
+            `collapsed ${viewport.width}x${viewport.height}`,
+          ).toBeGreaterThanOrEqual(0.99);
+
+          await page.locator(".explore-item").last().focus();
+          await page.evaluate(() => {
+            window.dispatchEvent(new Event("keya:viewport-fit"));
+          });
+          await page.waitForTimeout(32);
+
+          const expanded = await page.evaluate(() => {
+            const root = document.documentElement;
+            const details = Array.from(
+              document.querySelectorAll<HTMLElement>(".explore-item p"),
+            );
+            const activeItem =
+              document.activeElement instanceof HTMLElement
+                ? document.activeElement
+                : null;
+            const activeRect = activeItem?.getBoundingClientRect();
+
+            return {
+              scale: Number(root.dataset.keyaViewportFitScale ?? "0"),
+              visibleDetailCount: details.filter(
+                (detail) => getComputedStyle(detail).display !== "none",
+              ).length,
+              activeItemVisible:
+                activeRect !== undefined &&
+                activeRect.width > 0 &&
+                activeRect.height >= 43.5 &&
+                activeRect.left >= -1 &&
+                activeRect.top >= -1 &&
+                activeRect.right <= window.innerWidth + 1 &&
+                activeRect.bottom <= window.innerHeight + 1,
+            };
+          });
+
+          expect(
+            expanded,
+            `expanded ${viewport.width}x${viewport.height}`,
+          ).toMatchObject({
+            visibleDetailCount: 1,
+            activeItemVisible: true,
+          });
+          expect(
+            expanded.scale,
+            `expanded ${viewport.width}x${viewport.height}`,
+          ).toBeGreaterThanOrEqual(0.99);
+          await page.close();
+        }
+      } finally {
+        await browser.close();
+      }
+    },
+    15_000,
   );
 });

@@ -180,6 +180,8 @@ export function createCourseGenerationTaskService(
         `课程 ${courseId} 已有任务 ${conflicting.taskId} 处于 ${conflicting.status} 状态，不能并发写入同一检查点。`,
       );
     }
+
+    courseClaims.set(courseId, taskId);
   };
 
   return {
@@ -267,7 +269,6 @@ export function createCourseGenerationTaskService(
         taskId,
         new Set(["queued", "running", "paused"]),
       );
-      courseClaims.set(courseId, taskId);
       try {
         await dependencies.taskStore.save(record);
       } catch (error) {
@@ -300,18 +301,18 @@ export function createCourseGenerationTaskService(
           isTerminalStatus(record.status) ||
           record.status === "paused"
         ) {
+          if (record) releaseCourseClaim(record.courseId, safeTaskId);
           return record
             ? dependencies.courseStore.load(record.courseId)
             : undefined;
         }
 
-        await assertCourseIsAvailable(
-          record.courseId,
-          safeTaskId,
-          new Set(["running"]),
-        );
-        courseClaims.set(record.courseId, safeTaskId);
         try {
+          await assertCourseIsAvailable(
+            record.courseId,
+            safeTaskId,
+            new Set(["running"]),
+          );
           return await executeTask(
             safeTaskId,
             controller,
@@ -335,15 +336,17 @@ export function createCourseGenerationTaskService(
     async pause(taskId) {
       const safeTaskId = CourseTaskIdSchema.parse(taskId);
       const record = await dependencies.taskStore.load(safeTaskId);
+      const active = activeTasks.get(safeTaskId);
       if (
         !record ||
         isTerminalStatus(record.status) ||
         record.status === "paused"
       ) {
-        if (record) releaseCourseClaim(record.courseId, record.taskId);
+        if (record && !active) {
+          releaseCourseClaim(record.courseId, record.taskId);
+        }
         return record;
       }
-      const active = activeTasks.get(safeTaskId);
       if (active) active.stopIntent = "pause";
 
       const paused = CourseTaskRecordSchema.parse({
@@ -413,14 +416,29 @@ export function createCourseGenerationTaskService(
       // runner 收敛；这里额外等待，覆盖服务内并发调用。
       await activeTasks.get(safeTaskId)?.promise;
 
+      const settled = await dependencies.taskStore.load(safeTaskId);
+      if (!settled || isTerminalStatus(settled.status)) return settled;
+      if (settled.status !== "paused") return settled;
+
       await assertCourseIsAvailable(
-        record.courseId,
-        record.taskId,
+        settled.courseId,
+        settled.taskId,
         new Set(["queued", "running"]),
       );
-      courseClaims.set(record.courseId, record.taskId);
+      // assertCourseIsAvailable 内部需要读取持久化任务列表；期间 cancel 或
+      // 另一控制请求可能已经改写状态。保存 queued 前最后复验一次，避免
+      // 用调用开始时的 paused 快照复活终态任务。
+      const resumable = await dependencies.taskStore.load(safeTaskId);
+      if (!resumable || isTerminalStatus(resumable.status)) {
+        releaseCourseClaim(settled.courseId, settled.taskId);
+        return resumable;
+      }
+      if (resumable.status !== "paused") {
+        releaseCourseClaim(settled.courseId, settled.taskId);
+        return resumable;
+      }
       const queued = CourseTaskRecordSchema.parse({
-        ...record,
+        ...resumable,
         traceId: dependencies.createTraceId(),
         status: "queued",
         updatedAt: dependencies.now(),
@@ -430,7 +448,7 @@ export function createCourseGenerationTaskService(
       try {
         await dependencies.taskStore.save(queued);
       } catch (error) {
-        releaseCourseClaim(record.courseId, record.taskId);
+        releaseCourseClaim(resumable.courseId, resumable.taskId);
         throw error;
       }
 
@@ -469,9 +487,9 @@ export function createCourseGenerationTaskService(
       }
       await dependencies.taskStore.save(cancelled);
       active?.controller.abort();
-      if (!active) {
-        releaseCourseClaim(cancelled.courseId, cancelled.taskId);
-      }
+      // 终态与 trace fencing 已经阻止旧 runner 再写 checkpoint；立即释放
+      // course claim，覆盖 cancel 发生在 run() 首次 load 完成前的竞态。
+      releaseCourseClaim(cancelled.courseId, cancelled.taskId);
       dependencies.eventBus.publish({
         type: "terminal",
         taskId: cancelled.taskId,
@@ -582,6 +600,16 @@ async function executeTask(
         );
         throw new DOMException("课程生成已暂停。", "AbortError");
       }
+      if (
+        !currentTask ||
+        currentTask.status !== "running" ||
+        currentTask.traceId !== running.traceId
+      ) {
+        controller.abort(
+          new DOMException("课程任务执行权已变更。", "AbortError"),
+        );
+        throw new DOMException("课程任务执行权已变更。", "AbortError");
+      }
       await dependencies.courseStore.save(checkpoint);
       logPageFailures(checkpoint);
     };
@@ -656,7 +684,12 @@ async function executeTask(
             },
           });
     const latestTask = await dependencies.taskStore.load(running.taskId);
-    if (stopIntent() === "pause" || latestTask?.status === "paused") {
+    if (
+      stopIntent() === "pause" ||
+      !latestTask ||
+      latestTask.status !== "running" ||
+      latestTask.traceId !== running.traceId
+    ) {
       return dependencies.courseStore.load(running.courseId);
     }
     if (!isCourseTerminalStatus(state.status)) {
@@ -715,6 +748,15 @@ async function executeTask(
     // 暂停只终止当前进程内的调用，持久化课程仍保持最近一次 running
     // checkpoint。它不是失败/取消，不写 error/completedAt，也不发 terminal。
     if (stopIntent() === "pause" || currentTask?.status === "paused") {
+      return currentState;
+    }
+    // 另一 service/HMR 实例已经为同一 taskId 分配了新 trace，旧 runner
+    // 失去 checkpoint 写权限后只退出，不能把新 queued/running 任务终态化。
+    if (
+      currentTask &&
+      (currentTask.traceId !== running.traceId ||
+        currentTask.status === "queued")
+    ) {
       return currentState;
     }
     dependencies.logSink.error({
@@ -1075,5 +1117,15 @@ function isCourseTerminalStatus(
   return status === "completed" || status === "failed" || status === "cancelled";
 }
 
+const globalCourseGenerationTaskService = globalThis as typeof globalThis & {
+  __keyaCourseGenerationTaskService?: CourseGenerationTaskService;
+};
+
+/**
+ * 默认后台任务服务必须跨 Next dev HMR 保持同一实例；否则旧模块中的 runner
+ * 仍会执行，而新 route 会创建另一份 activeTasks/courseClaims 并发写同一课程。
+ * 测试与定制调用继续使用 factory，彼此保持隔离。
+ */
 export const courseGenerationTaskService =
-  createCourseGenerationTaskService();
+  (globalCourseGenerationTaskService.__keyaCourseGenerationTaskService ??=
+    createCourseGenerationTaskService());
