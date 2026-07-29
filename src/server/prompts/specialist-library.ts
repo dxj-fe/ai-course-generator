@@ -138,7 +138,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     ],
     system: {
       name: "page-writer-system",
-      version: "2.8.0",
+      version: "2.10.2",
       role: "system",
       inputContract: [
         "已校验的 CourseIntent、单页 PagePlan、同页 PageWorkerBrief 和唯一 FunctionalTemplate。",
@@ -259,7 +259,7 @@ export const SPECIALIST_PROMPT_LIBRARY = [
     templateVariables: ["repairInputJson"],
     system: {
       name: "repair-system",
-      version: "1.6.0",
+      version: "1.6.1",
       role: "system",
       inputContract: [
         "只接收原始页面产物、已校验 QualityReport、限定目标和当前修订尝试序号。",

@@ -73,6 +73,7 @@ export function validateAndApplyRepairResult(
   if (html === request.html) {
     throw new AiSchemaValidationError("HTML Repair 候选没有产生实际变化。");
   }
+  assertNoScrollableLessonContainers(html);
   validateHtmlEngineerOutput(html, {
     content: request.content,
     visualBrief: request.visualBrief,
@@ -297,6 +298,95 @@ function applyHtmlPatches(
     html = `${html.slice(0, first)}${patch.replacement}${html.slice(first + search.length)}`;
   }
   return html;
+}
+
+const LESSON_CONTAINER_NAME =
+  "(?:content|content-area|content-grid|content-panel|content-section|course-action|course-content|course-stage|interaction|interaction-container|interaction-content|interaction-items|interaction-panel|lesson-body|lesson-card|lesson-content|main-content|page-body|page-content|quiz|quiz-container)";
+const LESSON_CONTAINER_MARKER =
+  /(?:\[\s*data-(?:block-id|interaction-(?:id|item-id|type)|page-id|question-id)\b)|(?:[.#](?:content|content-area|content-grid|content-panel|content-section|course-action|course-content|course-stage|interaction|interaction-container|interaction-content|interaction-items|interaction-panel|lesson-body|lesson-card|lesson-content|main-content|page-body|page-content|quiz|quiz-container)(?=$|[.#:[\]]))/i;
+
+/**
+ * Repair 的候选必须继续满足固定画布合同。这里只拒绝课程根、正文和互动
+ * 容器上的滚动，不限制纯装饰节点，避免把局部视觉裁切误判成正文滚动。
+ */
+function assertNoScrollableLessonContainers(html: string) {
+  for (const styleBlock of html.matchAll(
+    /<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi,
+  )) {
+    const css = (styleBlock[1] ?? "").replace(/\/\*[\s\S]*?\*\//g, "");
+    for (const rule of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const declarations = rule[2] ?? "";
+      if (!hasScrollableOverflowDeclaration(declarations)) continue;
+
+      const selectorList = rule[1] ?? "";
+      const selector =
+        selectorList.match(
+          /:(?:is|where)\([^)]*\b(?:html|body|main)\b[^)]*\)/i,
+        )?.[0] ??
+        selectorList.split(",").find(selectorTargetsLessonContainer);
+      if (selector) {
+        throw new AiSchemaValidationError(
+          `HTML Repair 候选不得在课程根、正文或互动容器 ${selector.trim()} 使用 overflow:auto/scroll。`,
+        );
+      }
+    }
+  }
+
+  for (const openingTag of html.matchAll(
+    /<([a-z][a-z0-9-]*)\b[^>]*>/gi,
+  )) {
+    const tag = openingTag[1]!.toLowerCase();
+    const markup = openingTag[0];
+    const inlineStyle = readAttribute(markup, "style");
+    if (
+      inlineStyle &&
+      isLessonContainerElement(tag, markup) &&
+      hasScrollableOverflowDeclaration(inlineStyle)
+    ) {
+      throw new AiSchemaValidationError(
+        `HTML Repair 候选不得在课程根、正文或互动容器 <${tag}> 使用 overflow:auto/scroll。`,
+      );
+    }
+  }
+}
+
+function hasScrollableOverflowDeclaration(declarations: string) {
+  return /(?:^|;)\s*overflow(?:-[xy])?\s*:\s*[^;{}]*\b(?:auto|scroll)\b/i.test(
+    declarations,
+  );
+}
+
+function selectorTargetsLessonContainer(selectorInput: string) {
+  const selector = selectorInput.trim();
+  if (!selector || /:{1,2}(?:after|before|backdrop|marker)\b/i.test(selector)) {
+    return false;
+  }
+  const subject = selector.split(/[\s>+~]+/).at(-1);
+  const targetsBroadUniversal =
+    subject === "*" &&
+    (selector === "*" ||
+      /^(?::root|html|body|main)(?:\b|[.#[:])[\s>]+\*$/i.test(selector));
+  return Boolean(
+    subject &&
+      (/^(?:html|body|main)(?=$|[.#[:])/i.test(subject) ||
+        /^:root$/.test(subject) ||
+        targetsBroadUniversal ||
+        LESSON_CONTAINER_MARKER.test(subject)),
+  );
+}
+
+function isLessonContainerElement(tag: string, openingTag: string) {
+  if (tag === "html" || tag === "body" || tag === "main") return true;
+  const classOrIdValues = [
+    ...(readAttribute(openingTag, "class")?.split(/\s+/) ?? []),
+    readAttribute(openingTag, "id"),
+  ].filter((value): value is string => Boolean(value));
+  return (
+    LESSON_CONTAINER_MARKER.test(openingTag) ||
+    classOrIdValues.some((value) =>
+      new RegExp(`^${LESSON_CONTAINER_NAME}$`, "i").test(value),
+    )
+  );
 }
 
 function isAllowedBoundaryScope(selector: string, selectors: string[]) {

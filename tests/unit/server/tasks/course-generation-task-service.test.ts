@@ -96,7 +96,7 @@ describe("course generation task service", () => {
       }),
     ).rejects.toThrow("请先暂停或等待该任务完成");
 
-    expect(fixture.tasks).toHaveLength(1);
+    expect(fixture.tasks.size).toBe(1);
     expect(fixture.tasks.get(first.taskId)?.status).toBe("queued");
   });
 
@@ -185,6 +185,51 @@ describe("course generation task service", () => {
       status: "cancelled",
     });
     expect(fixture.runWorkflow).not.toHaveBeenCalled();
+  });
+
+  it("releases the course claim when cancel wins the runner initial-load race", async () => {
+    const taskIds = [
+      "task-cancel-load-race-one",
+      "task-cancel-load-race-two",
+    ];
+    const fixture = createFixture({
+      createTaskId: () => taskIds.shift()!,
+    });
+    const first = await fixture.service.create({
+      userPrompt: "生成三页太阳系互动课程",
+      pageCount: 3,
+    });
+    const originalLoad = fixture.taskStore.load.bind(fixture.taskStore);
+    let markLoadStarted: () => void = () => undefined;
+    let releaseInitialLoad: () => void = () => undefined;
+    const loadStarted = new Promise<void>((resolve) => {
+      markLoadStarted = resolve;
+    });
+    const continueInitialLoad = new Promise<void>((resolve) => {
+      releaseInitialLoad = resolve;
+    });
+    let interceptNextLoad = true;
+    fixture.taskStore.load = async (id) => {
+      if (interceptNextLoad) {
+        interceptNextLoad = false;
+        markLoadStarted();
+        await continueInitialLoad;
+      }
+      return originalLoad(id);
+    };
+
+    const running = fixture.service.run(first.taskId);
+    await loadStarted;
+    await fixture.service.cancel(first.taskId);
+    releaseInitialLoad();
+
+    await expect(running).resolves.toMatchObject({ status: "cancelled" });
+    const recovery = await fixture.service.create({ courseId: first.courseId });
+    expect(recovery).toMatchObject({
+      taskId: "task-cancel-load-race-two",
+      courseId: first.courseId,
+      status: "queued",
+    });
   });
 
   it("persists and publishes a terminal failure when the workflow throws", async () => {
@@ -481,6 +526,77 @@ describe("course generation task service", () => {
     expect(fixture.errorLogs).toEqual([]);
   });
 
+  it("keeps the course claimed when a second pause observes an unwinding runner", async () => {
+    const taskIds = [
+      "task-double-pause-one",
+      "task-double-pause-blocked",
+      "task-double-pause-recovery",
+    ];
+    let markStarted: () => void = () => undefined;
+    let markAborted: () => void = () => undefined;
+    let finishAbort: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const aborted = new Promise<void>((resolve) => {
+      markAborted = resolve;
+    });
+    const abortCanFinish = new Promise<void>((resolve) => {
+      finishAbort = resolve;
+    });
+    const checkpoint = courseState("running", 1);
+    const runWorkflow = vi.fn(
+      async (_input, context, overrides) => {
+        await overrides.checkpoint?.(checkpoint);
+        markStarted();
+        return new Promise<CourseGenerationState>((_resolve, reject) => {
+          context.abortSignal?.addEventListener(
+            "abort",
+            () => {
+              markAborted();
+              void abortCanFinish.then(() =>
+                reject(new DOMException("paused", "AbortError")),
+              );
+            },
+            { once: true },
+          );
+        });
+      },
+    ) as typeof runCourseGenerationWorkflow;
+    const fixture = createFixture({
+      runWorkflow,
+      createTaskId: () => taskIds.shift()!,
+    });
+    const created = await fixture.service.create({
+      userPrompt: "生成三页太阳系互动课程",
+      source: "workflow",
+    });
+    const running = fixture.service.run(created.taskId);
+    await started;
+
+    const firstPause = fixture.service.pause(created.taskId);
+    await aborted;
+    const secondPause = await fixture.service.pause(created.taskId);
+    expect(secondPause?.status).toBe("paused");
+    fixture.tasks.set(created.taskId, {
+      ...secondPause!,
+      status: "cancelled",
+      completedAt: timestamp,
+    });
+
+    await expect(
+      fixture.service.create({ courseId: created.courseId }),
+    ).rejects.toThrow("请先暂停或等待该任务完成");
+
+    finishAbort();
+    await firstPause;
+    await running;
+    const recovery = await fixture.service.create({
+      courseId: created.courseId,
+    });
+    expect(recovery.taskId).toBe("task-double-pause-recovery");
+  });
+
   it("resumes the same task and course from its checkpoint with a new trace", async () => {
     const createResumedTraceId = vi
       .fn()
@@ -581,10 +697,79 @@ describe("course generation task service", () => {
     });
   });
 
+  it("fences an old runner after another service pauses and resumes the task", async () => {
+    let markStarted: () => void = () => undefined;
+    let releaseOldRunner: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const continueOldRunner = new Promise<void>((resolve) => {
+      releaseOldRunner = resolve;
+    });
+    const runWorkflow = vi.fn(
+      async (input, context, overrides) => {
+        const firstCheckpoint = runningCheckpoint(
+          input.courseId,
+          context.traceId,
+          input.userPrompt,
+        );
+        await overrides.checkpoint?.(firstCheckpoint);
+        markStarted();
+        await continueOldRunner;
+        const staleCheckpoint = {
+          ...firstCheckpoint,
+          currentStage: "planner" as const,
+        };
+        await overrides.checkpoint?.(staleCheckpoint);
+        return staleCheckpoint;
+      },
+    ) as typeof runCourseGenerationWorkflow;
+    const fixture = createFixture({ runWorkflow });
+    await fixture.service.create({
+      userPrompt: "生成同一门太阳系课程",
+      source: "workflow",
+    });
+    const oldRun = fixture.service.run(taskId);
+    await started;
+
+    const secondService = createCourseGenerationTaskService({
+      taskStore: fixture.taskStore,
+      courseStore: fixture.courseStore,
+      eventBus: fixture.eventBus,
+      runWorkflow,
+      now: () => timestamp,
+      createTaskId: () => "task-unused-second-service",
+      createCourseId: () => "course-unused-second-service",
+      createTraceId: () => "trace-second-service-resume",
+      logSink: {
+        info: () => undefined,
+        error: () => undefined,
+      },
+    });
+    await secondService.pause(taskId);
+    const resumed = await secondService.resume(taskId);
+    expect(resumed).toMatchObject({
+      status: "queued",
+      traceId: "trace-second-service-resume",
+    });
+
+    releaseOldRunner();
+    await expect(oldRun).resolves.toMatchObject({
+      status: "running",
+      currentStage: "intent",
+    });
+    expect(fixture.tasks.get(taskId)).toMatchObject({
+      status: "queued",
+      traceId: "trace-second-service-resume",
+    });
+    expect(fixture.courses.get(courseId)?.currentStage).toBe("intent");
+  });
+
   it("allows only one runner to claim a course when duplicate queued tasks race", async () => {
     const firstTaskId = "task-same-course-run-one";
     const secondTaskId = "task-same-course-run-two";
     let markStarted: () => void = () => undefined;
+    let winningTraceId: string | undefined;
     const started = new Promise<void>((resolve) => {
       markStarted = resolve;
     });
@@ -593,6 +778,7 @@ describe("course generation task service", () => {
         await overrides.checkpoint?.(
           runningCheckpoint(input.courseId, context.traceId, input.userPrompt),
         );
+        winningTraceId = context.traceId;
         markStarted();
         return new Promise<CourseGenerationState>((_resolve, reject) => {
           context.abortSignal?.addEventListener(
@@ -628,15 +814,20 @@ describe("course generation task service", () => {
     const secondRun = fixture.service.run(secondTaskId);
 
     await started;
-    await expect(secondRun).rejects.toThrow(
+    const firstWon = winningTraceId === "trace-same-course-run-one";
+    const winnerTaskId = firstWon ? firstTaskId : secondTaskId;
+    const loserTaskId = firstWon ? secondTaskId : firstTaskId;
+    const winnerRun = firstWon ? firstRun : secondRun;
+    const loserRun = firstWon ? secondRun : firstRun;
+    await expect(loserRun).rejects.toThrow(
       "请先暂停或等待该任务完成",
     );
     expect(runWorkflow).toHaveBeenCalledOnce();
-    expect(fixture.tasks.get(firstTaskId)?.status).toBe("running");
-    expect(fixture.tasks.get(secondTaskId)?.status).toBe("queued");
+    expect(fixture.tasks.get(winnerTaskId)?.status).toBe("running");
+    expect(fixture.tasks.get(loserTaskId)?.status).toBe("queued");
 
-    await fixture.service.pause(firstTaskId);
-    await expect(firstRun).resolves.toMatchObject({ status: "running" });
+    await fixture.service.pause(winnerTaskId);
+    await expect(winnerRun).resolves.toMatchObject({ status: "running" });
   });
 
   it("rejects resuming a paused task while another task owns the same course", async () => {
@@ -669,6 +860,40 @@ describe("course generation task service", () => {
     );
     expect(fixture.tasks.get(pausedTaskId)?.status).toBe("paused");
     expect(fixture.tasks.get(runningTaskId)?.status).toBe("running");
+  });
+
+  it("does not revive a task cancelled while resume is checking ownership", async () => {
+    const pausedTaskId = "task-resume-cancel-race";
+    const fixture = createFixture();
+    const paused: CourseTaskRecord = {
+      version: 1,
+      taskId: pausedTaskId,
+      courseId,
+      traceId: "trace-before-resume-cancel-race",
+      userPrompt: "生成同一门太阳系课程",
+      source: "workflow",
+      status: "paused",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    fixture.tasks.set(pausedTaskId, paused);
+    fixture.taskStore.list = async () => {
+      fixture.tasks.set(pausedTaskId, {
+        ...paused,
+        status: "cancelled",
+        updatedAt: timestamp,
+        completedAt: timestamp,
+      });
+      return { items: [...fixture.tasks.values()], unavailableCount: 0 };
+    };
+
+    const result = await fixture.service.resume(pausedTaskId);
+
+    expect(result).toMatchObject({ status: "cancelled" });
+    expect(fixture.tasks.get(pausedTaskId)).toMatchObject({
+      status: "cancelled",
+      traceId: "trace-before-resume-cancel-race",
+    });
   });
 
   it("isolates pause by taskId when two courses are running", async () => {

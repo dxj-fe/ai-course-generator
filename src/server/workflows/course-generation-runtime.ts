@@ -124,8 +124,10 @@ export function initializeCourseGenerationState(
         ({ id }) => id === page.pageId,
       );
       const staleRunningErrorCleared = clearStaleRunningPageError(page);
+      const fixedCanvasRecovered =
+        recoverOverCapacityRequiredVisualPage(staleRunningErrorCleared);
       const disabledChoiceRecovered =
-        recoverLegacyDisabledChoiceRepairFailure(staleRunningErrorCleared);
+        recoverLegacyDisabledChoiceRepairFailure(fixedCanvasRecovered);
       const recovered =
         recoverLegacyUnauthorizedIssueCodeRepairFailure(
           disabledChoiceRecovered,
@@ -166,6 +168,7 @@ export function initializeCourseGenerationState(
       );
       if (
         staleRunningErrorCleared !== page ||
+        fixedCanvasRecovered !== staleRunningErrorCleared ||
         recovered !== disabledChoiceRecovered ||
         choiceScopeRecovered !== recovered ||
         visualDominanceRecovered !== choiceScopeRecovered ||
@@ -261,6 +264,36 @@ export function initializeCourseGenerationState(
     workerConfig: resolveWorkerConfig(input),
     startedAt: timestamp,
     updatedAt: timestamp,
+  });
+}
+
+/**
+ * 新的固定画布预算属于内容合同迁移，而不是 HTML 修补规则。显式恢复时，
+ * 任何尚未完成且已经持久化了超容量 DSL 的页面都从 Page Writer 干净重写；
+ * 已完成页面保持不可变，避免升级规则追溯破坏用户可学习的既有章节。
+ */
+function recoverOverCapacityRequiredVisualPage(
+  page: PageGenerationState,
+): PageGenerationState {
+  if (
+    page.status === "completed" ||
+    !page.content ||
+    !exceedsFixedCanvasCapacity(page.content)
+  ) {
+    return page;
+  }
+
+  return PageGenerationStateSchema.parse({
+    ...page,
+    status: "running",
+    currentStage: "page_writer",
+    content: undefined,
+    assets: [],
+    htmlOutput: undefined,
+    qualityReport: undefined,
+    repairHistory: [],
+    attempts: [],
+    error: undefined,
   });
 }
 

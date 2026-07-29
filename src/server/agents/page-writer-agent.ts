@@ -72,8 +72,17 @@ const PageWriterInteractionDraftSchema = z.object({
   destination: z.string().trim().max(80),
 });
 
+// 与领域 Schema 的形状约束保持一致；旁白的信息量由下方
+// validateContentSubstance 按“去除标点后的语义长度”统一判断。
+// 这里曾额外要求原始字符串至少 12 个字符，导致已经满足语义
+// 校验的短句在结构化解析阶段反复失败，Page Worker 也无法得到
+// 可操作的内容校验反馈。
+export const PageWriterNarrationDraftSchema = z
+  .array(z.string().trim().min(2).max(500))
+  .max(3);
+
 const PageWriterModelOutputSchema = z.object({
-  narration: z.array(z.string().trim().min(12).max(500)).max(3),
+  narration: PageWriterNarrationDraftSchema,
   // 兼容部分模型把简单对象数组压缩为字符串数组；领域 Schema 仍保持严格。
   blocks: z.array(z.unknown()).max(12),
   interaction: PageWriterInteractionDraftSchema,
@@ -97,7 +106,22 @@ const ACHIEVEMENT_VISUAL_INPUT_LIMITS = {
   blocks: 2,
   supportingPoints: 2,
   evaluationCriteria: 2,
-  textWidth: 260,
+  // 273 宽度的真实任务结构已在 366×500、768×432、1365×768
+  // 三档画布完成最大反馈态浏览器回归；保留少量估算误差后以 280 为界。
+  textWidth: 280,
+} as const;
+
+// 三档固定视口的真实 QA 中，实际渲染的插图会占约 29%–55% 可见面积；4 张纵向
+// 卡片，或约 350–400 个汉字宽度的“正文 + 互动复述”，均在 366×500
+// 发生裁切/缩放。保留最多 3 个语义单元和 300 字宽，给标题、间距与触控区
+// 留出稳定余量；没有声明插图槽的简洁页面不进入这项预算。当前素材工作流会
+// 生成并渲染 optional 槽，因此 optional 不能被当作“零布局成本”。
+const RENDERED_VISUAL_FIXED_CANVAS_LIMITS = {
+  narration: 1,
+  blocks: 3,
+  supportingPoints: 3,
+  interactionEntries: 3,
+  textWidth: 300,
 } as const;
 
 export const PageWriterValidationFeedbackSchema = z
@@ -523,17 +547,26 @@ function normalizeInteractionFeedback(value: unknown): unknown {
 
 /**
  * 收敛 Provider 已知的无损结构压缩：
+ * - 单句 narration 字符串还原为单元素数组；
  * - 单条互动反馈字符串还原为单元素数组；
  * - choice 不使用的 items 占位字段固定为空数组。
  * 其余未知形状保持原样，继续交给严格 Schema 拒绝。
  */
 export function normalizePageWriterModelOutput(output: unknown): unknown {
-  if (!isRecord(output) || !isRecord(output.interaction)) return output;
+  if (!isRecord(output)) return output;
+
+  const normalizedOutput = {
+    ...output,
+    ...(typeof output.narration === "string"
+      ? { narration: [output.narration] }
+      : {}),
+  };
+  if (!isRecord(output.interaction)) return normalizedOutput;
 
   const interaction = output.interaction;
 
   return {
-    ...output,
+    ...normalizedOutput,
     interaction: {
       ...interaction,
       feedbackSuccess: normalizeInteractionFeedback(
@@ -810,12 +843,12 @@ function feedbackSubstanceIssue(
 }
 
 /**
- * 最窄课程画布需要同时容纳必需插图、正文与真实互动。若把故事或成就任务
- * 的每个槽位都填到 FunctionalTemplate 上限，即使结构合法也只能缩小、
- * 滚动或隐藏正文。
+ * 最窄课程画布需要同时容纳必需插图、正文与真实互动。FunctionalTemplate
+ * 的槽位上限描述语义能力，不等于在 366×500 固定画布中可同时完整展示的
+ * 数量；这里先处理两种高成本任务，再用统一预算兜住其他必需插图页面。
  */
 export function exceedsFixedCanvasCapacity(dsl: PageContentDSL) {
-  if (!dsl.assetSlots.some((slot) => slot.required)) return false;
+  if (dsl.assetSlots.length === 0) return false;
 
   const supportingPointCount = dsl.blocks.reduce(
     (total, block) => total + block.supportingPoints.length,
@@ -854,7 +887,15 @@ export function exceedsFixedCanvasCapacity(dsl: PageContentDSL) {
     );
   }
 
-  return false;
+  return (
+    dsl.narration.length > RENDERED_VISUAL_FIXED_CANVAS_LIMITS.narration ||
+    dsl.blocks.length > RENDERED_VISUAL_FIXED_CANVAS_LIMITS.blocks ||
+    supportingPointCount >
+      RENDERED_VISUAL_FIXED_CANVAS_LIMITS.supportingPoints ||
+    fixedCanvasInteractionEntryCount(dsl.interaction) >
+      RENDERED_VISUAL_FIXED_CANVAS_LIMITS.interactionEntries ||
+    textWidth > RENDERED_VISUAL_FIXED_CANVAS_LIMITS.textWidth
+  );
 }
 
 function validateFixedCanvasCapacity(
@@ -879,17 +920,24 @@ function validateFixedCanvasCapacity(
     ];
   }
 
-  const question =
+  if (
+    input.page.pageType === "story_intro" &&
+    dsl.functionalTemplateId === "story-intro" &&
     dsl.interaction.type === "choice"
-      ? dsl.interaction.questions[0]
-      : undefined;
+  ) {
+    const question = dsl.interaction.questions[0];
+
+    return [
+      `固定画布容量超限：story_intro 同时包含必需插图和 choice 时，最多 ${STORY_INTRO_VISUAL_CHOICE_LIMITS.narration} 句 narration、${STORY_INTRO_VISUAL_CHOICE_LIMITS.blocks} 个 blocks、合计 ${STORY_INTRO_VISUAL_CHOICE_LIMITS.supportingPoints} 条 supportingPoints、${STORY_INTRO_VISUAL_CHOICE_LIMITS.options} 个选项且可见文本约 ${STORY_INTRO_VISUAL_CHOICE_LIMITS.textWidth} 个汉字宽度；当前分别为 ${dsl.narration.length}、${dsl.blocks.length}、${supportingPointCount}、${question?.options.length ?? 0}、${textWidth}。请保留一个核心情境与一项判断依据并压缩文字，不能隐藏正文。`,
+    ];
+  }
 
   return [
-    `固定画布容量超限：story_intro 同时包含必需插图和 choice 时，最多 ${STORY_INTRO_VISUAL_CHOICE_LIMITS.narration} 句 narration、${STORY_INTRO_VISUAL_CHOICE_LIMITS.blocks} 个 blocks、合计 ${STORY_INTRO_VISUAL_CHOICE_LIMITS.supportingPoints} 条 supportingPoints、${STORY_INTRO_VISUAL_CHOICE_LIMITS.options} 个选项且可见文本约 ${STORY_INTRO_VISUAL_CHOICE_LIMITS.textWidth} 个汉字宽度；当前分别为 ${dsl.narration.length}、${dsl.blocks.length}、${supportingPointCount}、${question?.options.length ?? 0}、${textWidth}。请保留一个核心情境与一项判断依据并压缩文字，不能隐藏正文。`,
+    `固定画布容量超限：包含实际渲染插图槽的 ${dsl.functionalTemplateId}/${dsl.interaction.type} 页面最多 ${RENDERED_VISUAL_FIXED_CANVAS_LIMITS.narration} 句 narration、${RENDERED_VISUAL_FIXED_CANVAS_LIMITS.blocks} 个 blocks、合计 ${RENDERED_VISUAL_FIXED_CANVAS_LIMITS.supportingPoints} 条 supportingPoints、${RENDERED_VISUAL_FIXED_CANVAS_LIMITS.interactionEntries} 个互动项或选项，且最大可见状态文本约 ${RENDERED_VISUAL_FIXED_CANVAS_LIMITS.textWidth} 个汉字宽度；当前分别为 ${dsl.narration.length}、${dsl.blocks.length}、${supportingPointCount}、${fixedCanvasInteractionEntryCount(dsl.interaction)}、${textWidth}。请保留达成学习目标所需的最小知识集合：知识卡、时间线和对比页避免在 blocks 与互动中重复整段正文，优先删除可由 body 表达的 supportingPoints，并把 narration 控制在 24 字内、每个 heading 控制在 12 字内、每个 body 控制在 40 字内、互动 prompt 和每条展开解释分别控制在 24 字内；测验只保留 2–3 个有效选项，总结合并为 2–3 个核心要点，不能靠缩放、裁切或隐藏正文适配。`,
   ];
 }
 
-function estimateFixedCanvasVisibleTextWidth(dsl: PageContentDSL) {
+export function estimateFixedCanvasVisibleTextWidth(dsl: PageContentDSL) {
   const visibleText = [
     dsl.title,
     ...dsl.narration,
@@ -939,7 +987,48 @@ function fixedCanvasInteractionText(
     ];
   }
 
-  return [];
+  if (
+    interaction.type === "reveal" ||
+    interaction.type === "explore" ||
+    interaction.type === "sort"
+  ) {
+    return [
+      interaction.prompt,
+      ...interaction.items.map((item) => item.label),
+      longestReadableText(
+        interaction.items.map((item) => item.content),
+      ),
+      ...(interaction.type === "sort"
+        ? [
+            longestReadableText([
+              interaction.feedback.success,
+              interaction.feedback.retry,
+            ]),
+          ]
+        : []),
+    ];
+  }
+
+  return interaction.type === "navigate" ? [interaction.actionLabel] : [];
+}
+
+function fixedCanvasInteractionEntryCount(
+  interaction: PageContentInteraction,
+) {
+  switch (interaction.type) {
+    case "choice":
+      return interaction.questions[0]?.options.length ?? 0;
+    case "reveal":
+    case "explore":
+    case "sort":
+      return interaction.items.length;
+    case "input":
+      return interaction.evaluationCriteria.length;
+    case "navigate":
+      return 1;
+    case "none":
+      return 0;
+  }
 }
 
 function longestReadableText(values: string[]) {

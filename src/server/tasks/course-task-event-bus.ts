@@ -69,5 +69,14 @@ export function createCourseTaskEventBus(): CourseTaskEventBus {
   };
 }
 
-/** Route Handler 与后台任务服务共享的当前进程事件总线。 */
-export const courseTaskEventBus = createCourseTaskEventBus();
+const globalCourseTaskEventBus = globalThis as typeof globalThis & {
+  __keyaCourseTaskEventBus?: CourseTaskEventBus;
+};
+
+/**
+ * Route Handler 与后台任务服务共享的当前进程事件总线。放在 globalThis
+ * 可避免 Next dev HMR 重载模块后，旧后台 runner 与新 SSE route 使用不同实例。
+ */
+export const courseTaskEventBus =
+  (globalCourseTaskEventBus.__keyaCourseTaskEventBus ??=
+    createCourseTaskEventBus());
