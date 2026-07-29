@@ -91,7 +91,7 @@ export function HtmlThumbnailFrame({
     return (
       <span
         aria-hidden="true"
-        className="absolute inset-0 bg-[linear-gradient(135deg,#f2eee6,#fbfaf7)]"
+        className="absolute inset-0 bg-[radial-gradient(circle_at_24%_24%,rgba(116,198,122,0.28),transparent_32%),linear-gradient(135deg,#eaf5e6,#fff8dc)]"
       />
     );
   }
@@ -168,7 +168,7 @@ export function HtmlPreviewFrame({
     if (chrome === "learner") {
       return (
         <Alert
-          className="rounded-2xl border border-[#edc4b9] bg-[#fff0eb] px-4 py-4 text-sm text-[#984735]"
+          className="rounded-[22px] border border-[#edc4b9] bg-[#fff5ef]/95 px-4 py-4 text-sm text-[#984735] shadow-[0_14px_34px_-28px_rgba(152,71,53,0.52)]"
           role="alert"
           variant="destructive"
         >
@@ -179,7 +179,7 @@ export function HtmlPreviewFrame({
 
     return (
       <Alert
-        className="rounded-2xl border border-[#edc4b9] bg-[#fff0eb] px-4 py-3 text-[#984735]"
+        className="rounded-[22px] border border-[#edc4b9] bg-[#fff5ef]/95 px-4 py-3 text-[#984735] shadow-[0_14px_34px_-28px_rgba(152,71,53,0.52)]"
         role="alert"
         variant="destructive"
       >
@@ -212,12 +212,12 @@ export function HtmlPreviewFrame({
       )}
     >
       {chrome === "diagnostic" ? (
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#d8ead3] bg-[#f8fff5]/88 px-3 py-2 shadow-[0_10px_24px_-22px_rgba(47,104,69,0.58)]">
           <div className="flex items-center gap-2 text-xs font-semibold text-[#2f6845]">
             <ShieldCheck aria-hidden="true" size={15} strokeWidth={1.8} />
             <span>HTML 合同与安全预检已通过</span>
           </div>
-          <span className="rounded-full bg-[#edf5ee] px-2 py-1 font-mono text-[10px] text-[#397a52]">
+          <span className="rounded-full border border-[#d3e8cf] bg-[#e7f4e4] px-2.5 py-1 font-mono text-[10px] text-[#397a52]">
             sandbox · srcDoc
           </span>
         </div>
@@ -225,8 +225,8 @@ export function HtmlPreviewFrame({
 
       <div
         className={cn(
-          "min-h-0 overflow-hidden border border-[#e2d7ca] bg-white shadow-[0_12px_32px_-28px_rgba(45,51,43,0.75)]",
-          chrome === "learner" ? "h-full rounded-[inherit]" : "rounded-2xl",
+          "min-h-0 overflow-hidden border border-[#cfe3ca] bg-white shadow-[0_20px_48px_-34px_rgba(47,104,69,0.66)]",
+          chrome === "learner" ? "h-full rounded-[inherit]" : "rounded-[24px]",
         )}
       >
         <iframe
@@ -251,7 +251,7 @@ export function HtmlPreviewFrame({
       </div>
 
       {chrome === "diagnostic" ? (
-        <p className="text-[11px] leading-5 text-[#7a7468]">
+        <p className="px-1 text-[11px] leading-5 text-[#687a69]">
           预览文档位于独立浏览上下文；表单提交、弹窗、下载、顶层导航与同源能力均未开放。
         </p>
       ) : null}

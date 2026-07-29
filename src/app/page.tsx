@@ -26,10 +26,10 @@ export default async function Home() {
   return (
     <>
       <SiteHeader />
-      <div className="pt-16">
+      <main className="keya-home-page pt-16">
         <HomeHero featuredWorks={completedCourses.slice(0, 3)} />
         <WorkGallery works={history.items} />
-      </div>
+      </main>
     </>
   );
 }

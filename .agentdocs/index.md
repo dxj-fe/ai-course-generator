@@ -14,8 +14,11 @@
 
 `workflow/done/260728-course-generation-flow-inspector.md` - “一句话生成课程”交互式流程分析页的范围、事实来源、实现记录与验证标准。
 
+`workflow/done/260729-refresh-keya-green-theme.md` - 课芽全产品绿色清新卡通主题改造的范围、设计系统、实施边界与验收记录。
+
 ## 全局重要记忆
 
 - 当前新课程主链固定通过 `POST /api/courses/tasks` 创建 `source: langgraph` 的异步任务；旧分阶段 API 仅用于兼容和测试。
 - 课程每一节独立生成一份 HTML；内容 DSL、素材、HTML、QA 与 Repair 均位于隔离的 Page Worker 边界内。
 - 诊断信息可以展示结构化公开状态、源码位置与确定性风险，但不得展示模型私有推理。
+- 所有用户可见产品壳层统一使用 `src/app/globals.css` 的 `--keya-*` 绿色主题；生成课程 HTML 和样式模板预览保留独立主题，不向 iframe 注入平台样式。

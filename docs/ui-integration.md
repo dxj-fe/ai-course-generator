@@ -20,8 +20,16 @@ The removed `AiPlayground` and older course-planner panels are historical traini
 
 - Product name: `课芽`.
 - Primary: sprout green `#397A52`; hover/depth: `#2F6845`.
-- Accent: mango yellow `#F2B84B`; canvas: warm cream `#FFF9EE`.
-- Product surfaces use the `--keya-*` tokens in `src/app/globals.css`. Legacy internal module and type names are compatibility details, not user-facing brand copy.
+- Accent: mango yellow `#F2B84B`; canvas: mint `#EEF8EA`; paper: soft white `#FBFFF7`.
+- All product shells, including `/`, `/chat`, `/course`, `/course/[courseId]`, `/templates`,
+  `/preview/[previewId]` and `/analysis/course-generation`, use the `--keya-*` tokens and the
+  shared mint-canvas, rounded-paper, sprout-shadow visual language in `src/app/globals.css`.
+- Strong illustration and layered motion belong to discovery/welcome/empty states. Dense workspaces
+  use only restrained entrance, status and hover feedback, and all continuing motion must respect
+  `prefers-reduced-motion`.
+- Generated lesson HTML and style-template previews keep their own visual themes inside the existing
+  sandbox boundary; only their platform chrome adopts the 课芽 theme.
+- Legacy internal module and type names are compatibility details, not user-facing brand copy.
 
 ## Handbook capability map
 

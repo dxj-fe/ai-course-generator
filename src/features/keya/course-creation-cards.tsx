@@ -36,9 +36,9 @@ export function CourseCreationCards({
   const [editing, setEditing] = useState(false);
 
   return (
-    <div className="grid gap-6">
+    <div className="keya-page-reveal grid gap-6">
       <div className="flex items-start gap-3">
-        <span className="mt-1 flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-sm">
+        <span className="keya-gentle-bob mt-1 flex size-10 shrink-0 items-center justify-center rounded-[15px] bg-[linear-gradient(145deg,#74c67a,#397a52)] text-white shadow-[0_12px_24px_-13px_rgba(47,104,69,0.9)] ring-2 ring-white/80">
           <Sprout aria-hidden="true" size={20} strokeWidth={1.8} />
         </span>
         <CourseBriefCard
@@ -58,7 +58,7 @@ export function CourseCreationCards({
       ) : (
         <div className="ml-[52px] flex flex-wrap items-center gap-3">
           <Button
-            className="h-11 rounded-xl bg-primary px-5 text-sm font-semibold text-white shadow-sm hover:bg-[var(--keya-sprout-dark)]"
+            className="h-11 rounded-2xl bg-[linear-gradient(145deg,#68b96f,#397a52)] px-5 text-sm font-semibold text-white shadow-[0_12px_26px_-14px_rgba(47,104,69,0.85)] transition duration-200 hover:-translate-y-0.5 hover:bg-[linear-gradient(145deg,#74c67a,#2f6845)] hover:shadow-[0_16px_30px_-14px_rgba(47,104,69,0.95)] motion-reduce:transform-none"
             disabled={busy}
             onClick={onConfirm}
             type="button"
@@ -91,7 +91,7 @@ export function CourseBriefCard({
   return (
     <section
       aria-labelledby="course-brief-title"
-      className="min-w-0 flex-1 rounded-[22px] border border-border bg-card px-5 py-5 shadow-[var(--keya-card-shadow)] sm:px-6"
+      className="keya-card-lift relative min-w-0 flex-1 overflow-hidden rounded-[24px] border border-[#cfe2ca] bg-[radial-gradient(circle_at_100%_0%,rgba(191,231,174,0.36),transparent_12rem),rgba(255,255,255,0.84)] px-5 py-5 shadow-[0_16px_36px_-30px_rgba(35,82,49,0.62)] backdrop-blur-sm sm:px-6"
     >
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold text-foreground" id="course-brief-title">
@@ -100,7 +100,7 @@ export function CourseBriefCard({
         {onToggleEdit ? (
           <Button
             aria-expanded={editing}
-            className="h-8 rounded-full px-2.5 text-xs text-primary hover:bg-[var(--keya-pill)] hover:text-[var(--keya-sprout-dark)]"
+            className="h-8 rounded-full border border-transparent px-2.5 text-xs text-primary transition-colors hover:border-[#d5e7d0] hover:bg-[#e8f4e3] hover:text-[var(--keya-sprout-dark)]"
             onClick={onToggleEdit}
             type="button"
             variant="ghost"
@@ -136,7 +136,7 @@ export function CourseBriefCard({
       </dl>
 
       {editing && onAnswer ? (
-        <div className="mt-5 grid gap-4 border-t border-border pt-4">
+        <div className="mt-5 grid gap-4 border-t border-[#d9e8d5] pt-4">
           <PresetGroup
             label="适合对象"
             onAnswer={(answer) => onAnswer(answer)}
@@ -194,10 +194,10 @@ export function CourseJourney({
             <div className="grid justify-items-center gap-2">
               <span
                 aria-current={active ? "step" : undefined}
-                className={`flex size-9 items-center justify-center rounded-full border text-sm font-semibold ${
+                className={`flex size-9 items-center justify-center rounded-[14px] border text-sm font-semibold transition-[color,background-color,border-color,box-shadow,transform] duration-300 ${
                   completed || active
-                    ? "border-primary bg-primary text-white"
-                    : "border-border bg-[var(--keya-pill)] text-[var(--keya-muted-soft)]"
+                    ? "border-[#397a52] bg-[linear-gradient(145deg,#74c67a,#397a52)] text-white shadow-[0_9px_20px_-12px_rgba(47,104,69,0.9)]"
+                    : "border-[#cfe2ca] bg-[#edf8ea] text-[#7c907d]"
                 }`}
               >
                 {completed ? (
@@ -218,7 +218,9 @@ export function CourseJourney({
               <span
                 aria-hidden="true"
                 className={`mx-3 mt-[17px] h-0.5 min-w-6 flex-1 rounded-full ${
-                  step < activeStep ? "bg-primary" : "bg-border"
+                  step < activeStep
+                    ? "bg-[linear-gradient(90deg,#397a52,#74c67a)]"
+                    : "bg-[#d5e7d0]"
                 }`}
               />
             ) : null}
@@ -241,10 +243,10 @@ function ClarificationCard({
   return (
     <section
       aria-labelledby={`clarification-${question.id}`}
-      className="ml-[52px] rounded-[22px] border border-[#d9e8dc] bg-[#f2f7f2] p-5"
+      className="keya-card-lift ml-[52px] rounded-[24px] border border-[#bdd8b9] bg-[linear-gradient(145deg,rgba(255,255,255,0.82),rgba(227,242,222,0.9))] p-5 shadow-[0_16px_34px_-28px_rgba(47,104,69,0.58)]"
     >
       <div className="flex gap-3">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white text-primary shadow-sm">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-[12px] bg-white text-primary shadow-[0_9px_18px_-12px_rgba(47,104,69,0.8)] ring-1 ring-[#d5e7d0]">
           <BookOpen aria-hidden="true" size={16} strokeWidth={1.8} />
         </span>
         <div className="min-w-0">
@@ -264,8 +266,8 @@ function ClarificationCard({
           <Button
             className={`h-auto min-h-10 rounded-xl border px-3.5 py-2 text-left text-xs font-medium ${
               option.recommended
-                ? "border-primary bg-primary text-white hover:bg-[var(--keya-sprout-dark)]"
-                : "border-border bg-card text-[var(--keya-ink-soft)] hover:bg-[var(--keya-pill)]"
+                ? "border-primary bg-[linear-gradient(145deg,#68b96f,#397a52)] text-white shadow-[0_10px_22px_-14px_rgba(47,104,69,0.8)] hover:bg-[linear-gradient(145deg,#74c67a,#2f6845)]"
+                : "border-[#cfe2ca] bg-white/78 text-[var(--keya-ink-soft)] hover:bg-white"
             }`}
             disabled={busy}
             key={option.value}
@@ -317,7 +319,7 @@ function PresetGroup({
               type="radio"
               value={option.value}
             />
-            <span className="inline-flex h-9 items-center gap-2 rounded-full border border-border bg-card px-3.5 text-xs font-medium text-[var(--keya-ink-soft)] transition-[color,background-color,border-color,box-shadow] hover:bg-[var(--keya-pill)] peer-checked:border-primary peer-checked:bg-[#e8f3ea] peer-checked:text-[var(--keya-sprout-dark)] peer-checked:shadow-[inset_0_0_0_1px_var(--keya-sprout)] peer-focus-visible:ring-2 peer-focus-visible:ring-primary peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-[var(--keya-paper)]">
+            <span className="inline-flex h-9 items-center gap-2 rounded-full border border-[#cfe2ca] bg-white/80 px-3.5 text-xs font-medium text-[var(--keya-ink-soft)] shadow-[0_8px_18px_-16px_rgba(47,104,69,0.6)] transition-[color,background-color,border-color,box-shadow,transform] hover:-translate-y-0.5 hover:bg-white peer-checked:border-primary peer-checked:bg-[#dff1d9] peer-checked:text-[var(--keya-sprout-dark)] peer-checked:shadow-[inset_0_0_0_1px_var(--keya-sprout),0_8px_18px_-14px_rgba(47,104,69,0.65)] peer-focus-visible:ring-2 peer-focus-visible:ring-primary peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-[var(--keya-paper)] motion-reduce:transform-none">
               {value === option.value ? (
                 <CircleCheck
                   aria-hidden="true"

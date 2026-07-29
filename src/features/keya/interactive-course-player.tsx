@@ -326,75 +326,75 @@ export function InteractiveCoursePlayer({
 
   return (
     <TooltipPrimitive.Provider delayDuration={350} skipDelayDuration={100}>
-      <main className="flex h-dvh min-w-[320px] flex-col overflow-hidden bg-background text-foreground">
-      <header className="z-20 grid h-16 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-border/80 bg-card/95 px-3 sm:px-5">
-        <div className="flex min-w-0 items-center gap-3">
-          <Button
-            asChild
-            className="size-10 shrink-0 rounded-full border-border bg-card hover:bg-[var(--keya-pill)] sm:size-11"
-            size="icon"
-            variant="outline"
-          >
-            <Link aria-label="返回课程库" href="/course">
-              <ArrowLeft aria-hidden="true" size={19} strokeWidth={1.8} />
-            </Link>
-          </Button>
-          <div className="hidden min-w-0 min-[520px]:block">
-            <h1>
-              <OverflowTooltipText
-                className="text-base font-semibold sm:text-lg"
-                side="bottom"
-                text={manifest.title}
-              />
-            </h1>
-            <p className="mt-0.5">
-              <OverflowTooltipText
-                className="text-[11px] text-muted-foreground sm:text-xs"
-                side="bottom"
-                text={currentSectionLabel}
-              />
-            </p>
+      <main className="keya-workspace-shell keya-page-reveal flex h-dvh min-w-[320px] flex-col overflow-hidden text-foreground">
+        <header className="z-20 grid h-16 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b border-[#cfe3cb] bg-[#fbfff7]/92 px-3 shadow-[0_10px_28px_-25px_rgba(36,92,58,0.62)] backdrop-blur-md sm:px-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <Button
+              asChild
+              className="size-10 shrink-0 rounded-full border-[#c7ddc3] bg-white/85 text-[#365840] shadow-sm transition-[transform,background-color,border-color] hover:border-[#a9d1a6] hover:bg-[#e4f2e0] motion-safe:hover:-translate-x-0.5 sm:size-11"
+              size="icon"
+              variant="outline"
+            >
+              <Link aria-label="返回课程库" href="/course">
+                <ArrowLeft aria-hidden="true" size={19} strokeWidth={1.8} />
+              </Link>
+            </Button>
+            <div className="hidden min-w-0 min-[520px]:block">
+              <h1>
+                <OverflowTooltipText
+                  className="text-base font-semibold sm:text-lg"
+                  side="bottom"
+                  text={manifest.title}
+                />
+              </h1>
+              <p className="mt-0.5">
+                <OverflowTooltipText
+                  className="text-[11px] text-muted-foreground sm:text-xs"
+                  side="bottom"
+                  text={currentSectionLabel}
+                />
+              </p>
+            </div>
           </div>
-        </div>
 
-        <div
-          aria-label="学习模式"
-          className="flex rounded-full border border-border bg-background p-1"
-          role="group"
-        >
-          <ModeButton
-            active={mode === "guided"}
-            icon="guided"
-            label="讲解"
-            onClick={() => setLearningMode("guided")}
-          />
-          <ModeButton
-            active={mode === "self-paced"}
-            icon="self-paced"
-            label="自学"
-            onClick={() => setLearningMode("self-paced")}
-          />
-        </div>
-
-        <div className="flex justify-end">
-          <Button
-            aria-expanded={mapOpen}
-            aria-label="打开课程地图"
-            className="size-10 rounded-full border-border bg-card hover:bg-[var(--keya-pill)] lg:hidden"
-            onClick={() => setMapOpen(true)}
-            size="icon"
-            type="button"
-            variant="outline"
+          <div
+            aria-label="学习模式"
+            className="flex rounded-full border border-[#c5ddc1] bg-[#e5f2e1]/85 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)]"
+            role="group"
           >
-            <List aria-hidden="true" size={19} strokeWidth={1.8} />
-          </Button>
-        </div>
-      </header>
+            <ModeButton
+              active={mode === "guided"}
+              icon="guided"
+              label="讲解"
+              onClick={() => setLearningMode("guided")}
+            />
+            <ModeButton
+              active={mode === "self-paced"}
+              icon="self-paced"
+              label="自学"
+              onClick={() => setLearningMode("self-paced")}
+            />
+          </div>
+
+          <div className="flex justify-end">
+            <Button
+              aria-expanded={mapOpen}
+              aria-label="打开课程地图"
+              className="size-10 rounded-full border-[#c7ddc3] bg-white/85 text-[#365840] shadow-sm hover:border-[#a9d1a6] hover:bg-[#e4f2e0] lg:hidden"
+              onClick={() => setMapOpen(true)}
+              size="icon"
+              type="button"
+              variant="outline"
+            >
+              <List aria-hidden="true" size={19} strokeWidth={1.8} />
+            </Button>
+          </div>
+        </header>
 
       <div className="flex min-h-0 flex-1">
         {!mapCollapsed ? (
           <CourseMap
-            className="hidden w-[280px] shrink-0 border-r border-border bg-card lg:flex"
+            className="hidden w-[280px] shrink-0 border-r border-[#cfe3cb] bg-[#fbfff7]/94 shadow-[12px_0_34px_-32px_rgba(36,92,58,0.58)] backdrop-blur-sm lg:flex"
             closeLabel="收起课程目录"
             completedSectionIds={completedSectionIds}
             currentSectionId={currentSection?.id}
@@ -408,12 +408,12 @@ export function InteractiveCoursePlayer({
           <>
             <button
               aria-label="关闭课程地图"
-              className="fixed inset-0 z-30 bg-[#2d332b]/20 backdrop-blur-[1px] lg:hidden"
+              className="fixed inset-0 z-30 bg-[#173622]/25 backdrop-blur-[2px] motion-safe:animate-in motion-safe:fade-in motion-safe:duration-200 lg:hidden"
               onClick={() => setMapOpen(false)}
               type="button"
             />
             <CourseMap
-              className="fixed inset-y-0 left-0 z-40 flex w-[min(340px,88vw)] border-r border-border bg-card pt-2 shadow-2xl lg:hidden"
+              className="fixed inset-y-0 left-0 z-40 flex w-[min(340px,88vw)] border-r border-[#c6ddc2] bg-[#fbfff7] pt-2 shadow-[20px_0_54px_-30px_rgba(23,54,34,0.55)] motion-safe:animate-in motion-safe:slide-in-from-left-5 motion-safe:duration-300 lg:hidden"
               completedSectionIds={completedSectionIds}
               currentSectionId={currentSection?.id}
               manifest={manifest}
@@ -424,14 +424,14 @@ export function InteractiveCoursePlayer({
         ) : null}
 
         <section
-          className={`relative min-w-0 flex-1 overflow-y-auto bg-background px-3 pt-[22px] sm:px-5 lg:overflow-hidden lg:px-6 ${
+          className={`relative min-w-0 flex-1 overflow-y-auto bg-transparent px-3 pt-[22px] sm:px-5 lg:overflow-hidden lg:px-6 ${
             thumbnailsOpen ? "pb-0" : "pb-6"
           }`}
         >
           {mapCollapsed ? (
             <button
               aria-label="展开课程目录"
-              className="absolute top-4 left-0 z-20 hidden h-10 w-6 items-center justify-center rounded-r-xl border border-l-0 border-border bg-card text-muted-foreground shadow-[0_6px_18px_-10px_rgba(45,51,43,0.55)] outline-none transition-colors hover:bg-[var(--keya-pill)] hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary lg:flex"
+              className="absolute top-4 left-0 z-20 hidden h-10 w-6 items-center justify-center rounded-r-xl border border-l-0 border-[#c7ddc3] bg-[#fbfff7]/95 text-[#607562] shadow-[0_8px_22px_-14px_rgba(36,92,58,0.58)] outline-none transition-[width,color,background-color] hover:w-7 hover:bg-[#deefda] hover:text-[#245c3a] focus-visible:ring-2 focus-visible:ring-primary lg:flex"
               onClick={() => setMapCollapsed(false)}
               type="button"
             >
@@ -446,7 +446,7 @@ export function InteractiveCoursePlayer({
             >
               <div
                 aria-label="课程画布"
-                className={`relative aspect-video w-full max-w-[1064px] overflow-hidden rounded-2xl border border-border bg-[#111711] shadow-[0_18px_48px_-32px_rgba(45,51,43,0.72)] ${
+                className={`relative aspect-video w-full max-w-[1064px] overflow-hidden rounded-[22px] border border-[#8fba92] bg-[#102c1b] shadow-[0_24px_60px_-34px_rgba(23,54,34,0.7),0_0_0_5px_rgba(255,255,255,0.56)] ${
                   fullscreen ? "h-screen w-screen max-w-none rounded-none border-0" : ""
                 }`}
                 ref={canvasRef}
@@ -489,7 +489,7 @@ export function InteractiveCoursePlayer({
                   <>
                     <Button
                       aria-label={fullscreen ? "退出全屏" : "进入全屏"}
-                      className="absolute top-3 right-3 z-10 size-9 rounded-full border-white/20 bg-[#171914]/55 p-0 text-white shadow-lg backdrop-blur-md hover:bg-[#171914]/80 sm:top-4 sm:right-4"
+                      className="absolute top-3 right-3 z-10 size-9 rounded-full border-white/25 bg-[#173622]/68 p-0 text-white shadow-lg backdrop-blur-md transition-[transform,background-color] hover:bg-[#102719]/90 motion-safe:hover:scale-105 sm:top-4 sm:right-4"
                       onClick={() => void toggleFullscreen()}
                       size="icon"
                       type="button"
@@ -515,7 +515,7 @@ export function InteractiveCoursePlayer({
                         aria-live="polite"
                         className="pointer-events-none absolute right-4 bottom-2 left-4 z-10 flex justify-center sm:right-8 sm:left-8"
                       >
-                        <p className="line-clamp-1 max-w-[78%] rounded-md border border-white/15 bg-[#121510]/80 px-3 py-1 text-center text-[10px] leading-4 text-white/95 shadow-lg backdrop-blur-md">
+                        <p className="line-clamp-1 max-w-[78%] rounded-lg border border-white/20 bg-[#102c1b]/84 px-3 py-1 text-center text-[10px] leading-4 text-white/95 shadow-lg backdrop-blur-md">
                           {narration}
                         </p>
                       </div>
@@ -614,7 +614,7 @@ function PlayerControls({
     >
       <span className="hidden lg:block" />
 
-      <div className="flex h-[50px] items-center justify-center rounded-full border border-border bg-card px-1.5 shadow-[0_8px_24px_-18px_rgba(45,51,43,0.7)]">
+      <div className="flex h-[50px] items-center justify-center rounded-full border border-[#c4dcc0] bg-[#fbfff7]/92 px-1.5 shadow-[0_12px_30px_-22px_rgba(36,92,58,0.72)] backdrop-blur-sm">
         <Button
           className="h-10 min-w-[84px] rounded-full border-0 bg-transparent px-3 text-xs shadow-none hover:bg-[var(--keya-pill)] sm:text-sm"
           disabled={!previousId}
@@ -629,7 +629,7 @@ function PlayerControls({
         {mode === "guided" ? (
           <Button
             aria-label={narrating ? "暂停讲解" : "播放讲解"}
-            className="size-11 shrink-0 rounded-full border-0 bg-[#c9b9a8] text-white shadow-none hover:bg-[#bba895]"
+            className="size-11 shrink-0 rounded-full border-0 bg-[#397a52] text-white shadow-[0_8px_20px_-12px_rgba(36,92,58,0.9)] transition-[transform,background-color,box-shadow] hover:bg-[#245c3a] hover:shadow-[0_12px_24px_-12px_rgba(36,92,58,0.95)] motion-safe:hover:scale-105"
             disabled={!narration}
             onClick={onToggleNarration}
             size="icon"
@@ -644,7 +644,7 @@ function PlayerControls({
         ) : (
           <span
             aria-label="自学模式"
-            className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[var(--keya-pill)] text-primary"
+            className="flex size-11 shrink-0 items-center justify-center rounded-full border border-[#c9e0c5] bg-[#e3f1df] text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]"
             role="img"
           >
             <BookOpen aria-hidden="true" size={18} strokeWidth={1.8} />
@@ -682,7 +682,7 @@ function PlayerControls({
             aria-pressed={captionsEnabled}
             className={`h-9 rounded-full border-border px-3 text-xs shadow-none ${
               captionsEnabled && mode === "guided"
-                ? "bg-card text-foreground"
+                ? "border-[#a8cfa5] bg-[#e4f2e0] text-[#245c3a]"
                 : "bg-transparent text-muted-foreground"
             }`}
             disabled={mode !== "guided"}
@@ -700,7 +700,7 @@ function PlayerControls({
         </label>
         <select
           aria-label="播放速度"
-          className="h-9 rounded-full border border-border bg-card px-3 text-xs outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
+          className="h-9 rounded-full border border-[#c4dcc0] bg-[#fbfff7] px-3 text-xs text-[#365840] shadow-sm outline-none transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
           disabled={mode !== "guided"}
           id="narration-rate"
           onChange={(event) =>
@@ -742,7 +742,7 @@ function ThumbnailToggle({
       <button
         aria-expanded={open}
         aria-label={label}
-        className="flex h-10 items-center gap-2 rounded-full bg-[#5a4c39] px-3.5 text-xs font-medium text-white outline-none transition-colors hover:bg-[#463b2d] focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        className="flex h-10 items-center gap-2 rounded-full bg-[#2f6845] px-3.5 text-xs font-medium text-white shadow-[0_8px_20px_-13px_rgba(36,92,58,0.92)] outline-none transition-[transform,background-color,box-shadow] hover:bg-[#245c3a] hover:shadow-[0_11px_24px_-13px_rgba(36,92,58,0.98)] focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-safe:hover:-translate-y-0.5"
         onClick={onClick}
         type="button"
       >
@@ -757,7 +757,7 @@ function ThumbnailToggle({
         )}
       </button>
       <span
-        className="pointer-events-none absolute right-0 bottom-full z-20 mb-2 whitespace-nowrap rounded-md bg-[#5a4c39] px-2 py-1 text-[10px] text-white opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+        className="pointer-events-none absolute right-0 bottom-full z-20 mb-2 whitespace-nowrap rounded-md bg-[#245c3a] px-2 py-1 text-[10px] text-white opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
         role="tooltip"
       >
         {label}
@@ -787,7 +787,7 @@ function ThumbnailNavigation({
   return (
     <nav
       aria-label="页面缩略图"
-      className="mt-[29px] flex h-[60px] shrink-0 items-center gap-3 rounded-t-[18px] bg-[#f8f4eb] px-3"
+      className="mt-[29px] flex h-[60px] shrink-0 items-center gap-3 rounded-t-[20px] border-x border-t border-[#cfe3cb] bg-[#e8f4e4]/92 px-3 shadow-[0_-10px_28px_-26px_rgba(36,92,58,0.56)] backdrop-blur-sm"
     >
       <Button
         aria-label="向前浏览缩略图"
@@ -823,9 +823,9 @@ function ThumbnailNavigation({
                 aria-label={`跳转到第 ${section.order} 页：${section.title}`}
                 className={`relative block h-[38px] w-[62px] overflow-hidden rounded-md border-2 bg-white outline-none transition-[border-color,box-shadow] focus-visible:ring-2 focus-visible:ring-primary ${
                   current
-                    ? "border-[#83b66d] shadow-[0_0_0_1px_rgba(255,255,255,0.9)]"
+                    ? "border-[#5aa56a] shadow-[0_0_0_2px_rgba(255,255,255,0.94),0_0_0_4px_rgba(90,165,106,0.2)]"
                     : ready
-                      ? "border-transparent hover:border-[#c8bda9]"
+                      ? "border-transparent hover:border-[#a9d1a6]"
                       : "border-transparent bg-[var(--keya-pill)] opacity-60"
                 }`}
                 disabled={!ready}
@@ -840,10 +840,10 @@ function ThumbnailNavigation({
                 ) : (
                   <span
                     aria-hidden="true"
-                    className="absolute inset-0 bg-[linear-gradient(135deg,#f2eee6,#fbfaf7)]"
+                    className="absolute inset-0 bg-[radial-gradient(circle_at_28%_24%,rgba(116,198,122,0.3),transparent_34%),linear-gradient(135deg,#e9f5e5,#fff7d9)]"
                   />
                 )}
-                <span className="pointer-events-none absolute top-0.5 left-0.5 z-10 min-w-[18px] rounded-[3px] bg-[#413d34]/65 px-1 py-0.5 text-[9px] leading-[11px] font-semibold text-white tabular-nums">
+                <span className="pointer-events-none absolute top-0.5 left-0.5 z-10 min-w-[18px] rounded-[4px] bg-[#245c3a]/78 px-1 py-0.5 text-[9px] leading-[11px] font-semibold text-white tabular-nums">
                   {padPageNumber(section.order)}
                 </span>
               </button>
@@ -953,11 +953,11 @@ function CourseMapSection({
           <button
             aria-current={current ? "step" : undefined}
             aria-disabled={!ready}
-            className={`flex min-h-[60px] min-w-0 w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary aria-disabled:cursor-not-allowed ${
+            className={`flex min-h-[60px] min-w-0 w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none transition-[transform,background-color,color] focus-visible:ring-2 focus-visible:ring-primary aria-disabled:cursor-not-allowed ${
               current
-                ? "bg-[var(--keya-pill)]"
+                ? "bg-[#e0f0dc] text-[#245c3a] shadow-[inset_0_0_0_1px_rgba(57,122,82,0.08)]"
                 : ready
-                  ? "hover:bg-[#fff9ee]"
+                  ? "hover:bg-[#edf7e9] motion-safe:hover:translate-x-0.5"
                   : "opacity-70"
             }`}
             onClick={() => ready && onSelect(section.id)}
@@ -1036,13 +1036,13 @@ function OverflowTooltipContent({
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Content
         align={side === "bottom" ? "start" : "center"}
-        className="z-[70] max-w-[min(320px,calc(100vw-24px))] rounded-lg border border-white/10 bg-[#514534] px-3 py-2 text-xs leading-5 font-medium text-balance text-white shadow-[0_10px_30px_-12px_rgba(45,38,29,0.65)] [overflow-wrap:anywhere]"
+        className="z-[70] max-w-[min(320px,calc(100vw-24px))] rounded-lg border border-white/10 bg-[#245c3a] px-3 py-2 text-xs leading-5 font-medium text-balance text-white shadow-[0_10px_30px_-12px_rgba(23,54,34,0.7)] [overflow-wrap:anywhere]"
         collisionPadding={12}
         side={side}
         sideOffset={8}
       >
         {text}
-        <TooltipPrimitive.Arrow className="fill-[#514534]" />
+        <TooltipPrimitive.Arrow className="fill-[#245c3a]" />
       </TooltipPrimitive.Content>
     </TooltipPrimitive.Portal>
   );
@@ -1104,7 +1104,7 @@ function MapStatusIcon({
   }
   if (current) {
     return (
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-full border-[5px] border-[#dceadd] bg-primary" />
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-full border-[5px] border-[#cde4c9] bg-primary shadow-[0_0_0_3px_rgba(57,122,82,0.08)] motion-safe:animate-pulse" />
     );
   }
   if (section.generationStatus === "generating") {
@@ -1173,7 +1173,7 @@ function CourseUnavailableState({
   hasReadySection: boolean;
 }) {
   return (
-    <div className="flex min-h-[420px] flex-1 items-center justify-center rounded-[24px] border border-border bg-card px-6 text-center">
+    <div className="flex min-h-[420px] flex-1 items-center justify-center rounded-[24px] border border-[#c8dfc4] bg-[#fbfff7]/94 px-6 text-center shadow-[0_22px_54px_-40px_rgba(36,92,58,0.68)]">
       <div className="max-w-sm">
         <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-[var(--keya-pill)] text-primary">
           <Volume2 aria-hidden="true" size={21} strokeWidth={1.8} />

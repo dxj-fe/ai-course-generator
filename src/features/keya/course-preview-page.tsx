@@ -30,12 +30,12 @@ export function CoursePreviewPage({
   };
 
   return (
-    <main className="flex h-dvh overflow-hidden flex-col bg-[#fff9ee] text-[#2d332b]">
-      <header className="flex h-[70px] shrink-0 items-center justify-between gap-4 border-b border-[#e8dfd0] bg-[#fffcf5] px-4 sm:px-6">
+    <main className="keya-workspace-shell keya-page-reveal flex h-dvh overflow-hidden flex-col text-[#294532]">
+      <header className="flex h-[70px] shrink-0 items-center justify-between gap-4 border-b border-[#d7e9d2] bg-[#fbfff8]/90 px-4 shadow-[0_12px_34px_-30px_rgba(47,104,69,0.58)] backdrop-blur-md sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <Button
             aria-label="返回课程编辑"
-            className="size-10 shrink-0 rounded-full border-[#e5d9cb] bg-[#fffcf5] text-[#3f4a40] hover:bg-[#f6eedc]"
+            className="size-10 shrink-0 rounded-full border-[#cfe3ca] bg-white/85 text-[#35583f] shadow-sm transition-[transform,background-color,border-color] hover:border-[#acd3a8] hover:bg-[#e8f4e5] motion-safe:hover:-translate-x-0.5"
             onClick={goBack}
             size="icon"
             type="button"
@@ -47,18 +47,18 @@ export function CoursePreviewPage({
             <p className="truncate text-sm font-semibold sm:text-base">
               {preview?.title ?? "课程页面预览"}
             </p>
-            <p className="mt-0.5 truncate text-[11px] text-[#7a7468]">
+            <p className="mt-0.5 truncate text-[11px] text-[#6c7e6e]">
               {preview ? `页面 ${preview.pageId}` : "正在读取安全预览…"}
             </p>
           </div>
         </div>
 
-        <div className="hidden items-center gap-2 rounded-full border border-[#e5d9cb] bg-[#f6eedc] p-1 sm:flex">
-          <span className="flex items-center gap-2 rounded-full bg-[#3f4a40] px-4 py-2 text-xs font-semibold text-white shadow-sm">
+        <div className="hidden items-center gap-2 rounded-full border border-[#d1e5cc] bg-[#edf6e9] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.86)] sm:flex">
+          <span className="flex items-center gap-2 rounded-full bg-[#397a52] px-4 py-2 text-xs font-semibold text-white shadow-[0_7px_18px_-12px_rgba(47,104,69,0.9)]">
             <Monitor aria-hidden="true" size={14} strokeWidth={1.8} />
             预览模式
           </span>
-          <span className="flex items-center gap-2 px-3 text-xs font-semibold text-[#6f6a60]">
+          <span className="flex items-center gap-2 px-3 text-xs font-semibold text-[#57705d]">
             <ShieldCheck aria-hidden="true" size={14} strokeWidth={1.8} />
             安全沙箱
           </span>
@@ -69,21 +69,21 @@ export function CoursePreviewPage({
             className={`shrink-0 rounded-full px-3 py-2 text-xs font-semibold ${
               preview.qualityReport.shouldRepair
                 ? "bg-[#fff0eb] text-[#a44f3d]"
-                : "bg-[#edf5ee] text-[#397a52]"
+                : "bg-[#e4f3e3] text-[#2f6845]"
             }`}
           >
             质量 {preview.qualityReport.overallScore} ·{" "}
             {preview.qualityReport.shouldRepair ? "待修复" : "已通过"}
           </span>
         ) : (
-          <span className="shrink-0 rounded-full bg-[#edf5ee] px-3 py-2 text-xs font-semibold text-[#397a52]">
+          <span className="shrink-0 rounded-full border border-[#cfe5ca] bg-[#e8f4e5] px-3 py-2 text-xs font-semibold text-[#397a52]">
             草稿
           </span>
         )}
       </header>
 
       <section className="flex min-h-0 flex-1 items-center justify-center p-3 sm:p-6 lg:p-8">
-        <div className="h-full w-full max-w-[1500px]">
+        <div className="h-full w-full max-w-[1500px] motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 motion-safe:duration-500">
           {preview ? (
             <HtmlPreviewFrame
               className="h-full grid-rows-[auto_minmax(0,1fr)_auto]"
@@ -93,7 +93,7 @@ export function CoursePreviewPage({
             />
           ) : (
             <Alert
-              className="mx-auto max-w-xl rounded-3xl border-[#edc4b9] bg-[#fff0eb] p-6 text-center text-sm leading-6 text-[#984735]"
+              className="mx-auto max-w-xl rounded-[28px] border-[#edc4b9] bg-[#fff5ef]/95 p-7 text-center text-sm leading-6 text-[#984735] shadow-[0_24px_60px_-44px_rgba(152,71,53,0.58)]"
               role="alert"
               variant="destructive"
             >
@@ -103,10 +103,10 @@ export function CoursePreviewPage({
         </div>
       </section>
 
-      <footer className="flex h-[74px] shrink-0 items-center justify-center border-t border-[#e8dfd0] bg-[#fffcf5] px-4">
-        <div className="flex items-center gap-4 rounded-full border border-[#e5d9cb] bg-[#fffcf5] px-3 py-2 shadow-sm">
+      <footer className="flex h-[74px] shrink-0 items-center justify-center border-t border-[#d7e9d2] bg-[#f8fff5]/90 px-4 backdrop-blur-md">
+        <div className="flex items-center gap-4 rounded-full border border-[#d1e5cc] bg-white/85 px-3 py-2 shadow-[0_10px_26px_-20px_rgba(47,104,69,0.62)]">
           <Button
-            className="rounded-full text-[#b0a79b]"
+            className="rounded-full text-[#9aaa9b]"
             disabled
             size="sm"
             type="button"
@@ -115,11 +115,11 @@ export function CoursePreviewPage({
             <ChevronLeft aria-hidden="true" size={16} />
             上一页
           </Button>
-          <span className="rounded-full bg-[#f2ece4] px-4 py-2 font-mono text-xs font-semibold text-[#3f4a40]">
+          <span className="rounded-full bg-[#e7f3e3] px-4 py-2 font-mono text-xs font-semibold text-[#35583f]">
             01 / 01
           </span>
           <Button
-            className="rounded-full text-[#b0a79b]"
+            className="rounded-full text-[#9aaa9b]"
             disabled
             size="sm"
             type="button"

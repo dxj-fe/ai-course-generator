@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 
@@ -22,6 +22,11 @@ export const metadata: Metadata = {
     template: "%s | 课芽",
   },
   description: "一句话生成可交互的个性化课程。",
+};
+
+export const viewport: Viewport = {
+  colorScheme: "light",
+  themeColor: "#eef8ea",
 };
 
 export default function RootLayout({

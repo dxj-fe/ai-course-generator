@@ -244,10 +244,10 @@ export function CourseRunTimeline({
   return (
     <section
       aria-labelledby="course-generation-title"
-      className="grid gap-6"
+      className="keya-page-reveal grid gap-6"
     >
       <div className="flex items-start gap-3">
-        <span className="mt-1 flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-sm">
+        <span className="keya-gentle-bob mt-1 flex size-10 shrink-0 items-center justify-center rounded-[15px] bg-[linear-gradient(145deg,#74c67a,#397a52)] text-white shadow-[0_12px_24px_-13px_rgba(47,104,69,0.9)] ring-2 ring-white/80">
           <Sprout aria-hidden="true" size={20} strokeWidth={1.8} />
         </span>
         <CourseBriefCard brief={brief} />
@@ -255,17 +255,21 @@ export function CourseRunTimeline({
 
       <CourseJourney activeStep={completed ? 3 : 2} />
 
-      <section className="ml-[52px] rounded-[22px] border border-border bg-card p-5 shadow-[var(--keya-card-shadow)]">
+      <section className="relative ml-[52px] overflow-hidden rounded-[24px] border border-[#c5ddc1] bg-[radial-gradient(circle_at_100%_0%,rgba(191,231,174,0.42),transparent_14rem),rgba(255,255,255,0.86)] p-5 shadow-[0_20px_44px_-34px_rgba(35,82,49,0.72)] backdrop-blur-sm">
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-4 -bottom-7 h-20 w-12 rotate-[30deg] rounded-[90%_10%_90%_10%] bg-[#74c67a]/10"
+        />
         <div className="flex items-start gap-3">
           <span
             className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full ${
               completed
-                ? "bg-[#e6f3e8] text-primary"
+                ? "bg-[#dff1d9] text-primary shadow-[0_8px_18px_-14px_rgba(47,104,69,0.8)]"
                 : paused
                   ? "bg-[#f7efdf] text-[#946f32]"
                 : failure
                   ? "bg-[#fff0e8] text-[#b2643f]"
-                  : "bg-[var(--keya-pill)] text-primary"
+                  : "bg-[#e3f2de] text-primary ring-4 ring-[#edf8ea]"
             }`}
           >
             {completed ? (
@@ -309,15 +313,20 @@ export function CourseRunTimeline({
               aria-valuemax={totalPages}
               aria-valuemin={0}
               aria-valuenow={completedCount}
-              className="h-2 overflow-hidden rounded-full bg-[var(--keya-pill)]"
+              className="h-2.5 overflow-hidden rounded-full bg-[#dfeeda] shadow-inner"
               role="progressbar"
             >
               <span
-                className="block h-full rounded-full bg-primary transition-[width] duration-300 motion-reduce:transition-none"
+                className="relative block h-full overflow-hidden rounded-full bg-[linear-gradient(90deg,#397a52,#74c67a)] shadow-[0_0_14px_rgba(80,160,92,0.35)] transition-[width] duration-500 motion-reduce:transition-none"
                 style={{
                   width: `${(completedCount / totalPages) * 100}%`,
                 }}
-              />
+              >
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-y-0 right-0 w-8 skew-x-[-24deg] bg-white/40 motion-safe:animate-pulse"
+                />
+              </span>
             </div>
           </div>
         ) : paused ? (
@@ -335,7 +344,7 @@ export function CourseRunTimeline({
         ) : (
           <div
             aria-live="polite"
-            className="mt-5 flex items-center gap-2 rounded-xl bg-[#f2f7f2] px-3 py-2.5 text-xs text-muted-foreground"
+            className="mt-5 flex items-center gap-2 rounded-2xl border border-[#d5e7d0] bg-[#edf8ea]/80 px-3 py-2.5 text-xs text-[#627364]"
           >
             <LoaderCircle
               aria-hidden="true"
@@ -350,7 +359,7 @@ export function CourseRunTimeline({
         <div className="mt-5 flex flex-wrap gap-3">
           {canResume ? (
             <Button
-              className="h-10 rounded-xl bg-primary px-4 text-sm font-semibold text-white hover:bg-[var(--keya-sprout-dark)]"
+              className="h-10 rounded-2xl bg-[linear-gradient(145deg,#68b96f,#397a52)] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_-14px_rgba(47,104,69,0.85)] transition duration-200 hover:-translate-y-0.5 hover:bg-[linear-gradient(145deg,#74c67a,#2f6845)] motion-reduce:transform-none"
               disabled={busy}
               onClick={onResumeCourse}
               type="button"
@@ -371,8 +380,8 @@ export function CourseRunTimeline({
             <Button
               className={
                 completed
-                  ? "h-10 rounded-xl bg-primary px-4 text-sm font-semibold text-white hover:bg-[var(--keya-sprout-dark)]"
-                  : "h-10 rounded-xl border-primary bg-card px-4 text-sm font-semibold text-primary hover:bg-[var(--keya-pill)]"
+                  ? "h-10 rounded-2xl bg-[linear-gradient(145deg,#68b96f,#397a52)] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_-14px_rgba(47,104,69,0.85)] transition duration-200 hover:-translate-y-0.5 hover:bg-[linear-gradient(145deg,#74c67a,#2f6845)] motion-reduce:transform-none"
+                  : "h-10 rounded-2xl border-[#9dc59a] bg-white/78 px-4 text-sm font-semibold text-primary shadow-[0_9px_20px_-16px_rgba(47,104,69,0.7)] transition duration-200 hover:-translate-y-0.5 hover:bg-[#edf8ea] motion-reduce:transform-none"
               }
               onClick={onOpenCoursePlayer}
               type="button"

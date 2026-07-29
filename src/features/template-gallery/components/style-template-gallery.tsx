@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { Palette, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -17,22 +18,25 @@ export function StyleTemplateGallery() {
 
   return (
     <section className="flex flex-col gap-6" aria-labelledby="style-templates">
-      <header className="flex flex-wrap items-end justify-between gap-4 border-t border-[#d8dee8] pt-8">
+      <header className="flex flex-wrap items-end justify-between gap-4 border-t border-[#cfe1ca] pt-10">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#7c3aed]">
-            Day 09 · Style Template Registry
+          <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.12em] text-[#4f7f59]">
+            <Palette aria-hidden="true" className="size-4" />
+            Visual Themes
           </p>
           <h2
-            className="mt-2 text-2xl font-semibold text-[#101827]"
+            className="mt-2 text-2xl font-semibold text-[#203c2a]"
             id="style-templates"
           >
-            样式模板预览
+            样式主题
           </h2>
-          <p className="mt-2 max-w-3xl text-sm leading-7 text-[#64748b]">
-            六张卡片使用同一份内容结构，只切换共享 Registry 生成的 CSS Variables。视觉差异来自 Design Tokens，而不是为每套风格手写页面。
+          <p className="mt-2 max-w-3xl text-sm leading-7 text-[#667568]">
+            六张卡片使用同一份内容结构，只切换共享 Registry 生成的 CSS
+            Variables。视觉差异来自 Design Tokens，而不是为每套风格手写页面。
           </p>
         </div>
-        <span className="rounded-full bg-[#ede9fe] px-3 py-1.5 text-xs font-semibold text-[#6d28d9]">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-[#d7dfac] bg-[#fff1c9] px-3 py-1.5 text-xs font-semibold text-[#75601f]">
+          <Sparkles aria-hidden="true" className="size-3.5" />
           {templates.length} 套风格 · 48 种组合已校验
         </span>
       </header>
@@ -62,8 +66,11 @@ function StyleTemplateCard({ template }: { template: StyleTemplate }) {
   const cssText = styleTemplateToCssText(template, `.${template.id}-theme`);
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-[#d8dee8] bg-white shadow-sm">
-      <div className="p-4 sm:p-5" style={previewStyle}>
+    <article className="keya-card-lift keya-page-reveal group overflow-hidden rounded-[26px] border border-[#d3e5cf] bg-[#fffcf5]/95 shadow-[0_18px_44px_-36px_rgba(47,104,69,0.52)]">
+      <div
+        className="border-b border-[#dce9d8] p-4 sm:p-5"
+        style={previewStyle}
+      >
         <div
           className="rounded-[var(--course-radius-card)] border-[length:var(--course-border-width-card)] border-[var(--course-color-border)] bg-[var(--course-color-surface)] p-5 shadow-[var(--course-shadow-card)]"
           style={{ color: "var(--course-color-text)" }}
@@ -138,19 +145,19 @@ function StyleTemplateCard({ template }: { template: StyleTemplate }) {
       <div className="flex flex-col gap-5 p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="font-mono text-xs text-[#64748b]">{template.id}</p>
-            <h3 className="mt-1 text-xl font-semibold text-[#101827]">
+            <p className="font-mono text-xs text-[#607562]">{template.id}</p>
+            <h3 className="mt-1 text-xl font-semibold text-[#203c2a] transition-colors group-hover:text-[#2f6845]">
               {template.name}
             </h3>
           </div>
-          <span className="rounded-full bg-[#ede9fe] px-3 py-1 text-xs font-semibold text-[#6d28d9]">
+          <span className="rounded-full border border-[#c9dfc4] bg-[#edf7e9] px-3 py-1 text-xs font-semibold text-[#397a52]">
             {template.layoutDensity}
           </span>
         </div>
-        <p className="text-sm leading-6 text-[#475569]">{template.goal}</p>
+        <p className="text-sm leading-6 text-[#617064]">{template.goal}</p>
 
         <section aria-label={`${template.name} 色彩 Token`}>
-          <h4 className="text-sm font-semibold text-[#344054]">语义色彩</h4>
+          <h4 className="text-sm font-semibold text-[#3f5a45]">语义色彩</h4>
           <div className="mt-2 flex flex-wrap gap-2">
             {[
               ["背景", template.colorTokens.background],
@@ -160,7 +167,7 @@ function StyleTemplateCard({ template }: { template: StyleTemplate }) {
               ["文字", template.colorTokens.text],
             ].map(([label, color]) => (
               <div
-                className="flex items-center gap-2 rounded-full border border-[#d8dee8] bg-[#f8fafc] py-1 pl-1 pr-3 text-xs text-[#64748b]"
+                className="flex items-center gap-2 rounded-full border border-[#d6e5d2] bg-[#f5faf1] py-1 pl-1 pr-3 text-xs text-[#667568]"
                 key={label}
               >
                 <span
@@ -173,9 +180,9 @@ function StyleTemplateCard({ template }: { template: StyleTemplate }) {
           </div>
         </section>
 
-        <div className="grid gap-4 text-xs text-[#64748b] sm:grid-cols-2">
+        <div className="grid gap-4 text-xs text-[#667568] sm:grid-cols-2">
           <section>
-            <h4 className="font-semibold text-[#344054]">排版与表面</h4>
+            <h4 className="font-semibold text-[#3f5a45]">排版与表面</h4>
             <p className="mt-2 leading-5">
               标题：{template.typography.headingFont}
               <br />
@@ -185,16 +192,16 @@ function StyleTemplateCard({ template }: { template: StyleTemplate }) {
             </p>
           </section>
           <section>
-            <h4 className="font-semibold text-[#344054]">素材指导</h4>
+            <h4 className="font-semibold text-[#3f5a45]">素材指导</h4>
             <p className="mt-2 leading-5">{template.assetGuidance.visualStyle}</p>
           </section>
         </div>
 
-        <details className="rounded-lg border border-[#d8dee8] bg-[#f8fafc] p-4">
-          <summary className="cursor-pointer text-sm font-semibold text-[#344054]">
+        <details className="rounded-2xl border border-[#d6e5d2] bg-[#f5faf1] p-4 transition-colors open:bg-white">
+          <summary className="cursor-pointer rounded text-sm font-semibold text-[#3f5a45] outline-none hover:text-[#2f6845] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#397a52]">
             查看 CSS Variables
           </summary>
-          <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-md bg-[#eef2f7] p-3 font-mono text-xs leading-5 text-[#172033]">
+          <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-xl border border-[#dce9d8] bg-[#edf6e9] p-3 font-mono text-xs leading-5 text-[#294231]">
             {cssText}
           </pre>
         </details>

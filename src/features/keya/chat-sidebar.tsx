@@ -63,8 +63,8 @@ interface ConversationRowsProps {
 }
 
 const focusRing =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#397a52] focus-visible:ring-offset-1 focus-visible:ring-offset-[#fff9ee]";
-const controlClass = `group flex h-9 w-[259px] items-center justify-start gap-3 rounded-lg border-0 bg-transparent px-2 text-left text-base leading-6 font-normal whitespace-normal transition-[color,background-color,border-color,fill,stroke] duration-150 hover:bg-[rgba(91,76,59,0.07)] ${focusRing}`;
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#397a52] focus-visible:ring-offset-1 focus-visible:ring-offset-[#edf8ea]";
+const controlClass = `group flex h-9 w-[259px] items-center justify-start gap-3 rounded-xl border-0 bg-transparent px-2 text-left text-base leading-6 font-normal whitespace-normal transition-[color,background-color,border-color,fill,stroke,transform] duration-200 hover:bg-[#dff1d9]/75 hover:text-[#2f6845] active:scale-[0.99] motion-reduce:transform-none ${focusRing}`;
 
 function ConversationRows({
   conversations,
@@ -93,8 +93,10 @@ function ConversationRows({
 
         return (
           <div
-            className={`group relative h-[37px] w-[259px] rounded-lg transition-colors duration-150 hover:bg-[rgba(91,76,59,0.07)] ${
-              selected ? "bg-[#f3ede4]" : ""
+            className={`group relative h-[37px] w-[259px] rounded-xl transition-[background-color,box-shadow,transform] duration-200 hover:bg-[#dff1d9]/75 active:scale-[0.99] motion-reduce:transform-none ${
+              selected
+                ? "bg-[#dcefd5] shadow-[inset_3px_0_0_#397a52,0_8px_20px_-18px_rgba(47,104,69,0.7)]"
+                : ""
             }`}
             key={conversation.id}
           >
@@ -115,7 +117,7 @@ function ConversationRows({
                 <Input
                   aria-label="新的对话名称"
                   autoFocus
-                  className="h-7 min-w-0 flex-1 rounded-md border-[#d9cfbf] bg-[#fffcf5] px-2 text-sm text-[#2d332b] focus-visible:border-[#397a52] focus-visible:ring-1 focus-visible:ring-[#397a52]"
+                  className="h-7 min-w-0 flex-1 rounded-lg border-[#bcd6b8] bg-white/85 px-2 text-sm text-[#203d2a] shadow-inner focus-visible:border-[#397a52] focus-visible:ring-1 focus-visible:ring-[#397a52]"
                   maxLength={160}
                   onBlur={() => onRenameSubmit(conversation)}
                   onChange={(event) =>
@@ -157,7 +159,7 @@ function ConversationRows({
                   ) : (
                     <MessageIcon
                       aria-hidden="true"
-                      className="shrink-0 text-[#3f4a40]"
+                      className="shrink-0 text-[#55715a] transition-transform duration-200 group-hover:rotate-[-5deg] group-hover:scale-105 motion-reduce:transform-none"
                       size={18}
                       strokeWidth={1.7}
                     />
@@ -165,7 +167,7 @@ function ConversationRows({
                   <span
                     className={`flex min-w-0 flex-1 items-center gap-2 text-base leading-6 transition-opacity duration-150 ${
                       collapsed ? "opacity-0" : "opacity-100"
-                    } ${generating ? "font-medium text-[#2f6845]" : "font-normal text-[#2d332b]"}`}
+                    } ${generating ? "font-medium text-[#245c3a]" : "font-normal text-[#203d2a]"}`}
                   >
                     <span className="min-w-0 flex-1 truncate">
                       {conversation.title}
@@ -186,7 +188,7 @@ function ConversationRows({
                   <DropdownMenuTrigger asChild>
                     <Button
                       aria-label={`${conversation.title} · 更多操作`}
-                      className={`absolute top-1/2 right-[7px] flex size-[22px] -translate-y-1/2 items-center justify-center rounded-md border-0 bg-transparent p-0 text-[#7a7468] transition-opacity duration-150 hover:bg-[rgba(91,76,59,0.1)] ${focusRing} ${
+                      className={`absolute top-1/2 right-[7px] flex size-[22px] -translate-y-1/2 items-center justify-center rounded-lg border-0 bg-transparent p-0 text-[#6f7d70] transition-[opacity,background-color,color] duration-150 hover:bg-white/75 hover:text-[#2f6845] ${focusRing} ${
                         collapsed
                           ? "pointer-events-none opacity-0"
                           : selected
@@ -207,12 +209,12 @@ function ConversationRows({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent
                     align="end"
-                    className="w-[172px] rounded-xl border border-[#e8dfd0] bg-[#fffcf5] p-1.5 text-[#3f3428] shadow-[0_12px_32px_rgba(63,52,40,0.14)]"
+                    className="w-[172px] rounded-2xl border border-[#cfe2ca] bg-white/94 p-1.5 text-[#314b38] shadow-[0_18px_42px_-24px_rgba(35,82,49,0.5)] backdrop-blur-xl"
                     side="bottom"
                     sideOffset={4}
                   >
                     <DropdownMenuItem
-                      className="h-9 gap-2.5 rounded-lg px-2.5 text-sm focus:bg-[#f3ede4]"
+                      className="h-9 gap-2.5 rounded-xl px-2.5 text-sm focus:bg-[#e3f2de]"
                       onSelect={() =>
                         onTogglePinned(conversation.id, !conversation.pinned)
                       }
@@ -225,15 +227,15 @@ function ConversationRows({
                       {conversation.pinned ? "取消置顶" : "置顶对话"}
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      className="h-9 gap-2.5 rounded-lg px-2.5 text-sm focus:bg-[#f3ede4]"
+                      className="h-9 gap-2.5 rounded-xl px-2.5 text-sm focus:bg-[#e3f2de]"
                       onSelect={() => onBeginRename(conversation)}
                     >
                       <RenameIcon aria-hidden="true" className="size-4" />
                       重命名
                     </DropdownMenuItem>
-                    <DropdownMenuSeparator className="mx-1 bg-[#eee5d7]" />
+                    <DropdownMenuSeparator className="mx-1 bg-[#d9e8d5]" />
                     <DropdownMenuItem
-                      className="h-9 gap-2.5 rounded-lg px-2.5 text-sm"
+                      className="h-9 gap-2.5 rounded-xl px-2.5 text-sm"
                       onSelect={() => onDeleteConversation(conversation.id)}
                       variant="destructive"
                     >
@@ -325,7 +327,7 @@ export function ChatSidebar({
         <Button
           aria-hidden={inert || undefined}
           aria-label="关闭侧栏"
-          className="fixed inset-0 z-20 h-auto w-auto rounded-none border-0 bg-[#2d332b]/15 p-0 backdrop-blur-[1px] hover:bg-[#2d332b]/15 md:hidden"
+          className="fixed inset-0 z-20 h-auto w-auto rounded-none border-0 bg-[#173b27]/18 p-0 backdrop-blur-[2px] hover:bg-[#173b27]/18 md:hidden"
           onClick={onCloseMobile}
           inert={inert ? true : undefined}
           type="button"
@@ -341,17 +343,25 @@ export function ChatSidebar({
       >
         <aside
           aria-label="对话侧栏"
-          className="absolute inset-0 overflow-hidden border-r border-[#e8dfd0] bg-[#fff9ee]"
+          className="absolute inset-0 overflow-hidden border-r border-[#cfe2ca] bg-[linear-gradient(180deg,rgba(247,251,241,0.98)_0%,rgba(237,248,234,0.97)_58%,rgba(255,249,238,0.96)_100%)] shadow-[12px_0_40px_-38px_rgba(35,82,49,0.7)]"
         >
-          <div className="absolute left-5 top-3.5">
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute -top-16 -left-14 size-48 rounded-full bg-[#bfe7ae]/40 blur-3xl motion-safe:animate-pulse"
+          />
+          <span
+            aria-hidden="true"
+            className="keya-gentle-bob pointer-events-none absolute right-5 bottom-12 h-24 w-14 rotate-[28deg] rounded-[90%_10%_90%_10%] bg-[#8dcc7f]/12"
+          />
+          <div className="absolute top-3.5 left-5 z-10">
             <Link
               aria-label="返回课芽首页"
-              className={`flex h-10 w-max items-center gap-3 rounded-lg px-2 text-lg font-semibold leading-6 text-foreground transition-colors duration-150 hover:bg-[rgba(91,76,59,0.07)] ${focusRing}`}
+              className={`group flex h-10 w-max items-center gap-3 rounded-xl px-2 text-lg font-semibold leading-6 text-[#24452f] transition-colors duration-200 hover:bg-white/65 ${focusRing}`}
               href="/"
               onClick={onCloseMobile}
             >
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-white">
-                <Sprout aria-hidden="true" size={16} strokeWidth={2} />
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-[12px] bg-[linear-gradient(145deg,#74c67a,#397a52)] text-white shadow-[0_8px_18px_-10px_rgba(47,104,69,0.95)] ring-2 ring-white/75 transition-transform duration-300 group-hover:rotate-6 group-hover:scale-105 motion-reduce:transform-none">
+                <Sprout aria-hidden="true" size={17} strokeWidth={2} />
               </span>
               <span
                 className={`whitespace-nowrap transition-opacity duration-150 ${
@@ -363,7 +373,7 @@ export function ChatSidebar({
             </Link>
 
             <Link
-              className={`mt-4 flex h-9 w-max items-center gap-3 rounded-lg px-2 text-base leading-6 text-[#3f4a40] transition-colors duration-150 hover:bg-[rgba(91,76,59,0.07)] ${focusRing}`}
+              className={`mt-4 flex h-9 w-max items-center gap-3 rounded-xl px-2 text-base leading-6 text-[#48624d] transition-colors duration-200 hover:bg-[#dff1d9]/75 hover:text-[#2f6845] ${focusRing}`}
               href="/"
               onClick={onCloseMobile}
             >
@@ -383,7 +393,7 @@ export function ChatSidebar({
             </Link>
 
             <Button
-              className={`${controlClass} mt-4 bg-[#f3ede4] text-[#2d332b]`}
+              className={`${controlClass} mt-4 bg-white/72 text-[#2f6845] shadow-[0_10px_24px_-20px_rgba(47,104,69,0.75)] ring-1 ring-[#d5e7d0] hover:bg-white`}
               onClick={() => {
                 onNewConversation();
                 onCloseMobile?.();
@@ -406,7 +416,7 @@ export function ChatSidebar({
               </span>
             </Button>
 
-            <label className="mt-1 flex h-9 w-[259px] items-center gap-3 rounded-lg px-2 text-[#3f4a40] focus-within:ring-2 focus-within:ring-[#397a52] focus-within:ring-offset-1 focus-within:ring-offset-[#fff9ee]">
+            <label className="mt-1 flex h-9 w-[259px] items-center gap-3 rounded-xl px-2 text-[#55715a] transition-colors focus-within:bg-white/70 focus-within:text-[#2f6845] focus-within:ring-2 focus-within:ring-[#397a52] focus-within:ring-offset-1 focus-within:ring-offset-[#edf8ea]">
               <SearchIcon
                 aria-hidden="true"
                 className="shrink-0"
@@ -416,7 +426,7 @@ export function ChatSidebar({
               <span className="sr-only">搜索对话</span>
               <Input
                 aria-label="搜索对话"
-                className={`h-[34px] w-[213px] min-w-0 rounded-none border-0 bg-transparent p-0 text-base leading-6 font-semibold tracking-[-0.12px] text-[#3f4a40] outline-none placeholder:text-[#7a7468] focus-visible:border-0 focus-visible:ring-0 md:text-base ${
+                className={`h-[34px] w-[213px] min-w-0 rounded-none border-0 bg-transparent p-0 text-base leading-6 font-semibold tracking-[-0.12px] text-[#314b38] outline-none placeholder:text-[#768677] focus-visible:border-0 focus-visible:ring-0 md:text-base ${
                   collapsed ? "pointer-events-none opacity-0" : "opacity-100"
                 }`}
                 onChange={(event) => setQuery(event.target.value)}
@@ -429,7 +439,7 @@ export function ChatSidebar({
 
             <Button
               aria-expanded={pinnedOpen}
-              className={`${controlClass} mt-1 text-[#2d332b]`}
+              className={`${controlClass} mt-1 text-[#314b38]`}
               onClick={() => setPinnedOpen((open) => !open)}
               type="button"
               variant="ghost"
@@ -480,7 +490,7 @@ export function ChatSidebar({
 
             <Button
               aria-expanded={historyOpen}
-              className={`${controlClass} mt-1 text-[#2d332b]`}
+              className={`${controlClass} mt-1 text-[#314b38]`}
               onClick={() => setHistoryOpen((open) => !open)}
               type="button"
               variant="ghost"
@@ -534,7 +544,7 @@ export function ChatSidebar({
 
         <Button
           aria-label={collapsed ? "展开左侧栏" : "收起左侧栏"}
-          className={`absolute left-full top-[38px] z-[31] hidden h-[35px] w-[27px] items-center justify-center rounded-r-[10px] border border-l-0 border-[#e8dfd0] bg-[#fffcf5] py-[11px] pr-2 pl-[7px] text-[#3f4a40] shadow-[2px_1px_8px_rgba(45,51,43,0.05)] transition-[left,background-color] duration-300 hover:bg-[#f6eedc] md:flex ${focusRing}`}
+          className={`absolute top-[38px] left-full z-[31] hidden h-[35px] w-[27px] items-center justify-center rounded-r-[12px] border border-l-0 border-[#c9dfc4] bg-white/88 py-[11px] pr-2 pl-[7px] text-[#397a52] shadow-[6px_6px_18px_-14px_rgba(47,104,69,0.8)] backdrop-blur transition-[left,background-color] duration-300 hover:bg-[#edf8ea] md:flex ${focusRing}`}
           onClick={onToggleCollapsed}
           size="icon"
           type="button"

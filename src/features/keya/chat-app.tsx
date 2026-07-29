@@ -2155,7 +2155,15 @@ export function ChatApp({
   };
 
   return (
-    <main className="fixed inset-0 flex overflow-hidden bg-[#fff9ee] text-[#2d332b]">
+    <main className="keya-workspace-shell fixed inset-0 isolate flex overflow-hidden text-[#203d2a]">
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute -top-32 left-[18%] size-80 rounded-full bg-[#bfe7ae]/30 blur-3xl motion-safe:animate-pulse"
+      />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-24 -bottom-24 size-72 rounded-full bg-[#f6d67d]/20 blur-3xl motion-safe:animate-pulse [animation-delay:1.4s]"
+      />
       {Object.values(activeCourseTasks).map((task) => {
         const taskStatus = conversations.find(
           (conversation) => conversation.id === task.conversationId,
@@ -2188,10 +2196,10 @@ export function ChatApp({
         selectedConversationId={selectedId}
       />
 
-      <section className="relative flex min-w-0 flex-1 overflow-hidden">
+      <section className="relative z-[1] flex min-w-0 flex-1 overflow-hidden">
         <Button
           aria-label="打开对话侧栏"
-          className="absolute top-3 left-3 z-20 flex size-10 items-center justify-center rounded-full border border-[#e8dfd0] bg-[#fffcf5] p-0 text-[#3f4a40] shadow-sm hover:bg-[#fffcf5] focus-visible:outline-2 focus-visible:outline-[#397a52] md:hidden"
+          className="absolute top-3 left-3 z-20 flex size-10 items-center justify-center rounded-full border border-[#c9dfc4] bg-white/85 p-0 text-[#397a52] shadow-[0_10px_24px_-16px_rgba(47,104,69,0.75)] backdrop-blur transition duration-200 hover:-translate-y-0.5 hover:border-[#9ec59a] hover:bg-white focus-visible:outline-2 focus-visible:outline-[#397a52] motion-reduce:transform-none md:hidden"
           onClick={() => setMobileOpen(true)}
           inert={workspaceIsModal ? true : undefined}
           size="icon"
@@ -2259,7 +2267,7 @@ export function ChatApp({
         {rightPanelOpen ? (
           <Button
             aria-label="关闭学习空间"
-            className="absolute inset-0 z-10 h-auto w-auto rounded-none border-0 bg-[#2d332b]/10 p-0 hover:bg-[#2d332b]/10 lg:hidden"
+            className="absolute inset-0 z-10 h-auto w-auto rounded-none border-0 bg-[#173b27]/15 p-0 backdrop-blur-[2px] hover:bg-[#173b27]/15 lg:hidden"
             onClick={() => setRightPanelOpen(false)}
             type="button"
             variant="ghost"
@@ -2270,7 +2278,7 @@ export function ChatApp({
           aria-hidden={!rightPanelOpen}
           aria-label="学习空间"
           aria-modal={workspaceIsModal ? true : undefined}
-          className={`min-h-0 shrink-0 overflow-hidden border-l border-border bg-card transition-[width,visibility] duration-300 max-[1199px]:absolute max-[1199px]:inset-y-0 max-[1199px]:right-0 max-[1199px]:z-20 ${
+          className={`min-h-0 shrink-0 overflow-hidden border-l border-[#cfe2ca] bg-white/90 shadow-[-18px_0_46px_-38px_rgba(35,82,49,0.65)] backdrop-blur-xl transition-[width,visibility] duration-300 max-[1199px]:absolute max-[1199px]:inset-y-0 max-[1199px]:right-0 max-[1199px]:z-20 ${
             rightPanelOpen
               ? "visible w-[410px] max-md:w-full"
               : "invisible w-0 border-l-0"
@@ -2306,7 +2314,7 @@ export function ChatApp({
           aria-controls="course-learning-workspace"
           aria-expanded={rightPanelOpen}
           aria-label={rightPanelOpen ? "收起右侧栏" : "展开右侧栏"}
-          className="absolute top-[38px] right-0 z-30 flex h-[35px] w-[27px] items-center justify-center rounded-l-[10px] border border-r-0 border-[#e8dfd0] bg-[#fffcf5] p-0 text-[#3f4a40] hover:bg-[#fffcf5] focus-visible:outline-2 focus-visible:outline-[#397a52]"
+          className="absolute top-[38px] right-0 z-30 flex h-[35px] w-[27px] items-center justify-center rounded-l-[12px] border border-r-0 border-[#c9dfc4] bg-white/88 p-0 text-[#397a52] shadow-[-6px_6px_18px_-14px_rgba(47,104,69,0.8)] backdrop-blur transition-colors hover:bg-[#edf8ea] focus-visible:outline-2 focus-visible:outline-[#397a52]"
           onClick={() => setRightPanelOpen((value) => !value)}
           ref={workspaceToggleRef}
           size="icon"

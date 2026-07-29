@@ -154,7 +154,7 @@ export function ChatComposer({
   };
 
   return (
-    <div className="w-full shrink-0 px-6 pb-[calc(22px+env(safe-area-inset-bottom))] max-sm:px-4 max-sm:pb-[calc(16px+env(safe-area-inset-bottom))]">
+    <div className="relative z-[2] w-full shrink-0 bg-[linear-gradient(180deg,rgba(237,248,234,0)_0%,rgba(237,248,234,0.88)_42%,rgba(237,248,234,0.98)_100%)] px-6 pt-2 pb-[calc(22px+env(safe-area-inset-bottom))] max-sm:px-4 max-sm:pb-[calc(16px+env(safe-area-inset-bottom))]">
       <form
         className="relative mx-auto w-full max-w-[750px]"
         onSubmit={handleSubmit}
@@ -167,7 +167,7 @@ export function ChatComposer({
           >
             {attachments.map((attachment) => (
               <li
-                className="min-w-0 rounded-2xl border border-[#e8dfd0] bg-[#fffcf5] px-3 py-2.5 text-xs text-[#6f6355] shadow-sm"
+                className="keya-page-reveal min-w-0 rounded-[20px] border border-[#cfe2ca] bg-white/86 px-3 py-2.5 text-xs text-[#607061] shadow-[0_14px_30px_-24px_rgba(47,104,69,0.55)] backdrop-blur"
                 key={attachment.id}
               >
                 <div className="flex min-w-0 items-center gap-2">
@@ -195,8 +195,8 @@ export function ChatComposer({
                       attachment.status === "error"
                         ? "bg-[#fff0ec] text-[#a54f3d]"
                         : attachment.status === "uploading"
-                          ? "bg-[#f3ece3] text-[#6f6a60]"
-                          : "bg-[#edf5ee] text-[#397a52]"
+                          ? "bg-[#f5f0df] text-[#766438]"
+                          : "bg-[#e3f2de] text-[#397a52]"
                     }`}
                   >
                     {attachment.status === "uploading"
@@ -208,7 +208,7 @@ export function ChatComposer({
                   {attachment.status === "error" && onRetryAttachment ? (
                     <Button
                       aria-label={`重试解析 ${attachment.name}`}
-                      className="size-7 rounded-full text-[#7a7468] hover:bg-[#f3ece3] hover:text-[#3f4a40]"
+                      className="size-7 rounded-full text-[#718072] hover:bg-[#edf8ea] hover:text-[#2f6845]"
                       disabled={busy}
                       onClick={() => onRetryAttachment(attachment.id)}
                       size="icon-xs"
@@ -221,7 +221,7 @@ export function ChatComposer({
                   {onRemoveAttachment ? (
                     <Button
                       aria-label={`移除资料 ${attachment.name}`}
-                      className="size-7 rounded-full text-[#7a7468] hover:bg-[#f3ece3] hover:text-[#3f4a40]"
+                      className="size-7 rounded-full text-[#718072] hover:bg-[#edf8ea] hover:text-[#2f6845]"
                       disabled={busy}
                       onClick={() => onRemoveAttachment(attachment.id)}
                       size="icon-xs"
@@ -234,7 +234,7 @@ export function ChatComposer({
                 </div>
 
                 {attachment.status === "uploading" ? (
-                  <p className="mt-2 pl-6 leading-5 text-[#7a7468]">
+                  <p className="mt-2 pl-6 leading-5 text-[#708071]">
                     正在提取正文并生成可引用摘要…
                   </p>
                 ) : attachment.status === "error" ? (
@@ -244,7 +244,7 @@ export function ChatComposer({
                 ) : (
                   <div className="mt-2 pl-6">
                     {attachment.summary ? (
-                      <p className="line-clamp-2 leading-5 text-[#7a7468]">
+                      <p className="line-clamp-2 leading-5 text-[#708071]">
                         {attachment.summary}
                       </p>
                     ) : null}
@@ -257,7 +257,7 @@ export function ChatComposer({
                             className="size-3.5 transition-transform group-open:rotate-180"
                           />
                         </summary>
-                        <ul className="mt-2 grid gap-1 border-l border-[#dceadf] pl-3 leading-5 text-[#7a7468]">
+                        <ul className="mt-2 grid gap-1 border-l border-[#cfe2ca] pl-3 leading-5 text-[#708071]">
                           {attachment.keyFacts.slice(0, 4).map((fact) => (
                             <li key={fact}>• {fact}</li>
                           ))}
@@ -285,7 +285,7 @@ export function ChatComposer({
           >
             {suggestions.map(({ Icon, text }) => (
               <Button
-                className="flex h-[33.5px] items-center gap-1.5 rounded-full border-0 bg-[rgba(253,250,247,0.7)] py-0 pr-4 pl-3.5 text-base leading-6 font-normal whitespace-nowrap shadow-[0_1.5px_1.7px_rgba(233,222,210,0.38),0_4px_14.5px_rgba(232,214,194,0.29)] transition-colors hover:bg-[rgba(253,251,248,0.95)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#397a52]"
+                className="keya-card-lift group flex h-[35px] items-center gap-1.5 rounded-full border border-white/80 bg-white/68 py-0 pr-4 pl-3.5 text-[15px] leading-6 font-normal whitespace-nowrap text-[#3f6349] shadow-[0_10px_26px_-20px_rgba(47,104,69,0.55)] backdrop-blur hover:border-[#c7dfc1] hover:bg-white hover:text-[#2f6845] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#397a52]"
                 key={text}
                 onClick={() => handleSuggestion(text)}
                 type="button"
@@ -293,7 +293,7 @@ export function ChatComposer({
               >
                 <Icon
                   aria-hidden="true"
-                  className="size-3.5 shrink-0 text-[#397a52]"
+                  className="size-3.5 shrink-0 text-[#58a765] transition-transform duration-200 group-hover:rotate-[-8deg] group-hover:scale-110 motion-reduce:transform-none"
                   size={14}
                   strokeWidth={1.7}
                 />
@@ -305,11 +305,11 @@ export function ChatComposer({
 
         <div
           aria-busy={busy}
-          className="flex min-h-[60px] items-center gap-2 rounded-[30px] border border-[#e8dfd0] bg-[#fffcf5] px-3 py-[11px] shadow-[0_2px_4px_rgba(91,76,59,0.05),0_8px_24px_rgba(91,76,59,0.06)]"
+          className="flex min-h-[62px] items-center gap-2 rounded-[31px] border border-[#bdd8b9] bg-white/88 px-3 py-[11px] shadow-[0_20px_48px_-28px_rgba(47,104,69,0.58),inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur-xl transition duration-300 focus-within:-translate-y-0.5 focus-within:border-[#78a875] focus-within:bg-white focus-within:shadow-[0_24px_52px_-26px_rgba(47,104,69,0.7),0_0_0_5px_rgba(116,170,112,0.12)] motion-reduce:transform-none"
         >
           <Button
             aria-label="上传文件"
-            className="flex size-6 shrink-0 items-center justify-center rounded-full border-0 p-0 text-[#7a7468] transition-transform hover:scale-[1.08] hover:bg-transparent hover:text-[#3f4a40] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#397a52]"
+            className="flex size-7 shrink-0 items-center justify-center rounded-full border-0 p-0 text-[#6f806f] transition duration-200 hover:rotate-90 hover:scale-[1.08] hover:bg-[#edf8ea] hover:text-[#2f6845] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#397a52] motion-reduce:transform-none"
             disabled={busy || attachments.length >= 3 || !onFilesSelected}
             onClick={() => fileInputRef.current?.click()}
             size="icon-xs"
@@ -339,12 +339,12 @@ export function ChatComposer({
 
           {contextLabel ? (
             <Badge
-              className="flex h-auto shrink-0 items-center gap-1 overflow-visible rounded-full border-0 bg-[rgba(57,122,82,0.12)] px-2 py-1 text-xs font-medium text-[#2f6845]"
+              className="flex h-auto shrink-0 items-center gap-1 overflow-visible rounded-full border border-[#cfe2ca] bg-[#e3f2de] px-2 py-1 text-xs font-medium text-[#2f6845]"
               variant="secondary"
             >
               <Presentation
                 aria-hidden="true"
-                className="size-[15px]! shrink-0 text-[#dbc5ad]"
+                className="size-[15px]! shrink-0 text-[#f0ae36]"
                 size={15}
                 strokeWidth={1.7}
               />
@@ -354,7 +354,7 @@ export function ChatComposer({
 
           <Textarea
             aria-label="消息输入"
-            className="min-h-6 w-auto min-w-0 flex-1 resize-none overflow-y-auto rounded-none border-0 bg-transparent p-0 pr-1 text-sm leading-6 text-[#2d332b] outline-none [field-sizing:fixed] placeholder:text-[#7a7468] focus-visible:border-0 focus-visible:ring-0"
+            className="min-h-6 w-auto min-w-0 flex-1 resize-none overflow-y-auto rounded-none border-0 bg-transparent p-0 pr-1 text-sm leading-6 text-[#294d34] outline-none [field-sizing:fixed] placeholder:text-[#778778] focus-visible:border-0 focus-visible:ring-0"
             onChange={(event) => {
               resizeTextarea(event.currentTarget);
               onDraftChange(event.currentTarget.value);
@@ -368,7 +368,7 @@ export function ChatComposer({
 
           <Button
             aria-label="语音输入"
-            className="flex size-6 shrink-0 items-center justify-center rounded-full border-0 p-0 text-[#7a7468] transition hover:scale-[1.06] hover:bg-[rgba(57,122,82,0.14)] hover:text-[#2f6845] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#397a52]"
+            className="flex size-7 shrink-0 items-center justify-center rounded-full border-0 p-0 text-[#6f806f] transition duration-200 hover:scale-[1.06] hover:bg-[#e3f2de] hover:text-[#2f6845] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#397a52] motion-reduce:transform-none"
             size="icon-xs"
             type="button"
             variant="ghost"
@@ -385,7 +385,7 @@ export function ChatComposer({
             aria-label={
               taskRunning ? "暂停生成" : taskPaused ? "继续生成" : "发送"
             }
-            className="flex size-8 shrink-0 items-center justify-center rounded-full border-0 p-0 text-white transition enabled:bg-[#397a52] enabled:hover:scale-[1.04] enabled:hover:bg-[#2f6845] enabled:focus-visible:outline-2 enabled:focus-visible:outline-offset-2 enabled:focus-visible:outline-[#397a52] disabled:pointer-events-auto disabled:cursor-not-allowed disabled:bg-[rgba(91,76,59,0.18)] disabled:opacity-100 disabled:hover:bg-[rgba(91,76,59,0.18)]"
+            className="flex size-9 shrink-0 items-center justify-center rounded-full border-0 p-0 text-white shadow-none transition duration-200 enabled:bg-[linear-gradient(145deg,#68b96f,#397a52)] enabled:shadow-[0_10px_22px_-10px_rgba(47,104,69,0.9)] enabled:hover:-translate-y-0.5 enabled:hover:scale-[1.05] enabled:hover:bg-[linear-gradient(145deg,#74c67a,#2f6845)] enabled:hover:shadow-[0_13px_26px_-10px_rgba(47,104,69,0.95)] enabled:focus-visible:outline-2 enabled:focus-visible:outline-offset-2 enabled:focus-visible:outline-[#397a52] disabled:pointer-events-auto disabled:cursor-not-allowed disabled:bg-[#d7e3d5] disabled:text-[#8b998b] disabled:opacity-100 disabled:hover:bg-[#d7e3d5] motion-reduce:transform-none"
             disabled={
               taskRunning
                 ? !onPause

@@ -12,20 +12,21 @@
     BlinkMacSystemFont, "Segoe UI", sans-serif;
   --app-font-mono: var(--font-geist-mono), "SFMono-Regular", Consolas,
     "Liberation Mono", monospace;
-  --keya-ink: #2d332b;
-  --keya-canvas: #fff9ee;
-  --keya-paper: #fffcf5;
-  --keya-muted: #7a7468;
-  --keya-ink-soft: #3f4a40;
-  --keya-muted-soft: #9a8e7c;
-  --keya-line: #e8dfd0;
-  --keya-pill: #f6eedc;
+  --keya-ink: #203d2a;
+  --keya-canvas: #eef8ea;
+  --keya-paper: #fbfff7;
+  --keya-muted: #607562;
+  --keya-ink-soft: #365840;
+  --keya-muted-soft: #78907c;
+  --keya-line: #cfe3cb;
+  --keya-pill: #e3f1df;
   --keya-sprout: #397a52;
   --keya-sprout-dark: #2f6845;
   --keya-mango: #f2b84b;
-  --keya-user-bubble: #f3ebd9;
-  --keya-card-shadow: 0 1px 0 rgb(45 51 43 / 5%),
-    0 4px 16px -8px rgb(45 51 43 / 10%);
+  --keya-user-bubble: #dcefd8;
+  --keya-card-shadow: 0 1px 0 rgb(36 92 58 / 5%),
+    0 12px 32px -22px rgb(36 92 58 / 32%);
+  --keya-card-shadow-hover: 0 18px 42px -24px rgb(36 92 58 / 42%);
   --background: var(--keya-canvas);
   --foreground: var(--keya-ink);
   --card: var(--keya-paper);
@@ -38,26 +39,26 @@
   --secondary-foreground: var(--keya-ink);
   --muted: var(--keya-pill);
   --muted-foreground: var(--keya-muted);
-  --accent: #fce6b6;
+  --accent: #ffe2a0;
   --accent-foreground: var(--keya-ink);
   --destructive: oklch(0.577 0.245 27.325);
   --border: var(--keya-line);
   --input: var(--keya-line);
   --ring: var(--keya-sprout);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --chart-1: #74c67a;
+  --chart-2: #397a52;
+  --chart-3: #245c3a;
+  --chart-4: #f2b84b;
+  --chart-5: #9ed9a3;
   --radius: 0.75rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: var(--keya-paper);
+  --sidebar-foreground: var(--keya-ink);
+  --sidebar-primary: var(--keya-sprout);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--keya-pill);
+  --sidebar-accent-foreground: var(--keya-ink);
+  --sidebar-border: var(--keya-line);
+  --sidebar-ring: var(--keya-sprout);
 }
 
 @theme inline {
@@ -159,6 +160,280 @@ body {
 
 .keya-fade-up {
   animation: keya-fade-up 200ms ease-out both;
+}
+
+.keya-product-shell {
+  background:
+    radial-gradient(circle at 7% 8%, rgb(255 255 255 / 92%), transparent 20rem),
+    radial-gradient(circle at 92% 5%, rgb(180 226 177 / 48%), transparent 24rem),
+    radial-gradient(circle, rgb(57 122 82 / 10%) 1px, transparent 1.2px),
+    linear-gradient(150deg, #f7fcf2 0%, var(--keya-canvas) 52%, #e5f3e2 100%);
+  background-position:
+    center,
+    center,
+    0 0,
+    center;
+  background-size:
+    auto,
+    auto,
+    26px 26px,
+    auto;
+}
+
+.keya-workspace-shell {
+  background:
+    radial-gradient(circle at 78% -18%, rgb(167 218 164 / 34%), transparent 32rem),
+    linear-gradient(145deg, #f8fcf4 0%, #edf7e9 100%);
+}
+
+.keya-page-reveal {
+  animation: keya-page-reveal 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.keya-gentle-bob {
+  animation: keya-gentle-bob 5.4s ease-in-out infinite;
+}
+
+.keya-card-lift {
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.keya-card-lift:hover {
+  box-shadow: var(--keya-card-shadow-hover);
+  transform: translateY(-3px);
+}
+
+@keyframes keya-page-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes keya-gentle-bob {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-1deg);
+  }
+  50% {
+    transform: translateY(-7px) rotate(1deg);
+  }
+}
+
+.keya-home-page {
+  --keya-home-mint: #edf8ea;
+  --keya-home-mint-soft: #f4faef;
+  --keya-home-leaf: #74c67a;
+  background: var(--keya-home-mint);
+}
+
+.keya-home-hero {
+  background:
+    radial-gradient(circle at 52% -8%, rgb(255 255 255 / 88%), transparent 36%),
+    linear-gradient(180deg, #f7fbf1 0%, #edf8e8 58%, #e7f4e4 100%);
+}
+
+.keya-home-hero::before {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(
+    circle,
+    rgb(57 122 82 / 13%) 1.1px,
+    transparent 1.2px
+  );
+  background-position: 0 0;
+  background-size: 25px 25px;
+  content: "";
+  -webkit-mask-image: linear-gradient(to bottom, black, transparent 74%);
+  mask-image: linear-gradient(to bottom, black, transparent 74%);
+  opacity: 0.45;
+}
+
+.keya-home-hero::after {
+  position: absolute;
+  right: -8%;
+  bottom: -145px;
+  left: -8%;
+  height: 230px;
+  border-radius: 50% 50% 0 0;
+  background: #edf8ea;
+  content: "";
+}
+
+.keya-home-gallery {
+  background:
+    radial-gradient(circle at 88% 12%, rgb(255 255 255 / 72%), transparent 24%),
+    linear-gradient(180deg, #edf8ea 0%, #f3f9ed 52%, #f8fcf2 100%);
+}
+
+@keyframes keya-home-rise {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes keya-home-sprout-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(42px) scale(0.82);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(-4px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes keya-home-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-9px);
+  }
+}
+
+@keyframes keya-home-orbit {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(12px, -14px, 0) scale(1.04);
+  }
+}
+
+@keyframes keya-home-sway {
+  0%,
+  100% {
+    transform: rotate(-4deg);
+  }
+  50% {
+    transform: rotate(7deg);
+  }
+}
+
+@keyframes keya-home-twinkle {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: translateY(0) rotate(45deg) scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-8px) rotate(45deg) scale(1.12);
+  }
+}
+
+@keyframes keya-home-card-rise {
+  from {
+    opacity: 0;
+    transform: translateY(28px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.keya-home-reveal {
+  animation: keya-home-rise 640ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.keya-home-sprout-enter {
+  animation: keya-home-sprout-enter 820ms 120ms
+    cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.keya-home-sprout-bob {
+  animation: keya-home-bob 5.4s 1s ease-in-out infinite;
+}
+
+.keya-home-orb {
+  animation: keya-home-orbit 7s ease-in-out infinite;
+}
+
+.keya-home-orb-delayed {
+  animation-delay: -3.5s;
+}
+
+.keya-home-leaf {
+  transform-origin: 50% 100%;
+  animation: keya-home-sway 5.8s ease-in-out infinite;
+}
+
+.keya-home-leaf-delayed {
+  animation-delay: -2.7s;
+}
+
+.keya-home-sparkle {
+  animation: keya-home-twinkle 3.8s ease-in-out infinite;
+}
+
+.keya-home-sparkle-delayed {
+  animation-delay: -1.9s;
+}
+
+.keya-home-feature-card {
+  animation: keya-home-card-rise 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .keya-home-reveal,
+  .keya-home-sprout-enter,
+  .keya-home-sprout-bob,
+  .keya-home-orb,
+  .keya-home-leaf,
+  .keya-home-sparkle,
+  .keya-home-feature-card,
+  .keya-page-reveal,
+  .keya-gentle-bob {
+    animation: none;
+  }
+
+  .keya-card-lift:hover {
+    transform: none;
+  }
+
+  .motion-reduce\:transform-none {
+    rotate: none !important;
+    scale: none !important;
+    transform: none !important;
+    translate: none !important;
+  }
+
+  .keya-latest-button {
+    translate: -50% 0 !important;
+  }
+
+  .keya-product-shell *,
+  .keya-product-shell *::before,
+  .keya-product-shell *::after,
+  .keya-workspace-shell *,
+  .keya-workspace-shell *::before,
+  .keya-workspace-shell *::after,
+  .keya-home-page *,
+  .keya-home-page *::before,
+  .keya-home-page *::after {
+    scroll-behavior: auto;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .dark {

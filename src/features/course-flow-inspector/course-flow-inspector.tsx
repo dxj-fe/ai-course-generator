@@ -17,6 +17,7 @@ import {
   RotateCcw,
   Search,
   Sparkles,
+  Sprout,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -225,14 +226,17 @@ export function CourseFlowInspector() {
   };
 
   return (
-    <main className={styles.shell}>
-      <header className={styles.header}>
+    <main className={`${styles.shell} keya-workspace-shell`}>
+      <header className={`${styles.header} keya-page-reveal`}>
         <div className={styles.brandBlock}>
           <Link className={styles.backLink} href="/chat">
             <ArrowLeft size={15} />
             返回课芽
           </Link>
-          <div className={styles.eyebrow}>COURSE PIPELINE / 2026.07.28</div>
+          <div className={styles.eyebrow}>
+            <Sprout aria-hidden="true" size={13} strokeWidth={2} />
+            COURSE PIPELINE / 2026.07.28
+          </div>
           <h1>一句话，如何变成一门课</h1>
           <p>
             当前真实代码链路 · {FLOW_NODES.length} 个节点 ·{" "}
@@ -297,7 +301,7 @@ export function CourseFlowInspector() {
           </div>
 
           {searchOpen ? (
-            <div className={styles.searchPanel}>
+            <div className={`${styles.searchPanel} keya-page-reveal`}>
               <Search size={16} />
               <input
                 autoFocus
@@ -339,7 +343,7 @@ export function CourseFlowInspector() {
           ) : null}
 
           {risksOpen ? (
-            <div className={styles.riskPanel}>
+            <div className={`${styles.riskPanel} keya-page-reveal`}>
               <div className={styles.riskPanelHeader}>
                 <div>
                   <span>WHY IT FAILS</span>

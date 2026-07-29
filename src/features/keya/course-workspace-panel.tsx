@@ -115,22 +115,26 @@ export function CourseWorkspacePanel({
   return (
     <section
       aria-labelledby="course-workspace-title"
-      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card text-foreground"
+      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[linear-gradient(180deg,rgba(247,252,242,0.98)_0%,rgba(237,248,234,0.95)_100%)] text-foreground"
     >
-      <header className="min-w-0 shrink-0 border-b border-border px-5 py-6">
-        <p className="text-xs font-semibold tracking-[0.08em] text-primary">
+      <header className="relative min-w-0 shrink-0 overflow-hidden border-b border-[#cfe2ca] bg-[radial-gradient(circle_at_100%_0%,rgba(166,218,162,0.42),transparent_15rem),rgba(255,255,255,0.52)] px-5 py-6">
+        <span
+          aria-hidden="true"
+          className="keya-gentle-bob pointer-events-none absolute -right-3 bottom-2 h-20 w-11 rotate-[30deg] rounded-[90%_10%_90%_10%] bg-[#74c67a]/13"
+        />
+        <p className="relative z-[1] text-xs font-semibold tracking-[0.12em] text-primary">
           课程草稿
         </p>
         <h2
-          className="mt-2 text-[22px] leading-8 font-semibold"
+          className="relative z-[1] mt-2 text-[22px] leading-8 font-semibold text-[#284d34]"
           id="course-workspace-title"
         >
           {topic}
         </h2>
-        <p className="mt-2 line-clamp-3 text-sm leading-6 text-muted-foreground">
+        <p className="relative z-[1] mt-2 line-clamp-3 text-sm leading-6 text-[#667568]">
           {summary}
         </p>
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="relative z-[1] mt-4 flex flex-wrap gap-2">
           <MetaPill>
             {intent?.audienceAgeRange.label ?? brief?.audience ?? "初学者"}
           </MetaPill>
@@ -195,7 +199,7 @@ export function CourseWorkspacePanel({
               </p>
             </div>
             {complete ? (
-              <span className="rounded-full bg-[#e8f3ea] px-2.5 py-1 text-[11px] font-medium text-primary">
+              <span className="rounded-full border border-[#cfe2ca] bg-[#dff1d9] px-2.5 py-1 text-[11px] font-medium text-primary shadow-[0_8px_18px_-16px_rgba(47,104,69,0.65)]">
                 已完成
               </span>
             ) : null}
@@ -204,24 +208,24 @@ export function CourseWorkspacePanel({
           {sections.length > 0 ? (
             <ol
               aria-label="课程章节列表"
-              className="scrollbar-hide mt-4 min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain rounded-2xl border border-border bg-card"
+              className="scrollbar-hide mt-4 min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain rounded-[22px] border border-[#cfe2ca] bg-white/72 shadow-[0_18px_40px_-34px_rgba(35,82,49,0.65)] backdrop-blur-sm"
             >
               {sections.map((section) => {
                 const interactive =
                   section.status === "completed" && Boolean(section.html);
                 return (
                   <li
-                    className="border-b border-border last:border-b-0"
+                    className="border-b border-[#dcead8] last:border-b-0"
                     key={section.id}
                   >
                     <button
                       aria-current={section.id === effectiveSelectedId ? "true" : undefined}
                       className={`flex min-h-[70px] w-full items-center gap-3 px-3 py-3 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary disabled:cursor-not-allowed ${
                         section.id === effectiveSelectedId
-                          ? "bg-[var(--keya-pill)]"
+                          ? "bg-[#dff1d9]/88 shadow-[inset_3px_0_0_#397a52]"
                           : interactive
-                            ? "hover:bg-[#fff9ee]"
-                            : "bg-card"
+                            ? "hover:bg-[#edf8ea]/80"
+                            : "bg-white/35"
                       }`}
                       disabled={!interactive}
                       onClick={() => setSelectedId(section.id)}
@@ -253,7 +257,11 @@ export function CourseWorkspacePanel({
               })}
             </ol>
           ) : (
-            <div className="mt-4 rounded-2xl border border-dashed border-[#cbdccf] bg-[#f5f8f3] px-4 py-5">
+            <div className="keya-page-reveal relative mt-4 overflow-hidden rounded-[22px] border border-dashed border-[#aecdac] bg-[linear-gradient(145deg,rgba(255,255,255,0.72),rgba(227,242,222,0.72))] px-4 py-5 shadow-[0_16px_34px_-30px_rgba(47,104,69,0.55)]">
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute -right-3 -bottom-6 h-20 w-11 rotate-[35deg] rounded-[90%_10%_90%_10%] bg-[#74c67a]/12"
+              />
               <p className="text-sm font-medium text-foreground">
                 {taskStatus === "paused"
                   ? "课程规划已暂停"
@@ -271,10 +279,10 @@ export function CourseWorkspacePanel({
         {selectedSection?.html ? (
           <section
             aria-labelledby="course-draft-preview-title"
-            className="min-w-0 shrink-0 rounded-[22px] border border-border bg-[#fff9ee] p-3"
+            className="keya-card-lift min-w-0 shrink-0 rounded-[22px] border border-[#c5ddc1] bg-white/78 p-3 shadow-[0_14px_30px_-26px_rgba(47,104,69,0.6)] backdrop-blur-sm"
           >
             <div className="flex items-center gap-3 px-1">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#e8f3ea] text-primary">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-[14px] bg-[#dff1d9] text-primary shadow-[0_8px_18px_-14px_rgba(47,104,69,0.7)]">
                 <Eye aria-hidden="true" size={17} strokeWidth={1.8} />
               </span>
               <div className="min-w-0">
@@ -289,7 +297,7 @@ export function CourseWorkspacePanel({
                 </p>
               </div>
               <Button
-                className="ml-auto h-8 shrink-0 rounded-full px-3 text-xs text-primary hover:bg-[var(--keya-pill)]"
+                className="ml-auto h-8 shrink-0 rounded-full border border-transparent px-3 text-xs text-primary hover:border-[#d5e7d0] hover:bg-[#edf8ea]"
                 onClick={() => onOpenHtmlPreview(selectedSection.id)}
                 type="button"
                 variant="ghost"
@@ -316,7 +324,7 @@ export function CourseWorkspacePanel({
                   {failure.description} 已完成的 {completedCount} 节内容不会丢失。
                 </p>
                 <Button
-                  className="mt-3 h-9 rounded-xl bg-primary px-3 text-xs font-semibold text-white hover:bg-[var(--keya-sprout-dark)]"
+                  className="mt-3 h-9 rounded-xl bg-[linear-gradient(145deg,#68b96f,#397a52)] px-3 text-xs font-semibold text-white shadow-[0_9px_20px_-13px_rgba(47,104,69,0.82)] transition duration-200 hover:-translate-y-0.5 hover:bg-[linear-gradient(145deg,#74c67a,#2f6845)] motion-reduce:transform-none"
                   disabled={busy}
                   onClick={onResumeCourse}
                   type="button"
@@ -343,7 +351,7 @@ export function CourseWorkspacePanel({
 
         {completedCount > 0 && onOpenCoursePlayer ? (
           <Button
-            className="h-12 w-full shrink-0 rounded-xl bg-primary text-sm font-semibold text-white shadow-sm hover:bg-[var(--keya-sprout-dark)]"
+            className="h-12 w-full shrink-0 rounded-2xl bg-[linear-gradient(145deg,#68b96f,#397a52)] text-sm font-semibold text-white shadow-[0_14px_28px_-15px_rgba(47,104,69,0.9)] transition duration-200 hover:-translate-y-0.5 hover:bg-[linear-gradient(145deg,#74c67a,#2f6845)] hover:shadow-[0_17px_32px_-15px_rgba(47,104,69,0.95)] motion-reduce:transform-none"
             onClick={onOpenCoursePlayer}
             type="button"
           >
@@ -354,7 +362,7 @@ export function CourseWorkspacePanel({
 
         {complete ? (
           <Button
-            className="h-10 w-full shrink-0 rounded-xl border-border bg-card text-xs text-muted-foreground hover:bg-[var(--keya-pill)]"
+            className="h-10 w-full shrink-0 rounded-2xl border-[#c5ddc1] bg-white/78 text-xs text-[#667568] shadow-[0_10px_22px_-18px_rgba(47,104,69,0.55)] hover:bg-white hover:text-[#2f6845]"
             disabled={exporting}
             onClick={onExportCourse}
             type="button"
@@ -428,14 +436,14 @@ function SectionStatusIcon({
 }) {
   if (status === "completed") {
     return (
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-white">
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-[11px] bg-[linear-gradient(145deg,#74c67a,#397a52)] text-white shadow-[0_8px_16px_-10px_rgba(47,104,69,0.9)]">
         <Check aria-hidden="true" size={14} strokeWidth={2.2} />
       </span>
     );
   }
   if (status === "running") {
     return (
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-full border-2 border-[#e0a126] text-[#b77700]">
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-[11px] border-2 border-[#e0a126] bg-[#fff9e8] text-[#b77700] shadow-[0_7px_16px_-12px_rgba(183,119,0,0.8)]">
         <LoaderCircle
           aria-hidden="true"
           className="motion-safe:animate-spin"
@@ -447,20 +455,20 @@ function SectionStatusIcon({
   }
   if (status === "paused") {
     return (
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#d9bd85] bg-[#fbf4e6] text-[#946f32]">
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-[11px] border border-[#d9bd85] bg-[#fbf4e6] text-[#946f32]">
         <CirclePause aria-hidden="true" size={14} strokeWidth={1.8} />
       </span>
     );
   }
   if (status === "failed") {
     return (
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#d99779] text-[#a85e3c]">
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-[11px] border border-[#d99779] bg-[#fff5ef] text-[#a85e3c]">
         <CircleX aria-hidden="true" size={13} strokeWidth={1.8} />
       </span>
     );
   }
   return (
-    <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#b6aea1] text-xs font-medium text-muted-foreground">
+    <span className="flex size-7 shrink-0 items-center justify-center rounded-[11px] border border-[#bcd6b8] bg-[#edf8ea]/70 text-xs font-medium text-[#778778]">
       {order}
     </span>
   );
@@ -468,7 +476,7 @@ function SectionStatusIcon({
 
 function MetaPill({ children }: { children: React.ReactNode }) {
   return (
-    <span className="rounded-full border border-border bg-[var(--keya-pill)] px-3 py-1 text-xs text-muted-foreground">
+    <span className="rounded-full border border-[#c5ddc1] bg-white/64 px-3 py-1 text-xs text-[#5f7562] shadow-[0_8px_18px_-16px_rgba(47,104,69,0.55)]">
       {children}
     </span>
   );

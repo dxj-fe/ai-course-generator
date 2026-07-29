@@ -1,10 +1,10 @@
 .shell {
-  --ink: #293128;
-  --muted: #7d776c;
-  --paper: #fffaf0;
-  --canvas: #f7f1e5;
-  --line: #ded5c4;
-  background: var(--paper);
+  --ink: #203c2a;
+  --muted: #667568;
+  --paper: #f8fcf4;
+  --canvas: #eaf5e6;
+  --line: #cfe1ca;
+  background: transparent;
   color: var(--ink);
   display: flex;
   flex-direction: column;
@@ -15,8 +15,11 @@
 
 .header {
   align-items: flex-end;
-  background: rgb(255 250 240 / 94%);
+  background:
+    radial-gradient(circle at 86% -30%, rgb(174 220 161 / 54%), transparent 26rem),
+    rgb(248 252 244 / 94%);
   border-bottom: 1px solid var(--line);
+  box-shadow: 0 16px 36px -34px rgb(47 104 69 / 55%);
   display: flex;
   flex: 0 0 auto;
   justify-content: space-between;
@@ -32,16 +35,26 @@
 
 .backLink {
   align-items: center;
-  color: var(--muted);
+  background: rgb(255 255 255 / 68%);
+  border: 1px solid #d4e5d0;
+  border-radius: 999px;
+  color: #397a52;
   display: inline-flex;
   font-size: 12px;
   gap: 6px;
   margin-bottom: 13px;
-  transition: color 150ms ease;
+  min-height: 34px;
+  padding: 0 12px;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    transform 150ms ease;
 }
 
 .backLink:hover {
-  color: var(--ink);
+  background: #fff;
+  border-color: #9fc69a;
+  transform: translateY(-1px);
 }
 
 .eyebrow,
@@ -52,6 +65,12 @@
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.15em;
+}
+
+.eyebrow {
+  align-items: center;
+  display: flex;
+  gap: 6px;
 }
 
 .brandBlock h1 {
@@ -77,7 +96,7 @@
 .headerActions button,
 .sourceLink {
   align-items: center;
-  background: transparent;
+  background: rgb(255 255 255 / 62%);
   border: 1px solid var(--line);
   border-radius: 999px;
   display: inline-flex;
@@ -85,6 +104,17 @@
   gap: 7px;
   min-height: 38px;
   padding: 0 14px;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    transform 150ms ease;
+}
+
+.headerActions button:hover,
+.sourceLink:hover {
+  background: #fff;
+  border-color: #a8cda2;
+  transform: translateY(-1px);
 }
 
 .summaryButton {
@@ -123,7 +153,7 @@
 
 .toolbar {
   align-items: center;
-  background: var(--paper);
+  background: rgb(248 252 244 / 94%);
   border-bottom: 1px solid var(--line);
   display: flex;
   flex: 0 0 51px;
@@ -168,8 +198,8 @@
 .toolbarActions button:hover,
 .filters .filterActive,
 .toolbarActions .toolActive {
-  background: #eee6d8;
-  color: var(--ink);
+  background: #e2f1dd;
+  color: #2f6845;
 }
 
 .filters i {
@@ -195,9 +225,9 @@
 .canvasViewport {
   background-color: var(--canvas);
   background-image:
-    linear-gradient(rgb(65 82 65 / 4%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(65 82 65 / 4%) 1px, transparent 1px),
-    radial-gradient(circle, rgb(57 122 82 / 16%) 1px, transparent 1.2px);
+    linear-gradient(rgb(57 122 82 / 5%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(57 122 82 / 5%) 1px, transparent 1px),
+    radial-gradient(circle, rgb(57 122 82 / 18%) 1px, transparent 1.2px);
   background-position: 0 0, 0 0, 0 0;
   background-size: 80px 80px, 80px 80px, 16px 16px;
   cursor: grab;
@@ -269,9 +299,9 @@
 
 .flowNode {
   --node-accent: #397a52;
-  background: #fffdf7;
-  border: 1px solid #d8d0c1;
-  border-radius: 15px;
+  background: #fffef9;
+  border: 1px solid #cfe0c9;
+  border-radius: 18px;
   box-shadow:
     0 1px 0 rgb(45 51 43 / 7%),
     0 11px 26px -20px rgb(45 51 43 / 38%);
@@ -288,7 +318,7 @@
 
 .flowNode::before {
   background: var(--node-accent);
-  border-radius: 15px 15px 0 0;
+  border-radius: 18px 18px 0 0;
   content: "";
   height: 4px;
   left: -1px;
@@ -387,8 +417,8 @@
 
 .canvasHint {
   align-items: center;
-  background: rgb(255 250 240 / 88%);
-  border: 1px solid rgb(222 213 196 / 80%);
+  background: rgb(248 252 244 / 90%);
+  border: 1px solid rgb(207 225 202 / 88%);
   border-radius: 999px;
   bottom: 15px;
   color: var(--muted);
@@ -403,7 +433,7 @@
 
 .zoomControls {
   align-items: center;
-  background: rgb(255 250 240 / 94%);
+  background: rgb(248 252 244 / 94%);
   border: 1px solid var(--line);
   border-radius: 9px;
   bottom: 15px;
@@ -424,8 +454,8 @@
 }
 
 .zoomControls button:hover {
-  background: #eee6d8;
-  color: var(--ink);
+  background: #e2f1dd;
+  color: #2f6845;
 }
 
 .zoomControls span {
@@ -456,7 +486,7 @@
 
 .inspectorToggle {
   align-items: center;
-  background: #fffcf5;
+  background: #f8fcf4;
   border: 1px solid var(--line);
   border-radius: 9px 0 0 9px;
   color: var(--muted);
@@ -544,7 +574,7 @@
 
 .modelCallout {
   align-items: center;
-  background: #edf3e9;
+  background: #e8f4e3;
   border-left: 3px solid #397a52;
   display: flex;
   gap: 12px;
@@ -626,8 +656,8 @@
 
 .note {
   align-items: flex-start;
-  background: #f3eee3;
-  color: #71695e;
+  background: #f0f6eb;
+  color: #617064;
   display: flex;
   font-size: 11px;
   gap: 9px;
@@ -646,8 +676,8 @@
 }
 
 .files code {
-  background: #f3eee3;
-  color: #5d6259;
+  background: #edf6e9;
+  color: #48604e;
   display: block;
   font-family: var(--app-font-mono);
   font-size: 9px;
@@ -717,7 +747,7 @@
 .searchResults button {
   align-items: center;
   background: transparent;
-  border-bottom: 1px solid #eee6d8;
+  border-bottom: 1px solid #e1ebde;
   display: grid;
   gap: 10px;
   grid-template-columns: 26px minmax(110px, auto) 1fr;
@@ -727,7 +757,7 @@
 }
 
 .searchResults button:hover {
-  background: #f4eee2;
+  background: #f0f7ec;
 }
 
 .searchResults span,
@@ -784,7 +814,7 @@
 }
 
 .riskList button:hover {
-  background: #f5eee2;
+  background: #f2f7ee;
 }
 
 .riskList button > span {
