@@ -9,91 +9,53 @@ vi.mock("@/components/site-header", () => ({
   SiteHeader: () => <header>header</header>,
 }));
 vi.mock("@/features/keya/home-hero", () => ({
-  HomeHero: ({
-    featuredWorks,
+  HomeHero: () => <section>hero</section>,
+}));
+vi.mock("@/features/keya/recommended-course-showcase", () => ({
+  RecommendedCourseShowcase: ({
+    initialData,
   }: {
-    featuredWorks: Array<{ courseId: string }>;
+    initialData: { items: Array<{ id: string }> };
   }) => (
-    <section data-featured={featuredWorks.map(({ courseId }) => courseId).join(",")}>
-      featured
+    <section data-recommended={initialData.items.map(({ id }) => id).join(",")}>
+      recommendations
     </section>
   ),
 }));
-vi.mock("@/features/keya/work-gallery", () => ({
-  WorkGallery: ({ works }: { works: Array<{ courseId: string }> }) => (
-    <section data-gallery={works.map(({ courseId }) => courseId).join(",")}>
-      gallery
-    </section>
-  ),
-}));
-vi.mock("@/server/courses/course-history-service", () => ({
-  courseHistoryService: { list: mocks.list },
+vi.mock("@/server/recommendations/recommended-course-registry", () => ({
+  listRecommendedCourses: mocks.list,
 }));
 
 import Home from "../../../src/app/page";
 
-describe("homepage course selection", () => {
-  it("features only fully generated courses while preserving all history below", async () => {
-    const items = [
-      historyItem("course-complete", {
-        status: "completed",
-        exportable: true,
-        completedPages: 3,
-        totalPages: 3,
-        latestRun: { status: "completed" },
-      }),
-      historyItem("course-paused", {
-        status: "completed",
-        exportable: true,
-        completedPages: 3,
-        totalPages: 3,
-        latestRun: { status: "paused" },
-      }),
-      historyItem("course-running", {
-        status: "running",
-        completedPages: 1,
-        totalPages: 3,
-      }),
-      historyItem("course-failed", {
-        status: "failed",
-        completedPages: 1,
-        totalPages: 3,
-      }),
-      historyItem("course-incomplete", {
-        status: "completed",
-        exportable: true,
-        completedPages: 2,
-        totalPages: 3,
-      }),
-    ];
-    mocks.list.mockResolvedValue({ items, total: items.length, unavailableCount: 0 });
+describe("homepage recommendations", () => {
+  it("uses the backend recommendation batch without loading personal history", async () => {
+    mocks.list.mockReturnValue({
+      items: [
+        { id: "recommended-math-functions" },
+        { id: "recommended-chinese-analects" },
+        { id: "recommended-english-conversation" },
+      ],
+    });
 
     const markup = renderToStaticMarkup(await Home());
 
-    expect(markup).toContain('data-featured="course-complete"');
+    expect(mocks.list).toHaveBeenCalledWith(0);
     expect(markup).toContain(
-      'data-gallery="course-complete,course-paused,course-running,course-failed,course-incomplete"',
+      'data-recommended="recommended-math-functions,recommended-chinese-analects,recommended-english-conversation"',
     );
+    expect(markup).not.toContain("gallery");
+  });
+
+  it("uses the recommendation cursor for the native no-JavaScript fallback", async () => {
+    mocks.list.mockReturnValue({ items: [{ id: "recommended-science-sky" }] });
+
+    renderToStaticMarkup(
+      await Home({
+        searchParams: Promise.resolve({ recommendationCursor: "3" }),
+      }),
+    );
+
+    expect(mocks.list).toHaveBeenCalledWith(3);
   });
 });
-
-function historyItem(
-  courseId: string,
-  overrides: Record<string, unknown>,
-) {
-  return {
-    courseId,
-    title: courseId,
-    prompt: "生成课程",
-    status: "running",
-    currentStage: "page_writer",
-    totalPages: 3,
-    completedPages: 0,
-    referenceCount: 0,
-    runCount: 1,
-    exportable: false,
-    startedAt: "2026-07-22T03:00:00.000Z",
-    updatedAt: "2026-07-22T03:05:00.000Z",
-    ...overrides,
-  };
-}

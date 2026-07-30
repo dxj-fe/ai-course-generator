@@ -334,6 +334,15 @@ export {
   type CourseRunSummary,
 } from "./course-history";
 export {
+  RecommendedCourseDomainSchema,
+  RecommendedCourseIdSchema,
+  RecommendedCourseListResponseSchema,
+  RecommendedCourseSummarySchema,
+  type RecommendedCourseDomain,
+  type RecommendedCourseListResponse,
+  type RecommendedCourseSummary,
+} from "./recommended-course";
+export {
   ConversationIdSchema,
   ConversationListResponseSchema,
   ConversationMessageIdSchema,

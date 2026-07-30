@@ -2,33 +2,39 @@ import type { Metadata } from "next";
 
 import { SiteHeader } from "@/components/site-header";
 import { HomeHero } from "@/features/keya/home-hero";
-import { WorkGallery } from "@/features/keya/work-gallery";
-import { courseHistoryService } from "@/server/courses/course-history-service";
+import { RecommendedCourseShowcase } from "@/features/keya/recommended-course-showcase";
+import { listRecommendedCourses } from "@/server/recommendations/recommended-course-registry";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "探索",
-  description: "发现课程作品，或者从一次对话开始学习。",
+  description: "发现精选示例课程，或者从一次对话开始学习。",
 };
 
-export default async function Home() {
-  const history = await courseHistoryService.list();
-  const completedCourses = history.items.filter(
-    (course) =>
-      course.status === "completed" &&
-      course.exportable &&
-      course.totalPages > 0 &&
-      course.completedPages === course.totalPages &&
-      (!course.latestRun || course.latestRun.status === "completed"),
-  );
+interface HomeProps {
+  searchParams?: Promise<{
+    recommendationCursor?: string;
+  }>;
+}
+
+export default async function Home({ searchParams }: HomeProps = {}) {
+  const params = searchParams ? await searchParams : {};
+  const parsedCursor = Number(params.recommendationCursor ?? 0);
+  const cursor =
+    Number.isInteger(parsedCursor) &&
+    parsedCursor >= 0 &&
+    parsedCursor <= 10_000
+      ? parsedCursor
+      : 0;
+  const recommendations = listRecommendedCourses(cursor);
 
   return (
     <>
       <SiteHeader />
       <main className="keya-home-page pt-16">
-        <HomeHero featuredWorks={completedCourses.slice(0, 3)} />
-        <WorkGallery works={history.items} />
+        <HomeHero />
+        <RecommendedCourseShowcase initialData={recommendations} />
       </main>
     </>
   );

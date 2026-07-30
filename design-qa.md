@@ -1,3 +1,64 @@
+# 首页精选课程推荐 Design QA（2026-07-30）
+
+## Evidence
+
+- Source visual truth: `/Users/eeo/.codex/generated_images/019fb0c5-df59-7f33-a249-6f170a90a063/call_lVX98BayLsYNPryGvkN7JKQg.png`
+- Source pixels: `1487 × 1058`，按 `1×` 处理。
+- Browser-rendered implementation: `/Users/eeo/Projects/ai-course-generator/design-qa-home-1440x1024-final.png`
+- Implementation viewport: `1440 × 1024` CSS pixels，按 `1×` 处理。
+- State: `/` 首页；默认推荐批次展示数学、语文、英语三门课程；一张主推卡和两张辅助卡。
+- Density normalization: 源图与实现宽高比均约为 `1.406`；组合对比中分别等比缩放到 `730 × 520`，未加入浏览器外框或额外裁切。
+- Full-view comparison: `/Users/eeo/Projects/ai-course-generator/design-qa-comparison-full-final.png`
+- Focused course-region comparison: `/Users/eeo/Projects/ai-course-generator/design-qa-comparison-courses-final.png`
+- Mobile evidence:
+  - `/Users/eeo/Projects/ai-course-generator/design-qa-home-mobile-390x844.png`
+  - `/Users/eeo/Projects/ai-course-generator/design-qa-home-mobile-courses-390x844.png`
+  - `/Users/eeo/Projects/ai-course-generator/design-qa-home-mobile-supporting-390x844.png`
+
+## Findings
+
+- 未发现仍需处理的 P0、P1 或 P2 问题。
+- [P3] 实现保留了现有 Keya 设计系统的“课程灵感”眉题，源图只使用更轻量的萌芽标记。该差异不会改变信息层级，并让首页与现有产品语言保持一致，因此作为有意偏差保留。
+- [P3] 三张课程图片为针对实际推荐内容生成的独立高清资产，构图和题材与源图一致，但不是从组合稿中裁出的像素副本。由于源稿没有可复用的单张原始素材，这一差异符合资产质量与可维护性要求。
+
+## Required fidelity surfaces
+
+- Fonts and typography: 沿用项目现有中文无衬线字体栈；标题、正文、标签和元信息的字重、字号、行高及截断层级与源图一致。课程标题在桌面和 `390px` 宽度下均无破坏性换行或溢出。
+- Spacing and layout rhythm: 桌面首屏保持 `96px` 内容边距、一主两辅卡片网格、`24–26px` 圆角和轻量投影；精选区底边为约 `1002px`，完整落在 `1024px` 视口内。移动端改为纵向堆叠，根节点 `clientWidth` 与 `scrollWidth` 均为 `390px`。
+- Colors and visual tokens: 继续使用 Keya 的米白、浅芽绿、深森林绿与低对比边框；渐变、阴影和交互色均复用当前视觉体系，文字对比清晰。
+- Image quality and asset fidelity: 三张首批图片均为独立 `1600 × 900` JPEG；题材、裁切和色调分别对应函数山路、《论语》书卷与英语对话。iframe 预览不使用占位图、CSS 插画、emoji 或手工 SVG，并通过 sandbox/CSP 隔离。
+- Copy and content: “本周精选”“先看看一门好课可以长成什么样”“换一批灵感”与源设计意图一致；课程主题、摘要、页数、时长和生成提示相互一致，并能独立解释产品能力。
+- Icons and affordances: 使用项目既有 Lucide 图标体系；换批、页数、时长和进入课程的方向提示具有一致线宽、对齐和可见焦点。
+- Responsiveness and accessibility: `390 × 844` 下无横向溢出，主推卡与辅助卡按阅读顺序堆叠；按钮、链接、区块标题、live region、iframe 隐藏语义和 reduced-motion 处理完整。
+
+## Primary interactions tested
+
+1. 浏览器点击“换一批灵感”后，主推课程从“看懂函数的变化”切换为“天空为什么会变色”，并进入 `/?recommendationCursor=3`；正常 hydration 状态使用推荐 API 无刷新更新，原生 GET 表单作为脚本未就绪时的渐进增强兜底。
+2. 浏览器点击主推卡“查看课程”后进入 `/chat`，URL 携带完整课程生成 prompt 和 `source=recommendation`。
+3. 在 `390 × 844` 视口滚动检查主推卡和两张辅助卡，布局、裁切、点击目标及阅读顺序正常。
+4. 推荐 API 客户端、Route Handler、四个批次轮换、十二领域覆盖和预览 HTML 均有自动化测试。
+5. 桌面初始状态、换批后状态与移动端状态的浏览器控制台 error/warn 均为 `0`。
+
+## Comparison history
+
+1. 首轮截图 `/Users/eeo/Projects/ai-course-generator/design-qa-home-1440x1024-v1.png` 发现精选课程整体落到首屏以下，属于 P1 的主要区域比例偏差；课程 iframe 内的重复标题被裁切，属于 P2 的内容密度问题。
+2. 缩短桌面 hero 的上下留白、将精选区桌面顶部间距调整为 `32px`，并在卡片缩略宽度下隐藏预览 HTML 的文字叠层，仅保留真实封面资产。
+3. 中间截图 `/Users/eeo/Projects/ai-course-generator/design-qa-home-1440x1024-v2.png` 暴露旧 iframe 缓存和进场动画的瞬时状态；预览 URL 增加版本参数后重新捕获。
+4. 最终截图与源图在同一组合输入中复核；一主两辅结构、首屏比例、图片质量、字体、间距、颜色和文案均无剩余 P0/P1/P2 差异。
+
+## Implementation checklist
+
+- [x] 首页改为一张主推课程与两张辅助课程。
+- [x] 推荐课程由后端注册表和 API 提供，每批三门。
+- [x] 十二个领域均至少包含一门高质量课程。
+- [x] “换一批灵感”支持 API 无刷新更新及原生 GET 兜底。
+- [x] 每门课程提供高质量生成 prompt、结构化大纲和 sandboxed HTML 预览。
+- [x] 桌面、移动端、控制台、自动化测试和生产构建通过。
+
+final result: passed
+
+---
+
 # 课芽课程简报选中态与动态章节 Design QA
 
 ## Evidence

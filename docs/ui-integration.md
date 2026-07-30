@@ -33,6 +33,12 @@ The removed `AiPlayground` and older course-planner panels are historical traini
 
 ## Handbook capability map
 
+- Homepage course inspiration (2026-07-30): `/` renders a server-owned, twelve-domain
+  recommendation registry through `GET /api/recommendations/courses`. The first three-course batch
+  is rendered with the page, while “换一批灵感” advances through the same validated API contract.
+  Each recommendation has a curated learning outcome, page outline, generation Prompt, real cover
+  asset, and script-free sandboxed HTML preview; selecting one carries its Prompt into `/chat`.
+  Personal generated/history items remain exclusively under `/course`.
 - Course generation flow inspector (2026-07-28): `/analysis/course-generation` is a read-only engineering artifact with a pan/zoom node canvas and source-backed node inspector. It documents the existing `/chat` → task API → LangGraph → Page Worker → QA/Repair → SSE/player chain without owning product state, calling business APIs, exposing private reasoning, or creating an alternative course-generation entry.
 - Days 1–6: model calls, tool calls, and Agent events feed the `/chat` controller and public event timeline.
 - Days 7–12: `CourseIntent`, `CoursePlan`, professional briefs, and `PageContentDSL` render in the learning workspace.

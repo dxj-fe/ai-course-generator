@@ -273,6 +273,12 @@ body {
     linear-gradient(180deg, #edf8ea 0%, #f3f9ed 52%, #f8fcf2 100%);
 }
 
+.keya-home-recommendations {
+  background:
+    radial-gradient(circle at 84% 8%, rgb(255 255 255 / 78%), transparent 27%),
+    linear-gradient(180deg, #edf8ea 0%, #f3f9ed 100%);
+}
+
 @keyframes keya-home-rise {
   from {
     opacity: 0;
@@ -394,14 +400,19 @@ body {
   animation: keya-home-card-rise 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+.keya-recommendation-card {
+  animation: keya-home-card-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .keya-home-reveal,
   .keya-home-sprout-enter,
   .keya-home-sprout-bob,
   .keya-home-orb,
   .keya-home-leaf,
-  .keya-home-sparkle,
-  .keya-home-feature-card,
+    .keya-home-sparkle,
+    .keya-home-feature-card,
+    .keya-recommendation-card,
   .keya-page-reveal,
   .keya-gentle-bob {
     animation: none;
