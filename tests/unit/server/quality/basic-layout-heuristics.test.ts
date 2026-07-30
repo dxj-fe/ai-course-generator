@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { basicLayoutHeuristics } from "../../../../src/server/quality/basic-layout-heuristics";
+import { basicLayoutHeuristics } from "../../../../src/server/course/page/quality/basic-layout";
 import { AssetGenerationResultSchema } from "../../../../src/shared/course-schema";
 import { pageContentDsl } from "../../../fixtures/course-design";
 import { buildValidGeneratedHtml } from "../../../fixtures/generated-html";

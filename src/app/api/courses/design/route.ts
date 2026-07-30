@@ -4,8 +4,8 @@ import {
   AiRequestError,
   createAiErrorResponse,
   createTraceId,
-} from "@/server/ai/error";
-import { runCourseDesignWorkflow } from "@/server/workflows/course-design-workflow";
+} from "@/server/infra/ai/error";
+import { runCourseDesignWorkflow } from "@/server/course";
 import {
   CourseIntentSchema,
   CoursePlanSchema,

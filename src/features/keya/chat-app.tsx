@@ -25,7 +25,7 @@ import {
   generateCoursePageHtml,
   writeCoursePage,
 } from "@/features/course-planner/lib/course-planner-api";
-import { courseGenerationToKeyaRun } from "@/features/course-planner/lib/course-generation-adapter";
+import { projectCourseStateToKeyaRun } from "@/shared/course-view/keya-run";
 import {
   downloadCourseArchive,
 } from "@/features/course-planner/lib/course-library-api";
@@ -218,7 +218,7 @@ function mapStreamedCourseRun(
   state: CourseGenerationState,
   task: ActiveCourseTask,
 ) {
-  return courseGenerationToKeyaRun(
+  return projectCourseStateToKeyaRun(
     {
       courseId: state.courseId,
       traceId: state.traceId,
@@ -1107,7 +1107,7 @@ export function ChatApp({
       courseId,
       prompt: taskPrompt,
       traceId,
-      source: "langgraph",
+      source: "agent-v2",
       startedAt,
       planner: { status: "running", events: [] },
       design: { status: "idle", events: [] },
@@ -1146,6 +1146,7 @@ export function ChatApp({
         {
           courseId,
           userPrompt: taskPrompt,
+          creationBrief: brief,
           referencePacks,
           ...(pageCount ? { pageCount } : {}),
         },
@@ -1385,6 +1386,9 @@ export function ChatApp({
         {
           courseId,
           userPrompt: run.prompt,
+          creationBrief:
+            courseBriefs[conversationId] ??
+            createCourseCreationBrief(run.prompt),
           ...(pageCount ? { pageCount } : {}),
         },
         { signal: controller.signal, traceId },

@@ -1,166 +1,187 @@
-# 手写兼容课程生成流程
+# 当前 MVP 课程生成流程
 
-> **IMPLEMENTED / 兼容运行时**
->
-> 本文描述 `runCourseGenerationWorkflow` 的手写兼容路径。`/chat` 新任务当前强制使用 LangGraph，真实默认链路见[从提示词到最终 HTML](./prompt-to-html-current-flow.md)。两种运行时复用同一 Agent、Page Worker、Schema、质量闭环和 checkpoint 语义。
+> 新建课程统一使用 `agent-v2`。`workflow` 和 `langgraph` 只用于读取历史记录，不再是新任务执行入口。
 
-## 兼容入口与完整调用链
-
-`POST /api/courses/generate` 和历史 `source: "workflow"` 任务使用兼容 facade。它先让受约束 Supervisor 调度 Intent、Planner 和 Course Design，再让页面运行层调度隔离 Worker。serial 模式按学习依赖逐页生成；parallel 模式保留依赖作为学习顺序，并独立并发生成页面。Worker 局部更新只有通过串行 merge/checkpoint 队列才能进入课程事实来源。
+## 1. 从产品到运行时
 
 ```mermaid
 flowchart TD
-  Batch["POST /api/courses/generate<br/>或历史 source=workflow task"] --> Facade["runCourseGenerationWorkflow<br/>compatibility facade"]
-  Facade --> Supervisor["SupervisorAgent<br/>structured routing proposal"]
-  Facade --> NodeList["global WorkflowNodes<br/>Intent / Planner / Course Design"]
-  Supervisor --> Guard["runSupervisedWorkflow<br/>allowlist + retry/stop budgets"]
-  NodeList --> Guard
-  Guard --> Runner["runSequentialWorkflow<br/>requiredInputs + produces"]
-
-  Runner --> Intent["Intent node"]
-  Intent --> Planner["Course Planner"]
-
-  subgraph DesignNode ["Course Design node（复用既有子流程）"]
-    Pedagogy["Pedagogy Agent"] --> Story["Story Agent"]
-    Story --> Visual["Visual Director"]
-  end
-
-  Planner --> Pedagogy
-
-  Visual --> WorkerScheduler["course-workers-workflow<br/>serial dependency / parallel independent"]
-  WorkerScheduler --> Mode{"serial / parallel"}
-  Mode --> Pool["Promise Pool<br/>default concurrency = 2"]
-
-  subgraph PageWorker ["isolated generatePageWorker(page)"]
-  Pool --> PageWriter["Page Writer<br/>PageContentDSL"]
-  PageWriter --> AssetSlots{"是否有 asset slots"}
-  AssetSlots -->|"否"| SkipAssets["确定性跳过素材"]
-  AssetSlots -->|"是"| ImagePrompt["Image Prompt Agent<br/>或 request-set cache"]
-  ImagePrompt --> AssetLoop["按 slot 串行解析"]
-  AssetLoop --> AssetCache{"ready asset cache"}
-  AssetCache -->|"hit"| AssetResult["AssetGenerationResult"]
-  AssetCache -->|"miss / stale / bypass"| ImageSkill["GenerateImage Skill"]
-  ImageSkill -->|"ready"| AssetResult
-  ImageSkill -->|"provider failure"| Fallback["typed fallback"]
-  Fallback --> AssetResult
-  AssetResult --> MoreSlots{"仍有素材槽?"}
-  MoreSlots -->|"是"| AssetLoop
-  SkipAssets --> Html["HTML Engineer"]
-  MoreSlots -->|"否"| Html
-  Html --> QA["Page QA<br/>report only"]
-  QA --> PageDone["PageWorkerResult<br/>page_done"]
-  end
-  PageDone --> WorkerMerge["serialized worker merge<br/>state schema + event resequence"]
-  WorkerMerge --> Complete{"全部依赖页面完成?"}
-  Complete -->|"否"| WorkerScheduler
-  Complete -->|"是"| CourseDone["CourseGenerationState completed"]
-
-  Intent -. "partial state + events" .-> Merge["produces 白名单<br/>central merge + state schema"]
-  Planner -. "partial state + events" .-> Merge
-  Visual -. "partial state + events" .-> Merge
-  WorkerMerge -. "page-local state + events" .-> Merge
-  Merge -. "每个已接受边界" .-> Checkpoint["typed checkpoint"]
-  Checkpoint --> CourseStore["CourseStore"]
-  CourseStore --> Response["validated batch JSON response"]
+  Chat["/chat 用户输入"] --> Brief["CourseCreationBrief"]
+  Reference["可选 ReferencePack"] --> Task
+  Brief --> Task["POST /api/courses/tasks"]
+  Task --> Record["CourseTaskRecord source=agent-v2"]
+  Record --> Service["CourseGenerationTaskService"]
+  Service --> Engine["CourseRunEngine"]
+  Engine --> Repo["CourseRun Repository / SQLite"]
+  Repo --> Projector["CourseStateProjector"]
+  Projector --> Service
+  Service --> SSE["既有 task SSE"]
+  SSE --> Keya["/chat 与 /course"]
 ```
 
-## 当前全局调度与页面 Worker 顺序
+Route 只负责校验、创建任务并唤醒后台执行。业务事实由 agent-v2 Repository 保存；Task Service 仍是旧任务状态和 SSE 的单一发布者。
 
-顶层兼容入口仍是 [`runCourseGenerationWorkflow`](../../src/server/workflows/course-generation-workflow.ts)，已有任务服务与测试不需要迁移到新调用方式。它负责创建新状态或校验恢复状态，装配运行上下文与节点列表，再把结果映射回原有成功/失败合同。
+## 2. 课程生成主链
 
-[`course-generation-nodes.ts`](../../src/server/workflows/course-generation-nodes.ts) 继续定义全局节点工厂，Supervisor 只能选择运行层给出的候选。全局设计完成后不再把整课状态交给逐页 Specialist 节点，而是切换到页面 Worker 运行层：
+```mermaid
+flowchart LR
+  B["Brief"] --> A["Architect"]
+  A --> AS["Architecture submission"]
+  AS --> DA["Director 语义验收"]
+  DA -->|"退回"| A
+  DA -->|"接受"| F["原子派发 Page WorkOrder"]
+  F --> W["依赖 wave"]
+  W --> P["Page Builder 并行"]
+  P --> G["Page Gate"]
+  G -->|"未过"| P
+  G -->|"通过"| S["PageSummary 解锁后继页"]
+  S --> W
+  S -->|"全部完成"| M["冻结 Manifest"]
+  M --> R["Reviewer"]
+  R --> D["Director"]
+  D -->|"fix"| W
+  D -->|"replan"| A
+  D -->|"pass"| FG["Final Gate"]
+  FG --> Done["completed"]
+```
 
-1. `Intent` 节点只在状态缺少 `intent` 时运行入口解析；恢复时保留已有产物。
-2. `Planner` 节点消费已校验 `intent` 并生成 `CoursePlan`；确定性适配仍补齐 ID、模板和页面依赖。
-3. `Course Design` 节点复用 [`runCourseDesignWorkflow`](../../src/server/workflows/course-design-workflow.ts)，内部仍严格执行 `Pedagogy -> Story -> Visual`，再投影逐页 `PageWorkerBrief`。
-4. [`runCourseWorkersWorkflow`](../../src/server/workflows/course-workers-workflow.ts) 在 serial 模式根据 `dependsOnPageIds` 计算就绪页面；parallel 模式不让学习顺序依赖串行化生成，而是通过默认并发度 2 的 [`runPromisePool`](../../src/server/workflows/promise-pool.ts) 执行。
-5. 每个 [`generatePageWorker`](../../src/server/workflows/page-worker.ts) 只管理当前页，依次执行 `Page Writer -> Assets -> HTML Engineer -> Page QA`，每阶段最多执行 3 次；HTML 重试继续接收上一次安全校验反馈。
-6. 单页失败不会取消同批其他 Worker，也不会删除已完成页面；依赖失败页面的后继页保持未执行，互不依赖的页面仍可完成。
-7. 所有规划页面完成后，兼容 facade 把课程置为 `completed` 并保存最终 checkpoint。
+## 3. 谁做判断，谁做机械工作
 
-[`runSequentialWorkflow`](../../src/server/workflows/sequential-workflow.ts) 是固定节点列表的唯一通用执行器：运行前检查 `requiredInputs`，执行节点，拒绝 `produces` 之外的 patch，通过集中 merge 复验 `CourseGenerationStateSchema`，然后才在既有稳定边界 checkpoint。节点抛错、缺少输入、缺少声明产物或越权写字段都会转换成带 `nodeName` 的 `WorkflowNodeError`，facade 再映射为原有公开阶段、页面、Agent、错误码和消息。
+| 动作 | 执行者 | 是否调用模型 |
+| --- | --- | --- |
+| 设计整课和 PageTask | Architect | 是 |
+| 判断架构是否值得执行 | Director | 是 |
+| 创建 Page WorkOrder | Repository 命令 | 否 |
+| 检查依赖、并发领取 | CourseRunEngine | 否 |
+| 逐页生成和定向修订 | Page Builder | 是 |
+| 校验单页产物 | Page Gate | 否 |
+| 解锁后继页 | Repository 命令 | 否 |
+| 检查整课跨页质量 | Reviewer | 是 |
+| 选择发布 / 修页 / 重规划 | Director | 是 |
+| 最终发布校验 | Final Gate | 否 |
+| 投影旧 UI 状态 | CourseStateProjector | 否 |
 
-每个 Agent 自己仍使用统一的最小状态、步骤上限和结构化事件合同，见 [`minimal-agent.ts`](../../src/server/agents/core/minimal-agent.ts)。Supervisor 可以在确定性候选中提出 `run / retry / complete / stop`，但不能编造节点、提高预算或绕过输入检查。兼容 Provider 的 union JSON 校验失败时，只在运行层已经证明动作唯一的情况下确定性降级；多个候选仍然失败，白名单边界不放宽。
+这张表是判断“真 Agent”和“假 Agent”的最短标准。机械动作不需要模型，也不应该叫 Supervisor。
 
-## WorkflowNode 合同与边界
+## 4. 当前耐久状态
 
-`WorkflowNode<State, Context, Event>` 只描述协调信息，不是新的模型 Agent：
+业务事实分为四层：
 
-- `name` 是稳定的运行与错误定位名称；
-- `requiredInputs` 声明节点执行前必须可读取的状态值；
-- `produces` 同时声明执行后必须存在的产物，并作为 patch 顶层字段白名单；
-- `run(state, context)` 只返回 `partial state + events`，不能直接持久化整课状态或向 SSE 推送；
-- `runSequentialWorkflow` 是节点 patch 合并的唯一所有者，合并后的完整状态必须再次通过共享 Schema；facade 仍负责开始、失败、完成等课程生命周期迁移。
+```text
+CourseTaskRecord
+  产品任务、source、Brief、取消和 SSE 生命周期
 
-这个合同仍负责全局节点 handoff；Day 25 的页面并发不让多个 Worker 直接合并课程 patch，而是让课程运行层串行接受每个 `PageWorkerUpdate`，因此并发不会破坏课程事件顺序和 checkpoint 所有权。
+CourseRun
+  当前架构、当前页面、当前 Review、阶段、租约
 
-## 素材子流程
+WorkOrder
+  某次 Agent 回合的输入、权限、预算、状态和提交
 
-[`runImageAssetWorkflow`](../../src/server/workflows/image-asset-workflow.ts) 是页面素材阶段的真实实现：
+Artifact
+  架构、页面内容、HTML、质量、摘要、manifest、review
+```
 
-- 先查询完整 `AssetRequest[]` 的 request-set cache；未命中时才调用 Image Prompt Agent。
-- 按素材槽顺序逐个查询 ready asset cache。
-- 未命中、失效或没有可用模型身份时调用 [`GenerateImage Skill`](../../src/server/tools/generate-image-skill.ts)。Skill 是有类型输入输出的工具，不是 Specialist Agent。
-- 生图失败可以返回结构化 fallback，素材 workflow 仍可完成。
-- cache 读写错误被计入公开摘要，但不会阻断生图主链路。
-- 父 workflow 只在整页素材阶段完成后保存该页全部 `assets`。
+工具调用的输入哈希、状态、安全摘要和结果引用另存 `ToolOperation`，公开进度另存 `CourseRunEvent`。ToolOperation 是审计台账，不是通用 exactly-once 或自动重放层。
 
-## Checkpoint、任务服务与 SSE
+五张 agent-v2 表：
 
-[`CourseGenerationTaskService`](../../src/server/tasks/course-generation-task-service.ts) 负责 `queued / running / completed / failed / cancelled` 生命周期，而不是生成课程内容。它把 workflow 的 checkpoint 回调接到：
+- `course_runs`
+- `course_work_orders`
+- `course_artifacts`
+- `course_tool_operations`
+- `course_run_events`
 
-- [`CourseStore`](../../src/server/storage/course-store.ts)：保存可恢复的课程聚合；
-- [`CourseTaskStore`](../../src/server/storage/course-task-store.ts)：保存 task 与 course 的映射及任务终态；
-- [`CourseTaskEventBus`](../../src/server/tasks/course-task-event-bus.ts)：向当前进程的订阅者发布新事件；
-- [`SSE Route`](../../src/app/api/courses/tasks/[taskId]/events/route.ts)：先从 checkpoint 快照或 `Last-Event-ID` 重放，再切到实时订阅。
+Task 层另有 `course_execution_claims`，用 SQLite 唯一键保证同一 `courseId` 只有一个
+queued/running/paused 任务。`courses` 仍保存前端兼容读模型，但所有更新都使用旧
+payload CAS，并同时核对 TaskRecord 的 trace/status。
 
-workflow 会在长耗时 Agent 运行前保存 `agent_start`，并在校验后的阶段结果、页面完成、失败和整课完成处再次 checkpoint。并行 Worker 的 update 先经过单一 Promise 链串行合并，避免两个 checkpoint 覆盖页面结果或重复事件序号。恢复时依据已保存的 DSL、素材、HTML、QA 和页面阶段跳过已完成工作；新的手动恢复会为失败阶段开启一轮新的三次页面预算。
+## 5. 关键事务
 
-SSE 合同由 [`course-task-event.ts`](../../src/shared/course-schema/course-task-event.ts) 定义，只允许：
+以下操作必须原子完成：
 
-- 完整、已校验的课程快照；
-- 结构化公开事件；
-- 与课程 checkpoint 一致的终态。
+1. 创建 CourseRun 和第一张 Architect WorkOrder；
+2. 接受架构并创建恰好 N 张 Page WorkOrder；
+3. 接受页面、切换 current page 指针并解锁依赖页；
+4. 冻结 manifest 并创建 Reviewer WorkOrder；
+5. Review 提交为 submitted 后，Engine 在另一个事务创建 Director round；
+6. 指派返工、标记 stale 页面和创建 fix WorkOrder；
+7. Final Gate 通过后把 CourseRun 置为 completed。
 
-顶层 workflow 在持久化 Agent 事件时只保留 `type`、`stage`、`pageId`、`agent`、`step`、`summary`、时间和 trace 信息，不复制 Agent 原生 `data`，因此不会把 Prompt、模型私有上下文或 chain-of-thought 发送给前端。
+事务中途失败不能留下半套页面任务或半套当前指针。
 
-## 前端数据边界
+## 6. 并行规则
 
-[`course-task-api.ts`](../../src/features/course-planner/lib/course-task-api.ts) 只负责创建和取消任务；[`use-sse-task.ts`](../../src/features/course-planner/hooks/use-sse-task.ts) 把 SSE 消息转换为共享的类型化任务状态。[`ChatApp`](../../src/features/keya/chat-app.tsx) 充当当前产品的 Task Controller，再把状态传给：
+`PageTask.order` 只控制学习顺序。
 
-- [`ChatThread`](../../src/features/keya/chat-thread.tsx) 与 [`CourseRunTimeline`](../../src/features/keya/course-run-timeline.tsx)：公开 Agent 进度、耗时、错误和恢复；
-- [`CourseWorkspacePanel`](../../src/features/keya/course-workspace-panel.tsx)：规划、DSL、素材、HTML、安全预览和质量报告。
+`PageTask.buildDependsOnPageIds` 才控制生成顺序。没有依赖的页同时进入第一波；依赖页面 Page Gate 通过并生成 `PageSummary` 后，后继页才封口输入并进入下一波。
 
-展示组件不直接调用生成业务 API，也不消费框架原生流事件。
+最大并发由任务配置控制，范围 1–5。并发写入仍通过每张 WorkOrder 的 lease、CourseRun 的围栏和 Repository 事务保护。
 
-## 与当前 LangGraph 运行时的关系
+## 7. 恢复规则
 
-[`runCourseGenerationGraphWorkflow`](../../src/server/langgraph/course-generation/run-course-graph.ts) 以同一 `CourseGenerationWorkflowInput`、依赖注入和 `CourseGenerationState` 合同运行完整课程。生产 Graph 从规则型 Supervisor 开始，通过条件边进入全局 Specialist、Page Workers、Retry、Repair、Finalize 或失败终态。
+- CourseRun 同时只能有一个有效 lease owner；
+- WorkOrder 同时只能有一个有效 lease owner；
+- 进程中断后可接管过期 lease；
+- Artifact 不原地覆盖；
+- Repository 事务和 WorkOrder 幂等键避免重复业务派工；
+- 外部工具仍要依靠各自缓存或 Provider 幂等能力缩小重复副作用窗口；
+- 只从 Repository current 指针恢复；
+- 历史 checkpoint 的 `workflow` / `langgraph` 不重新进入旧生成器。
 
-两种运行时现在共同依赖 [`course-generation-runtime.ts`](../../src/server/workflows/course-generation-runtime.ts) 中的初始化、节点执行、公开事件投影、失败、完成和 checkpoint 逻辑。Graph State 的字段直接来自 `CourseGenerationStateSchema.shape`，每个节点输出仍重新通过完整聚合 Schema；没有第二套课程状态模型。
+Next 启动钩子只扫描一次；持续恢复必须运行 `npm run worker:course`，或配置等价的外部调度。
+跨进程暂停靠持久化 TaskRecord 生效：Engine 在工作单边界和每次工具前重读控制态，
+并在退出时释放自己持有的 lease。
 
-`POST /api/courses/tasks` 强制新任务选择 `langgraph`；Task Service 根据持久化 `source` 选择 Graph 或兼容 Workflow。Graph `updates/custom` 已由严格 mapper 转换成现有 checkpoint 和公共事件，再进入同一 EventBus/SSE。运行时失败不会自动切换，因为双跑会重复模型、生图和存储副作用。
+## 8. 质量规则
 
-## QA 与有界 Repair 是 Worker 的页面质量闭环
+单页完成要经过 Page Gate：
 
-[`Page QA Agent`](../../src/server/agents/page-qa-agent.ts) 已接入每个新 Page Worker 的末段；已有 [`/api/pages/qa`](../../src/app/api/pages/qa/route.ts) 仍支持显式重跑：
+- DSL 和 PageTask 一致；
+- 素材覆盖；
+- HTML 合同与安全；
+- 互动和反馈；
+- 页面质量和截图证据。
 
-- QA 只返回 `QualityReport`；
-- QA 不修改 HTML；
-- QA 按内容、教学、排版、风格、HTML、素材六个语义维度报告，旧字段名和 checkpoint 保持兼容；
-- 静态启发式、可选 Playwright 固定视口指标和模型评价合并后由服务端按内容错误优先稳定排序；
-- 截图文件只保存在 `.data/quality-screenshots`，共享报告不暴露服务器路径；截图失败不影响 QA 主流程；
-- QA 结果保存到页面局部 `qualityReport` 并投影到现有六维质量面板；
-- QA 执行失败只使当前 Worker 失败，不抹掉其他成功页面；
-- `shouldRepair=false` 时页面直接完成；否则由确定性分类器选择 located DSL blocks 或 HTML patches，Repair Agent 不能自行选页面、扩大 scope 或宣布通过；
-- 每次 Repair 保存来源报告、issue、目标和公开变更摘要，候选应用后必须经过原合同和 re-QA；只有成功应用并完成 re-QA 才计为质量迭代；
-- 连续三次有效修订没有改善质量向量时触发 `QUALITY_STALLED`；执行失败独立重试，但相同 Schema/model 合同错误只做一次恢复重试；另有 24 次紧急安全上限防止实现错误形成无限循环。
+整课完成还要经过：
 
-## 当前明确不存在的能力
+```text
+CourseManifest
+→ Reviewer
+→ Director publish 决策
+→ Final Gate
+```
 
-- Supervisor 不拥有课程正文能力，也没有人工审批队列。
-- Graph 复用项目领域 checkpoint；LangGraph 原生 checkpoint 格式不会成为产品事实来源或进入前端。
-- QA/Repair 已形成页面质量闭环，但尚未引入人工发布门槛。
-- EventBus 与活动任务去重都是单进程实现，不是分布式任务队列或 lease。
+旧 Review、缺页、stale 页面或 manifest hash 不一致都不能发布。
 
-当前 Graph、Supervisor 和停止条件见 [`multi-agent-flow.md`](./multi-agent-flow.md)。
+## 9. API 和 UI 边界
+
+产品路由不变：
+
+- `/chat`：输入、任务创建、公开进度、右侧学习空间；
+- `/course`：历史课程；
+- `/course/[courseId]`：持久课程播放器；
+- `/templates`：模板目录。
+
+浏览器只收到：
+
+- strict task snapshot；
+- allowlist public event；
+- terminal。
+
+当前进程由 EventBus 快速推送；SSE Route 每 500 ms 直接追读
+`course_run_events`，补齐其他 worker 的工具级增量。Task/CourseStore 只提供
+snapshot 和 terminal。Last-Event-ID 同时包含 traceId 和 durable sequence，resume
+后不会漏掉新 trace 的事件。
+
+不发送模型私有推理、工具原始参数、服务器路径或框架原生事件。
+
+## 10. 主要源码
+
+- `src/server/course/task/service.ts`
+- `src/server/course/run/engine.ts`
+- `src/server/course/store/repository.ts`
+- `src/server/agent/plugins/agents/course/`
+- `src/server/course/gate/page.ts`
+- `src/server/course/gate/review.ts`
+- `src/server/course/projection/state.ts`
+- `src/shared/course-schema/`

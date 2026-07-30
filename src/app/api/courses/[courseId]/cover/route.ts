@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { createCourseStore } from "@/server/storage/course-store";
+import { getWebServices } from "@/server/setup/web";
 import { CourseIdSchema } from "@/shared/course-schema";
 import {
   buildFittedLessonSrcDoc,
@@ -10,7 +10,7 @@ import {
 
 export const runtime = "nodejs";
 
-const courseStore = createCourseStore();
+const { courses: courseStore } = getWebServices();
 
 const CoverQuerySchema = z
   .object({

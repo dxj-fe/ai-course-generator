@@ -8,8 +8,8 @@
 固定 Demo 统一使用：
 
 - 5 页；
-- `langgraph` 运行源；
-- Page Worker 串行执行、并发数 1；
+- `agent-v2` 运行源和结构化 `CourseCreationBrief`；
+- agent-v2 依赖波次调度、并发上限 1（便于稳定对比）；
 - 自动 Page QA 和 Playwright 截图证据；
 - 课程详情页桌面端与 390 × 844 移动端截图；
 - ZIP 导出复核。
@@ -42,8 +42,10 @@
 
 ## 一条命令运行
 
-先保证 `.env.local` 中存在真实模型和图片 Provider 配置，并安装 Playwright
-Chromium：
+先保证 `.env.local` 或 `.env` 中存在真实模型和图片 Provider 配置，并安装
+Playwright Chromium。Runner 会按 Next.js 的环境文件优先级加载配置，并在启动
+服务前拒绝缺失值、占位 Key、占位模型 ID 和占位 Base URL，不会把明显无效的
+配置发送给外部 Provider：
 
 ```bash
 pnpm exec playwright install chromium
@@ -58,8 +60,26 @@ Runner 默认启动独立本地 Next.js 开发服务，并强制启用截图 QA�
 pnpm demo:run -- --record
 ```
 
+排查单个案例时使用 `--case`；可选 ID 为 `mars-exploration`、
+`solar-system` 和 `ai-literacy`。聚焦运行不能使用 `--record`，避免把不完整
+案例集误记成正式通过：
+
+```bash
+pnpm demo:run -- --case solar-system
+```
+
+默认图片模型复用 `ARK_API_KEY`。只有使用独立图片 Provider 时，才同时填写
+`IMAGE_API_KEY`、`IMAGE_BASE_URL`、`IMAGE_MODEL_ID` 和
+`IMAGE_PROVIDER_NAME`；不要保留这组变量的示例占位值，否则它会覆盖 Ark 生图
+配置。
+
 原始课程 JSON、ZIP、服务日志和截图保存在 `.data/demo-runs/<runId>`。`--record`
 只把聚合报告、桌面/移动截图和人工评分表复制到 `docs/demo/results/<runId>`。
+聚合报告同时记录课程架构尝试/退回次数、整课是否首轮完成、首轮通过页面
+数/比例、真正由模型生成且未返修的页面比例、确定性 HTML fallback 数量、
+图片素材 ready/fallback 比例、Repair 总次数与平均次数、平均 QA/视觉分和
+综合分，用来判断质量是否真的来自上游 Prompt、Tool、Skill、模型和 Context，
+而不是靠重规划、更多返修或安全 fallback 换取表面通过。
 
 单独复核已有产物：
 
@@ -70,17 +90,22 @@ pnpm demo:check -- \
   --archive .data/demo-runs/<runId>/<case>/<courseId>.zip
 ```
 
-## 自动质量门槛
+## 基准回归发布门槛
 
 - `CourseGenerationStateSchema` 必须完整通过；
 - 课程和全部页面必须为 completed；
 - 大纲页数、页面职责、页型、交互和必备知识覆盖符合案例基线；
 - 每页重新通过现有 HTML Engineer 的 DSL、HTML、安全和素材引用合同；
 - 每页最终 QA 必须为 `pass`、`shouldRepair=false`；
+- 每页必须由 HTML 模型完成，不能把确定性安全 fallback 计作模型质量通过；
+- 已声明的图片素材必须为 `ready`，Provider fallback 只能作为生产降级，不能作为 Demo 成功证据；
 - 每页总分至少 85，六维单项至少 80；
 - 每页必须带 `captured` Playwright 截图证据；
+- 报告必须保留首轮通过率与 Repair 次数；最终通过但返修明显增加不能视为质量提升；
 - ZIP 必须包含 `course.json`、全部有序页面 HTML 和素材清单；
 - `/course/[courseId]` 桌面端和移动端无页面错误，移动端无横向溢出。
+
+这里的分数用于整批基准比较和发布复核，不是生产 Page Gate 的自动 Repair 条件。生产链只有在出现可定位 `error` 时才返工；持续低分应优先回到 Prompt、模型、Skill、模板和上下文设计。
 
 ## 快照策略
 

@@ -4,7 +4,7 @@ import { chromium } from "playwright";
 import {
   DETERMINISTIC_PAGE_RENDERER_VERSION,
   renderDeterministicPageFallback,
-} from "../../../../src/server/html/deterministic-page-fallback";
+} from "../../../../src/server/course/page/deterministic-fallback";
 import { buildFittedLessonSrcDoc } from "../../../../src/shared/html-preview";
 import type {
   AssetGenerationResult,

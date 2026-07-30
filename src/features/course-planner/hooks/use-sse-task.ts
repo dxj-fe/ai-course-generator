@@ -39,6 +39,8 @@ export type CourseTaskStreamState = {
   connectionStatus: CourseTaskConnectionStatus;
   taskStatus?: CourseTaskStatus;
   source?: CourseTaskRuntimeSource;
+  /** 已消费的 durable event sequence；不能从裁剪后的 snapshot 数组长度推导。 */
+  lastEventSequence?: number;
   messages: CourseTaskStreamMessage[];
   latestState?: CourseGenerationState;
   error?: Error;
@@ -379,13 +381,24 @@ function applyStreamMessage(
   }
 
   if (message.type === "snapshot") {
-    const currentSequence =
+    const currentStateSequence =
       state.latestState?.events.at(-1)?.sequence ?? -1;
     const incomingSequence = message.state.events.at(-1)?.sequence ?? -1;
+    const traceChanged =
+      state.latestState !== undefined &&
+      state.latestState.traceId !== message.state.traceId;
 
     // Route 初始化时会先订阅实时总线、再读取磁盘快照。若磁盘已经
     // 前进到更新版本，缓冲区里的旧 snapshot 不能让客户端状态回退。
-    if (incomingSequence < currentSequence) {
+    // revision 切换可能合法地裁掉旧事件，所以更新时间更新时仍接受新快照，
+    // 但独立保留 durable cursor。
+    if (
+      !traceChanged &&
+      incomingSequence < currentStateSequence &&
+      state.latestState &&
+      Date.parse(message.state.updatedAt) <=
+        Date.parse(state.latestState.updatedAt)
+    ) {
       return state;
     }
 
@@ -393,6 +406,12 @@ function applyStreamMessage(
       connectionStatus: "open",
       taskStatus: message.taskStatus ?? message.state.status,
       source: message.source,
+      lastEventSequence: traceChanged
+        ? Math.max(0, incomingSequence)
+        : Math.max(
+            state.lastEventSequence ?? 0,
+            incomingSequence,
+          ),
       messages: [...state.messages, message],
       latestState: message.state,
     };
@@ -403,6 +422,10 @@ function applyStreamMessage(
       connectionStatus: "closed",
       taskStatus: message.status,
       source: message.source,
+      lastEventSequence: Math.max(
+        state.lastEventSequence ?? 0,
+        message.state.events.at(-1)?.sequence ?? 0,
+      ),
       messages: [...state.messages, message],
       latestState: message.state,
     };
@@ -418,20 +441,13 @@ function applyStreamMessage(
     };
   }
 
-  const lastSequence = latestState.events.at(-1)?.sequence ?? 0;
+  const lastSequence =
+    state.lastEventSequence ??
+    latestState.events.at(-1)?.sequence ??
+    0;
 
   if (message.event.sequence <= lastSequence) {
     return state;
-  }
-
-  if (message.event.sequence !== lastSequence + 1) {
-    return {
-      ...state,
-      connectionStatus: "closed",
-      error: new Error(
-        `课程任务事件序号不连续：期望 ${lastSequence + 1}，收到 ${message.event.sequence}。`,
-      ),
-    };
   }
 
   const parsedState = CourseGenerationStateSchema.safeParse({
@@ -459,6 +475,7 @@ function applyStreamMessage(
     connectionStatus: "open",
     taskStatus: "running",
     source: message.source,
+    lastEventSequence: message.event.sequence,
     messages: [...state.messages, message],
     latestState: parsedState.data,
   };

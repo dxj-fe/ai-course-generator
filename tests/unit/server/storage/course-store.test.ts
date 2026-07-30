@@ -4,7 +4,8 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createCourseStore } from "../../../../src/server/storage/course-store";
+import { createCourseStore } from "../../../../src/server/course/store/course";
+import { createCourseTaskStore } from "../../../../src/server/course/store/task";
 import type { CourseGenerationState } from "../../../../src/shared/course-schema";
 
 const directories: string[] = [];
@@ -47,7 +48,7 @@ describe("course store", () => {
     const store = createCourseStore({ rootDir: await temporaryRoot() });
     const state = runningState();
 
-    await store.save(state);
+    await store.save(state, { expected: undefined });
 
     await expect(store.load(state.courseId)).resolves.toEqual(state);
   });
@@ -109,7 +110,7 @@ describe("course store", () => {
       store.save({
         ...runningState(),
         version: 2,
-      } as unknown as CourseGenerationState),
+      } as unknown as CourseGenerationState, { expected: undefined }),
     ).rejects.toThrow();
     await expect(store.list()).resolves.toEqual({
       items: [],
@@ -117,31 +118,98 @@ describe("course store", () => {
     });
   });
 
-  it("serializes checkpoint upserts in invocation order", async () => {
+  it("rejects an update based on a stale checkpoint snapshot", async () => {
     const store = createCourseStore({ rootDir: await temporaryRoot() });
     const first = runningState();
     const second = runningState({
       userPrompt: "生成一门三页的太阳系互动课程",
       updatedAt: "2026-07-15T01:00:01.000Z",
     });
+    const stale = runningState({
+      currentStage: "planner",
+      updatedAt: "2026-07-15T01:00:02.000Z",
+    });
 
-    await Promise.all([store.save(first), store.save(second)]);
+    expect(await store.save(first, { expected: undefined })).toBe(true);
+    const loaded = await store.load(first.courseId);
+    expect(await store.save(second, { expected: loaded })).toBe(true);
+    expect(await store.save(stale, { expected: loaded })).toBe(false);
     await expect(store.load(second.courseId)).resolves.toEqual(second);
   });
 
   it("lists valid checkpoints by update time", async () => {
     const store = createCourseStore({ rootDir: await temporaryRoot() });
-    await store.save(runningState());
+    await store.save(runningState(), { expected: undefined });
     await store.save(
       runningState({
         courseId: "course-456",
         updatedAt: "2026-07-15T01:00:02.000Z",
       }),
+      { expected: undefined },
     );
 
     await expect(store.list()).resolves.toMatchObject({
       items: [{ courseId: "course-456" }, { courseId: "course-123" }],
       unavailableCount: 0,
     });
+  });
+
+  it("atomically rejects a stale runner checkpoint after TaskRecord is paused", async () => {
+    const rootDir = await temporaryRoot();
+    const courseStore = createCourseStore({ rootDir });
+    const taskStore = createCourseTaskStore({ rootDir });
+    const task = {
+      version: 1 as const,
+      taskId: "task-course-store-fence",
+      courseId: "course-123",
+      traceId: "trace-123",
+      userPrompt: "生成太阳系课程",
+      creationBrief: {
+        originalRequest: "生成太阳系课程",
+        topic: "太阳系",
+        audience: "初学者",
+        goal: "理解太阳系",
+        sectionCount: 3,
+        learningMode: "mixed" as const,
+        language: "zh-CN" as const,
+      },
+      source: "agent-v2" as const,
+      status: "running" as const,
+      createdAt: "2026-07-15T01:00:00.000Z",
+      updatedAt: "2026-07-15T01:00:00.000Z",
+    };
+    await taskStore.save(task, { expected: undefined });
+    const first = runningState();
+    expect(
+      await courseStore.save(first, {
+        expected: undefined,
+        taskFence: {
+          taskId: task.taskId,
+          traceId: task.traceId,
+          statuses: ["running"],
+        },
+      }),
+    ).toBe(true);
+    const loaded = await courseStore.load(first.courseId);
+    const paused = { ...task, status: "paused" as const };
+    await taskStore.save(paused, { expected: task });
+
+    expect(
+      await courseStore.save(
+        runningState({
+          currentStage: "planner",
+          updatedAt: "2026-07-15T01:00:01.000Z",
+        }),
+        {
+          expected: loaded,
+          taskFence: {
+            taskId: task.taskId,
+            traceId: task.traceId,
+            statuses: ["running"],
+          },
+        },
+      ),
+    ).toBe(false);
+    await expect(courseStore.load(first.courseId)).resolves.toEqual(first);
   });
 });

@@ -1,11 +1,11 @@
 import { z } from "zod";
 
-import { runHtmlEngineerAgent } from "@/server/agents/html-engineer-agent";
+import { runHtmlEngineerModelStep } from "@/server/setup/capabilities";
 import {
   AiRequestError,
   createAiErrorResponse,
   createTraceId,
-} from "@/server/ai/error";
+} from "@/server/infra/ai/error";
 import {
   AssetGenerationResultSchema,
   PageContentDSLSchema,
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     }
 
     const traceId = parsed.data.traceId || headerTraceId;
-    const state = await runHtmlEngineerAgent(
+    const state = await runHtmlEngineerModelStep(
       {
         content: parsed.data.content,
         visualBrief: parsed.data.visualBrief,

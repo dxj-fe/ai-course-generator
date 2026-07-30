@@ -1,16 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { aiResultCache } from "../../../../src/server/ai/result-cache";
+import { aiResultCache } from "../../../../src/server/infra/ai/result-cache";
 import type { ReferencePack } from "../../../../src/shared/course-schema";
-import { createAgentRetrievalTools } from "../../../../src/server/tools/agent-retrieval-tools";
-import { SkillRegistry } from "../../../../src/server/tools/skill-registry";
 import {
-  createRetrieveReferenceSkill,
   retrieveReferenceHits,
-  retrieveSkillCards,
-  retrieveSkillDocsSkill,
   retrieveTemplateCards,
-} from "../../../../src/server/tools/retrieval-skills";
+} from "../../../../src/server/agent/plugins/tools/course/retrieval";
 
 const solarPack: ReferencePack = {
   version: 1,
@@ -33,39 +28,7 @@ const solarPack: ReferencePack = {
   truncated: false,
 };
 
-describe("Day 33 retrieval skills", () => {
-  it("exposes all three retrieval skills as scoped AI SDK tools", () => {
-    expect(
-      Object.keys(createAgentRetrievalTools("retrieval-tools", [solarPack])),
-    ).toEqual([
-      "retrieveSkillDocsSkill",
-      "retrieveTemplateCardsSkill",
-      "retrieveReferenceSkill",
-    ]);
-  });
-
-  it("retrieves only skills registered for the requested Agent", async () => {
-    const direct = retrieveSkillCards({
-      agentName: "planner",
-      task: "规划课程模板和资料引用",
-      limit: 3,
-    });
-
-    expect(direct.matches.map(({ card }) => card.id)).toEqual(["plan-course"]);
-    const registry = new SkillRegistry(() => {}).register(
-      retrieveSkillDocsSkill,
-    );
-    await expect(
-      registry.execute(
-        retrieveSkillDocsSkill.name,
-        { agentName: "planner", task: "规划课程", limit: 1 },
-        { traceId: "retrieve-skill-docs" },
-      ),
-    ).resolves.toMatchObject({
-      matches: [{ card: { id: "plan-course" } }],
-    });
-  });
-
+describe("course architecture retrieval", () => {
   it("returns bounded functional and style Template Cards", () => {
     const result = retrieveTemplateCards({
       pageGoal: "用互动问答检查儿童学习结果",
@@ -80,6 +43,28 @@ describe("Day 33 retrieval skills", () => {
     expect(result.style[0]?.card.visualStyle).toBe("kids-playful");
     expect(result.functional[0]?.card).not.toHaveProperty("slots");
     expect(result.style[0]?.card).not.toHaveProperty("colorTokens");
+  });
+
+  it("一次覆盖整课不同页面职责，不要求 Architect 为每页重复调用工具", () => {
+    const result = retrieveTemplateCards({
+      pageNeeds: [
+        { goal: "解释三个核心概念", pageType: "knowledge_card" },
+        { goal: "比较两种方法的异同", pageType: "comparison" },
+        { goal: "让学习者完成选择题并获得反馈", pageType: "quiz" },
+      ],
+      audience: "大学新生",
+      visualStyle: "minimal",
+    });
+
+    expect(result.functional.map(({ card }) => card.id)).toEqual(
+      expect.arrayContaining([
+        "knowledge-card-grid",
+        "comparison-board",
+        "interactive-quiz",
+      ]),
+    );
+    expect(result.functional).toHaveLength(3);
+    expect(result.style[0]?.card.visualStyle).toBe("minimal");
   });
 
   it("reuses a validated Template Card search result", () => {
@@ -101,7 +86,7 @@ describe("Day 33 retrieval skills", () => {
     lookup.mockRestore();
   });
 
-  it("returns traceable Reference Hits without raw chunk text", async () => {
+  it("返回可追溯且受长度限制的命中原文，不混入未命中的 chunk", () => {
     const result = retrieveReferenceHits(
       { query: "太阳风 带电粒子", limit: 2 },
       [solarPack],
@@ -111,19 +96,21 @@ describe("Day 33 retrieval skills", () => {
       expect.objectContaining({
         referencePackId: solarPack.id,
         chunkIds: ["chunk-01"],
+        excerpts: [
+          expect.objectContaining({
+            chunkId: "chunk-01",
+            truncated: false,
+          }),
+        ],
       }),
     ]);
-    expect(JSON.stringify(result)).not.toContain("RAW_REFERENCE_SENTINEL");
-
-    const registry = new SkillRegistry(() => {}).register(
-      createRetrieveReferenceSkill([solarPack]),
-    );
-    await expect(
-      registry.execute(
-        "retrieveReferenceSkill",
+    expect(JSON.stringify(result)).toContain("RAW_REFERENCE_SENTINEL");
+    expect(JSON.stringify(result)).not.toContain("无关的附录说明");
+    expect(
+      retrieveReferenceHits(
         { query: "不存在的主题", limit: 1 },
-        { traceId: "retrieve-reference" },
+        [solarPack],
       ),
-    ).resolves.toEqual({ hits: [] });
+    ).toEqual({ hits: [] });
   });
 });

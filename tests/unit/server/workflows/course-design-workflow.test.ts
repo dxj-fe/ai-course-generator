@@ -8,25 +8,25 @@ import {
   visualBrief,
 } from "../../../fixtures/course-design";
 import {
-  createPedagogyAgent,
-  createPedagogyAgentState,
-} from "../../../../src/server/agents/pedagogy-agent";
+  createPedagogyModelStep,
+  createPedagogyModelStepState,
+} from "../../../../src/server/agent/plugins/model-steps/course/pedagogy-model-step";
 import {
-  createStoryAgent,
-  createStoryAgentState,
-} from "../../../../src/server/agents/story-agent";
+  createStoryModelStep,
+  createStoryModelStepState,
+} from "../../../../src/server/agent/plugins/model-steps/course/story-model-step";
 import {
-  createVisualDirectorAgent,
-  createVisualDirectorAgentState,
-} from "../../../../src/server/agents/visual-director-agent";
+  createVisualBriefModelStep,
+  createVisualBriefModelStepState,
+} from "../../../../src/server/agent/plugins/model-steps/course/visual-brief-model-step";
 import {
   runCourseDesignWorkflow,
   validateCourseDesignBriefs,
   type CourseDesignWorkflowDependencies,
-} from "../../../../src/server/workflows/course-design-workflow";
+} from "../../../../src/server/course/service/design";
 
 describe("course design workflow", () => {
-  it("runs three agents serially and builds Page Worker handoffs", async () => {
+  it("runs three model steps serially and builds Page Worker handoffs", async () => {
     const order: string[] = [];
     const dependencies = createDependencies(order);
     const result = await runCourseDesignWorkflow(
@@ -50,16 +50,16 @@ describe("course design workflow", () => {
     );
   });
 
-  it("stops before StoryAgent when PedagogyAgent fails", async () => {
+  it("stops before StoryModelStep when PedagogyModelStep fails", async () => {
     const runStory = vi.fn();
     const runVisual = vi.fn();
     const dependencies: CourseDesignWorkflowDependencies = {
       runPedagogy: async (intent, outline, context) =>
-        createPedagogyAgent({
+        createPedagogyModelStep({
           generatePlan: async () => {
             throw new Error("pedagogy unavailable");
           },
-        }).run(createPedagogyAgentState(intent, outline), context),
+        }).run(createPedagogyModelStepState(intent, outline), context),
       runStory,
       runVisual,
     };
@@ -93,29 +93,29 @@ describe("course design workflow", () => {
   });
 });
 
-/** 构造真实最小 Agent，使工作流测试同时覆盖事件聚合和串行交接。 */
+/** 构造真实最小模型步骤，使工作流测试同时覆盖事件聚合和串行交接。 */
 function createDependencies(
   order: string[],
 ): CourseDesignWorkflowDependencies {
   return {
     runPedagogy: async (intent, outline, context) => {
       order.push("pedagogy");
-      return createPedagogyAgent({
+      return createPedagogyModelStep({
         generatePlan: async () => pedagogyPlan,
-      }).run(createPedagogyAgentState(intent, outline), context);
+      }).run(createPedagogyModelStepState(intent, outline), context);
     },
     runStory: async (input, context) => {
       order.push("story");
-      return createStoryAgent({ generateArc: async () => storyArc }).run(
-        createStoryAgentState(input),
+      return createStoryModelStep({ generateArc: async () => storyArc }).run(
+        createStoryModelStepState(input),
         context,
       );
     },
     runVisual: async (input, context) => {
       order.push("visual");
-      return createVisualDirectorAgent({
+      return createVisualBriefModelStep({
         generateBrief: async () => visualBrief,
-      }).run(createVisualDirectorAgentState(input), context);
+      }).run(createVisualBriefModelStepState(input), context);
     },
   };
 }

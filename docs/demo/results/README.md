@@ -4,7 +4,7 @@
 
 每个固定案例只留存：
 
-- `check-report.json`：自动结构、HTML、素材、QA 和导出检查；
+- `check-report.json`：自动结构、HTML、素材、QA、模型首轮通过率、HTML/图片 Provider 成功率、Repair 次数和导出检查；
 - `course-detail-desktop.png`：1440 × 900 产品详情证据；
 - `course-detail-mobile.png`：390 × 844 产品详情证据；
 - `manual-review.md`：六维人工评分与结论。

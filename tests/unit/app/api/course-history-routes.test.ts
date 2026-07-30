@@ -10,13 +10,13 @@ const mocks = vi.hoisted(() => ({
   createArchive: vi.fn(),
 }));
 
-vi.mock("@/server/courses/course-history-service", () => ({
-  courseHistoryService: { list: mocks.list, load: mocks.loadDetail },
+vi.mock("@/server/setup/web", () => ({
+  getWebServices: () => ({
+    courseHistory: { list: mocks.list, load: mocks.loadDetail },
+    courses: { load: mocks.loadCourse },
+  }),
 }));
-vi.mock("@/server/storage/course-store", () => ({
-  createCourseStore: () => ({ load: mocks.loadCourse }),
-}));
-vi.mock("@/server/courses/course-export", () => ({
+vi.mock("@/server/course/service/export", () => ({
   createCourseArchive: mocks.createArchive,
 }));
 

@@ -4,7 +4,7 @@ import {
   CourseGenerationStateSchema,
   type CourseGenerationState,
 } from "@/shared/course-schema";
-import { compareCourseQuality } from "@/server/quality/course-quality-comparison";
+import { compareCourseQuality } from "@/server/course/page/quality/comparison";
 
 const [baselinePath, candidatePath] = process.argv.slice(2);
 if (!baselinePath || !candidatePath) {

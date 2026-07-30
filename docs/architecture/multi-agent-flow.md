@@ -1,243 +1,373 @@
-# Supervisor + Specialist 多 Agent 当前流程
+# agent-v2 多 Agent 执行流程
 
-> **IMPLEMENTED / 当前事实**
->
-> 本文最初是 Day 21 的目标架构，现已按当前源码校准：受限 Supervisor、显式全局 `WorkflowNode`、隔离 Page Worker、受控并发、质量优先 QA/Repair/re-QA、生产 LangGraph 条件图和严格 stream mapper 均已实现。完整运行事实以[从提示词到最终 HTML](./prompt-to-html-current-flow.md)为准。
+> 本文描述当前生产事实。旧 Supervisor、九名 Specialist、Page Worker 固定流水线和 LangGraph 内容属于历史实现，不再是新任务入口。
 
-## 设计目标
+## 1. 设计目标
 
-目标不是增加更多模型调用，而是把调度、专业产出、工具执行、确定性校验和持久化分开：
+多 Agent 不是多起几个名字，而是让每个需要模型判断的角色都有：
 
-- Supervisor 只根据类型化状态决定下一节点、重试、修复或停止；人工升级仍是后续能力。
-- Specialist 只产出自己负责的专业协议，不控制全局流程。
-- Page Worker 隔离单页执行范围，但它不是第十名 Specialist。
-- GenerateImage Skill 是 Image Prompt 之后的工具执行，不是 Agent。
-- validators 决定输出能否合并到共享状态，不能由 Agent 自行宣布通过。
-- checkpoint 和公开事件由运行层统一写入，Specialist 不直接修改全局状态或推送 UI。
-- QA 与 Repair 构成有预算、有停止条件、可审计的闭环，而不是无限自我修正。
+- 独立目标和 `WorkOrder`；
+- 封口输入和 Artifact 版本；
+- 明确的可用工具和禁止范围；
+- 模型可以根据工具结果选择下一步；
+- 可验证的提交或阻塞终态；
+- 独立预算、租约、恢复和返工边界。
 
-## 当前流程
+机械动作由 TypeScript 引擎、Repository 命令和 Gate 完成，不伪装成 Agent。
+
+## 2. 四个 Agent
+
+| Agent | 输入 | 负责 | 不负责 | 终态工具 |
+| --- | --- | --- | --- | --- |
+| Curriculum Architect | Brief、资料、模板、修订意见 | 一次设计完整 CoursePack、CourseBlueprint 和全部 PageTask | 写单页 HTML、派工、发布 | `submit_course_architecture` |
+| Course Director | 当前 Run 摘要、完整架构或冻结 Review | 在两个语义时点选择接受、退回、发布、修页、重规划或失败 | 每步调度、写页面、绕过 Gate | 架构决策或整课决策 terminal tool |
+| Page Builder | 一张 PageTask、授权资料、依赖 PageSummary、可选旧产物和 issue | 自主调用模型步骤与工具，生成并定向修订一页 | 改架构、改其他页、自评通过 | `submit_page` / `block_page` |
+| Course Reviewer | 冻结 manifest、全部页面摘要和受控质量证据 | 检查跨页目标、重复、断层、难度、一致性和互动 | 修改页面、派工、发布 | `submit_course_review` / `block_course_review` |
+
+Director 是主 Agent，但不是常驻 Supervisor。它只在架构提交后和整课 Review 提交后运行短回合。
+
+Page Writer、Image Prompt、HTML Engineer、Page QA、Repair、Pedagogy、Story 和 Visual 等能力现在是 `src/server/agent/plugins/model-steps/course/` 中的 Model Step。它们能完成专业模型生成，但没有独立 WorkOrder、派工权和恢复边界，因此不算顶层 Agent。
+
+## 3. 全局时序
 
 ```mermaid
 flowchart TD
-  Intake["typed request + CourseIntent"] --> Supervisor["Supervisor<br/>state-driven routing only"]
-  Supervisor -->|"plan"| Planner["1. Planner"]
-  Planner --> ValidatePlan["validator + merge partial state"]
-  ValidatePlan --> Supervisor
+  Brief["CourseCreationBrief + ReferencePack"] --> Boot["原子创建 CourseRun<br/>+ architect_course WorkOrder"]
+  Boot --> Architect["Curriculum Architect"]
+  Architect --> AS["提交完整 CourseArchitecture"]
+  AS --> AG["Architecture Gate"]
+  AG -->|"硬条件未过"| Architect
+  AG --> DirectorA["Director 架构语义验收"]
+  DirectorA -->|"request revision，整课最多 2 次"| Architect
+  DirectorA -->|"accept"| Fanout["同一事务：接受架构<br/>+ 创建恰好 N 张 Page WorkOrder"]
 
-  Supervisor -->|"design pedagogy"| Pedagogy["2. Pedagogy"]
-  Pedagogy --> ValidateDesign["validator + merge partial state"]
-  Supervisor -->|"design story"| Story["3. Story"]
-  Story --> ValidateDesign
-  Supervisor -->|"design visual"| Visual["4. Visual"]
-  Visual --> ValidateDesign
-  ValidateDesign --> Supervisor
+  Fanout --> Ready["queued：依赖已满足<br/>waiting_dependencies：依赖未满足"]
+  Ready --> Wave["Engine 领取当前 wave<br/>并发上限 1–5"]
+  Wave --> Builders["Page Builder × N 并行"]
+  Builders --> PG["Page Gate"]
+  PG -->|"未过且有预算"| Builders
+  PG -->|"通过"| Accept["原子接受页面<br/>+ 保存 PageSummary<br/>+ 切 current 指针"]
+  Accept --> Unlock["把依赖摘要加入后继页<br/>封口输入并 queued"]
+  Unlock -->|"仍有页面"| Wave
+  Accept -->|"全部当前页完成"| Manifest["冻结 CourseManifest<br/>+ review_course WorkOrder"]
 
-  subgraph PageWorker ["Page Worker：单页隔离执行范围"]
-    PageWriter["5. Page Writer"] --> ValidateDsl["DSL validator"]
-    ValidateDsl --> ImagePrompt["6. Image Prompt"]
-    ImagePrompt --> ImageSkill["GenerateImage Skill<br/>cache / provider / fallback"]
-    ImageSkill --> ValidateAssets["asset validator"]
-    ValidateAssets --> HtmlEngineer["7. HTML Engineer"]
-    HtmlEngineer --> ValidateHtml["HTML contract + safety validator"]
-    ValidateHtml --> QA["8. QA"]
-    QA --> QualityGate{"quality gate"}
-    QualityGate -->|"pass"| PageResult["PageWorkerResult completed"]
-    QualityGate -->|"repairable and budget remains"| Repair["9. Repair"]
-    Repair --> ValidateRepair["scope + schema + safety validator"]
-    ValidateRepair --> ReQA["re-QA"]
-    ReQA --> QualityGate
-    QualityGate -->|"fatal or budget exhausted"| PageFailed["PageWorkerResult failed<br/>retain evidence"]
-  end
-
-  Supervisor -->|"dispatch ready page"| PageWriter
-  PageResult --> WorkerCheckpoint["central checkpoint + public events"]
-  PageFailed --> WorkerCheckpoint
-  WorkerCheckpoint --> Supervisor
-  Supervisor -->|"all pages terminal"| Finalize["finalize course"]
-  Supervisor -->|"cancel / global budget / unrecoverable"| Stop["controlled stop"]
-  Finalize --> Transport["shared snapshots / events / terminal"]
-  Stop --> Transport
-  Transport --> SSE["SSE transport"]
-  SSE --> Controller["Task Controller"]
-  Controller --> UI["/chat thread + learning workspace"]
+  Manifest --> Reviewer["Course Reviewer"]
+  Reviewer --> DirectorR["Director 整课决策"]
+  DirectorR -->|"revise_pages"| Fix["stale 目标页和依赖闭包<br/>+ fix_page WorkOrder"]
+  Fix --> Wave
+  DirectorR -->|"replan"| Replan["新 revision<br/>+ architect_course WorkOrder"]
+  Replan --> Architect
+  DirectorR -->|"publish"| Final["Final Gate 重建 manifest"]
+  Final --> Done["CourseRun completed"]
+  Done --> Project["CourseStateProjector<br/>checkpoint + SSE + Keya UI"]
 ```
 
-图中的主链已实现；“人工接受当前页面/人工发布”不在当前运行图内。
-
-## Supervisor 边界
-
-Supervisor 是状态驱动的调度者，不是“万能课程 Agent”。当前输入限制为：
-
-- 当前已校验的 `CourseGenerationState` 摘要；
-- 可执行节点清单及其 `requiredInputs / produces`；
-- 最近一次结构化错误和公开质量结论；
-- page/node 级 attempt 计数；
-- retry、成本、时长和取消预算。
-
-决策使用 `run / retry / complete / stop` 等结构化动作，并携带目标、公开 `reasonSummary` 和停止原因。无论决策如何产生，都必须经过确定性路由规则校验。
-
-Supervisor **不负责**：
-
-- 编写 CoursePlan、教学策略、故事、视觉 brief 或 PageContentDSL；
-- 写 HTML、图片 Prompt 或修复后的页面正文；
-- 调用生图 provider；
-- 自行修改 checkpoint；
-- 绕过 validator、提升自己的 retry budget，或根据私有推理向 UI 解释决策。
-
-Day 23 已在 Day 22 节点合同之上加入 [`SupervisorAgent`](../../src/server/agents/supervisor-agent.ts) 和 [`runSupervisedWorkflow`](../../src/server/workflows/supervised-workflow.ts)。模型只在运行层提供的候选集合中提出决策；确定性代码继续校验 `requiredInputs / produces`、node/page attempts、取消、无进展和停止条件，集中状态合并、validator 与公开事件安全边界保持不变。
-
-## 九名 Specialist
-
-Supervisor 和 Page Worker 都不计入以下九名 Specialist；GenerateImage 也不计入。
-
-| # | Specialist | 最小输入 | 类型化输出 | 禁止职责 |
-|---|---|---|---|---|
-| 1 | Planner | `CourseIntent`、功能/样式模板摘要 | `CoursePlan` | 不写逐页正文、HTML、素材 URI 或运行状态 |
-| 2 | Pedagogy | `CourseIntent + CoursePlan` | `PedagogyPlan` | 不决定视觉实现、故事文案或 HTML |
-| 3 | Story | `CourseIntent + CoursePlan + PedagogyPlan` | `StoryArc` | 不覆盖教学目标或发明与课程冲突的事实 |
-| 4 | Visual | `CoursePlan + PedagogyPlan + StoryArc + StyleTemplate` | `VisualBrief` | 不生成图片二进制、PageContentDSL 或 HTML |
-| 5 | Page Writer | 单页 `PagePlan + PageWorkerBrief + CourseIntent` | `PageContentDSL` | 不读取原始全局运行状态，不输出 HTML 或素材 URI |
-| 6 | Image Prompt | 单页 DSL 素材槽 + `VisualBrief` | `AssetRequest[]` | 不直接调用 provider，不发明 asset slot，不生成页面内容 |
-| 7 | HTML Engineer | DSL、模板、视觉指导、已校验素材 | `HtmlOutput` | 不重新规划课程，不改写 DSL，不读取原始用户 Prompt |
-| 8 | QA | PagePlan、DSL、brief、HTML、素材与确定性检查结果 | `QualityReport` | 只报告证据，不修改 HTML，不自行宣布修复完成 |
-| 9 | Repair | 原始产物、限定目标、`QualityReport`、安全尝试序号 | 目标 `RepairResult` / 修复候选 | 不扩大修复范围，不改无关页面，不跳过 re-QA，不自我判定通过 |
-
-九类 Specialist 均有当前实现或生产协议：前八类对应各 Agent 文件，Repair 使用 [`repair-agent.ts`](../../src/server/agents/repair-agent.ts) 和共享 [`RepairResultSchema`](../../src/shared/course-schema/repair.ts)。Supervisor、Page Worker 与 GenerateImage Skill 仍不计入九名 Specialist。
-
-## Page Worker 是执行边界，不是 Specialist
-
-Page Worker 接收一个已准备好的页面任务，只管理该页局部状态：
+核心顺序是：
 
 ```text
-PagePlan + PageWorkerBrief
-  → Page Writer
-  → Image Prompt
-  → GenerateImage Skill / cache / fallback
-  → HTML Engineer
-  → QA
-  → 可选、受限的 Repair / re-QA
-  → PageWorkerResult
+先完成整课架构
+→ Director 确认整体方向
+→ 原子派发全部页面工作单
+→ 页面才按真实依赖波次并行
 ```
 
-Page Worker 应遵守以下边界：
+Architect 不能一边规划一边启动 Page Builder，否则各页看不到完整目标矩阵，运行层也无法证明已经创建了恰好 N 张页面任务。
 
-- 不直接修改整课状态，只返回带 `pageId` 的局部结果与公开事件。
-- 不改变 CoursePlan 的页面顺序、全局目标或 StyleTemplate。
-- 每页拥有独立的 attempts、错误、事件和取消检查。
-- 由 Promise Pool 控制并发；默认并发度为 2，依赖就绪由课程运行层确定。
-- 某一页失败不会删除其他页面已完成产物。
+## 4. 协作协议
 
-当前 [`generatePageWorker`](../../src/server/workflows/page-worker.ts) 已实现这个隔离边界：它只接收单页计划、对应 brief、必要全局指导和页面 checkpoint，内部串行执行 Writer、Assets、HTML 与 QA，并返回 `PageWorkerResult`。[`course-workers-workflow.ts`](../../src/server/workflows/course-workers-workflow.ts) 负责依赖就绪、串行/并行模式和受控并发；只有外层串行 merge 队列可以把 Worker 更新写回整课 checkpoint。
+### CourseArchitecture
 
-## GenerateImage Skill 不是 Agent
+一次提交三类全局事实：
 
-[`GenerateImage Skill`](../../src/server/tools/generate-image-skill.ts) 的目标边界保持与当前实现一致：
+- `CoursePack`：事实、术语、例子、约束和资料引用；
+- `CourseBlueprint`：受众、目标、统一教学与视觉规则；
+- `PageTask[]`：每页职责、目标、互动、素材、验收和 build 依赖。
 
-- Image Prompt Specialist 决定结构化 `AssetRequest`；
-- Skill Registry 校验工具输入输出并执行 provider/storage 调用；
-- cache、ready、fallback 和 provider 错误都转换为 `AssetGenerationResult`；
-- Skill 不决定课程结构、页面内容、是否重试整个节点或下一个 Agent。
+Architecture Gate 检查 ID、顺序、目标覆盖、模板、互动、引用和无环依赖；Director 再判断页面是否重复、难度是否合适、依赖是否真的必要。
 
-把工具执行算成 Specialist 会混淆“谁做专业判断”和“谁执行受控副作用”。
+### WorkOrder
 
-## Validators、状态合并与 checkpoint
+每个 Agent 回合都绑定一张工作单，保存：
 
-每个 Specialist 的输出必须先经过确定性 validator，再由运行层合并到共享状态。固定串行运行层与 Graph 均复用 `requiredInputs` 前置检查、`produces` patch 白名单、合并后完整状态复验和结构化错误定位：
+- kind、course/page scope 和父任务；
+- 输入 ArtifactRef、输入封口时间和依赖；
+- allowedTools、acceptance 和预算；
+- executionAttempt、lease、状态和 submission。
+
+Agent 运行中不能突然读取未授权的新版本。
+
+当前首张 `architect_course` 是一个明确例外：它的 `inputArtifactRefs` 为空，
+`creationBrief` 和 `referencePacks` 固定在 TaskRecord，由 Engine 按当前 task/trace
+传入；修订回合才附带旧架构等 ArtifactRef。要把所有输入统一成 ArtifactRef，仍需
+另做 Brief/ReferencePack 产物化，不能把它当成当前已有能力。
+
+### Artifact
+
+架构、内容、素材、HTML、质量、摘要、manifest 和 review 都是不可变 Artifact。修订会产生新 Artifact，`CourseRun` 只切换 current 指针。Reviewer 因此能明确自己审的是哪一版。
+
+### PageSummary
+
+后继页不读取上游完整 HTML，只读取已验收摘要：
+
+- 已讲知识和学习结果；
+- 需要延续的事实、术语和状态；
+- 质量结论；
+- 可安全引用的 ArtifactRef。
+
+### CourseManifest
+
+全部当前页完成后，系统把架构和每页精确 ArtifactRef 固定成 manifest 并计算 hash。Reviewer 和 Final Gate 都以这个版本为准。
+
+## 5. 页面 wave 如何运行
+
+`order` 只决定学习展示顺序；`buildDependsOnPageIds` 才决定生成顺序。
 
 ```text
-specialist candidate
-  → schema / registry / reference / HTML safety validator
-  → accepted partial state OR typed node error
-  → central merge
-  → checkpoint
-  → public event projection
+page-1: 无依赖
+page-2: 无依赖
+page-3: 依赖 page-1
+page-4: 依赖 page-1
+page-5: 依赖 page-3、page-4
+
+wave 1: page-1 + page-2
+wave 2: page-3 + page-4
+wave 3: page-5
 ```
 
-当前架构复用以下事实来源：
+Engine 每轮领取当前可运行 WorkOrder，并用 Promise Pool 并行。页面通过 Gate 后，Repository 在事务中保存 PageSummary、更新 current page 并解锁依赖已满足的后继页。
 
-- [`shared/course-schema`](../../src/shared/course-schema)：Agent handoff 和持久化状态合同；
-- [`CourseGenerationStateSchema`](../../src/shared/course-schema/course-generation-state.ts)：课程、页面、公开事件和失败状态；
-- [`Course Design Workflow`](../../src/server/workflows/course-design-workflow.ts)：brief 对齐和 Page Worker 投影规则；
-- [`shared/html-preview`](../../src/shared/html-preview) 与 HTML Engineer 校验：HTML 合同和安全预检；
-- [`quality`](../../src/server/quality)：确定性页面质量检查；
-- [`CourseStore`](../../src/server/storage/course-store.ts)：可校验的原子 checkpoint。
+不要为了“课程有顺序”把所有页串成依赖链。只有后页必须读取前页实际生成结果时才声明 build 依赖。
 
-Specialist 不获得 `courseStore.save`，也不能直接发布 SSE。当前 `runSequentialWorkflow` 已让 Specialist 节点 patch 的合并只有一个所有者；facade 只处理课程生命周期迁移。未来加入重试、并行或迁移运行框架时仍必须保留这一属性。
+## 6. Page Builder 内部
 
-## 公开事件边界
+Page Builder 是一个真 Agent；它调用的能力不是子 Agent：
 
-节点事件投影为共享的 [`CourseGenerationPublicEvent`](../../src/shared/course-schema/course-generation-state.ts)。未来可以增加明确设计的新事件类型，但不能把框架事件原样透传。公开信息只包含：
-
-- node/Agent、pageId、阶段、attempt 和状态；
-- 可展示的 `reasonSummary`、错误 code 和停止原因；
-- checkpoint、QA、Repair 与人工升级的结构化摘要；
-- trace、sequence 和时间信息。
-
-不得包含 System Prompt、原始模型消息、任意 tool payload、私有 event data 或 chain-of-thought。当前 facade、节点适配与运行层仍会在进入 checkpoint 前把 Agent 事件投影为共享公开协议并丢弃原生 `data`；目标运行层必须保留这一安全属性。
-
-## 有界 QA、Repair 与 re-QA
-
-质量循环由代码状态约束。执行失败和有效质量迭代分别计数；连续三次有效候选没有改善质量向量时触发 `QUALITY_STALLED`，另有 24 次紧急上限防止实现错误形成无限循环。预算与停止条件不藏在 Prompt 中。
-
-```mermaid
-stateDiagram-v2
-  [*] --> QA
-  QA --> Passed: quality gate passed
-  QA --> Repair: repairable and safety guard remains
-  Repair --> ValidateRepair
-  ValidateRepair --> QA: valid candidate / re-QA
-  ValidateRepair --> RetryDecision: invalid candidate
-  QA --> RetryDecision: fatal issue or quality stalled
-  RetryDecision --> Repair: retryable and guard remains
-  RetryDecision --> Failed: fatal / cancelled / quality stalled
-  Passed --> [*]
-  Failed --> [*]
+```text
+读取封口上下文
+→ 按需运行 Page Writer Model Step
+→ 按需生成素材
+→ 运行 HTML Model Step
+→ 运行确定性检查和 Page QA Model Step
+→ 仅在 Gate 给出可定位 error 时运行受限 Repair Model Step
+→ terminal submit / block
 ```
 
-强制停止条件至少包括：
+`AgentRunner` 强制：
 
-- QA 已通过；
-- page/node retry budget 耗尽或质量连续不改善；
-- 安全违规或不可恢复 schema/reference 错误；
-- 用户取消；
-- 运行被取消、鉴权/配置不可用或质量安全熔断；
-- 三次有效修订没有改善质量向量；
-- Supervisor 决策不符合可用节点或前置输入合同。
+- 只能调用 WorkOrder allowlist 内的工具；
+- 模型步数、工具次数、时间等预算不能自行扩大；
+- terminal 工具必须真正提交到 Repository；
+- Agent 返回后重新读取同 trace、同 WorkOrder 的终态；
+- 暂时性 Provider 错误才允许一次配置好的模型 fallback。
 
-停止时必须保存最后一个有效 checkpoint、QA 证据、已用 attempts 和公开原因。当前 UI 可以从 checkpoint 重试失败章节，但没有“人工接受不合格页面”的发布绕过。
+模型说“已经完成”不算完成，Repository 中的终态才算。
 
-## LangGraph 的当前位置
+质量分用于发现 Prompt、模型、Skill 或页面设计的系统性改进方向，不是自动返工条件。没有具体 `error` 的低分页面可以首轮提交；Schema 或业务错误会立即停止当前执行，不会通过同一 Tool 的循环重试掩盖上游问题。
 
-LangGraph 是可替换的运行工具，不是多 Agent 架构本身。当前实现包括：
+`block_page` 也不是普通错误出口。它要求当前 execution attempt 已读取封口上下文，
+已有失败的 current `PageQuality`，并且出现以下至少一种情况：修复被明确拒绝、有效
+质量修订预算耗尽，或确定性修复计划无法授权任何可行修复。普通 Provider、内容、
+素材或 HTML 工具失败都不能让模型直接阻塞页面。缺失 ReferencePack/Chunk 则在
+Page Builder 启动前以 `PAGE_REFERENCE_INPUT_INVALID` 失败，不交给 Agent 自行解释。
 
-- `CourseGenerationStateSchema.shape` 直接成为 graph state 字段来源；
-- Supervisor、全局 Specialist、Page Workers、Retry、Repair、Finalize 和失败终态成为 graph nodes；
-- 既有 validator、公开事件和 checkpoint 继续由共享运行时持有；
-- Page Worker 内部的依赖、并发、QA/Repair 和页面合并保持不变。
+## 7. 两层质量验收
 
-`POST /api/courses/tasks` 已默认选择 LangGraph。Graph 以 `updates/custom` streaming，严格 mapper 只接受已知节点、当前 trace、连续 sequence 和通过 `CourseGenerationStateSchema` 的 checkpoint。项目领域 checkpoint 仍由 Task Service 持久化；LangGraph 内部状态不会进入前端。
+### Page Gate
 
-但是业务合同仍由本项目的共享 schemas 和 Route Handler/workflow 规则拥有。LangGraph 原生 chunks、内部 node state 或 checkpoint 格式不能进入前端。
+代码检查：
 
-```mermaid
-flowchart LR
-  Runtime["LangGraph default or handwritten compatibility"] --> Adapter["strict graph/state adapter"]
-  Adapter --> Shared["CourseGenerationState<br/>CourseGenerationPublicEvent"]
-  Shared --> SSE["SSE"]
-  SSE --> Controller["Task Controller"]
-  Controller --> UI["Keya /chat UI"]
+- DSL 是否覆盖 PageTask；
+- 素材槽是否齐全；
+- HTML 合同、安全和素材绑定；
+- 互动、完成条件和反馈；
+- 质量报告和截图证据是否属于当前版本。
+
+Page Builder 可以修订候选，但不能给自己盖章。
+
+### Reviewer + Final Gate
+
+Reviewer 检查整课：
+
+- 目标是否既有教学覆盖又有学习证据；
+- 是否有重复、断层或难度突跳；
+- 事实、术语、例子和视觉规则是否一致；
+- 互动是否落地并有反馈；
+- 开头承诺和结尾回扣是否对应。
+
+Reviewer 不能抽样后直接交活。它必须先读取课程目标矩阵，再把当前 manifest 下的
+`PageSummary` 和 `QualityReport` 分页读到末尾，最后才能校验、提交或阻塞。
+工具调用预算按页数计算：每批最多 20 页，200 页课程也能在有界预算内完成完整审查。
+批量质量结果只返回分数、问题摘要和截图指标，避免 16 KB ToolResult 截断后仍被误判
+为“已经看完”。
+
+`block_course_review` 不是 Reviewer 的主观退出按钮。只有全量证据已经读完，且机器
+检查发现 PageSummary 的 `courseId/order` 与冻结 manifest 冲突，或 PageSummary 的
+质量投影 `overallScore/decision/issueCodes` 与对应 PageQuality 冲突时才会动态开放。
+PageQuality 本身没有课程和顺序字段。健康证据下该工具既不出现在 active tools 中，
+执行层也会拒绝；少读证据只会要求继续读取，内容质量问题必须提交
+`revise_pages` 或 `replan`。
+
+每条 Review issue 都必须引用 Reviewer 实际读过的 current 证据：
+
+- 页面级 issue 至少包含该页的 `page_summary` 或 `page_quality` 精确
+  ArtifactRef；
+- 课程级 issue 只能引用 current `course_architecture`、`page_summary` 或
+  `page_quality`；
+- 只引用 `page_html`、`page_content` 或 `page_assets` 会被 Schema 和 Gate 拒绝。
+
+Director 只能根据 Review 选择发布、局部返工或重规划。发布前 Final Gate 会从 current 指针重建 manifest；旧 Review 不能发布新页面。
+
+Director 的所有终态动作也有证据前置条件：
+
+- 架构回合先调用 `inspect_architecture`，才能接受、退回或失败；
+- Review 回合先调用 `inspect_course_review`，才能发布、返工、重规划或失败。
+
+“先 inspect”只是必要条件，不会自动获得失败权限。合法架构和 `pass` Review 下
+`fail_course` 会被隐藏并在执行层拒绝；只有架构语义退回、页面返工或 replan 的
+持久化预算确实耗尽后，机器 Gate 才会开放失败动作。架构语义退回在整个任务内最多
+2 次，第三次 `request_architecture_revision` 会返回确定性预算错误，Director 随后
+只能按该机器原因终止，不能采用模型自报的错误码或“我觉得不可恢复”。
+
+## 8. 返工和失效传播
+
+局部问题使用 `fix_page`：
+
+1. 标记 Reviewer 点名页面为 stale；
+2. 计算真正依赖这些页面的传递后继页；
+3. 为目标集合创建修订 WorkOrder；
+4. 页面 issue 必须用机器字段 `targetArtifact` 明确指定
+   `page_content` 或 `page_html`，不能从自然语言建议里猜；
+5. 旧页面 Artifact 只作为只读 `baseline`，不是新 WorkOrder 的 checkpoint；
+6. 直接命中 issue 的页面必须先生成新的目标 Artifact；依赖闭包页一律按
+   `page_content` 重新生成，以消费新的上游 `PageSummary`；
+7. 内容返工继续重建素材、HTML 和质量；HTML 返工可以复用未改动的 baseline
+   内容/素材，但必须生成新 HTML 和新质量证据；
+8. 重新执行 Page Gate、manifest、Reviewer 和 Director。
+
+`submit_page` 还会核对本次 Fix WorkOrder 是否真的产生了目标 Artifact 和当前
+`PageQuality`。把旧 content/html/quality 原样塞回去，或只写一句“已修复”，都不能
+交活。
+
+全局目标、页面职责或课程顺序本身错误时才 `replan`。新 revision 从 Architect 开始；
+旧分支保留审计，但不再是 current。架构验收阶段的语义退回最多 2 次，整课 Review
+触发的 replan 最多 1 次；达到上限后由机器资格 Gate 决定是否允许失败，不无限循环。
+
+## 9. 持久化、审计和恢复
+
+| 表 | 作用 |
+| --- | --- |
+| `course_execution_claims` | 同一 `courseId` 的唯一活动 Task 执行权 |
+| `course_task_control_intents` | 跨进程取消意图；阻止 resume 和旧 runner 复活任务 |
+| `course_runs` | 当前指针、阶段、stale 标记、整课 lease |
+| `course_work_orders` | Agent 工作单、输入、预算、状态和 lease |
+| `course_artifacts` | 不可变业务产物 |
+| `course_tool_operations` | 工具输入哈希、状态、安全摘要和 ArtifactRef 审计 |
+| `course_run_events` | 可投影的有序运行事件 |
+
+`ToolOperation` 不提供通用 exactly-once 和自动 tool replay。当前安全保证分层实现：
+
+- Repository 事务保证业务状态不会只改一半；
+- WorkOrder 幂等键避免重复派发同一业务任务；
+- Artifact 不可变并通过 current 指针选择版本；
+- 图片缓存等具体工具降低重复外部调用；
+- ToolOperation 记录输入哈希和结果引用，便于排错和审计。
+
+如果外部 Provider 已成功，但进程在缓存或 Artifact 落库前崩溃，恢复时仍可能重复调用。需要 Provider 幂等键或工具级预留/提交协议，才能进一步收窄这个窗口。
+
+恢复依赖显式执行者：
+
+```text
+Next instrumentation：启动时 scanOnce，仅一次快路径
+npm run worker:course：常驻轮询 queued/running agent-v2 Task
+CourseRunEngine：通过数据库 lease 原子 claim
 ```
 
-因此从手写 workflow 迁移到 LangGraph 时，只替换服务端执行和状态更新方式；[`useSSETask`](../../src/features/course-planner/hooks/use-sse-task.ts)、[`ChatApp`](../../src/features/keya/chat-app.tsx)、Timeline 和 learning workspace 不应重新设计，也不应依赖 LangGraph。
+只有部署常驻 worker（或等价外部调度）才有持续恢复。`after()`、内存 EventBus 和一次启动扫描都不能单独保证进程退出后的任务被继续执行。
 
-## 演进记录
+Task 控制面另有两层数据库围栏：
 
-1. **Day 22 已完成：** 把现有固定流程包装为声明式、可测试的 `WorkflowNode` 接口和集中串行运行层；兼容 facade、API、SSE、Schema、checkpoint、恢复和 UI 语义保持不变。
-2. **Day 23 已完成：** 加入只负责结构化调度的 Supervisor、持久化有限重试、确定性停止规则和公开决策摘要。
-3. **Day 24 已完成：** 收紧九名 Specialist 的 Prompt、输入输出和禁止项。
-4. **Day 25 已完成：** 实现隔离 Page Worker、页面局部重试、自动 QA、依赖感知调度和默认并发度 2 的 Promise Pool。
-5. **Day 26–27 已完成：** 深化六维 QA，并接入定向 Repair、原合同校验与 re-QA；后续升级为质量停滞熔断。
-6. **Day 28 已完成：** 用独立 `START → Planner → END` Demo 验证 State、Node、Edge、Reducer 与 updates stream。
-7. **Day 29 已完成：** 实现复用生产状态、Agent、Page Worker 和 checkpoint 的 StateGraph runner。
-8. **Days 30–31 已完成：** 映射 `updates/custom` 到公共事件，并接入规则型 Supervisor 条件边、Retry、Repair 和生产默认运行源。
+- `course_execution_claims` 通过 SQLite 唯一键保证两个进程不能同时为同一门课程创建
+  活动任务；它是唯一 claim 真相，Task Service 不再保留会跨实例陈旧的内存
+  `courseClaims`；
+- `CourseStore.save()` 使用旧 payload CAS，并在同一条 SQL 中核对 TaskRecord 的
+  `taskId + traceId + status`。暂停或取消一旦提交，旧 runner 就不能再覆盖课程
+  checkpoint。
+
+所有普通 CourseRun 业务事务还在同一 `BEGIN IMMEDIATE` 内统一核对当前
+TaskRecord 的 task/course/trace/status=running，并确认没有 cancel intent。架构、
+页面、Review、发布、返工、失败、claim/renew 和事件追加都经过这个 guard；cancel、
+reconcile 和 lease release 是显式控制路径。这样 cancel intent 先提交时，旧 runner
+不能再留下任何部分 Artifact、WorkOrder 或 Event。
+
+取消不是先改 CourseRun、再碰运气 CAS TaskRecord。TaskStore 会先在 SQLite 写锁内
+登记 `cancel` intent；之后 resume、普通 Task CAS 和普通 CourseStore checkpoint
+都会失败，只有携带该 intent 的取消终态提交能清除它。恢复扫描遇到遗留 intent 时
+优先继续取消，不会被普通长任务挤出扫描配额。即使 resume 已先换了 trace、CourseRun
+尚未 adopt，Repository 也只在 intent 与当前 TaskRecord 一致时允许取消旧 trace 并
+对齐终态。同一 `courseId` 的旧 Task/trace 终态不能被新 attempt 继承；同 trace 的
+CourseStore 与权威 CourseRun 终态不一致时，以 CourseRun 的只读投影对齐。
+
+跨进程暂停不依赖内存 `AbortController`：Engine 在 WorkOrder 边界和每次工具调用前
+重读 TaskRecord。发现 paused/cancelled 或 trace 已变化时立刻停止写入，并在 `finally`
+释放自己持有的 CourseRun/WorkOrder lease。恢复时若旧 trace 的 lease 尚未释放，任务
+会原子退回 queued，交给恢复 worker 稍后重试。pause 提交后会重查当前 taskId 的
+CourseRun；若它已在竞态窗口进入终态，独立 `reconcile()` 会只读投影并对齐
+CourseStore/TaskRecord。恢复扫描也会处理这种 paused + terminal Run，不会永久跳过。
+
+## 10. 公开事件边界
+
+Repository 的 `CourseRunEvent` 经 Projector 和 Task Service 转成现有 SSE：
+
+- `snapshot`
+- allowlist `event`
+- `terminal`
+
+同进程事件由 EventBus 低延迟唤醒；SSE Route 同时每 500 ms 通过
+`CoursePublicEventReader` 直接增量读取持久化 `course_run_events`，因此另一个 worker
+执行的 Agent/Tool 事件不必等 CourseStore checkpoint 才能出现。CourseStore 和
+TaskStore 只提供 snapshot 与 terminal 判断。
+
+`Last-Event-ID` 使用 `traceId + durable sequence` 游标。Projector 过滤旧 revision
+和私有事件后保留数据库原序号，允许出现空洞，绝不重新编号。Reader 分开记录已扫描
+raw sequence 和已发送 public sequence。replan 期间选择最新非 inactive Architect，
+即使旧 Architecture 仍 active，新 Architect 自己的 claimed/tool/submitted 事件也
+能实时显示；旧分支的其他事件继续过滤。pause/resume 更换 trace 后从新 trace 的 0
+开始，并且必须先发送新 trace 的基线 snapshot，再发送任何增量 event。CourseStore
+尚未对齐的窄窗口内，EventBus 增量直接丢弃，随后从 durable log 完整重放，不会把新
+页面事件错误合并进旧 snapshot。
+
+公开内容可以包含角色、pageId、阶段、attempt、Artifact 公共摘要和结构化错误；不能包含 System Prompt、原始模型消息、chain-of-thought、工具原始 payload、资料原文或服务器路径。
+
+Provider/Agent 原始异常在持久化前统一转换成稳定 `code/causeCode` 和固定公开文案。
+Projector 与 SSE 的统一 `send` 出口再对 durable 读取和同进程 EventBus 消息做第二次
+清洗，凭据、Prompt、request body、Unix 路径和带 authority 的 `file://` 路径不能
+通过 snapshot、event 或 terminal 到达浏览器。若 terminal 的旧 checkpoint 游标落后
+于已经发出的 durable event，Route 仍用已发送游标编码终态并关闭连接，不会静默丢掉
+terminal。
+
+## 11. 历史实现说明
+
+仓库仍允许历史 TaskRecord 使用 `source: "workflow" | "langgraph"`，目的是读取旧记录，不是继续执行旧生成器。
+
+以下概念只应出现在历史回顾中：
+
+- LangGraph StateGraph 和 graph stream mapper；
+- 每一步都经过的规则 Supervisor；
+- 九名一次性 Specialist；
+- 固定 Page Worker 流水线；
+- `POST /api/courses/generate` 手写兼容入口；
+- `createMinimalAgent` 和旧 Supervisor Agent。
+
+当前代码入口：
+
+| 关注点 | 文件 |
+| --- | --- |
+| 总引擎 | `src/server/course/run/engine.ts` |
+| Repository | `src/server/course/store/repository.ts` |
+| 四个 Agent | `src/server/agent/plugins/agents/course/` |
+| Agent Runtime | `src/server/agent/runtime/` |
+| Model Steps | `src/server/agent/plugins/model-steps/course/` |
+| Gates | `src/server/course/gate/architecture.ts`、`page.ts`、`review.ts` |
+| 返工与发布 | `src/server/course/run/commands.ts`、`revision-commands.ts` |
+| UI 投影 | `src/server/course/projection/state.ts` |
+| 持续恢复 | `scripts/course-task-worker.ts` |

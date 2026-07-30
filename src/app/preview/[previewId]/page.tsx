@@ -1,7 +1,9 @@
 import { CoursePreviewPage } from "@/features/keya/course-preview-page";
-import { htmlPreviewStore } from "@/server/storage/html-preview-store";
+import { getWebServices } from "@/server/setup/web";
 
 export const dynamic = "force-dynamic";
+
+const { previews } = getWebServices();
 
 export default async function PreviewPage({
   params,
@@ -9,7 +11,7 @@ export default async function PreviewPage({
   params: Promise<{ previewId: string }>;
 }) {
   const { previewId } = await params;
-  const preview = await htmlPreviewStore.load(previewId);
+  const preview = await previews.load(previewId);
 
   return <CoursePreviewPage preview={preview} />;
 }

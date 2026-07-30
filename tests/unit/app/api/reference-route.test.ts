@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ parseUploadedFileSkill: vi.fn() }));
+const mocks = vi.hoisted(() => ({ parseReferenceUpload: vi.fn() }));
 
-vi.mock("@/server/skills/parse-uploaded-file", () => ({
-  parseUploadedFileSkill: mocks.parseUploadedFileSkill,
+vi.mock("@/server/reference/parse", () => ({
+  parseReferenceUpload: mocks.parseReferenceUpload,
 }));
 
 import { POST } from "../../../../src/app/api/references/parse/route";
@@ -24,7 +24,7 @@ describe("reference parse Route Handler", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("parses a multipart file and keeps the trace boundary", async () => {
-    mocks.parseUploadedFileSkill.mockResolvedValue(pack);
+    mocks.parseReferenceUpload.mockResolvedValue(pack);
     const formData = new FormData();
     const file = new File(["太阳风包含带电粒子。"], "solar.txt", {
       type: "text/plain",
@@ -41,7 +41,7 @@ describe("reference parse Route Handler", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual(pack);
-    expect(mocks.parseUploadedFileSkill).toHaveBeenCalledWith(
+    expect(mocks.parseReferenceUpload).toHaveBeenCalledWith(
       expect.objectContaining({ name: "solar.txt" }),
       { traceId: "trace-reference-route" },
     );
@@ -60,6 +60,6 @@ describe("reference parse Route Handler", () => {
       code: "REQUEST_ERROR",
       message: "multipart/form-data 必须包含 file 字段。",
     });
-    expect(mocks.parseUploadedFileSkill).not.toHaveBeenCalled();
+    expect(mocks.parseReferenceUpload).not.toHaveBeenCalled();
   });
 });

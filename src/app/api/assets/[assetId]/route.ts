@@ -1,4 +1,4 @@
-import { loadGeneratedAsset } from "@/server/assets/generated-asset-store";
+import { loadGeneratedAsset } from "@/server/setup/capabilities";
 
 export const runtime = "nodejs";
 

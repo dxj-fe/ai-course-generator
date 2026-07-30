@@ -2,8 +2,11 @@ import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
 
-import { compareCourseQuality } from "../../../../src/server/quality/course-quality-comparison";
-import { buildPageQualityReport } from "../../../../src/server/quality/page-quality";
+import {
+  compareCourseQuality,
+  summarizeCourseQuality,
+} from "../../../../src/server/course/page/quality/comparison";
+import { buildPageQualityReport } from "../../../../src/server/course/page/quality/report";
 import type {
   CourseGenerationState,
   QualityScreenshotEvidence,
@@ -45,6 +48,9 @@ describe("course quality comparison", () => {
     expect(result.winner).toBe("candidate");
     expect(result.scoreDelta).toBeGreaterThan(1);
     expect(result.candidate.screenshotCaptureRate).toBe(1);
+    expect(result.candidate.firstPassAcceptanceRate).toBe(1);
+    expect(result.candidate.modelFirstPassAcceptanceRate).toBe(0);
+    expect(result.candidate.averageRepairAttempts).toBe(0);
     expect(result.pageComparisons[0]?.winner).toBe("candidate");
   });
 
@@ -57,9 +63,81 @@ describe("course quality comparison", () => {
     expect(new Set(manifest.cases.map(({ id }) => id)).size).toBe(20);
     expect(new Set(manifest.cases.map(({ category }) => category)).size).toBeGreaterThanOrEqual(8);
   });
+
+  it("优先使用新运行时投影的 durable Repair 次数", () => {
+    const metrics = summarizeCourseQuality(course("repaired", 94, 2));
+
+    expect(metrics.repairAttemptCount).toBe(2);
+    expect(metrics.averageRepairAttempts).toBe(2);
+    expect(metrics.firstPassAcceptanceRate).toBe(0);
+  });
+
+  it("separates provider-backed first-pass quality from graceful fallbacks", () => {
+    const modelCourse = course("model-rendered", 94);
+    modelCourse.pages[0]!.htmlOutput = {
+      version: 1,
+      html: "<!doctype html><html><body></body></html>",
+      generatedAt: "2026-07-24T10:00:00.000Z",
+    };
+    const fallbackCourse = course("fallback-rendered", 94);
+    fallbackCourse.pages[0]!.htmlOutput = {
+      version: 1,
+      html: '<!doctype html><html data-keya-renderer="deterministic"><body></body></html>',
+      generatedAt: "2026-07-24T10:00:00.000Z",
+    };
+
+    const modelMetrics = summarizeCourseQuality(modelCourse);
+    const fallbackMetrics = summarizeCourseQuality(fallbackCourse);
+
+    expect(modelMetrics.modelFirstPassAcceptanceRate).toBe(1);
+    expect(modelMetrics.modelRenderRate).toBe(1);
+    expect(fallbackMetrics.firstPassAcceptanceRate).toBe(1);
+    expect(fallbackMetrics.modelFirstPassAcceptanceRate).toBe(0);
+    expect(fallbackMetrics.modelRenderRate).toBe(0);
+    expect(modelMetrics.compositeScore).toBeGreaterThan(
+      fallbackMetrics.compositeScore,
+    );
+  });
+
+  it("penalizes architecture and whole-course revision rounds", () => {
+    const firstPass = course("first-pass-course", 94);
+    firstPass.status = "completed";
+    firstPass.generationMetrics = {
+      architectureAttemptCount: 1,
+      architectureRevisionCount: 0,
+      replanCount: 0,
+      courseRevisionCount: 0,
+    };
+    firstPass.pages[0]!.htmlOutput = {
+      version: 1,
+      html: "<!doctype html><html><body></body></html>",
+      generatedAt: "2026-07-24T10:00:00.000Z",
+    };
+    const revised = structuredClone(firstPass);
+    revised.courseId = "revised-course";
+    revised.generationMetrics = {
+      architectureAttemptCount: 2,
+      architectureRevisionCount: 1,
+      replanCount: 1,
+      courseRevisionCount: 1,
+    };
+
+    const firstPassMetrics = summarizeCourseQuality(firstPass);
+    const revisedMetrics = summarizeCourseQuality(revised);
+
+    expect(firstPassMetrics.courseFirstPassAccepted).toBe(true);
+    expect(revisedMetrics.courseFirstPassAccepted).toBe(false);
+    expect(firstPassMetrics.compositeScore).toBeGreaterThan(
+      revisedMetrics.compositeScore,
+    );
+  });
 });
 
-function course(courseId: string, score: number): CourseGenerationState {
+function course(
+  courseId: string,
+  score: number,
+  repairAttemptCount = 0,
+): CourseGenerationState {
   const report = buildPageQualityReport({
     id: `quality-${courseId}`,
     createdAt: "2026-07-24T10:00:00.000Z",
@@ -91,6 +169,7 @@ function course(courseId: string, score: number): CourseGenerationState {
         currentStage: "qa",
         assets: [],
         qualityReport: report,
+        repairAttemptCount,
       },
     ],
     events: [],

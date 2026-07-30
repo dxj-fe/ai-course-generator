@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createCourseHistoryService } from "../../../../src/server/courses/course-history-service";
+import { createCourseHistoryService } from "../../../../src/server/course/service/history";
 import type {
   CourseGenerationState,
   CourseTaskRecord,
@@ -49,6 +49,24 @@ const tasks: CourseTaskRecord[] = [
     createdAt: "2026-07-22T04:00:00.000Z",
     updatedAt: "2026-07-22T04:00:00.000Z",
   }),
+  {
+    ...taskRecord({
+      taskId: "task-history-one-agent-v2",
+      courseId: firstCourse.courseId,
+      createdAt: "2026-07-22T04:10:00.000Z",
+      updatedAt: "2026-07-22T04:10:00.000Z",
+    }),
+    source: "agent-v2",
+    creationBrief: {
+      originalRequest: "生成太阳系互动课程",
+      topic: "太阳系",
+      audience: "初学者",
+      goal: "理解太阳系结构",
+      sectionCount: "auto",
+      learningMode: "mixed",
+      language: "zh-CN",
+    },
+  },
   taskRecord({
     taskId: "task-history-two-workflow",
     courseId: secondCourse.courseId,
@@ -75,21 +93,25 @@ const service = createCourseHistoryService({
       items: [firstCourse, secondCourse],
       unavailableCount: 1,
     }),
-    save: async () => undefined,
+    save: async () => false,
   },
   taskStore: {
     load: async (taskId) => tasks.find((task) => task.taskId === taskId),
+    loadCourseClaim: async () => undefined,
+    loadControlIntent: async () => undefined,
+    requestCancel: async () => undefined,
     list: async () => ({ items: tasks, unavailableCount: 2 }),
-    save: async () => undefined,
+    save: async () => false,
   },
 });
 
 describe("course history service", () => {
-  it("returns only courses whose latest run uses LangGraph", async () => {
+  it("returns courses whose latest run uses agent-v2 or LangGraph", async () => {
     const result = await service.list();
 
     expect(result.items.map(({ courseId }) => courseId)).toEqual([
       "course-history-two",
+      "course-history-one",
     ]);
     expect(result.items[0]).toMatchObject({
       title: "生成高一数学课程",
@@ -102,10 +124,14 @@ describe("course history service", () => {
         version: 2,
       },
     });
+    expect(result.items[1]).toMatchObject({
+      latestRun: { source: "agent-v2" },
+      runCount: 2,
+    });
     expect(result.unavailableCount).toBe(3);
   });
 
-  it("filters LangGraph history by search and course status", async () => {
+  it("filters visible course history by search and course status", async () => {
     await expect(
       service.list({ query: "数学", status: "failed" }),
     ).resolves.toMatchObject({
@@ -118,8 +144,17 @@ describe("course history service", () => {
     });
   });
 
-  it("loads only courses whose latest run uses LangGraph", async () => {
-    await expect(service.load(firstCourse.courseId)).resolves.toBeUndefined();
+  it("loads agent-v2 and LangGraph runs while excluding workflow runs", async () => {
+    await expect(service.load(firstCourse.courseId)).resolves.toMatchObject({
+      course: { courseId: firstCourse.courseId },
+      runs: [
+        { taskId: "task-history-one-agent-v2", source: "agent-v2" },
+        {
+          taskId: "task-history-one-langgraph",
+          source: "langgraph",
+        },
+      ],
+    });
     await expect(service.load(secondCourse.courseId)).resolves.toMatchObject({
       course: { courseId: secondCourse.courseId },
       runs: [{ taskId: "task-history-two", source: "langgraph" }],
@@ -147,7 +182,9 @@ function runningCourse(
   };
 }
 
-function taskRecord(overrides: Partial<CourseTaskRecord>): CourseTaskRecord {
+function taskRecord(
+  overrides: Partial<LegacyCourseTaskRecord>,
+): LegacyCourseTaskRecord {
   return {
     version: 1,
     taskId: "task-history-default",
@@ -161,3 +198,8 @@ function taskRecord(overrides: Partial<CourseTaskRecord>): CourseTaskRecord {
     ...overrides,
   };
 }
+
+type LegacyCourseTaskRecord = Extract<
+  CourseTaskRecord,
+  { source: "workflow" | "langgraph" }
+>;

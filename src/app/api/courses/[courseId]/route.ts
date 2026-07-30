@@ -1,8 +1,10 @@
-import { AiRequestError, createAiErrorResponse, createTraceId } from "@/server/ai/error";
-import { courseHistoryService } from "@/server/courses/course-history-service";
+import { AiRequestError, createAiErrorResponse, createTraceId } from "@/server/infra/ai/error";
+import { getWebServices } from "@/server/setup/web";
 import { CourseIdSchema } from "@/shared/course-schema";
 
 export const runtime = "nodejs";
+
+const { courseHistory } = getWebServices();
 
 type CourseRouteContext = { params: Promise<{ courseId: string }> };
 
@@ -11,7 +13,7 @@ export async function GET(request: Request, { params }: CourseRouteContext) {
   try {
     const parsedId = CourseIdSchema.safeParse((await params).courseId);
     if (!parsedId.success) throw new AiRequestError("courseId 格式无效。");
-    const detail = await courseHistoryService.load(parsedId.data);
+    const detail = await courseHistory.load(parsedId.data);
     if (!detail) {
       return Response.json(
         { code: "REQUEST_ERROR", message: "课程不存在。", traceId },

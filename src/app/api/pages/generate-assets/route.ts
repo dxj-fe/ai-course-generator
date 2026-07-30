@@ -4,8 +4,8 @@ import {
   AiRequestError,
   createAiErrorResponse,
   createTraceId,
-} from "@/server/ai/error";
-import { runImageAssetWorkflow } from "@/server/workflows/image-asset-workflow";
+} from "@/server/infra/ai/error";
+import { runImageAssetWorkflow } from "@/server/setup/capabilities";
 import {
   PageContentDSLSchema,
   VisualBriefSchema,

@@ -4,7 +4,7 @@ import { z } from "zod";
 import {
   createAiResultCache,
   createAiResultCacheKey,
-} from "../../../../src/server/ai/result-cache";
+} from "../../../../src/server/infra/ai/result-cache";
 
 const schema = z.object({ value: z.string() }).strict();
 

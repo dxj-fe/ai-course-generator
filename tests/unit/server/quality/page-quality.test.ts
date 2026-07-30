@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { PAGE_QUALITY_FAILURE_TAXONOMY } from "../../../../src/server/quality/failure-taxonomy";
-import { buildPageQualityReport } from "../../../../src/server/quality/page-quality";
+import { PAGE_QUALITY_FAILURE_TAXONOMY } from "../../../../src/server/course/page/quality/failure-taxonomy";
+import { buildPageQualityReport } from "../../../../src/server/course/page/quality/report";
 import type { QualityIssue } from "../../../../src/shared/course-schema";
 
 const dimensions = {
@@ -71,13 +71,17 @@ describe("page quality rules", () => {
     ]);
   });
 
-  it("forces repair when teaching coherence falls below the quality gate", () => {
+  it("没有可定位问题时把低分保留为观测信号，不自动启动 Repair", () => {
     const report = buildPageQualityReport({
       id: "quality-course-coherence",
       createdAt: "2026-07-14T19:00:00+08:00",
       pageId: "page-02-knowledge",
       modelDimensions: {
         ...dimensions,
+        contentAccuracy: {
+          score: 20,
+          summary: "模型给出极低主观分，但没有提供任何可定位事实错误。",
+        },
         courseCoherence: {
           score: 84,
           summary: "缺少与学习目标对齐的具体练习。",
@@ -88,11 +92,11 @@ describe("page quality rules", () => {
       requireScreenshotEvidence: false,
     });
 
-    expect(report.shouldRepair).toBe(true);
-    expect(report.decision).toBe("revise");
+    expect(report.shouldRepair).toBe(false);
+    expect(report.decision).toBe("pass");
   });
 
-  it("does not pass visually weak HTML just because content and runtime are valid", () => {
+  it("视觉主观分数必须配合具体 issue 才能授权返工", () => {
     const report = buildPageQualityReport({
       id: "quality-visual-gate",
       createdAt: "2026-07-24T15:00:00+08:00",
@@ -113,8 +117,8 @@ describe("page quality rules", () => {
       requireScreenshotEvidence: false,
     });
 
-    expect(report.shouldRepair).toBe(true);
-    expect(report.decision).toBe("revise");
+    expect(report.shouldRepair).toBe(false);
+    expect(report.decision).toBe("pass");
   });
 
   it("sorts content errors before visual errors and keeps deterministic ties", () => {

@@ -1,17 +1,15 @@
-export type CourseSectionCount = "auto" | number;
+import type {
+  CourseCreationBrief,
+  CourseLanguage,
+  CourseLearningMode,
+  CourseSectionCount,
+} from "@/shared/course-schema";
 
-export type CourseLearningMode = "guided" | "practice" | "mixed";
-
-export type CourseLanguage = "zh-CN" | "en-US" | "bilingual";
-
-export type CourseCreationBrief = {
-  originalRequest: string;
-  topic: string;
-  audience: string;
-  goal?: string;
-  sectionCount?: CourseSectionCount;
-  learningMode: CourseLearningMode;
-  language: CourseLanguage;
+export type {
+  CourseCreationBrief,
+  CourseLanguage,
+  CourseLearningMode,
+  CourseSectionCount,
 };
 
 export type ClarificationQuestion = {

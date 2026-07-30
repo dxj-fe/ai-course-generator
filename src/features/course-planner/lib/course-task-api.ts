@@ -2,6 +2,7 @@ import { getErrorText } from "@/features/ai-playground/lib/messages";
 import {
   CourseTaskControlResponseSchema,
   CourseTaskCreateResponseSchema,
+  type CourseCreationBrief,
   type CoursePageCount,
   type CourseTaskControlAction,
   type CourseTaskControlResponse,
@@ -11,7 +12,8 @@ import {
 
 export type CourseTaskPageCount = CoursePageCount;
 type CourseTaskWorkerOptions = {
-  executionMode?: "serial" | "parallel";
+  creationBrief: CourseCreationBrief;
+  executionMode?: "parallel";
   concurrency?: number;
   referencePacks?: ReferencePack[];
 };

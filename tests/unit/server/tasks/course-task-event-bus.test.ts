@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createCourseTaskEventBus } from "../../../../src/server/tasks/course-task-event-bus";
+import { createCourseTaskEventBus } from "../../../../src/server/course/task/event-bus";
 import type { CourseTaskStreamMessage } from "../../../../src/shared/course-schema";
 
 const timestamp = "2026-07-15T03:00:00.000Z";

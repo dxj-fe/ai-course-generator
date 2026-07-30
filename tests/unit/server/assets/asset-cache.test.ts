@@ -13,7 +13,7 @@ import {
   createAssetCacheKey,
   createAssetRequestSetCacheKey,
   type AssetCacheKeyInput,
-} from "../../../../src/server/assets/asset-cache";
+} from "../../../../src/server/agent/plugins/tools/course/image-cache";
 import type {
   AssetGenerationResult,
   AssetRequest,

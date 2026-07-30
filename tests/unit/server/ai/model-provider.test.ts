@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getLanguageModelIdentity } from "../../../../src/server/ai/model-provider";
+import { getLanguageModelIdentity } from "../../../../src/server/infra/ai/model-provider";
 
 afterEach(() => {
   vi.unstubAllEnvs();

@@ -4,7 +4,11 @@ import { pathToFileURL } from "node:url";
 
 import { z } from "zod";
 
-import { validateHtmlEngineerOutput } from "@/server/agents/html-engineer-agent";
+import { validateHtmlEngineerOutput } from "@/server/agent/plugins/model-steps/course/html-engineer-model-step";
+import {
+  isDeterministicPageHtml,
+  summarizeCourseQuality,
+} from "@/server/course/page/quality/comparison";
 import {
   CourseGenerationStateSchema,
   QualityDimensionNameSchema,
@@ -93,6 +97,26 @@ export type DemoCheckReport = {
     actualPages: number;
     qaPages: number;
     screenshotPages: number;
+    firstPassAcceptedPages: number;
+    firstPassAcceptanceRate: number;
+    modelFirstPassAcceptedPages: number;
+    modelFirstPassAcceptanceRate: number;
+    modelRenderedPages: number;
+    modelRenderRate: number;
+    requestedAssets: number;
+    readyAssets: number;
+    fallbackAssets: number;
+    assetReadyRate: number;
+    architectureAttempts: number;
+    architectureRevisions: number;
+    replanCount: number;
+    courseRevisionCount: number;
+    courseFirstPassAccepted: boolean;
+    repairAttemptCount: number;
+    averageRepairAttempts: number;
+    averageOverallScore: number;
+    averageVisualScore: number;
+    compositeScore: number;
     minimumOverallScore?: number;
     archiveEntryCount: number;
   };
@@ -272,6 +296,27 @@ function checkPages(
         });
       }
     }
+    if (
+      page.htmlOutput &&
+      isDeterministicPageHtml(page.htmlOutput.html)
+    ) {
+      issues.push({
+        code: "DETERMINISTIC_HTML_FALLBACK_USED",
+        pageId: page.pageId,
+        message:
+          "页面使用了确定性 HTML fallback；它可以保证安全降级，但不能作为 HTML 模型首轮质量证据。",
+      });
+    }
+    const fallbackAssets = page.assets.filter(
+      ({ status }) => status === "fallback",
+    );
+    if (fallbackAssets.length > 0) {
+      issues.push({
+        code: "ASSET_PROVIDER_FALLBACK_USED",
+        pageId: page.pageId,
+        message: `页面有 ${fallbackAssets.length} 个素材请求使用 fallback，不能作为图片 Provider 成功证据。`,
+      });
+    }
 
     const quality = page.qualityReport;
     if (!quality) {
@@ -414,6 +459,9 @@ function reportFor(input: {
   now?: () => string;
 }): DemoCheckReport {
   const course = input.course;
+  const quality = course
+    ? summarizeCourseQuality(course)
+    : undefined;
   return {
     version: 1,
     baselineId: input.baseline.id,
@@ -431,6 +479,35 @@ function reportFor(input: {
           ({ qualityReport }) =>
             qualityReport?.screenshotEvidence?.status === "captured",
         ).length ?? 0,
+      firstPassAcceptedPages:
+        quality?.firstPassAcceptedPageCount ?? 0,
+      firstPassAcceptanceRate:
+        quality?.firstPassAcceptanceRate ?? 0,
+      modelFirstPassAcceptedPages:
+        quality?.modelFirstPassAcceptedPageCount ?? 0,
+      modelFirstPassAcceptanceRate:
+        quality?.modelFirstPassAcceptanceRate ?? 0,
+      modelRenderedPages:
+        quality?.modelRenderedPageCount ?? 0,
+      modelRenderRate: quality?.modelRenderRate ?? 0,
+      requestedAssets: quality?.requestedAssetCount ?? 0,
+      readyAssets: quality?.readyAssetCount ?? 0,
+      fallbackAssets: quality?.fallbackAssetCount ?? 0,
+      assetReadyRate: quality?.assetReadyRate ?? 0,
+      architectureAttempts:
+        quality?.architectureAttemptCount ?? 0,
+      architectureRevisions:
+        quality?.architectureRevisionCount ?? 0,
+      replanCount: quality?.replanCount ?? 0,
+      courseRevisionCount: quality?.courseRevisionCount ?? 0,
+      courseFirstPassAccepted:
+        quality?.courseFirstPassAccepted ?? false,
+      repairAttemptCount: quality?.repairAttemptCount ?? 0,
+      averageRepairAttempts:
+        quality?.averageRepairAttempts ?? 0,
+      averageOverallScore: quality?.averageOverallScore ?? 0,
+      averageVisualScore: quality?.averageVisualScore ?? 0,
+      compositeScore: quality?.compositeScore ?? 0,
       minimumOverallScore: input.minimumOverallScore,
       archiveEntryCount: input.archiveEntries.length,
     },

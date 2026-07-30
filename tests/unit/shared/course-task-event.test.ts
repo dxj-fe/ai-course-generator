@@ -11,6 +11,15 @@ import {
 } from "../../../src/shared/course-schema";
 
 const timestamp = "2026-07-15T03:00:00.000Z";
+const creationBrief = {
+  originalRequest: "生成三页太阳系互动课程",
+  topic: "太阳系",
+  audience: "初学者",
+  goal: "理解行星特征与太阳系结构",
+  sectionCount: 3,
+  learningMode: "mixed" as const,
+  language: "zh-CN" as const,
+};
 
 function runningState(
   overrides: Partial<CourseGenerationState> = {},
@@ -95,6 +104,55 @@ describe("Day 19 course task protocol", () => {
       status: "queued",
       source: "langgraph",
     });
+  });
+
+  it("requires a structured creation brief only for agent-v2 records", () => {
+    expect(
+      CourseTaskRecordSchema.safeParse({
+        version: 1,
+        taskId: "task-agent-v2",
+        courseId: "course-agent-v2",
+        traceId: "trace-agent-v2",
+        userPrompt: "生成三页太阳系互动课程",
+        source: "agent-v2",
+        status: "queued",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }).success,
+    ).toBe(false);
+
+    expect(
+      CourseTaskRecordSchema.parse({
+        version: 1,
+        taskId: "task-agent-v2",
+        courseId: "course-agent-v2",
+        traceId: "trace-agent-v2",
+        userPrompt: "生成三页太阳系互动课程",
+        creationBrief,
+        source: "agent-v2",
+        status: "queued",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }),
+    ).toMatchObject({
+      source: "agent-v2",
+      creationBrief,
+    });
+  });
+
+  it("keeps legacy records readable when source or creationBrief is absent", () => {
+    expect(
+      CourseTaskRecordSchema.parse({
+        version: 1,
+        taskId: "task-legacy-record",
+        courseId: "course-legacy-record",
+        traceId: "trace-legacy-record",
+        userPrompt: "生成旧版课程",
+        status: "completed",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }),
+    ).toMatchObject({ source: "workflow" });
   });
 
   it("keeps pause as a non-terminal task control state", () => {

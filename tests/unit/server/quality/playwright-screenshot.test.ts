@@ -7,7 +7,7 @@ import {
   countAuthoredTouchTargets,
   normalizeViewportFitMetrics,
   resolveDominantVisualMetrics,
-} from "../../../../src/server/quality/playwright-screenshot";
+} from "../../../../src/server/infra/browser/page-screenshot";
 import { pageContentDsl } from "../../../fixtures/course-design";
 import { buildValidGeneratedHtml } from "../../../fixtures/generated-html";
 

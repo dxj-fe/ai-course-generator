@@ -1,12 +1,12 @@
-import { AiRequestError, createAiErrorResponse, createTraceId } from "@/server/ai/error";
-import { createCourseArchive } from "@/server/courses/course-export";
-import { createCourseStore } from "@/server/storage/course-store";
+import { AiRequestError, createAiErrorResponse, createTraceId } from "@/server/infra/ai/error";
+import { createCourseArchive } from "@/server/course";
+import { getWebServices } from "@/server/setup/web";
 import { CourseIdSchema } from "@/shared/course-schema";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const courseStore = createCourseStore();
+const { courses: courseStore } = getWebServices();
 type CourseExportRouteContext = { params: Promise<{ courseId: string }> };
 
 export async function GET(

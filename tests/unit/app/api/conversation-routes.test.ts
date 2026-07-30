@@ -7,8 +7,10 @@ const mocks = vi.hoisted(() => ({
   delete: vi.fn(),
 }));
 
-vi.mock("@/server/storage/conversation-store", () => ({
-  conversationStore: mocks,
+vi.mock("@/server/setup/web", () => ({
+  getWebServices: () => ({
+    conversations: mocks,
+  }),
 }));
 
 import {

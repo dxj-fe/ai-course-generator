@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { buildRepairPrompts } from "../../../../src/server/prompts/repair";
+import { buildRepairPrompts } from "../../../../src/server/agent/plugins/prompts/course/model-steps/repair";
 
 describe("Repair prompts", () => {
   it("uses the active bounded and report-only Repair contract", async () => {
     const prompts = await buildRepairPrompts({ pageId: "page-02" });
 
-    expect(prompts.version).toBe("1.6.1/1.0.1");
+    expect(prompts.version).toBe("1.6.2/1.0.1");
     expect(prompts.systemPrompt).toContain("安全熔断");
     expect(prompts.systemPrompt).not.toContain("最多两轮");
     expect(prompts.systemPrompt).toContain("禁止返回完整重写文档");

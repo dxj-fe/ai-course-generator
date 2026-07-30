@@ -4,7 +4,7 @@ import {
   pageContentDsl,
   visualBrief,
 } from "../../../fixtures/course-design";
-import { buildHtmlEngineerPrompts } from "../../../../src/server/prompts/html-engineer";
+import { buildHtmlEngineerPrompts } from "../../../../src/server/agent/plugins/prompts/course/model-steps/html-engineer";
 import { getFunctionalTemplate } from "../../../../src/shared/templates/functional";
 import { getStyleTemplate } from "../../../../src/shared/templates/style";
 
@@ -25,9 +25,17 @@ describe("HTML Engineer prompts", () => {
       styleTemplate: styleTemplate!,
       visualBrief,
       pageGuidance,
+      pageDesignGuidance: [
+        {
+          logicalPath:
+            "agent/skills/course-page-design/SKILL.md",
+          digest: "a".repeat(64),
+          content: "围绕一个主要认知动作建立视觉焦点。",
+        },
+      ],
     });
 
-    expect(prompts.version).toBe("2.7.0/2.2.0");
+    expect(prompts.version).toBe("2.8.0/2.2.0");
     expect(prompts.systemPrompt).toContain("禁止任何 `<script>`");
     expect(prompts.systemPrompt).toContain("不得交换槽位");
     expect(prompts.systemPrompt).toContain("精确 altText");
@@ -44,33 +52,22 @@ describe("HTML Engineer prompts", () => {
       "choice prompt 若只比对应 question block 的 body 多一个纯题号前缀",
     );
     expect(prompts.systemPrompt).toContain("x1&lt;x2");
-    expect(prompts.systemPrompt).toContain(
-      "文档宽高不得超出视口",
-    );
+    expect(prompts.systemPrompt).toContain("PageDesignGuidance");
     expect(prompts.systemPrompt).toContain(
       "不得使用 `overflow:auto` / `overflow:scroll`",
     );
     expect(prompts.systemPrompt).toContain(
       "`html`、`body` 和唯一 `main` 必须使用 `width:100%`",
     );
-    expect(prompts.systemPrompt).toContain(
-      "不能依赖播放器把超长页面整体缩小",
-    );
-    expect(prompts.systemPrompt).toContain("@media (max-height:520px)");
-    expect(prompts.systemPrompt).toContain(
-      "max-height:min(42vh, 220px)",
-    );
-    expect(prompts.systemPrompt).toContain(
-      "其首屏可见面积至少占画布 8%",
-    );
+    expect(prompts.systemPrompt).toContain("不能依赖播放器整体缩放");
     expect(prompts.systemPrompt).toContain(
       "禁止先渲染一份静态题卡",
     );
     expect(prompts.systemPrompt).toContain(
       "input 页面必须逐字呈现页面 title",
     );
-    expect(prompts.systemPrompt).toContain(
-      "原生 `details/summary` 渐进展开结构",
+    expect(prompts.systemPrompt).not.toContain(
+      "三个及以上内容块",
     );
     expect(prompts.userPrompt).toContain(pageContentDsl.pageId);
     expect(prompts.userPrompt).toContain("--course-color-background");
@@ -82,6 +79,9 @@ describe("HTML Engineer prompts", () => {
       'data-runtime-submit="true"',
     );
     expect(prompts.userPrompt).toContain("data-question-id");
+    expect(prompts.userPrompt).toContain(
+      "围绕一个主要认知动作建立视觉焦点",
+    );
     expect(prompts.userPrompt).toContain("null");
   });
 

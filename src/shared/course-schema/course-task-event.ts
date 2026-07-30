@@ -12,6 +12,7 @@ import {
   ReferencePackSchema,
 } from "./reference";
 import { CoursePageCountSchema } from "./intent";
+import { CourseCreationBriefSchema } from "./course-creation-brief";
 
 /** 可安全用作任务存储目录名及 SSE 订阅键的稳定 ID。 */
 export const CourseTaskIdSchema = z
@@ -37,10 +38,11 @@ export const CourseTaskControlRequestSchema = z
   })
   .strict();
 
-/** 公开标识任务由兼容手写编排还是 LangGraph 运行。 */
+/** 保留旧运行源用于历史读取；新任务统一使用 agent-v2。 */
 export const CourseTaskRuntimeSourceSchema = z.enum([
   "workflow",
   "langgraph",
+  "agent-v2",
 ]);
 
 const CourseTaskErrorSchema = z
@@ -51,8 +53,7 @@ const CourseTaskErrorSchema = z
   })
   .strict();
 
-/** 持久化 taskId 与课程检查点之间的映射及任务生命周期。 */
-export const CourseTaskRecordSchema = z
+const CourseTaskRecordBaseSchema = z
   .object({
     version: z.literal(1),
     taskId: CourseTaskIdSchema,
@@ -63,14 +64,42 @@ export const CourseTaskRecordSchema = z
     pageCount: CoursePageCountSchema.optional(),
     executionMode: PageWorkerModeSchema.optional(),
     concurrency: z.number().int().min(1).max(5).optional(),
-    source: CourseTaskRuntimeSourceSchema.default("workflow"),
     status: CourseTaskStatusSchema,
     createdAt: z.string().datetime({ offset: true }),
     updatedAt: z.string().datetime({ offset: true }),
     completedAt: z.string().datetime({ offset: true }).optional(),
     error: CourseTaskErrorSchema.optional(),
   })
-  .strict()
+  .strict();
+
+const LegacyCourseTaskRecordSchema = CourseTaskRecordBaseSchema.extend({
+  source: z.enum(["workflow", "langgraph"]),
+  creationBrief: CourseCreationBriefSchema.optional(),
+}).strict();
+
+const AgentV2CourseTaskRecordSchema = CourseTaskRecordBaseSchema.extend({
+  source: z.literal("agent-v2"),
+  creationBrief: CourseCreationBriefSchema,
+}).strict();
+
+/**
+ * 持久化 taskId 与课程检查点之间的映射及任务生命周期。
+ * 历史记录缺少 source 时继续按 workflow 读取；agent-v2 在运行时和类型层都强制保存 brief。
+ */
+export const CourseTaskRecordSchema = z
+  .preprocess(
+    (value) =>
+      typeof value === "object" &&
+      value !== null &&
+      !Array.isArray(value) &&
+      !("source" in value)
+        ? { ...value, source: "workflow" }
+        : value,
+    z.discriminatedUnion("source", [
+      LegacyCourseTaskRecordSchema,
+      AgentV2CourseTaskRecordSchema,
+    ]),
+  )
   .superRefine((record, context) => {
     if (
       record.status === "paused" &&

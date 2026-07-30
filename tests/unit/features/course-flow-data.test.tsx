@@ -38,6 +38,47 @@ describe("course flow inspector data", () => {
     }
   });
 
+  it("shows the real agent-v2 architecture, semantic handoff, and review loops", () => {
+    const nodeIds = new Set(FLOW_NODES.map(({ id }) => id));
+    for (const nodeId of [
+      "brief",
+      "architect",
+      "architecture-submission",
+      "director-architecture",
+      "fanout",
+      "wave-scheduler",
+      "page-builder",
+      "page-gate",
+      "summary-unlock",
+      "manifest",
+      "reviewer",
+      "director-review",
+      "fix-pages",
+      "replan",
+      "final-gate",
+    ]) {
+      expect(nodeIds.has(nodeId), nodeId).toBe(true);
+    }
+    expect(
+      FLOW_EDGES.some(
+        ({ from, to }) => from === "director-architecture" && to === "fanout",
+      ),
+    ).toBe(true);
+    expect(
+      FLOW_EDGES.some(
+        ({ from, to, kind }) =>
+          from === "summary-unlock" &&
+          to === "wave-scheduler" &&
+          kind === "loop",
+      ),
+    ).toBe(true);
+    expect(
+      FLOW_NODES.some(({ files }) =>
+        files.some((file) => file.includes("server/langgraph")),
+      ),
+    ).toBe(false);
+  });
+
   it("links every risk summary to existing nodes", () => {
     const knownNodeIds = new Set(FLOW_NODES.map(({ id }) => id));
 
@@ -53,8 +94,8 @@ describe("course flow inspector data", () => {
 
     expect(markup).toContain("一句话，如何变成一门课");
     expect(markup).toContain("适配画布");
-    expect(markup).toContain("Page QA，风险：高风险");
+    expect(markup).toContain("Course Reviewer Agent，风险：高风险");
     expect(markup).toContain("POST /api/courses/tasks");
-    expect(markup).toContain("src/server/tasks/course-generation-task-service.ts");
+    expect(markup).toContain("src/server/course/task/service.ts");
   });
 });

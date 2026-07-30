@@ -1,5 +1,7 @@
 # Day 24 Prompt Review
 
+> 历史审查记录：下文的 Specialist、Supervisor 和版本结论描述旧运行时，不是当前 agent-v2 架构。当前生产 Prompt 清单见 [`prompt-library.md`](./prompt-library.md)，Writer、HTML、QA、Repair 等现已归类为 Model Step。
+
 本审查先记录建议，再逐项决定是否修改。Prompt Lint 只报告合同问题，不自动覆盖文件。
 
 | Specialist | 审查发现 | 建议 | 处理结果 |

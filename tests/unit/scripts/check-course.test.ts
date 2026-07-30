@@ -79,6 +79,26 @@ describe("Day 36 course checker", () => {
         actualPages: 3,
         qaPages: 3,
         screenshotPages: 3,
+        firstPassAcceptedPages: 3,
+        firstPassAcceptanceRate: 1,
+        modelFirstPassAcceptedPages: 3,
+        modelFirstPassAcceptanceRate: 1,
+        modelRenderedPages: 3,
+        modelRenderRate: 1,
+        requestedAssets: 0,
+        readyAssets: 0,
+        fallbackAssets: 0,
+        assetReadyRate: 1,
+        architectureAttempts: 1,
+        architectureRevisions: 0,
+        replanCount: 0,
+        courseRevisionCount: 0,
+        courseFirstPassAccepted: true,
+        repairAttemptCount: 0,
+        averageRepairAttempts: 0,
+        averageOverallScore: 95,
+        averageVisualScore: 95,
+        compositeScore: 97,
         minimumOverallScore: 95,
         archiveEntryCount: 5,
       },
@@ -160,6 +180,44 @@ describe("Day 36 course checker", () => {
     );
   });
 
+  it("does not mistake deterministic HTML fallback for model quality", () => {
+    const course = completedCourse();
+    const firstPage = course.pages[0]!;
+    const fallbackCourse = {
+      ...course,
+      pages: [
+        {
+          ...firstPage,
+          htmlOutput: {
+            ...firstPage.htmlOutput!,
+            html: firstPage.htmlOutput!.html.replace(
+              "<html",
+              '<html data-keya-renderer="deterministic"',
+            ),
+          },
+        },
+        ...course.pages.slice(1),
+      ],
+    };
+
+    const report = checkDemoCourse({
+      course: fallbackCourse,
+      baseline,
+      archiveBytes: archiveFor(course),
+    });
+
+    expect(report.passed).toBe(false);
+    expect(report.metrics.firstPassAcceptedPages).toBe(3);
+    expect(report.metrics.modelFirstPassAcceptedPages).toBe(2);
+    expect(report.metrics.modelRenderedPages).toBe(2);
+    expect(report.issues).toContainEqual(
+      expect.objectContaining({
+        code: "DETERMINISTIC_HTML_FALLBACK_USED",
+        pageId: firstPage.pageId,
+      }),
+    );
+  });
+
   it("keeps all checked-in Demo baseline files schema-valid", async () => {
     for (const fileName of [
       "mars-exploration.json",
@@ -218,6 +276,12 @@ function completedCourse(): CourseGenerationState {
       visual: visualBrief.pageGuidance[index],
     })),
     workerConfig: { mode: "serial", concurrency: 1 },
+    generationMetrics: {
+      architectureAttemptCount: 1,
+      architectureRevisionCount: 0,
+      replanCount: 0,
+      courseRevisionCount: 0,
+    },
     pages: courseDesignOutline.pages.map((page, index) => ({
       pageId: page.id,
       order: page.order,

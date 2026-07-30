@@ -4,8 +4,8 @@ import {
   AiRequestError,
   createAiErrorResponse,
   createTraceId,
-} from "@/server/ai/error";
-import { runToolCallDemo } from "@/server/tools/tool-call-demo";
+} from "@/server/infra/ai/error";
+import { runToolCallDemo } from "@/server/setup/capabilities";
 
 export const runtime = "nodejs";
 

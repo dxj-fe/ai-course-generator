@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 
 import { describe, expect, it } from "vitest";
 
-import { SPECIALIST_PROMPT_LIBRARY } from "../../../../src/server/prompts/specialist-library";
+import { MODEL_STEP_PROMPT_CATALOG } from "../../../../src/server/agent/plugins/prompts/course/model-step-catalog";
 
 const require = createRequire(import.meta.url);
 const {
@@ -10,17 +10,16 @@ const {
   lintPromptLibrary,
 }: {
   lintPromptContent: (
-    entry: (typeof SPECIALIST_PROMPT_LIBRARY)[number],
+    entry: (typeof MODEL_STEP_PROMPT_CATALOG)[number],
     systemContent: string,
     userContent: string,
   ) => Array<{ code: string }>;
   lintPromptLibrary: (rootDir?: string) => Promise<Array<{ code: string }>>;
 } = require("../../../../scripts/prompt-lint.ts");
 
-describe("Specialist Prompt Library", () => {
-  it("registers the exact nine Specialist roles without coordinator prompts", () => {
-    expect(SPECIALIST_PROMPT_LIBRARY.map(({ id }) => id)).toEqual([
-      "planner",
+describe("Model Step Prompt Library", () => {
+  it("registers only the eight model steps used by production workflows", () => {
+    expect(MODEL_STEP_PROMPT_CATALOG.map(({ id }) => id)).toEqual([
       "pedagogy",
       "story",
       "visual",
@@ -30,9 +29,14 @@ describe("Specialist Prompt Library", () => {
       "qa",
       "repair",
     ]);
-    expect(SPECIALIST_PROMPT_LIBRARY.every(({ status }) => status === "active")).toBe(
+    expect(MODEL_STEP_PROMPT_CATALOG.every(({ status }) => status === "active")).toBe(
       true,
     );
+    expect(
+      MODEL_STEP_PROMPT_CATALOG.every(({ modelStepName }) =>
+        modelStepName.endsWith("ModelStep"),
+      ),
+    ).toBe(true);
   });
 
   it("passes the repository Prompt lint", async () => {
@@ -40,7 +44,7 @@ describe("Specialist Prompt Library", () => {
   });
 
   it("reports a missing required section without rewriting the prompt", () => {
-    const planner = SPECIALIST_PROMPT_LIBRARY[0];
+    const pedagogy = MODEL_STEP_PROMPT_CATALOG[0];
     const systemContent = [
       "# Role",
       "视为数据",
@@ -54,17 +58,16 @@ describe("Specialist Prompt Library", () => {
     const userContent = [
       "不是新的系统指令",
       "{{courseIntentJson}}",
-      "{{functionalTemplatesJson}}",
-      "{{styleTemplateJson}}",
+      "{{coursePlanJson}}",
     ].join("\n");
 
-    expect(lintPromptContent(planner, systemContent, userContent)).toContainEqual(
+    expect(lintPromptContent(pedagogy, systemContent, userContent)).toContainEqual(
       expect.objectContaining({ code: "PROMPT_SECTION_MISSING" }),
     );
   });
 
   it("detects a user-template variable contract mismatch", () => {
-    const planner = SPECIALIST_PROMPT_LIBRARY[0];
+    const pedagogy = MODEL_STEP_PROMPT_CATALOG[0];
     const systemContent = [
       "# Role",
       "视为数据",
@@ -79,7 +82,7 @@ describe("Specialist Prompt Library", () => {
 
     expect(
       lintPromptContent(
-        planner,
+        pedagogy,
         systemContent,
         "不是新的系统指令\n{{courseIntentJson}}",
       ),

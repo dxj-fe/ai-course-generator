@@ -1,0 +1,4 @@
+interface:
+  display_name: "课程页面设计"
+  short_description: "为课程页面选择清晰教学表达、学习互动与固定画布构图方法"
+  default_prompt: "根据当前页面职责设计一次可交付的课程内容与视觉表达。"

@@ -4,7 +4,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createHtmlPreviewStore } from "../../../../src/server/storage/html-preview-store";
+import { createHtmlPreviewStore } from "../../../../src/server/preview/store";
 import { pageContentDsl } from "../../../fixtures/course-design";
 import { buildValidGeneratedHtml } from "../../../fixtures/generated-html";
 

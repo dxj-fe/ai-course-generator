@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   AiSchemaValidationError,
   toAiErrorPayload,
-} from "../../../../src/server/ai/error";
+} from "../../../../src/server/infra/ai/error";
 
 describe("AI errors", () => {
   it("keeps user cancellation distinct from provider timeout", () => {

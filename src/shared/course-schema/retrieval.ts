@@ -3,10 +3,10 @@ import { z } from "zod";
 import { PageTypeSchema } from "./page";
 import { VisualStyleSchema } from "./intent";
 
-export const RETRIEVAL_MAX_SKILL_CARDS = 3;
-export const RETRIEVAL_MAX_TEMPLATE_CARDS = 3;
+export const RETRIEVAL_MAX_TEMPLATE_CARDS = PageTypeSchema.options.length;
 export const RETRIEVAL_MAX_REFERENCE_HITS = 3;
 export const RETRIEVAL_MAX_REFERENCE_CHUNKS_PER_HIT = 4;
+export const RETRIEVAL_MAX_REFERENCE_EXCERPT_CHARS = 1_200;
 
 const CardIdSchema = z
   .string()
@@ -19,43 +19,6 @@ const CardLimitationsSchema = z
   .array(z.string().min(2).max(180))
   .min(1)
   .max(6);
-const CardKeywordsSchema = z
-  .array(z.string().min(1).max(40))
-  .min(1)
-  .max(16);
-
-export const ToolCardSchema = z
-  .object({
-    kind: z.literal("tool"),
-    id: CardIdSchema,
-    name: CardNameSchema,
-    description: CardDescriptionSchema,
-    whenToUse: CardUsageSchema,
-    inputSchemaSummary: z.string().min(2).max(240),
-    outputSummary: z.string().min(2).max(240),
-    limitations: CardLimitationsSchema,
-    keywords: CardKeywordsSchema,
-  })
-  .strict();
-
-export const SkillCardSchema = z
-  .object({
-    kind: z.literal("skill"),
-    id: CardIdSchema,
-    name: CardNameSchema,
-    description: CardDescriptionSchema,
-    agentNames: z
-      .array(z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(80))
-      .min(1)
-      .max(6),
-    whenToUse: CardUsageSchema,
-    inputSchemaSummary: z.string().min(2).max(240),
-    outputSummary: z.string().min(2).max(240),
-    limitations: CardLimitationsSchema,
-    keywords: CardKeywordsSchema,
-  })
-  .strict();
-
 export const TemplateCardSchema = z
   .object({
     kind: z.enum(["functional-template", "style-template"]),
@@ -98,13 +61,21 @@ export const ReferenceHitSchema = z
       .array(z.string().regex(/^chunk-[0-9]{2}$/))
       .min(1)
       .max(RETRIEVAL_MAX_REFERENCE_CHUNKS_PER_HIT),
-    reason: z.string().min(2).max(240),
-  })
-  .strict();
-
-export const SkillCardMatchSchema = z
-  .object({
-    card: SkillCardSchema,
+    excerpts: z
+      .array(
+        z
+          .object({
+            chunkId: z.string().regex(/^chunk-[0-9]{2}$/),
+            text: z
+              .string()
+              .min(1)
+              .max(RETRIEVAL_MAX_REFERENCE_EXCERPT_CHARS),
+            truncated: z.boolean(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(RETRIEVAL_MAX_REFERENCE_CHUNKS_PER_HIT),
     reason: z.string().min(2).max(240),
   })
   .strict();
@@ -113,12 +84,6 @@ export const TemplateCardMatchSchema = z
   .object({
     card: TemplateCardSchema,
     reason: z.string().min(2).max(240),
-  })
-  .strict();
-
-export const SkillCardSearchResultSchema = z
-  .object({
-    matches: z.array(SkillCardMatchSchema).max(RETRIEVAL_MAX_SKILL_CARDS),
   })
   .strict();
 
@@ -139,13 +104,9 @@ export const ReferenceSearchResultSchema = z
   })
   .strict();
 
-export type ToolCard = z.infer<typeof ToolCardSchema>;
-export type SkillCard = z.infer<typeof SkillCardSchema>;
 export type TemplateCard = z.infer<typeof TemplateCardSchema>;
 export type ReferenceHit = z.infer<typeof ReferenceHitSchema>;
-export type SkillCardMatch = z.infer<typeof SkillCardMatchSchema>;
 export type TemplateCardMatch = z.infer<typeof TemplateCardMatchSchema>;
-export type SkillCardSearchResult = z.infer<typeof SkillCardSearchResultSchema>;
 export type TemplateCardSearchResult = z.infer<
   typeof TemplateCardSearchResultSchema
 >;

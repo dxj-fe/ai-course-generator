@@ -1,186 +1,32 @@
 import { getErrorText } from "@/features/ai-playground/lib/messages";
-import { z } from "zod";
 import type {
   CourseDesignBriefs,
   AssetGenerationResult,
-  AssetRequest,
   CourseIntent,
-  CoursePageCount,
   CoursePlan,
-  HtmlOutput,
+  CourseDesignResponse,
+  HtmlEngineerResponse,
+  ImageAssetResponse,
   PageContentDSL,
+  PageQAResponse,
   PagePlan,
+  PageWriterResponse,
   PageWorkerBrief,
-  QualityReport,
   ReferencePack,
 } from "@/shared/course-schema";
-import {
-  CourseGenerationStateSchema,
-  type CourseGenerationState,
-} from "@/shared/course-schema";
 
-type AgentStatus = "idle" | "running" | "completed" | "failed";
-type AgentEventType =
-  | "start"
-  | "agent_start"
-  | "agent_done"
-  | "model_call"
-  | "tool_call"
-  | "validation"
-  | "repair_attempt"
-  | "repair_success"
-  | "page_done"
-  | "finish"
-  | "error";
-type CourseDesignAgent = "pedagogy" | "story" | "visual";
 type RequestOptions = { traceId?: string; signal?: AbortSignal };
-type CourseWorkerOptions = {
-  executionMode?: "serial" | "parallel";
-  concurrency?: number;
-};
 
-export type PublicAgentEvent = {
-  id: string;
-  sequence: number;
-  type: AgentEventType;
-  summary: string;
-  traceId?: string;
-  timestamp?: string;
-  step?: number;
-  data?: Record<string, unknown>;
-};
-
-export type CoursePlannerResponse = {
-  traceId: string;
-  intent: CourseIntent;
-  state: {
-    status: AgentStatus;
-    events: PublicAgentEvent[];
-    outline?: CoursePlan;
-    error?: { code: string; message: string };
-  };
-};
-
-export type CourseDesignResponse = {
-  traceId: string;
-  state: {
-    status: "completed" | "failed";
-    events: Array<PublicAgentEvent & { agent: CourseDesignAgent }>;
-    briefs?: CourseDesignBriefs;
-    pageWorkerBriefs?: PageWorkerBrief[];
-    error?: {
-      agent: CourseDesignAgent | "workflow";
-      code: string;
-      message: string;
-    };
-  };
-};
-
-export type PageWriterResponse = {
-  traceId: string;
-  state: {
-    status: AgentStatus;
-    events: PublicAgentEvent[];
-    content?: PageContentDSL;
-    error?: { code: string; message: string };
-  };
-};
-
-export type HtmlEngineerResponse = {
-  traceId: string;
-  state: {
-    status: AgentStatus;
-    events: PublicAgentEvent[];
-    htmlOutput?: HtmlOutput;
-    error?: { code: string; message: string };
-  };
-};
-
-export type ImageAssetResponse = {
-  traceId: string;
-  state: {
-    status: "completed" | "failed";
-    events: PublicAgentEvent[];
-    requests?: AssetRequest[];
-    results?: AssetGenerationResult[];
-    error?: { code: string; message: string };
-  };
-};
-
-export type PageQAResponse = {
-  traceId: string;
-  state: {
-    status: AgentStatus;
-    events: PublicAgentEvent[];
-    report?: QualityReport;
-    error?: { code: string; message: string };
-  };
-};
-
-export type CourseMvpPageCount = CoursePageCount;
-
-export type CourseGenerationResponse = {
-  courseId: string;
-  traceId: string;
-  state: CourseGenerationState;
-};
-
-const CourseGenerationResponseSchema = z
-  .object({
-    courseId: z.string().min(1),
-    traceId: z.string().min(1),
-    state: CourseGenerationStateSchema,
-  })
-  .strict();
-
-/** 一次请求以可配置 Page Worker 生成内容驱动的课程；传 courseId 时恢复。 */
-export async function generateCourseMvp(
-  input:
-    | (CourseWorkerOptions & {
-        userPrompt: string;
-        courseId?: string;
-        pageCount?: CourseMvpPageCount;
-      })
-    | (CourseWorkerOptions & {
-        courseId: string;
-        userPrompt?: string;
-        pageCount?: CourseMvpPageCount;
-      }),
-  options?: RequestOptions,
-): Promise<CourseGenerationResponse> {
-  const payload = await postPlannerRequest<unknown>(
-    "/api/courses/generate",
-    input,
-    options,
-  );
-  const parsed = CourseGenerationResponseSchema.safeParse(payload);
-
-  if (!parsed.success) {
-    throw new Error(
-      `整课生成接口返回了无效状态：${parsed.error.issues
-        .map((issue) => `${issue.path.join(".") || "root"}: ${issue.message}`)
-        .join("; ")}`,
-    );
-  }
-
-  return parsed.data;
-}
-
-/** 调用现有课程规划接口；响应仍在请求完成后一次性返回。 */
-export function planCourse(
-  input: {
-    userPrompt?: string;
-    intent?: CourseIntent;
-    referencePacks?: ReferencePack[];
-  },
-  options?: RequestOptions,
-) {
-  return postPlannerRequest<CoursePlannerResponse>(
-    "/api/courses/plan",
-    input,
-    options,
-  );
-}
+export type {
+  CourseDesignResponse,
+  CourseGenerationResponse,
+  CoursePlannerResponse,
+  HtmlEngineerResponse,
+  ImageAssetResponse,
+  PageQAResponse,
+  PageWriterResponse,
+  PublicAgentEvent,
+} from "@/shared/course-schema";
 
 /** 调用现有专业设计工作流接口。 */
 export function designCourse(

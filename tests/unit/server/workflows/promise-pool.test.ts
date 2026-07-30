@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { runPromisePool } from "../../../../src/server/workflows/promise-pool";
+import { runPromisePool } from "../../../../src/server/infra/concurrency/pool";
 
 describe("runPromisePool", () => {
   it("caps active work at the configured concurrency and preserves input order", async () => {

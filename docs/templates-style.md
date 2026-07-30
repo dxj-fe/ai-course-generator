@@ -17,7 +17,7 @@
 | `decoration` | 定义背景纹理、形状语言和装饰强度。 |
 | `motion` | 定义标准时长、缓动、动效强度和 reduced-motion 降级。 |
 | `layoutDensity` | 使用 `compact / comfortable / spacious` 控制整体信息密度。 |
-| `assetGuidance` | 给图片 Agent 提供风格、构图、背景和负向约束。 |
+| `assetGuidance` | 给 Image Prompt Model Step 和生图 Tool 提供风格、构图、背景和负向约束。 |
 | `bestFor` / `avoidFor` | 帮助 Agent 判断适用与不适用场景。 |
 | `keywords` | 为确定性候选搜索提供视觉关键词。 |
 

@@ -31,7 +31,7 @@ must call the cancellation endpoint.
 
 ## Model routing
 
-`src/server/ai/model-router.ts` maps a server-owned capability to one tier:
+`src/server/infra/ai/model-router.ts` maps a server-owned capability to one tier:
 
 | Tier | Current capabilities | Transient fallback |
 | --- | --- | --- |

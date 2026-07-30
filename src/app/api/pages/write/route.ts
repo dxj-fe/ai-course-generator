@@ -1,11 +1,11 @@
 import { z } from "zod";
 
-import { runPageWriterAgent } from "@/server/agents/page-writer-agent";
+import { runPageWriterModelStep } from "@/server/setup/capabilities";
 import {
   AiRequestError,
   createAiErrorResponse,
   createTraceId,
-} from "@/server/ai/error";
+} from "@/server/infra/ai/error";
 import {
   CourseIntentSchema,
   PagePlanSchema,
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
     }
 
     const traceId = parsed.data.traceId || headerTraceId;
-    const state = await runPageWriterAgent(
+    const state = await runPageWriterModelStep(
       {
         intent: parsed.data.intent,
         page: parsed.data.page,

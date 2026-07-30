@@ -1,4 +1,4 @@
-import type { ModelTier } from "@/server/ai/model-router";
+import type { ModelTier } from "@/server/infra/ai/model-router";
 
 const DEFAULT_MODEL_NAME = "xai/grok-build-0.1";
 const DEFAULT_ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";

@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  SkillCardSchema,
-  TemplateCardSchema,
-  ToolCardSchema,
-} from "../../../src/shared/course-schema";
+import { TemplateCardSchema } from "../../../src/shared/course-schema";
 
 const baseCard = {
   id: "sample-card",
@@ -16,26 +12,7 @@ const baseCard = {
   limitations: ["仅供测试"],
 };
 
-describe("retrieval card schemas", () => {
-  it("validates strict ToolCard and SkillCard contracts", () => {
-    expect(
-      ToolCardSchema.parse({
-        ...baseCard,
-        kind: "tool",
-        keywords: ["测试"],
-      }),
-    ).toMatchObject({ id: "sample-card", kind: "tool" });
-    expect(
-      SkillCardSchema.safeParse({
-        ...baseCard,
-        kind: "skill",
-        agentNames: ["planner"],
-        keywords: ["测试"],
-        privatePrompt: "must not pass",
-      }).success,
-    ).toBe(false);
-  });
-
+describe("template retrieval card schema", () => {
   it("requires the discriminator-specific template field", () => {
     expect(
       TemplateCardSchema.safeParse({

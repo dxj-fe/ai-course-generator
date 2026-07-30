@@ -6,12 +6,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   runImageAssetWorkflow,
   type ImageAssetWorkflowDependencies,
-} from "../../../../src/server/workflows/image-asset-workflow";
+} from "../../../../src/server/agent/plugins/tools/course/image-assets";
 import {
   createAssetCache,
   type AssetCache,
-} from "../../../../src/server/assets/asset-cache";
-import { createGenerateImageSkill } from "../../../../src/server/tools/generate-image-skill";
+} from "../../../../src/server/agent/plugins/tools/course/image-cache";
+import { createGenerateImageTool } from "../../../../src/server/agent/plugins/tools/course/generate-image";
 import type {
   AssetRequest,
   PageContentDSL,
@@ -393,7 +393,7 @@ function createDependencies({
   return {
     cache,
     getImageModelIdentity: () => modelIdentity,
-    imageSkill: createGenerateImageSkill({ generate, store }),
+    imageTool: createGenerateImageTool({ generate, store }),
     runImagePrompt,
   };
 }

@@ -74,7 +74,7 @@ export function CourseFlowInspector() {
     y: 32,
     scale: 0.34,
   });
-  const [selectedId, setSelectedId] = useState("create-task");
+  const [selectedId, setSelectedId] = useState("task");
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -235,7 +235,7 @@ export function CourseFlowInspector() {
           </Link>
           <div className={styles.eyebrow}>
             <Sprout aria-hidden="true" size={13} strokeWidth={2} />
-            COURSE PIPELINE / 2026.07.28
+            COURSE PIPELINE / AGENT-V2
           </div>
           <h1>一句话，如何变成一门课</h1>
           <p>
@@ -595,12 +595,12 @@ function StageBands() {
     x: number;
     width: number;
   }> = [
-    { stage: "input", x: 32, width: 920 },
-    { stage: "task", x: 972, width: 910 },
-    { stage: "design", x: 1902, width: 1220 },
-    { stage: "page", x: 3142, width: 1190 },
-    { stage: "quality", x: 4352, width: 510 },
-    { stage: "delivery", x: 4882, width: 806 },
+    { stage: "input", x: 32, width: 350 },
+    { stage: "task", x: 402, width: 570 },
+    { stage: "design", x: 992, width: 1200 },
+    { stage: "page", x: 2212, width: 1210 },
+    { stage: "quality", x: 3442, width: 1270 },
+    { stage: "delivery", x: 4732, width: 956 },
   ];
   return (
     <>

@@ -3,8 +3,8 @@
 const { readFile, access } = require("node:fs/promises") as typeof import("node:fs/promises");
 const path = require("node:path") as typeof import("node:path");
 const {
-  SPECIALIST_PROMPT_LIBRARY,
-} = require("../src/server/prompts/specialist-library.ts") as typeof import("../src/server/prompts/specialist-library");
+  MODEL_STEP_PROMPT_CATALOG,
+} = require("../src/server/agent/plugins/prompts/course/model-step-catalog.ts") as typeof import("../src/server/agent/plugins/prompts/course/model-step-catalog");
 
 const REQUIRED_SECTIONS = [
   "Role",
@@ -33,7 +33,7 @@ function pushIssue(
 }
 
 function lintPromptContent(
-  entry: (typeof SPECIALIST_PROMPT_LIBRARY)[number],
+  entry: (typeof MODEL_STEP_PROMPT_CATALOG)[number],
   systemContent: string,
   userContent: string,
 ) {
@@ -128,20 +128,20 @@ async function lintPromptLibrary(rootDir = process.cwd()) {
   const ids = new Set<string>();
   const files = new Set<string>();
 
-  if (SPECIALIST_PROMPT_LIBRARY.length !== 9) {
+  if (MODEL_STEP_PROMPT_CATALOG.length !== 8) {
     pushIssue(issues, {
-      code: "PROMPT_SPECIALIST_COUNT",
+      code: "PROMPT_MODEL_STEP_COUNT",
       promptId: "library",
-      message: `Prompt Library 必须登记 9 名 Specialist，当前为 ${SPECIALIST_PROMPT_LIBRARY.length}。`,
+      message: `Prompt Library 必须登记 8 个实际 Model Step，当前为 ${MODEL_STEP_PROMPT_CATALOG.length}。`,
     });
   }
 
-  for (const entry of SPECIALIST_PROMPT_LIBRARY) {
+  for (const entry of MODEL_STEP_PROMPT_CATALOG) {
     if (ids.has(entry.id)) {
       pushIssue(issues, {
         code: "PROMPT_ID_DUPLICATED",
         promptId: entry.id,
-        message: "Specialist ID 重复。",
+        message: "Model Step ID 重复。",
       });
     }
     ids.add(entry.id);
@@ -174,8 +174,11 @@ async function lintPromptLibrary(rootDir = process.cwd()) {
       rootDir,
       "src",
       "server",
+      "agent",
+      "plugins",
       "prompts",
-      "templates",
+      "course",
+      "model-steps",
     );
     const systemPath = path.join(templateDirectory, entry.system.fileName);
     const userPath = path.join(templateDirectory, entry.user.fileName);
@@ -198,7 +201,17 @@ async function lintPromptLibrary(rootDir = process.cwd()) {
     if (moduleFile) {
       try {
         await access(
-          path.join(rootDir, "src", "server", "prompts", moduleFile),
+          path.join(
+            rootDir,
+            "src",
+            "server",
+            "agent",
+            "plugins",
+            "prompts",
+            "course",
+            "model-steps",
+            moduleFile,
+          ),
         );
       } catch {
         pushIssue(issues, {
@@ -234,7 +247,7 @@ async function main() {
   }
 
   console.log(
-    `Prompt lint passed: ${SPECIALIST_PROMPT_LIBRARY.length} specialists, ${REQUIRED_SECTIONS.length} required sections.`,
+    `Prompt lint passed: ${MODEL_STEP_PROMPT_CATALOG.length} model steps, ${REQUIRED_SECTIONS.length} required sections.`,
   );
 }
 

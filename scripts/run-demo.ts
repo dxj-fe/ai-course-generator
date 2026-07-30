@@ -10,8 +10,14 @@ import path from "node:path";
 import { once } from "node:events";
 import { pathToFileURL } from "node:url";
 
+import { loadEnvConfig } from "@next/env";
 import { chromium, type Page } from "playwright";
 
+import {
+  getImageModelConfig,
+  getModelConfig,
+} from "@/config/env";
+import type { ModelTier } from "@/server/infra/ai/model-router";
 import {
   CourseHistoryDetailResponseSchema,
   CourseTaskCreateResponseSchema,
@@ -26,13 +32,31 @@ import {
   type DemoCheckReport,
 } from "./check-course";
 
-const BASELINE_FILES = [
-  "mars-exploration.json",
-  "solar-system.json",
-  "ai-literacy.json",
+const DEMO_BASELINES = [
+  { id: "mars-exploration", fileName: "mars-exploration.json" },
+  { id: "solar-system", fileName: "solar-system.json" },
+  { id: "ai-literacy", fileName: "ai-literacy.json" },
 ] as const;
+const MODEL_TIERS: ModelTier[] = ["cheap", "balanced", "strong"];
 const TASK_TIMEOUT_MS = 45 * 60 * 1_000;
 const SERVER_START_TIMEOUT_MS = 3 * 60 * 1_000;
+
+type DemoCliOptions = {
+  caseIds: string[];
+  recordResults: boolean;
+};
+
+type ProviderConfig = {
+  apiKey: string;
+  baseURL: string;
+  modelName: string;
+  providerName: string;
+};
+
+type NamedProviderConfig = {
+  label: string;
+  config: ProviderConfig;
+};
 
 type DemoCaseResult = {
   baselineId: string;
@@ -63,19 +87,22 @@ type DemoRunSummary = {
 };
 
 async function main() {
-  const recordResults = process.argv.slice(2).includes("--record");
+  const options = parseDemoCliOptions(process.argv.slice(2));
   const runId = new Date().toISOString().replace(/[:.]/g, "-");
   const startedAt = new Date().toISOString();
   const rootDir = process.cwd();
-  const runDir = path.join(rootDir, ".data", "demo-runs", runId);
-  await mkdirAsync(runDir, { recursive: true });
+  loadEnvConfig(rootDir, true);
 
   const externalBaseUrl = process.env.DEMO_BASE_URL?.replace(/\/+$/, "");
+  if (!externalBaseUrl) assertLocalDemoProviderConfig();
+
+  const baselines = await loadBaselines(rootDir, options.caseIds);
+  const runDir = path.join(rootDir, ".data", "demo-runs", runId);
+  await mkdirAsync(runDir, { recursive: true });
   const server = externalBaseUrl
     ? undefined
     : await startLocalServer(rootDir, runDir);
   const baseUrl = externalBaseUrl ?? server!.baseUrl;
-  const baselines = await loadBaselines(rootDir);
   const results: DemoCaseResult[] = [];
 
   try {
@@ -100,12 +127,142 @@ async function main() {
   const summaryPath = path.join(runDir, "summary.json");
   await writeJson(summaryPath, summary);
 
-  if (recordResults) {
+  if (options.recordResults) {
     await recordCuratedResults(rootDir, summary, runDir);
   }
 
   printSummary(summary, summaryPath);
   if (!summary.passed) process.exitCode = 1;
+}
+
+export function parseDemoCliOptions(args: string[]): DemoCliOptions {
+  const caseIds: string[] = [];
+  let recordResults = false;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]!;
+    if (argument === "--record") {
+      recordResults = true;
+      continue;
+    }
+    if (argument === "--case") {
+      const caseId = args[index + 1];
+      if (!caseId || caseId.startsWith("--")) {
+        throw new Error("--case 后必须提供固定 Demo ID。");
+      }
+      caseIds.push(caseId);
+      index += 1;
+      continue;
+    }
+    throw new Error(`未知 Demo 参数：${argument}`);
+  }
+
+  const uniqueCaseIds = [...new Set(caseIds)];
+  const supportedCaseIds = new Set<string>(
+    DEMO_BASELINES.map(({ id }) => id),
+  );
+  const unknownCaseIds = uniqueCaseIds.filter((id) => !supportedCaseIds.has(id));
+  if (unknownCaseIds.length > 0) {
+    throw new Error(
+      `未知固定 Demo：${unknownCaseIds.join(", ")}。可选值：${[...supportedCaseIds].join(", ")}。`,
+    );
+  }
+  if (recordResults && uniqueCaseIds.length > 0) {
+    throw new Error("--record 只允许留存完整的三个固定 Demo，不能与 --case 同时使用。");
+  }
+
+  return { caseIds: uniqueCaseIds, recordResults };
+}
+
+export function findProviderConfigIssues(configs: NamedProviderConfig[]) {
+  const issues: string[] = [];
+
+  for (const { label, config } of configs) {
+    if (looksLikePlaceholder(config.apiKey)) {
+      issues.push(`${label} 的 API Key 仍是占位值。`);
+    }
+    if (looksLikePlaceholder(config.modelName)) {
+      issues.push(`${label} 的模型 ID 仍是占位值。`);
+    }
+    if (!isUsableProviderUrl(config.baseURL)) {
+      issues.push(`${label} 的 Base URL 无效或仍是占位地址。`);
+    }
+  }
+
+  return issues;
+}
+
+function assertLocalDemoProviderConfig() {
+  const configs: NamedProviderConfig[] = [];
+  const issues: string[] = [];
+
+  for (const tier of MODEL_TIERS) {
+    try {
+      configs.push({
+        label: `文本模型 ${tier}`,
+        config: getModelConfig(tier),
+      });
+    } catch (error) {
+      issues.push(`文本模型 ${tier} 配置不完整：${configErrorMessage(error)}`);
+    }
+  }
+
+  try {
+    configs.push({
+      label: "图片模型",
+      config: getImageModelConfig(),
+    });
+  } catch (error) {
+    issues.push(`图片模型配置不完整：${configErrorMessage(error)}`);
+  }
+
+  issues.push(...findProviderConfigIssues(configs));
+  if (issues.length === 0) return;
+
+  throw new Error(
+    [
+      "Demo Provider 预检失败，未启动服务，也未发送外部请求：",
+      ...issues.map((issue) => `- ${issue}`),
+      "请在 .env.local 或 .env 中配置真实 Provider；若复用 Ark 生图，请删除或留空全部 IMAGE_* 覆盖项。",
+    ].join("\n"),
+  );
+}
+
+function looksLikePlaceholder(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return (
+    normalized.length === 0 ||
+    normalized.startsWith("<") ||
+    normalized.includes("placeholder") ||
+    normalized.includes("replace_me") ||
+    normalized.includes("replace-me") ||
+    normalized.includes("changeme") ||
+    normalized.includes("your_") ||
+    normalized.includes("your-") ||
+    normalized.includes("your ")
+  );
+}
+
+function isUsableProviderUrl(value: string) {
+  if (looksLikePlaceholder(value)) return false;
+  try {
+    const parsed = new URL(value);
+    return (
+      (parsed.protocol === "https:" || parsed.protocol === "http:") &&
+      !parsed.hostname.includes("example") &&
+      !parsed.hostname.includes("your-")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function configErrorMessage(error: unknown) {
+  if (!(error instanceof Error)) return "缺少必需环境变量。";
+  const match = error.message.match(
+    /Missing required environment variable: ([A-Z0-9_]+)/,
+  );
+  return match ? `缺少 ${match[1]}。` : "配置格式不正确。";
 }
 
 async function runCase(input: {
@@ -157,7 +314,7 @@ async function runCase(input: {
 
     const passed = report.passed && Boolean(screenshots);
     process.stdout.write(
-      `[demo:${input.baseline.id}] ${passed ? "PASS" : "FAIL"} · QA 最低分 ${report.metrics.minimumOverallScore ?? "n/a"} · ${report.issues.length} issues\n`,
+      `[demo:${input.baseline.id}] ${passed ? "PASS" : "FAIL"} · 整课首轮 ${report.metrics.courseFirstPassAccepted ? "是" : "否"} · 架构尝试 ${report.metrics.architectureAttempts} 次 · 模型页面首轮 ${(report.metrics.modelFirstPassAcceptanceRate * 100).toFixed(0)}% · 模型 HTML ${(report.metrics.modelRenderRate * 100).toFixed(0)}% · 素材 ready ${(report.metrics.assetReadyRate * 100).toFixed(0)}% · Repair ${report.metrics.repairAttemptCount} 次 · 综合分 ${report.metrics.compositeScore} · ${report.issues.length} issues\n`,
     );
     return {
       baselineId: input.baseline.id,
@@ -210,19 +367,32 @@ async function createTask(baseUrl: string, baseline: DemoBaseline) {
   const response = await fetch(`${baseUrl}/api/courses/tasks`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      userPrompt: baseline.prompt,
-      pageCount: baseline.pageCount,
-      executionMode: "serial",
-      concurrency: 1,
-      source: "langgraph",
-    }),
+    body: JSON.stringify(buildDemoTaskInput(baseline)),
   });
   const payload: unknown = await response.json();
   if (!response.ok) {
     throw new Error(`创建任务失败 (${response.status})：${JSON.stringify(payload)}`);
   }
   return CourseTaskCreateResponseSchema.parse(payload);
+}
+
+export function buildDemoTaskInput(baseline: DemoBaseline) {
+  return {
+    userPrompt: baseline.prompt,
+    creationBrief: {
+      originalRequest: baseline.prompt,
+      topic: baseline.name,
+      audience: "原始课程要求中指定的学习者",
+      goal: `完成“${baseline.name}”课程目标，并通过课程中的可观察练习证明理解。`,
+      sectionCount: baseline.pageCount,
+      learningMode: "mixed" as const,
+      language: "zh-CN" as const,
+    },
+    pageCount: baseline.pageCount,
+    executionMode: "parallel" as const,
+    concurrency: 1,
+    source: "agent-v2" as const,
+  };
 }
 
 async function waitForTerminal(baseUrl: string, taskId: string) {
@@ -379,9 +549,15 @@ async function openCourseDetail(
   await page.emulateMedia({ reducedMotion: "reduce" });
 }
 
-async function loadBaselines(rootDir: string) {
+async function loadBaselines(rootDir: string, caseIds: string[]) {
+  const selectedIds = new Set(caseIds);
+  const selected =
+    selectedIds.size === 0
+      ? DEMO_BASELINES
+      : DEMO_BASELINES.filter(({ id }) => selectedIds.has(id));
+
   return Promise.all(
-    BASELINE_FILES.map(async (fileName) => {
+    selected.map(async ({ fileName }) => {
       const source = await readFile(
         path.join(rootDir, "docs", "demo", "baselines", fileName),
         "utf8",
@@ -413,7 +589,7 @@ async function startLocalServer(rootDir: string, runDir: string) {
         ...process.env,
         NEXT_DIST_DIR: path.relative(
           rootDir,
-          path.join(runDir, "next"),
+          path.join(rootDir, ".data", "demo-next"),
         ),
         PAGE_QA_SCREENSHOTS_ENABLED: "true",
       },

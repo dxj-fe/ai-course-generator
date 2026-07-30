@@ -138,7 +138,7 @@ describe("course task SSE client state", () => {
     expect(next.latestState?.status).toBe("running");
   });
 
-  it("deduplicates a replayed sequence and reports a sequence gap", () => {
+  it("按 durable sequence 去重，并接受 revision 过滤造成的序号间隔", () => {
     const event = {
       id: "event-1",
       sequence: 1,
@@ -177,11 +177,14 @@ describe("course task SSE client state", () => {
 
     expect(reduceMessage(state, duplicate)).toBe(state);
 
-    const invalid = reduceMessage(state, gap);
-    expect(invalid.connectionStatus).toBe("closed");
-    expect(invalid.error?.message).toContain("期望 2，收到 3");
-    expect(invalid.latestState?.events).toHaveLength(1);
-    expect(shouldCloseCourseTaskStream(state, invalid)).toBe(true);
+    const accepted = reduceMessage(state, gap);
+    expect(accepted.connectionStatus).toBe("open");
+    expect(accepted.error).toBeUndefined();
+    expect(accepted.lastEventSequence).toBe(3);
+    expect(accepted.latestState?.events.map(({ sequence }) => sequence)).toEqual(
+      [1, 3],
+    );
+    expect(shouldCloseCourseTaskStream(state, accepted)).toBe(false);
   });
 
   it("does not roll state back when route initialization buffers an older snapshot", () => {
@@ -218,6 +221,129 @@ describe("course task SSE client state", () => {
     });
 
     expect(reduceMessage(current, stale)).toBe(current);
+  });
+
+  it("接受更新时间更晚但 revision 已裁掉旧事件的 snapshot，并保留 durable cursor", () => {
+    const event = {
+      id: "event-7",
+      sequence: 7,
+      type: "agent_done" as const,
+      traceId,
+      timestamp: "2026-07-15T02:00:07.000Z",
+      step: 7,
+      summary: "旧 revision 已完成。",
+      stage: "planner" as const,
+      agent: "curriculum-architect",
+    };
+    const current: CourseTaskStreamState = {
+      connectionStatus: "open",
+      taskStatus: "running",
+      source: "agent-v2",
+      lastEventSequence: 7,
+      messages: [],
+      latestState: createState({
+        events: [event],
+        updatedAt: "2026-07-15T02:00:07.000Z",
+      }),
+    };
+    const newRevision = CourseTaskStreamMessageSchema.parse({
+      type: "snapshot",
+      taskId,
+      courseId,
+      source: "agent-v2",
+      state: createState({
+        currentStage: "planner",
+        events: [],
+        updatedAt: "2026-07-15T02:00:08.000Z",
+      }),
+    });
+
+    const next = reduceMessage(current, newRevision);
+
+    expect(next.latestState?.events).toEqual([]);
+    expect(next.lastEventSequence).toBe(7);
+    expect(next.connectionStatus).toBe("open");
+  });
+
+  it("resume 新 trace 先接收 snapshot 后，可安全合并新页面事件", () => {
+    const resumedTraceId = "trace-sse-task-resumed";
+    const previous: CourseTaskStreamState = {
+      connectionStatus: "open",
+      taskStatus: "running",
+      source: "agent-v2",
+      lastEventSequence: 10,
+      messages: [],
+      latestState: createState({
+        traceId,
+        currentStage: "planner",
+        pages: [],
+        events: [
+          {
+            id: "event-old-10",
+            sequence: 10,
+            type: "agent_done",
+            traceId,
+            timestamp: "2026-07-15T02:00:10.000Z",
+            step: 10,
+            summary: "旧 trace 已暂停。",
+            stage: "planner",
+          },
+        ],
+      }),
+    };
+    const resumedSnapshot = CourseTaskStreamMessageSchema.parse({
+      type: "snapshot",
+      taskId,
+      courseId,
+      source: "agent-v2",
+      taskStatus: "running",
+      state: createState({
+        traceId: resumedTraceId,
+        currentStage: "page_writer",
+        pages: [
+          {
+            pageId: "page-new",
+            order: 1,
+            status: "running",
+            currentStage: "page_writer",
+            assets: [],
+          },
+        ],
+        events: [],
+        updatedAt: "2026-07-15T02:01:00.000Z",
+      }),
+    });
+    const resumedPageEvent = CourseTaskStreamMessageSchema.parse({
+      type: "event",
+      taskId,
+      courseId,
+      source: "agent-v2",
+      event: {
+        id: "event-new-11",
+        sequence: 11,
+        type: "agent_start",
+        traceId: resumedTraceId,
+        timestamp: "2026-07-15T02:01:01.000Z",
+        step: 11,
+        summary: "新 trace 页面 Agent 已领取任务。",
+        stage: "page_writer",
+        pageId: "page-new",
+        agent: "page-builder",
+      },
+    });
+
+    const withSnapshot = reduceMessage(previous, resumedSnapshot);
+    const withEvent = reduceMessage(withSnapshot, resumedPageEvent);
+
+    expect(withSnapshot.latestState?.traceId).toBe(resumedTraceId);
+    expect(withEvent.connectionStatus).toBe("open");
+    expect(withEvent.error).toBeUndefined();
+    expect(withEvent.latestState?.events.at(-1)).toMatchObject({
+      sequence: 11,
+      pageId: "page-new",
+      traceId: resumedTraceId,
+    });
+    expect(shouldCloseCourseTaskStream(withSnapshot, withEvent)).toBe(false);
   });
 
   it("keeps a network reconnect separate from task failure and accepts terminal state", () => {

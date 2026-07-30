@@ -1,10 +1,12 @@
 import { z } from "zod";
 
-import { createAiErrorResponse, createTraceId } from "@/server/ai/error";
-import { htmlPreviewStore } from "@/server/storage/html-preview-store";
+import { createAiErrorResponse, createTraceId } from "@/server/infra/ai/error";
+import { getWebServices } from "@/server/setup/web";
 import { QualityReportSchema } from "@/shared/course-schema";
 
 export const runtime = "nodejs";
+
+const { previews } = getWebServices();
 
 const PreviewInputSchema = z
   .object({
@@ -19,7 +21,7 @@ export async function POST(request: Request) {
   const traceId = request.headers.get("x-trace-id")?.trim() || createTraceId();
   try {
     const input = PreviewInputSchema.parse(await request.json());
-    return Response.json(await htmlPreviewStore.save(input), {
+    return Response.json(await previews.save(input), {
       status: 201,
       headers: { "x-trace-id": traceId },
     });

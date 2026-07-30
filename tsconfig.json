@@ -35,8 +35,8 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts",
-    ".data/demo-runs/2026-07-23T07-10-04-686Z/next/types/**/*.ts",
-    ".data/demo-runs/2026-07-23T07-10-04-686Z/next/dev/types/**/*.ts"
+    ".data/demo-next/types/**/*.ts",
+    ".data/demo-next/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

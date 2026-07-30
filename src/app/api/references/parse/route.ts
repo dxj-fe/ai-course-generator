@@ -2,8 +2,8 @@ import {
   AiRequestError,
   createAiErrorResponse,
   createTraceId,
-} from "@/server/ai/error";
-import { parseUploadedFileSkill } from "@/server/skills/parse-uploaded-file";
+} from "@/server/infra/ai/error";
+import { parseReferenceUpload } from "@/server/reference";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -18,7 +18,7 @@ export async function POST(request: Request) {
       throw new AiRequestError("multipart/form-data 必须包含 file 字段。");
     }
 
-    const referencePack = await parseUploadedFileSkill(file, { traceId });
+    const referencePack = await parseReferenceUpload(file, { traceId });
     return Response.json(referencePack, {
       headers: { "x-trace-id": traceId },
     });

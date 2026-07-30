@@ -6,7 +6,7 @@ import {
   pedagogyPlan,
   storyArc,
 } from "../../../fixtures/course-design";
-import { buildVisualDirectorPrompts } from "../../../../src/server/prompts/visual-director";
+import { buildVisualDirectorPrompts } from "../../../../src/server/agent/plugins/prompts/course/model-steps/visual";
 
 describe("Visual Director prompts", () => {
   it("states array cardinalities and the exact page guidance count", async () => {
@@ -19,7 +19,7 @@ describe("Visual Director prompts", () => {
       styleTemplate: { id: "sci-fi" },
     });
 
-    expect(prompts.version).toBe("2.2.0/2.0.0");
+    expect(prompts.version).toBe("2.2.1/2.0.0");
     expect(prompts.systemPrompt).toContain("layoutPrinciples 必须包含 2–10 条");
     expect(prompts.systemPrompt).toContain("accessibilityRules 必须包含 2–12 条");
     expect(prompts.systemPrompt).toContain("主次层级、内容与插图的空间关系");

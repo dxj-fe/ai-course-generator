@@ -1,4 +1,4 @@
-import { handleStreamTextRequest } from "@/server/ai/handlers";
+import { handleStreamTextRequest } from "@/server/infra/ai/handlers";
 
 export const runtime = "nodejs";
 

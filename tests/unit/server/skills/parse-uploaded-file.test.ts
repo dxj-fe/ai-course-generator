@@ -3,15 +3,15 @@ import { describe, expect, it, vi } from "vitest";
 import {
   chunkReferenceText,
   normalizeReferenceSummaryOutput,
-  parseUploadedFileSkill,
-} from "../../../../src/server/skills/parse-uploaded-file";
+  parseReferenceUpload,
+} from "../../../../src/server/reference/parse";
 
 const summary = {
   summary: "资料解释太阳风。",
   keyFacts: [{ text: "太阳风包含带电粒子。", chunkIds: ["chunk-01"] }],
 };
 
-describe("parseUploadedFileSkill", () => {
+describe("parseReferenceUpload", () => {
   it("normalizes observed localized summary keys before strict validation", () => {
     expect(
       normalizeReferenceSummaryOutput({
@@ -42,7 +42,7 @@ describe("parseUploadedFileSkill", () => {
       { type: "text/markdown" },
     );
 
-    const result = await parseUploadedFileSkill(
+    const result = await parseReferenceUpload(
       file,
       { traceId: "trace-reference" },
       { summarize },
@@ -73,7 +73,7 @@ describe("parseUploadedFileSkill", () => {
 
   it("uses the PDF extractor only for a valid PDF header", async () => {
     const extractPdfText = vi.fn(async () => "太阳风由日冕释放。" );
-    const result = await parseUploadedFileSkill(
+    const result = await parseReferenceUpload(
       new File(["%PDF-1.7\nfixture"], "solar.pdf", {
         type: "application/pdf",
       }),
@@ -90,14 +90,14 @@ describe("parseUploadedFileSkill", () => {
     const summarize = async () => summary;
 
     await expect(
-      parseUploadedFileSkill(
+      parseReferenceUpload(
         new File(["hello"], "notes.docx"),
         context,
         { summarize },
       ),
     ).rejects.toThrow("仅支持 txt、md 和 pdf");
     await expect(
-      parseUploadedFileSkill(
+      parseReferenceUpload(
         new File([new Uint8Array([0, 1, 2])], "notes.txt", {
           type: "text/plain",
         }),
@@ -106,14 +106,14 @@ describe("parseUploadedFileSkill", () => {
       ),
     ).rejects.toThrow("包含二进制内容");
     await expect(
-      parseUploadedFileSkill(
+      parseReferenceUpload(
         new File([new Uint8Array(5 * 1024 * 1024 + 1)], "notes.txt"),
         context,
         { summarize },
       ),
     ).rejects.toThrow("不能超过 5 MB");
     await expect(
-      parseUploadedFileSkill(
+      parseReferenceUpload(
         new File(["%PDF-1.7"], "scan.pdf", { type: "application/pdf" }),
         context,
         { extractPdfText: async () => "", summarize },
@@ -131,7 +131,7 @@ describe("parseUploadedFileSkill", () => {
 
   it("rejects model facts that reference unknown chunks", async () => {
     await expect(
-      parseUploadedFileSkill(
+      parseReferenceUpload(
         new File(["一份有效的资料正文。"], "notes.txt", {
           type: "text/plain",
         }),

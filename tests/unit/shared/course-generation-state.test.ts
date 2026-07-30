@@ -116,6 +116,31 @@ describe("Day 18 course generation state", () => {
     });
   });
 
+  it("validates aggregate architecture revision metrics", () => {
+    expect(
+      CourseGenerationStateSchema.safeParse({
+        ...createRunningState(),
+        generationMetrics: {
+          architectureAttemptCount: 2,
+          architectureRevisionCount: 1,
+          replanCount: 0,
+          courseRevisionCount: 0,
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      CourseGenerationStateSchema.safeParse({
+        ...createRunningState(),
+        generationMetrics: {
+          architectureAttemptCount: 2,
+          architectureRevisionCount: 0,
+          replanCount: 0,
+          courseRevisionCount: 0,
+        },
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts a completed three-page course with previewable HTML", () => {
     const state = createCompletedState();
 
@@ -185,6 +210,36 @@ describe("Day 18 course generation state", () => {
     };
 
     expect(CourseGenerationStateSchema.safeParse(state).success).toBe(false);
+  });
+
+  it("接受有间隔的持久化事件游标，并拒绝游标回退", () => {
+    const baseEvent = {
+      type: "agent_start" as const,
+      traceId: "trace-day-18",
+      timestamp: startedAt,
+      step: 1,
+      summary: "课程 Agent 已开始。",
+      stage: "intent" as const,
+      agent: "course-agent",
+    };
+    const withGap = {
+      ...createRunningState(),
+      events: [
+        { ...baseEvent, id: "event-11", sequence: 11 },
+        { ...baseEvent, id: "event-23", sequence: 23 },
+      ],
+    };
+
+    expect(CourseGenerationStateSchema.safeParse(withGap).success).toBe(true);
+    expect(
+      CourseGenerationStateSchema.safeParse({
+        ...withGap,
+        events: [
+          { ...baseEvent, id: "event-23", sequence: 23 },
+          { ...baseEvent, id: "event-11", sequence: 11 },
+        ],
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects completed pages without HTML output", () => {

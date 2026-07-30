@@ -21,7 +21,7 @@ vi.mock("ai", () => ({
   streamText: vi.fn(),
 }));
 
-vi.mock("../../../../src/server/ai/model-provider", () => ({
+vi.mock("../../../../src/server/infra/ai/model-provider", () => ({
   getLanguageModel: getLanguageModelMock,
   getLanguageModelIdentity: getLanguageModelIdentityMock,
 }));
@@ -29,8 +29,8 @@ vi.mock("../../../../src/server/ai/model-provider", () => ({
 import {
   generateStructuredObjectSafe,
   generateTextSafe,
-} from "../../../../src/server/ai/client";
-import { aiResultCache } from "../../../../src/server/ai/result-cache";
+} from "../../../../src/server/infra/ai/client";
+import { aiResultCache } from "../../../../src/server/infra/ai/result-cache";
 
 describe("AI client", () => {
   beforeEach(() => {
@@ -66,16 +66,11 @@ describe("AI client", () => {
     ]);
   });
 
-  it("falls back when the primary model returns a schema-invalid structured object", async () => {
-    generateTextMock
-      .mockResolvedValueOnce({
-        output: { unexpected: "shape" },
-        usage: { outputTokens: 10 },
-      })
-      .mockResolvedValueOnce({
-        output: { value: "valid fallback" },
-        usage: { outputTokens: 12 },
-      });
+  it("Schema 不合同时直接暴露上游质量问题，不用较弱模型重写整份结果", async () => {
+    generateTextMock.mockResolvedValueOnce({
+      output: { unexpected: "shape" },
+      usage: { outputTokens: 10 },
+    });
 
     await expect(
       generateStructuredObjectSafe({
@@ -85,12 +80,11 @@ describe("AI client", () => {
         schemaName: "page_repair_result",
         traceId: "schema-fallback-test",
       }),
-    ).resolves.toEqual({ value: "valid fallback" });
+    ).rejects.toThrow("结构化输出校验失败");
 
-    expect(generateTextMock).toHaveBeenCalledTimes(2);
+    expect(generateTextMock).toHaveBeenCalledTimes(1);
     expect(generateTextMock.mock.calls.map(([input]) => input.model)).toEqual([
       { tier: "strong" },
-      { tier: "balanced" },
     ]);
   });
 
@@ -149,11 +143,11 @@ describe("AI client", () => {
     const request = {
       cache: {
         input: { topic: "solar wind" },
-        namespace: "test-intent",
+        namespace: "test-page-writer",
         schemaVersion: "test-schema@1",
       },
-      capability: "intent" as const,
-      prompt: "Generate an intent",
+      capability: "page-writer" as const,
+      prompt: "Generate page content",
       promptVersion: "test-prompt@1",
       schema: z.object({ value: z.string() }),
       schemaName: "test_intent",

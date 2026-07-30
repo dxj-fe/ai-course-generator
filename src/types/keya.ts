@@ -1,16 +1,14 @@
 import type {
   CourseDesignResponse,
+  CourseGenerationState,
   CoursePlannerResponse,
+  CourseTaskRuntimeSource,
+  CourseTaskStatus,
   HtmlEngineerResponse,
   ImageAssetResponse,
   PageQAResponse,
   PageWriterResponse,
   PublicAgentEvent,
-} from "@/features/course-planner/lib/course-planner-api";
-import type {
-  CourseGenerationState,
-  CourseTaskRuntimeSource,
-  CourseTaskStatus,
 } from "@/shared/course-schema";
 
 export type ChatMessageRole = "assistant" | "user";

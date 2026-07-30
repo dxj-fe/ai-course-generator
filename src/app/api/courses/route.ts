@@ -1,9 +1,11 @@
 import { z } from "zod";
 
-import { createAiErrorResponse, createTraceId } from "@/server/ai/error";
-import { courseHistoryService } from "@/server/courses/course-history-service";
+import { createAiErrorResponse, createTraceId } from "@/server/infra/ai/error";
+import { getWebServices } from "@/server/setup/web";
 
 export const runtime = "nodejs";
+
+const { courseHistory } = getWebServices();
 
 const CourseHistoryQuerySchema = z
   .object({
@@ -20,7 +22,7 @@ export async function GET(request: Request) {
       query: url.searchParams.get("query") || undefined,
       status: url.searchParams.get("status") || undefined,
     });
-    return Response.json(await courseHistoryService.list(query), {
+    return Response.json(await courseHistory.list(query), {
       headers: { "x-trace-id": traceId },
     });
   } catch (error) {

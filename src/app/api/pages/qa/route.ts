@@ -1,11 +1,11 @@
 import { z } from "zod";
 
-import { runPageQAAgent } from "@/server/agents/page-qa-agent";
+import { runPageQAModelStep } from "@/server/setup/capabilities";
 import {
   AiRequestError,
   createAiErrorResponse,
   createTraceId,
-} from "@/server/ai/error";
+} from "@/server/infra/ai/error";
 import {
   AssetGenerationResultSchema,
   PageContentDSLSchema,
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
     }
 
     const traceId = parsed.data.traceId || headerTraceId;
-    const state = await runPageQAAgent(
+    const state = await runPageQAModelStep(
       {
         page: parsed.data.page,
         content: parsed.data.content,

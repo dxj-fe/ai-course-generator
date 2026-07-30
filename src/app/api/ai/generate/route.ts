@@ -1,4 +1,4 @@
-import { handleGenerateTextRequest } from "@/server/ai/handlers";
+import { handleGenerateTextRequest } from "@/server/infra/ai/handlers";
 
 export const runtime = "nodejs";
 

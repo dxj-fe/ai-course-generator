@@ -102,17 +102,23 @@ Day 16 在领域 `Asset` 之前增加两层执行协议。`AssetRequest` 由 Ima
 
 ## QualityReportSchema
 
-质量报告可以指向整门课程或单页。`dimensions` 的持久化键保持内容准确性、排版质量、课程连贯性、风格一致性、HTML 可运行性和素材可用性，并分别映射到手册的内容、排版、教学、风格、HTML、素材六维；每个维度派生 `issueCodes` 和去重 `repairHints`。`issues` 是完整问题的唯一事实来源，保存维度、严重程度、静态/浏览器/模型证据来源、结构化位置和 `repairHint`；`shouldRepair` 与 `decision` 为后续工作流提供确定性分支。
+质量报告可以指向整门课程或单页。`dimensions` 的持久化键保持内容准确性、排版质量、课程连贯性、风格一致性、HTML 可运行性和素材可用性，并分别映射到内容、排版、教学、风格、HTML、素材六维；每个维度派生 `issueCodes` 和去重 `repairHints`。`issues` 是完整问题的唯一事实来源，保存维度、严重程度、静态/浏览器/模型证据来源、结构化位置和 `repairHint`；`shouldRepair` 只在存在至少一个明确 `error` 时为真，warning 和评分只用于观测与后续 Prompt/模型优化。
 
-Day 15 的页面总分按内容 30%、排版 22%、连贯 17%、风格 13%、HTML 10%、素材 8% 加权。当前质量优先门槛依次为内容 88、教学 88、排版 82、风格 82、HTML 92、素材 80；出现 error 或任一维度低于门槛时，程序必须设置 `shouldRepair: true`。模型只提供语义维度和候选问题，ID、时间、总分、限分和工作流决策都由代码补齐。
+页面总分按内容 30%、排版 22%、连贯 17%、风格 13%、HTML 10%、素材 8% 加权。内容 88、教学 88、排版 82、风格 82、HTML 92、素材 80 是质量目标，不是自动 Gate；低分但没有具体交付错误时页面仍可提交。模型只提供语义维度和候选问题，ID、时间、总分、限分和是否存在确定性错误由代码补齐。
 
-Day 26 增加内容错误优先的服务端稳定排序，并允许报告携带 `screenshotEvidence`。生产 QA 现在把该证据作为强制质量闸门：缺失、跳过或任一视口采集失败都会生成 error，并进入 Repair。顶层状态、opaque artifact ID、viewport 和几何指标继续表示 primary 桌面证据；`captures` 保存真实播放器 `922×460`、平板 `712×650` 与手机 `366×500` 的逐视口状态、指标和 artifact ID。几何与运行时指标检查横向溢出、裁切、触控目标、主操作首屏位置、初始反馈泄露、选择题提交与反馈、单素材占比和首屏教学内容面积；真实 PNG 路径始终只保留在服务器内部。旧报告缺少维度问题索引、截图证据、`captures` 或新增指标时仍能直接解析，但不能作为新的生产 QA 通过证据。
+质量问题按内容错误优先稳定排序，报告可以携带 `screenshotEvidence`。生产 QA 把浏览器证据作为强制交付合同：缺失、跳过或任一视口采集失败都会生成具体 error，并进入受限 Repair。顶层状态、opaque artifact ID、viewport 和几何指标表示 primary 桌面证据；`captures` 保存真实播放器 `922×460`、平板 `712×650` 与手机 `366×500` 的逐视口状态、指标和 artifact ID。几何与运行时指标检查横向溢出、裁切、触控目标、主操作首屏位置、初始反馈泄露、选择题提交与反馈、单素材占比和首屏教学内容面积；真实 PNG 路径始终只保留在服务器内部。旧报告缺少维度问题索引、截图证据、`captures` 或新增指标时仍能解析，但不能作为新的生产 QA 通过证据。
 
 ## RepairRequestSchema / RepairResultSchema
 
 `RepairRequest` 把一个页面、来源 `QualityReport`、允许 issue codes 和 DSL block/content field/HTML selector scope 绑定在一起。DSL 请求必须至少定位一个真实 block，或在无 block 的稀疏页面上明确授权 `narration`；所有 issue code 必须存在于来源报告。尝试序号只服务于 24 次紧急安全上限，不是课程质量预算。
 
-`RepairResult` 是三分支联合：`dsl_candidate`、`html_patch_candidate` 或 `declined`。DSL 候选重新通过 `PageContentDSLSchema`，只能修改授权 block 或 `narration` / `interaction` 根字段；互动修复必须保留原 type，其余根字段保持不变。HTML patches 必须唯一匹配、与 addressed issues 对应，应用后重新通过 HTML 文档、安全、DSL 文本、稳定标记和素材引用合同。`RepairAttemptRecord` 只持久化来源报告和公开审计摘要，不重复保存候选正文；旧页面 checkpoint 可以没有 `repairHistory`。
+`RepairResult` 是三分支联合：`dsl_candidate`、`html_patch_candidate` 或 `declined`。DSL 候选重新通过 `PageContentDSLSchema`，只能修改授权 block 或 `narration` / `interaction` 根字段；互动修复必须保留原 type，其余根字段保持不变。HTML patches 必须唯一匹配、与 addressed issues 对应，应用后重新通过 HTML 文档、安全、DSL 文本、稳定标记和素材引用合同。`RepairAttemptRecord` 只持久化来源报告和公开审计摘要，不重复保存候选正文；旧页面 checkpoint 可以没有 `repairHistory`。agent-v2 投影另外提供 `repairAttemptCount`，直接由当前架构分支的 WorkOrder revision 与 durable Repair Tool checkpoint 计算，质量基准用它判断首轮通过率，不从最终分数反推返修次数。
+
+`CourseGenerationState.generationMetrics` 只公开架构尝试、架构退回、
+整课 replan 和页面批次返工的聚合计数，不包含 WorkOrder、Tool 参数或模型
+推理。Demo Harness 将它与页面 `repairAttemptCount`、HTML renderer 标记和素材
+ready/fallback 状态组合，区分“一次生成正确”与“最终通过但经历重规划、返工或
+安全降级”；这些字段只用于质量观测和回归比较，不驱动生产 Repair。
 
 ## 关键跨实体校验
 

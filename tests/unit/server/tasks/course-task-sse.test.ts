@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   encodeCourseTaskSseMessage,
   parseLastEventId,
-} from "../../../../src/server/tasks/course-task-sse";
+} from "../../../../src/server/course/task/sse";
 import { CourseGenerationStateSchema } from "../../../../src/shared/course-schema";
 
 const state = CourseGenerationStateSchema.parse({
@@ -42,7 +42,7 @@ describe("course task SSE codec", () => {
       state,
     });
 
-    expect(frame).toContain("id: 1\n");
+    expect(frame).toContain("id: v1:trace-sse:1\n");
     expect(frame).toContain("event: snapshot\n");
     expect(frame).toContain('"type":"snapshot"');
     expect(frame).toContain('"source":"langgraph"');
@@ -51,9 +51,17 @@ describe("course task SSE codec", () => {
 
   it("parses a valid replay cursor and rejects malformed values", () => {
     expect(parseLastEventId(null)).toBeUndefined();
-    expect(parseLastEventId("0")).toBe(0);
-    expect(parseLastEventId("17")).toBe(17);
-    expect(() => parseLastEventId("1.5")).toThrow(/非负整数/);
-    expect(() => parseLastEventId("-1")).toThrow(/非负整数/);
+    expect(parseLastEventId("0")).toEqual({ sequence: 0 });
+    expect(parseLastEventId("17")).toEqual({ sequence: 17 });
+    expect(parseLastEventId("v1:trace-sse:17")).toEqual({
+      traceId: "trace-sse",
+      sequence: 17,
+    });
+    expect(parseLastEventId("v1:trace%3Aresume:2")).toEqual({
+      traceId: "trace:resume",
+      sequence: 2,
+    });
+    expect(() => parseLastEventId("1.5")).toThrow(/有效的 trace 游标/);
+    expect(() => parseLastEventId("-1")).toThrow(/有效的 trace 游标/);
   });
 });

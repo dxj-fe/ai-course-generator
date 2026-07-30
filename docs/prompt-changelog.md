@@ -1,5 +1,23 @@
 # Prompt Changelog
 
+> 旧条目沿用当时的 Specialist/Agent 命名，仅用于历史审计。当前生产清单统一使用 Model Step，见 [`prompt-library.md`](./prompt-library.md)。
+
+## 2026-07-30 — 首轮生成优先与 Agent 全局上下文
+
+- Architect 系统 Prompt 接入 `course-design` Agent Skill、整课模板检索和受控资料摘录；统一 Skill Harness 会先完整注入核心说明，Agent 再按需读取目标证据或课程结构 reference。页面类型服从目标与课程弧线，不固定首页/末页序列。
+- Page Builder 接入标准 `course-page-design` Agent Skill：同一 Skill Harness 按 Agent 注册配置加载核心说明，Agent 再通过 `read_local_resource` 按页面职责渐进读取固定画布或学习互动 reference；已读内容会进入 Page Writer 和 HTML Engineer 的真实结构化输入。
+- Page Writer system/user 升级到 `3.0.0/3.0.0`，一次接收结构化 Brief、完整课程事实与规则、当前页面职责、相邻页面职责和已验收依赖摘要。
+- HTML Engineer system 升级到 `2.8.0`，移除强制三块内容使用 `details/summary`、素材面积比例和固定 CSS 数值等创作型微规则；保留安全、DOM、播放器画布和无滚动合同，把构图判断交给按需加载的页面设计 Skill。
+- Page QA system 升级到 `2.4.0`：质量分是观测目标，不单独触发 Gate 或 Repair；只有可定位、影响交付的具体错误进入 `error`。
+- Reviewer 不再假设固定首页承诺与结尾形式，只检查课程实际提出的承诺是否在合适位置兑现。
+- 模型 Schema 或业务错误不会伪装成可恢复工具失败反复调用；只有瞬时 Provider 故障允许 fallback 或受控重试。
+
+## 2026-07-29 — Prompt 角色按真实运行方式命名
+
+- Prompt Library 只保留生产工作流实际调用的八个 Model Step。
+- 删除已无生产入口的 Intent、Course Planner、Supervisor 和 Single Page Prompt。
+- 八个 System Prompt 只把角色名从 Agent 改为 Model Step，不改变输入输出合同；对应补丁版本各提升一次。
+
 ## 2026-07-27 — 课程页面固定画布与无滚动合同
 
 - Intent system `1.3.0`、Planner system `2.4.0`、Page Writer system `2.3.0`、HTML Engineer system `2.4.0` 与 Page QA system `2.3.0` 统一按 `366×500`、`712×650`、`922×460` 固定播放器画布规划和生成内容。

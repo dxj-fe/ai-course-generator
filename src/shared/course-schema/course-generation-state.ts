@@ -32,6 +32,7 @@ export const CourseGenerationStageSchema = z.enum([
   "html",
   "qa",
   "repair",
+  "course_review",
   "complete",
 ]);
 
@@ -75,6 +76,7 @@ export const CourseGenerationEventTypeSchema = z.enum([
   "tool_call",
   "validation",
   "supervisor_decision",
+  "director_decision",
   "repair_attempt",
   "repair_success",
   "page_done",
@@ -142,7 +144,10 @@ export const PageGenerationAttemptSchema = z
 /** Worker 先产生页面局部事件，课程运行层再为其分配全局 id 与 sequence。 */
 export const PageWorkerEventSchema = z
   .object({
-    type: CourseGenerationEventTypeSchema.exclude(["supervisor_decision"]),
+    type: CourseGenerationEventTypeSchema.exclude([
+      "supervisor_decision",
+      "director_decision",
+    ]),
     stage: PageGenerationStageSchema.exclude(["complete"]),
     pageId: z.string().min(1).max(80),
     agent: z.string().min(1).max(80).optional(),
@@ -163,6 +168,7 @@ export const PageGenerationStateSchema = z
     assets: z.array(AssetGenerationResultSchema).max(12),
     htmlOutput: HtmlOutputSchema.optional(),
     qualityReport: QualityReportSchema.optional(),
+    repairAttemptCount: z.number().int().nonnegative().max(100).optional(),
     repairHistory: z.array(RepairAttemptRecordSchema).max(24).optional(),
     attempts: z.array(PageGenerationAttemptSchema).max(4).optional(),
     error: PageGenerationErrorSchema.optional(),
@@ -262,6 +268,32 @@ export const PageGenerationStateSchema = z
     }
   });
 
+/**
+ * 只公开质量回归需要的聚合运行事实，不暴露 WorkOrder、工具参数或模型推理。
+ * Harness 据此区分真正的一次生成成功和经多轮重规划后的最终成功。
+ */
+export const CourseGenerationMetricsSchema = z
+  .object({
+    architectureAttemptCount: z.number().int().nonnegative(),
+    architectureRevisionCount: z.number().int().nonnegative(),
+    replanCount: z.number().int().nonnegative(),
+    courseRevisionCount: z.number().int().nonnegative(),
+  })
+  .strict()
+  .superRefine((metrics, context) => {
+    if (
+      metrics.architectureRevisionCount !==
+      Math.max(0, metrics.architectureAttemptCount - 1)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "architectureRevisionCount 必须等于 architectureAttemptCount - 1（最小为 0）",
+        path: ["architectureRevisionCount"],
+      });
+    }
+  });
+
 /** Page Worker 的完整局部输出；不包含或引用整课状态。 */
 export const PageWorkerResultSchema = z
   .object({
@@ -308,6 +340,7 @@ export const CourseGenerationStateSchema = z
     briefs: CourseDesignBriefsSchema.optional(),
     pageWorkerBriefs: z.array(PageWorkerBriefSchema).optional(),
     workerConfig: PageWorkerConfigSchema.optional(),
+    generationMetrics: CourseGenerationMetricsSchema.optional(),
     pages: z.array(PageGenerationStateSchema),
     events: z.array(CourseGenerationPublicEventSchema),
     errors: z.array(CourseGenerationErrorSchema),
@@ -351,10 +384,11 @@ export const CourseGenerationStateSchema = z
     });
 
     state.events.forEach((event, index) => {
-      if (event.sequence !== index + 1) {
+      const previous = state.events[index - 1];
+      if (previous && event.sequence <= previous.sequence) {
         context.addIssue({
           code: "custom",
-          message: `公开事件序号应为 ${index + 1}`,
+          message: "公开事件序号必须按持久化游标严格递增",
           path: ["events", index, "sequence"],
         });
       }
@@ -564,6 +598,9 @@ export type CourseGenerationCauseCode = z.infer<
 export type PageGenerationError = z.infer<typeof PageGenerationErrorSchema>;
 export type PageGenerationAttempt = z.infer<
   typeof PageGenerationAttemptSchema
+>;
+export type CourseGenerationMetrics = z.infer<
+  typeof CourseGenerationMetricsSchema
 >;
 export type PageGenerationState = z.infer<typeof PageGenerationStateSchema>;
 export type PageWorkerMode = z.infer<typeof PageWorkerModeSchema>;

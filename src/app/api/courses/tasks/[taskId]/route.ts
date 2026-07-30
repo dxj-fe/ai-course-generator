@@ -5,8 +5,8 @@ import {
   createAiErrorResponse,
   createTraceId,
   toAiErrorPayload,
-} from "@/server/ai/error";
-import { courseGenerationTaskService } from "@/server/tasks/course-generation-task-service";
+} from "@/server/infra/ai/error";
+import { getWebServices } from "@/server/setup/web";
 import {
   CourseTaskControlRequestSchema,
   CourseTaskControlResponseSchema,
@@ -14,6 +14,8 @@ import {
 } from "@/shared/course-schema";
 
 export const runtime = "nodejs";
+
+const { courseTasks } = getWebServices();
 
 type CourseTaskRouteContext = {
   params: Promise<{ taskId: string }>;
@@ -34,8 +36,8 @@ export async function PATCH(
     const control = await readControlRequest(request);
     const record =
       control.action === "pause"
-        ? await courseGenerationTaskService.pause(parsedTaskId.data)
-        : await courseGenerationTaskService.resume(parsedTaskId.data);
+        ? await courseTasks.pause(parsedTaskId.data)
+        : await courseTasks.resume(parsedTaskId.data);
 
     if (!record) {
       return Response.json(
@@ -47,7 +49,7 @@ export async function PATCH(
     if (control.action === "resume" && record.status === "queued") {
       after(async () => {
         try {
-          await courseGenerationTaskService.run(record.taskId);
+          await courseTasks.run(record.taskId);
         } catch (error) {
           const classified = toAiErrorPayload(error, record.traceId);
           console.error("[course-task] 恢复后的后台任务执行失败", {
@@ -104,7 +106,7 @@ export async function DELETE(
       throw new AiRequestError("taskId 格式无效。");
     }
 
-    const record = await courseGenerationTaskService.cancel(parsedTaskId.data);
+    const record = await courseTasks.cancel(parsedTaskId.data);
     if (!record) {
       return Response.json(
         { code: "REQUEST_ERROR", message: "课程任务不存在。", traceId },

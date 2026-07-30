@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createConversationStore } from "../../../../src/server/storage/conversation-store";
+import { createConversationStore } from "../../../../src/server/conversation/store";
 
 const directories: string[] = [];
 

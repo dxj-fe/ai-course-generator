@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 
 import { ChatApp } from "@/features/keya/chat-app";
-import { conversationHistoryService } from "@/server/conversations/conversation-history-service";
+import { getWebServices } from "@/server/setup/web";
 
 export const metadata: Metadata = {
   title: "学习对话",
   description: "通过对话开始一段新的学习。",
 };
+
+const { conversationHistory } = getWebServices();
 
 interface ChatPageProps {
   searchParams: Promise<{
@@ -23,13 +25,13 @@ function first(value: string | string[] | undefined) {
 export default async function ChatPage({ searchParams }: ChatPageProps) {
   const params = await searchParams;
   const requestedCourseId = first(params.course);
-  const result = await conversationHistoryService.list();
+  const result = await conversationHistory.list();
   let conversations = result.items;
   let selectedConversationId = first(params.conversation);
 
   if (requestedCourseId) {
     const courseConversation =
-      await conversationHistoryService.viewForCourse(requestedCourseId);
+      await conversationHistory.viewForCourse(requestedCourseId);
     if (courseConversation) {
       conversations = [
         courseConversation,

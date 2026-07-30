@@ -8,6 +8,16 @@ import {
 } from "../../../src/features/course-planner/lib/course-task-api";
 
 describe("course task API client", () => {
+  const creationBrief = {
+    originalRequest: "生成三页太阳系课程",
+    topic: "太阳系",
+    audience: "初学者",
+    goal: "理解太阳系结构",
+    sectionCount: 3,
+    learningMode: "mixed" as const,
+    language: "zh-CN" as const,
+  };
+
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -18,7 +28,7 @@ describe("course task API client", () => {
       courseId: "course-123e4567-e89b-42d3-a456-426614174000",
       traceId: "trace-task-create",
       status: "queued",
-      source: "langgraph",
+      source: "agent-v2",
     };
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(payload), {
@@ -33,6 +43,7 @@ describe("course task API client", () => {
       createCourseTask(
         {
           userPrompt: "生成三页太阳系课程",
+          creationBrief,
           pageCount: 3,
         },
         { signal: controller.signal, traceId: payload.traceId },
@@ -49,6 +60,7 @@ describe("course task API client", () => {
     });
     expect(JSON.parse(String(init.body))).toEqual({
       userPrompt: "生成三页太阳系课程",
+      creationBrief,
       pageCount: 3,
       traceId: payload.traceId,
     });
@@ -73,7 +85,7 @@ describe("course task API client", () => {
 
     await expect(
       createCourseTask(
-        { userPrompt: "生成课程" },
+        { userPrompt: "生成课程", creationBrief },
         { traceId: "trace-task-create" },
       ),
     ).rejects.toThrow("课程任务接口返回了无效状态");

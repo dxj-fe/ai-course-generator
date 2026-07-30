@@ -25,36 +25,38 @@
 ### 一条课程如何生成
 
 ```mermaid
-flowchart LR
+flowchart TD
   Input["提示词或参考资料"] --> Brief["课程简报"]
   Brief --> Task["异步任务 API"]
-  Task --> Graph["LangGraph + 规则型 Supervisor"]
-  Graph --> Plan["Intent + Planner + 专业设计"]
-  Plan --> Worker["隔离 Page Worker"]
-  Worker --> DSL["PageContentDSL"]
-  DSL --> Assets["图片 Skill / 缓存 / fallback"]
-  Assets --> HTML["HTML Engineer"]
-  HTML --> QA["确定性检查 + Playwright + 模型 QA"]
-  QA --> Decision{"需要修复？"}
-  Decision -->|"是"| Repair["定向 Repair + re-QA"]
-  Repair --> QA
-  Decision -->|"否"| Persist["SQLite checkpoint"]
-  Persist --> SSE["公开 SSE"]
+  Task --> Architect["Curriculum Architect<br/>完整 CourseArchitecture + PageTask[]"]
+  Architect --> ArchitectureGate["Architecture Gate"]
+  ArchitectureGate --> DirectorA["Course Director 验收架构"]
+  DirectorA --> Fanout["原子创建 N 张 Page WorkOrder"]
+  Fanout --> Wave["按真实依赖分 wave"]
+  Wave --> Builders["Page Builder × N 并行"]
+  Builders --> PageGate["内容 / 素材 / HTML / 互动 / 质量 Gate"]
+  PageGate -->|"通过"| Summary["accepted PageSummary<br/>解锁后继页"]
+  Summary --> Wave
+  PageGate -->|"全部当前页完成"| Reviewer["Course Reviewer 整课审查"]
+  Reviewer --> DirectorR["Course Director<br/>发布 / 修页 / 重规划"]
+  DirectorR --> Persist["SQLite CourseRun / WorkOrder / Artifact"]
+  Persist --> SSE["兼容 checkpoint + 公开 SSE"]
   SSE --> UI["/chat 与 /course"]
 ```
 
-当前 `/chat` 新任务使用 LangGraph 运行源。规则型 Supervisor 只从后端计算出的合法节点中选择下一步；它不生成课程正文，也不能扩大重试预算。手写 Workflow 仍作为兼容批量入口和底层执行原语保留。
+当前 `/chat` 新任务固定使用 `agent-v2`。AI SDK `ToolLoopAgent` 负责单张 WorkOrder 内的自主工具循环，`CourseRunEngine` 负责跨 Agent 的依赖、并发、租约、持久化和恢复。旧 `workflow` / `langgraph` 值只用于读取历史任务，不再执行旧生成链。
 
 完整链路见[架构入口](docs/architecture/README.md)和[从提示词到最终 HTML](docs/architecture/prompt-to-html-current-flow.md)。
 
 ### 核心技术亮点
 
-- **结构化 AI 输出**：Intent、CoursePlan、PageContentDSL、QualityReport、RepairResult 等共享 Zod Schema 是前后端、Agent 与持久化之间的合同。
-- **受约束的多 Agent 编排**：Planner、Pedagogy、Story、Visual、Page Writer、HTML Engineer、QA 和 Repair 各自只负责一个可验证产物；Supervisor 只负责路由。
+- **结构化 AI 输出**：CourseCreationBrief、CourseArchitecture、PageContentDSL、QualityReport、CourseReview 等共享 Zod Schema 是前后端、Agent 与持久化之间的合同。
+- **四类真实 Agent**：Architect 先提交整课架构，Director 验收后原子派工，Page Builder 按真实依赖波次并行，Reviewer 独立审整课；每次回合都有 WorkOrder、工具权限和终态提交。
+- **耐久协作协议**：CourseRun 保存 current 指针，WorkOrder 保存封口输入、预算和 lease，Artifact 以不可变版本交接；旧结果不会静默覆盖当前分支。
 - **功能模板与样式模板分离**：功能模板约束教学结构，样式模板提供 Design Tokens，同一内容结构可以组合不同视觉方向。
 - **内容与页面实现分离**：Page Writer 生成语义 DSL；HTML Engineer 只实现已确认内容，避免在写页面时重新规划课程。
 - **质量闭环**：确定性合同、三视口 Playwright 证据和模型 QA 共同产出六维报告；Repair 只能修改授权范围，并在 re-QA 后决定是否继续。
-- **可恢复的长任务**：任务、课程、会话和 checkpoint 持久化到 SQLite；SSE 断开不会取消任务，暂停和失败恢复不会重跑已完成页面。
+- **可恢复的长任务**：任务、CourseRun、WorkOrder、Artifact 和事件持久化到 SQLite；数据库 lease、CAS 与显式 worker 支持暂停、恢复、取消和进程重启后的接续。
 - **安全 HTML 交付**：生成 HTML 必须通过服务端合同与安全预检；诊断预览使用空权限 sandbox，学习器只注入平台拥有的受限运行时。
 - **模型与素材可靠性**：有限超时、AbortSignal、分级模型路由、一次瞬时降级、结构化结果缓存，以及图片生成失败时的类型化 fallback。
 
@@ -70,7 +72,7 @@ flowchart LR
 
 ### 为什么图片只作为素材
 
-课程标题、正文、按钮和练习不能烘焙到图片中，否则会失去可访问性、响应式布局、文本选择和互动能力。图片 Agent 只生成背景、角色贴纸、图标或纹理，HTML Engineer 将批准素材绑定到语义节点，供应商失败时仍可使用 CSS、SVG 或占位 fallback 完成页面。
+课程标题、正文、按钮和练习不能烘焙到图片中，否则会失去可访问性、响应式布局、文本选择和互动能力。Image Prompt Model Step 与生图 Tool 只生成背景、角色贴纸、图标或纹理，HTML Model Step 将批准素材绑定到语义节点；供应商失败时仍可使用 CSS、SVG 或占位 fallback 完成页面。
 
 更完整的取舍见[为什么采用多 Agent](docs/why-multi-agent.md)。
 
@@ -85,7 +87,7 @@ flowchart LR
 | `/templates` | 功能模板、样式模板、Design Tokens 和 PagePlan 示例 |
 | `/preview/[previewId]` | 有时效的诊断预览，不承担持久课程历史 |
 
-展示组件不直接调用业务 API，也不消费 LangGraph 原生 chunk。API 客户端把 HTTP/SSE 转换为共享任务类型，`ChatApp` 作为 Task Controller，再将状态投影给对话和学习空间。
+展示组件不直接调用业务 API，也不消费 Agent 私有消息、工具原始结果或运行时内部事件。API 客户端把 HTTP/SSE 转换为共享任务类型，`ChatApp` 作为 Task Controller，再将状态投影给对话和学习空间。
 
 ## 技术栈
 
@@ -94,7 +96,7 @@ flowchart LR
 | Web | Next.js 16、React 19、TypeScript、Tailwind CSS |
 | UI | 本地 shadcn/ui primitives、Radix UI、Lucide React |
 | AI | Vercel AI SDK、OpenAI-compatible Provider、Volcengine Ark / Doubao |
-| 编排 | LangGraph、规则型 Supervisor、手写兼容 Workflow |
+| 编排 | AI SDK ToolLoopAgent、CourseRunEngine、耐久 WorkOrder、显式恢复 worker |
 | 合同 | Zod 4、版本化 Prompt、严格公共事件 Schema |
 | 质量 | Playwright、确定性 HTML/布局检查、模型 QA、Repair/re-QA |
 | 存储 | SQLite、本地生成素材与 QA 证据 |
@@ -186,6 +188,14 @@ pnpm dev
 
 默认访问 `http://localhost:3000`。若端口被占用，Next.js 会在终端显示实际地址。
 
+需要在进程退出后持续领取未完成课程时，另开一个终端运行：
+
+```bash
+pnpm worker:course
+```
+
+Next 启动时只做一次恢复扫描；正式部署必须运行这个 worker 或提供等价的外部调度。
+
 首次使用浏览器 QA 或完整 Demo 时安装 Chromium：
 
 ```bash
@@ -234,7 +244,7 @@ pnpm demo:check -- \
 - SSE 只允许 `snapshot`、公开 `event` 和 `terminal`；不会传输 Prompt、参考资料原文、框架内部状态或 chain-of-thought。
 - 模型生成 HTML 不进入主应用 DOM；所有预览都经过服务端校验并运行在 sandbox iframe。
 - 扫描 PDF 暂不支持 OCR；资料解析也不包含向量数据库。
-- 当前任务执行、EventBus 和取消控制是单进程实现，不是分布式队列。
+- WorkOrder 和 CourseRun 的执行权由 SQLite lease/CAS 保护；EventBus 仍只负责当前进程实时通知，持续恢复需运行 `pnpm worker:course`。
 
 ## 文档导航
 
@@ -254,6 +264,6 @@ pnpm demo:check -- \
 
 ## 当前边界与下一步
 
-当前版本没有用户账号、团队权限、分布式 Worker、对象存储、向量检索、人工发布审批、商业计费或线上 SLA。真实模型效果和耗时仍受 Provider 账号、模型质量和本地运行环境影响。
+当前版本没有用户账号、团队权限、分布式队列、对象存储、向量检索、人工发布审批、商业计费或线上 SLA。真实模型效果和耗时仍受 Provider 账号、模型质量和本地运行环境影响。`ToolOperation` 是审计台账，不保证所有外部 Provider 副作用 exactly-once。
 
-如果继续生产化，优先级应是：耐久任务队列与租约、对象存储、权限隔离、可观测成本账本、人工发布门槛，以及基于真实用户反馈的课程编辑能力。
+如果继续生产化，优先级应是：部署显式恢复 worker、在真实 Provider 环境运行多步工具 spike、接入分布式队列/事件总线和对象存储，再补权限隔离、成本账本、人工发布门槛与真实用户质量反馈。

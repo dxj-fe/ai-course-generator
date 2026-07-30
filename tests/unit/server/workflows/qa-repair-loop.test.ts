@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   didRepairQualityImprove,
   planRepairRound,
-} from "../../../../src/server/workflows/qa-repair-loop";
+} from "../../../../src/server/course/page/repair-plan";
 import {
   pageContentDsl,
   visualBrief,
@@ -86,7 +86,7 @@ describe("QA repair planning", () => {
     });
   });
 
-  it("collapses asset dominance and html/body clipping locations into one CSS presentation scope", () => {
+  it("把视觉错误收敛到一个 CSS scope，并忽略不阻塞交付的 warning", () => {
     const report = qualityReportWithIssue({
       code: "ASSET_OVERDOMINATES",
       dimension: "assetUsability",
@@ -140,7 +140,6 @@ describe("QA repair planning", () => {
       issueCodes: [
         "ASSET_OVERDOMINATES",
         "BROWSER_VISUAL_DOMINATES_VIEWPORT",
-        "LAYOUT_CLIPPING_RISK",
       ],
       allowedSelectors: ["style"],
     });

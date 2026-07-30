@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createCourseArchive } from "../../../../src/server/courses/course-export";
+import { createCourseArchive } from "../../../../src/server/course/service/export";
 import {
   courseDesignIntent,
   courseDesignOutline,

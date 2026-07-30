@@ -1,37 +1,59 @@
-# Product UI Integration Contract
+# Keya UI 集成边界
 
-The 课芽 interface is the product shell. Training-day features extend its behavior; they do not create a parallel training-console UI.
+## 1. 产品界面不重做
 
-## Stable product surfaces
+课程生成底层已切到 `agent-v2`，产品仍使用现有 Keya 界面：
 
-| Product concern | Canonical surface | State responsibility |
+- `/chat`：输入需求、确认课程简报、创建任务、查看公开进度；
+- `/chat` 右侧学习空间：查看课程架构、当前页面和预览；
+- `/course`：持久历史；
+- `/course/[courseId]`：课程学习器；
+- `/templates`：模板目录。
+
+不要因为重构 Agent 再造一套 Playground、Graph 控制台或第二套视觉系统。
+
+## 2. 当前数据流
+
+```text
+/chat CourseCreationBrief
+→ POST /api/courses/tasks source=agent-v2
+→ CourseGenerationTaskService
+→ CourseRunEngine / Repository
+→ CourseStateProjector
+→ CourseStore + CourseTaskStore
+→ strict task SSE
+→ task controller
+→ Chat Timeline + learning workspace
+```
+
+前端不直接消费 WorkOrder、模型流或框架事件。Projector 负责把新运行时转换为现有 `CourseGenerationState`。
+
+## 3. 能力对应
+
+| agent-v2 能力 | 产品位置 | 展示内容 |
 | --- | --- | --- |
-| Discover prompts and example courses | `/` | Display-only discovery data and links into `/chat` |
-| Create a course from a prompt | `/chat` composer | Draft and task creation UI state |
-| Explain Agent progress | `/chat` thread | Structured public events, status, errors, retry/cancel affordances |
-| Inspect course and page artifacts | `/chat` right learning workspace | Course, page, preview, asset, QA, and export views |
-| Browse generated/history items | `/course` | Persisted course/run queries and filters |
-| Inspect functional/style templates | `/templates` | Template registry and preview data |
-| Diagnose the prompt-to-course pipeline | `/analysis/course-generation` | Read-only architecture map and source-backed failure analysis |
+| CourseCreationBrief | `/chat` composer / brief workspace | 用户能理解和修改的主题、受众、目标、语言、学习方式 |
+| Architect 运行 | `/chat` thread | “正在规划整门课”等安全摘要 |
+| CourseArchitecture | 右侧学习空间 | 课程标题、目标、页面列表和当前可用页面 |
+| Page WorkOrder 并行 | `/chat` thread + 页面列表 | 每页等待、进行中、完成、暂时不完整 |
+| Page Gate 失败 | `/chat` thread | 可行动的公开错误，不暴露 Schema/Prompt |
+| Reviewer / Director | `/chat` thread | 整课检查、局部返工、重规划或发布摘要 |
+| completed CourseRun | `/course/[courseId]` | 多页课程播放器、学习位置、完成状态、导出 |
 
-The removed `AiPlayground` and older course-planner panels are historical training artifacts only. Their reusable client logic remains behind the Keya surfaces; do not restore the panels or use them as the visual foundation for new tasks.
+## 4. 前端边界
 
-## Brand theme
+1. API client 只负责 HTTP/SSE 协议转换。
+2. task controller 负责把共享状态投影成 Keya 运行模型。
+3. Presentational component 不调用课程业务 API。
+4. Chat thread 只显示公开状态和可行动错误，不显示 chain-of-thought。
+5. 学习空间不复制 Agent 调度规则。
+6. 页面 HTML 仍通过现有 sandbox 和安全预检展示。
+7. UI 不能从 summary 文本推断 WorkOrder 状态。
+8. `workflow` / `langgraph` 历史记录可以展示，但不能从 UI 重新执行旧生成链。
 
-- Product name: `课芽`.
-- Primary: sprout green `#397A52`; hover/depth: `#2F6845`.
-- Accent: mango yellow `#F2B84B`; canvas: mint `#EEF8EA`; paper: soft white `#FBFFF7`.
-- All product shells, including `/`, `/chat`, `/course`, `/course/[courseId]`, `/templates`,
-  `/preview/[previewId]` and `/analysis/course-generation`, use the `--keya-*` tokens and the
-  shared mint-canvas, rounded-paper, sprout-shadow visual language in `src/app/globals.css`.
-- Strong illustration and layered motion belong to discovery/welcome/empty states. Dense workspaces
-  use only restrained entrance, status and hover feedback, and all continuing motion must respect
-  `prefers-reduced-motion`.
-- Generated lesson HTML and style-template previews keep their own visual themes inside the existing
-  sandbox boundary; only their platform chrome adopts the 课芽 theme.
-- Legacy internal module and type names are compatibility details, not user-facing brand copy.
+## 5. 公开事件
 
-## Handbook capability map
+公开事件由 `src/server/course/projection/public-events.ts` 映射。允许发送：
 
 - Homepage course inspiration (2026-07-30): `/` renders a server-owned, twelve-domain
   recommendation registry through `GET /api/recommendations/courses`. The first three-course batch
@@ -78,22 +100,52 @@ The removed `AiPlayground` and older course-planner panels are historical traini
 - Course discovery cover refinement (2026-07-27): the homepage featured row admits only fully completed, exportable course runs; running, paused, failed, cancelled, or incomplete records remain available only in the history gallery and `/course`. Homepage, history gallery, and course-library cards use the completed first lesson as a lazy sandboxed 16:9 HTML cover through a dedicated versioned route, preserving the existing HTML contract, safety preflight, and no-same-origin boundary without serializing generated HTML into list payloads.
 - Local generation reliability refinement (2026-07-27): the project has no user-credit, monthly-cost, course-count, or cumulative-token quota. Planner primary and fallback attempts no longer split one timeout budget. Browser QA now measures the delivered fitted lesson canvas, and explicit recovery invalidates only stale pre-fit overflow reports while preserving generated HTML, DSL, assets, and completed lessons. Error checkpoints publish a fresh task snapshot, terminal UI state does not leave sibling lessons spinning, and the concrete provider `causeCode` survives Graph terminalization. Provider-account quota still remains an external prerequisite and cannot be bypassed in application code.
 
-## Frontend boundaries
+禁止发送：
 
-1. API clients translate HTTP/SSE payloads into shared typed task data.
-2. A task controller owns task, course, and page state. Presentational components do not call APIs.
-3. `ChatComposer` owns no business logic; it emits user intent and reflects busy/cancel state.
-4. `ChatThread` shows conversation content and public execution summaries, not private reasoning.
-5. The learning workspace renders structured artifacts and page actions. It should remain transport-agnostic.
-6. Route handlers and Agent workflows remain the business source of truth; UI components must not duplicate planning rules.
+- 模型私有推理；
+- system/user Prompt；
+- 原始工具参数和工具返回；
+- Artifact 正文；
+- 服务器路径；
+- Provider 原始报错；
+- 数据库 lease、lockVersion 和内部调试字段。
 
-## UI primitives
+持久化必须先于发布。数据库写失败时不能发“已完成”的假进度。
 
-- Reusable controls come from the local shadcn/ui source in `src/components/ui`; add only the primitives a product surface needs.
-- Product components import icons directly from `lucide-react`. Do not add a second hand-written SVG icon layer.
-- The 课芽 tokens and existing product classes remain the visual source of truth. Adopting a primitive must not silently change spacing, color, typography, responsive behavior, or interaction state.
-- Keep native semantic elements when a shadcn primitive would change the intended behavior, such as disclosure content or an existing radio group.
+## 6. 取消与恢复
 
-When a later task needs a new panel, first place it in one of these surfaces. Add a new product route only when the artifact has its own durable URL and cannot be represented by the existing shell.
+取消按钮必须同时做到：
 
-The Day 14 preview route remains a temporary full-canvas convenience backed by an expiring database record. Day 34 makes `/course` and `/course/[courseId]` the durable history/detail owners; persisted history never depends on the random preview ID.
+1. Abort 当前进程内模型/图片/浏览器工作；
+2. 切断 CourseRun 和 WorkOrder 数据库执行权；
+3. 把产品 Task 置为 cancelled；
+4. 发布 terminal。
+
+恢复未完成的 agent-v2 任务时：
+
+- 复用同一个 taskId/courseId；
+- 使用新的 trace 接管过期 lease；
+- 从 Repository current 指针投影，不从浏览器缓存恢复；
+- 保留已接受页面；
+- 只重跑未完成或已明确 stale 的 WorkOrder。
+
+## 7. HTML 播放安全
+
+- 诊断预览保持最小 sandbox；
+- 学习器只在 HTML 合同和安全预检通过后注入平台运行时；
+- learner iframe 不获得 same-origin、表单、弹窗、下载或任意导航权限；
+- `postMessage` 必须校验 source、消息版本和字段；
+- runtime 故障可退化为静态导航，但不能把不安全 HTML 当作修复方案。
+
+## 8. 修改界面前必查
+
+- `src/features/keya/chat-app.tsx`
+- `src/features/keya/course-workspace-panel.tsx`
+- `src/shared/course-view/keya-run.ts`
+- `src/features/keya/course-run-timeline-model.ts`
+- `src/features/keya/interactive-course-player.tsx`
+- `src/features/course-planner/hooks/use-sse-task.ts`
+- `src/server/course/projection/state.ts`
+- `src/shared/course-schema/course-task-event.ts`
+
+如果 agent-v2 新增一个内部状态，先判断用户是否真的需要看到。大多数 lease、WorkOrder、tool ledger 和重试细节只应留在服务端诊断层。
