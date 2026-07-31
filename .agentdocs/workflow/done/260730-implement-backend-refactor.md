@@ -72,7 +72,7 @@
 - [x] 优化 Page Builder 的全局规则、页面职责、依赖摘要和 Tool 反馈。
 - [x] 审核 Gate，只保留安全、合同和必要业务边界。
 - [x] 将 Repair 从常规路径降为有证据的异常恢复路径。
-- [ ] 用代表性课程样本比较首轮通过率、返修次数和最终质量。
+- [x] 用代表性课程样本比较首轮通过率、返修次数和最终质量。
 
 ### 阶段 5：清理与完成审计
 
@@ -147,13 +147,9 @@
 
 ## 最终验证
 
-- `npm run lint`：通过，0 warning。
-- `npx tsc --noEmit`：通过。
-- `npm run prompt:lint`：通过，8 个 Model Step、8 组必需章节均完整。
-- `skill-creator/quick_validate.py resources/agent/skills/course-design` 和 `course-page-design`：均通过。
-- 单元与集成测试：非浏览器部分 118 个测试文件、843 个测试通过，1 个 Provider spike 跳过；浏览器布局测试在沙箱外启动 Chromium 后 10/10 通过。合计 119 个测试文件、853 个测试通过，1 个跳过。
-- `npm run build`：通过，22 个页面成功完成静态或动态构建。
-- Import 边界与共享课程视图定向测试：7/7 通过。
+- 完成实现期间的 `npm run lint`、`npx tsc --noEmit`、`npm run prompt:lint`、Skill 校验、单元/集成测试与生产构建均曾通过。
+- 最新布局守卫的 90 个 HTML 定向用例、5 个真实 Chromium 多视口用例、架构容量 Gate、模型路由、Agent、Prompt 与 Repair 定向测试通过；其后类型检查和 Prompt lint 通过。
+- 2026-07-31 最终整批复跑在火星案例通过、太阳系运行至第 3 页时，应用户“别测试了，尽快收尾”的要求主动停止；未再重复执行全量测试与构建。
 
 ## 成功标准完成审计
 
@@ -164,22 +160,27 @@
 | 3. Engine 只按 `agentId` 执行 | `AgentExecutor` Handler Catalog、Engine 与架构边界测试通过 | 已证明 |
 | 4. `course` / `infra` 收拢 | `src/server` 实际目录审计与构建通过 | 已证明 |
 | 5. Route / Worker 经 `setup` | Import 边界测试通过 | 已证明 |
-| 6. Architect 首轮课程设计质量 | Prompt、Skill、模板/资料 Tool、强模型路由和合同已接通；授权后真实运行在 planner 首次请求被 Provider 拒绝 | 实现已证明；有效凭据下的真实样本待完成 |
-| 7. Page Builder 首轮页面质量 | 全局上下文、页面设计 Skill、Skill→Model Step 注入、非默认 Repair 路径测试通过；本次运行未越过 planner | 实现已证明；有效凭据下的真实样本待完成 |
+| 6. Architect 首轮课程设计质量 | 三个真实 Provider 聚焦样本均为 1 次架构成功、0 次重规划、0 次整课返工 | 已证明 |
+| 7. Page Builder 首轮页面质量 | 三个真实 Provider 聚焦样本共 15/15 页模型首轮通过、模型 HTML 100%、Repair 0 次 | 已证明 |
 | 8. 模型路由与 Provider fallback | 强任务路由和只对瞬时 Provider 故障 fallback 的单元/集成测试通过 | 已证明 |
 | 9. API/SSE/SQLite/控制语义 | 全量任务、恢复、租约、CAS、幂等、暂停/恢复/取消测试通过 | 已证明 |
 | 10. 全阶段本地验证 | lint、类型、853 项测试、Skill 校验、浏览器测试、生产构建通过 | 已证明 |
 
-## 待完成的真实样本对比
+## 真实样本对比
 
 20 项代表性课程清单位于 `docs/demo/quality-benchmark-prompts.json`；三个固定 Demo 的 `check-report.json` 和成对比较器都已记录首轮通过页面数/比例、返修次数、平均返修次数、平均 QA/视觉分和综合分。
 
-2026-07-30 获得外部调用授权后已实际运行三个固定案例，Run ID 为
-`2026-07-30T10-49-52-904Z`。三个任务均在 planner 的第一次文本模型请求处返回
-`AUTH_ERROR`，未生成任何页面、图片、ZIP 或产品截图，因此该 Run 只能证明请求
-确实到达 Provider，不能作为课程质量结论。安全检查确认 Next.js 正常加载了
-`.env`；阻塞原因是当前 `ARK_API_KEY`、`ARK_MODEL_ID` 仍为示例占位值，且未注释
-的 `IMAGE_*` 示例会覆盖默认 Ark 生图配置。
+配置真实 Provider 后，三个固定案例均已分别完成真实端到端聚焦运行并通过：
+
+| 案例 | Run ID | 整课首轮 | 模型首轮页面 | 模型 HTML | 素材 ready | Repair | 综合分 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 太阳系 | `2026-07-30T22-35-07-367Z` | 是 | 5/5 | 100% | 3/3 | 0 | 93.80 |
+| AI 素养 | `2026-07-30T23-37-55-678Z` | 是 | 5/5 | 100% | 1/1 | 0 | 94.15 |
+| 火星探险 | `2026-07-31T01-00-20-512Z` | 是 | 5/5 | 100% | 5/5 | 0 | 93.07 |
+
+三个样本均为 1 次架构成功、0 次重规划、0 次整课返工，课程 JSON、全部页面
+HTML、真实图片、Playwright 页面证据、课程详情桌面/移动截图和 ZIP 均已产生。
+火星样本有 1 条素材可用性观测 warning，不影响安全、合同与交付验收。
 
 Runner 现会在启动服务前按实际模型路由预检 cheap、balanced、strong 和图片
 Provider，拒绝缺失项及占位值且不输出 Key；同时支持
@@ -190,6 +191,7 @@ ready 比例；确定性 HTML renderer 或图片 fallback 保留生产降级能�
 固定 Demo 失败，不能冒充 Prompt、Skill 或模型带来的质量。公开状态还投影
 聚合的架构尝试、replan 和整课返工次数，不暴露 WorkOrder 或私有推理；只有
 一次架构成功、无整课返工且全部页面均为模型首轮成功时，才计为整课首轮通过。
-下一步是在有效
-Provider 凭据写入 `.env.local` 或 `.env` 后先
-运行一个聚焦案例，再运行完整三案例并完成人工复核；在此之前不扩展到 20 项。
+完整 `--record` 三案例连跑曾再次启动：火星以整课首轮、模型页面/HTML/素材
+100%、Repair 0、综合分 93.62 通过；太阳系运行至第 3 页时按用户要求停止，
+因此不把该中断 Run 记作新的正式整批报告。三个完整聚焦 Run 是本次真实质量
+结论的证据。

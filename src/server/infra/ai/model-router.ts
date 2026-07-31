@@ -1,6 +1,8 @@
 export type ModelTier = "cheap" | "balanced" | "strong";
 
 export type AiCapability =
+  | "course-architecture"
+  | "course-review"
   | "general"
   | "html"
   | "image-prompt"
@@ -20,7 +22,6 @@ export type ModelRoute = {
 };
 
 const STRONG_CAPABILITIES = new Set<AiCapability>([
-  "html",
   "page-qa",
   "page-writer",
   "pedagogy",
@@ -36,6 +37,21 @@ const CHEAP_CAPABILITIES = new Set<AiCapability>([
 
 /** 路由规则是服务端业务配置，模型和前端都不能自行选择档位。 */
 export function resolveModelRoute(capability: AiCapability): ModelRoute {
+  // 课程架构需要长工具回合。当前平衡档在完整输出和终态工具提交上更稳定，
+  // 强档作为失败升级；Blueprint Gate 与 Director 继续承担独立质量验收。
+  if (capability === "course-architecture") {
+    return { primary: "balanced", fallback: "strong" };
+  }
+  // 整课审查依赖多轮工具调用。平衡档在长工具回合中比强档更稳定，
+  // 仅在供应商失败时再升级强档，避免整课已经生成却卡在发布 Gate。
+  if (capability === "course-review") {
+    return { primary: "balanced", fallback: "strong" };
+  }
+  // 当前强档 HTML 模型在固定 120s 窗口内频繁超时；平衡档能稳定完成长 HTML
+  // 输出，失败时再升级强档，比每页先等待一次超时更可靠。
+  if (capability === "html") {
+    return { primary: "balanced", fallback: "strong" };
+  }
   if (STRONG_CAPABILITIES.has(capability)) {
     return { primary: "strong", fallback: "balanced" };
   }

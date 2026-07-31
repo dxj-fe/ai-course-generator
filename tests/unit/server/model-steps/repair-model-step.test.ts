@@ -90,6 +90,66 @@ describe("Repair model step", () => {
     });
   });
 
+  it("redirects an issue code to style when the request only authorizes CSS insertion", () => {
+    const request = htmlRequest();
+    const issueCode = request.issueCodes[0]!;
+
+    expect(
+      normalizeRepairModelOutput(
+        {
+          kind: "html_patch_candidate",
+          pageId: request.pageId,
+          targetArtifact: "html",
+          addressedIssueCodes: [issueCode],
+          unresolvedIssueCodes: [],
+          changeSummary: ["压缩固定画布中的纵向间距。"],
+          patches: [
+            {
+              issueCode,
+              operation: "insert_before_close_tag",
+              selector: issueCode,
+              replacement:
+                "\n@media (max-height: 520px) { main[data-page-id] { gap: .5rem; } }\n",
+              summary: "在低高度画布中压缩页面间距。",
+            },
+          ],
+        },
+        request,
+      ),
+    ).toMatchObject({
+      patches: [{ selector: "style" }],
+    });
+  });
+
+  it("redirects an authorized issue code to style while preserving other selector scopes", () => {
+    const base = htmlRequest();
+    const request = RepairRequestSchema.parse({
+      ...base,
+      allowedSelectors: ["style", '[data-block-id="block-01"]'],
+    });
+    const issueCode = request.issueCodes[0]!;
+
+    expect(
+      normalizeRepairModelOutput(
+        {
+          kind: "html_patch_candidate",
+          patches: [
+            {
+              issueCode,
+              operation: "insert_before_close_tag",
+              selector: issueCode,
+              replacement:
+                "\n@media (max-height: 520px) { main[data-page-id] { gap: .5rem; } }\n",
+            },
+          ],
+        },
+        request,
+      ),
+    ).toMatchObject({
+      patches: [{ selector: "style" }],
+    });
+  });
+
   it("does not reinterpret an html/body selector when the insertion is not CSS", () => {
     const output = {
       kind: "html_patch_candidate",
@@ -128,6 +188,39 @@ describe("Repair model step", () => {
           replacement: "html, body { box-sizing: border-box; }",
           summary:
             "针对 LAYOUT_CLIPPING_RISK 在授权标签边界插入修复。",
+        },
+      ],
+    });
+  });
+
+  it("normalizes an array issueCode to the first code authorized by the request", () => {
+    const request = htmlRequest();
+    const issueCode = request.issueCodes[0]!;
+
+    expect(
+      normalizeRepairModelOutput(
+        {
+          kind: "html_patch_candidate",
+          patches: [
+            {
+              issueCode: ["UNAUTHORIZED_ISSUE", issueCode],
+              operation: "insert_before_close_tag",
+              selector: "style",
+              replacement: "main { gap: 0.75rem; }",
+            },
+          ],
+        },
+        request,
+      ),
+    ).toEqual({
+      kind: "html_patch_candidate",
+      patches: [
+        {
+          issueCode,
+          operation: "insert_before_close_tag",
+          selector: "style",
+          replacement: "main { gap: 0.75rem; }",
+          summary: `针对 ${issueCode} 在授权标签边界插入修复。`,
         },
       ],
     });

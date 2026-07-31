@@ -101,6 +101,25 @@ export function runArchitectureGate(input: {
         path: `pageTasks.${index}.functionalTemplateId`,
         message: `模板 ${functionalTemplate.id} 只能用于 ${functionalTemplate.pageType}，不能用于 ${page.pageType}`,
       });
+    } else {
+      const interactionSlot = functionalTemplate.slots.find(
+        ({ name }) => name === "interaction",
+      );
+      const plannedInteractionEntries =
+        plannedInteractionEntryCount(page);
+      if (
+        interactionSlot &&
+        plannedInteractionEntries > interactionSlot.maxItems
+      ) {
+        issues.push({
+          code: "FUNCTIONAL_TEMPLATE_INTERACTION_CAPACITY_MISMATCH",
+          path: `pageTasks.${index}.functionalTemplateId`,
+          message:
+            `模板 ${functionalTemplate.id} 最多承载 ${interactionSlot.maxItems} 个互动项，` +
+            `当前 ${page.interactionType} 预计需要 ${plannedInteractionEntries} 个；` +
+            "请选择与信息关系和互动容量相符的模板，或在架构层合并真正同属一个操作的教学点",
+        });
+      }
     }
 
     if (
@@ -111,6 +130,32 @@ export function runArchitectureGate(input: {
         code: "PAGE_STYLE_VERSION_MISMATCH",
         path: `pageTasks.${index}.styleTemplateId`,
         message: "所有页面必须引用当前 Architecture 的同一个样式模板",
+      });
+    }
+
+    if (
+      page.pageType === "summary" &&
+      !page.acceptance.requiresInteraction &&
+      !["none", "navigate", "input"].includes(page.interactionType)
+    ) {
+      issues.push({
+        code: "SUMMARY_INTERACTION_REDUNDANT",
+        path: `pageTasks.${index}.interactionType`,
+        message:
+          "总结页不要求互动时只能使用 none、navigate 或 input；不要用 reveal 重复已经可见的总结正文",
+      });
+    }
+
+    if (
+      ["reveal", "choice", "sort", "input", "explore"].includes(
+        page.interactionType,
+      ) &&
+      !page.acceptance.requiresInteraction
+    ) {
+      issues.push({
+        code: "INTERACTION_ACCEPTANCE_MISMATCH",
+        path: `pageTasks.${index}.acceptance.requiresInteraction`,
+        message: `${page.interactionType} 是真实学习互动，acceptance.requiresInteraction 必须为 true；若互动不是验收所需，请把 interactionType 改为 none 或 navigate`,
       });
     }
 
@@ -150,6 +195,21 @@ export function runArchitectureGate(input: {
   }
 
   return issues.length > 0 ? { ok: false, issues } : { ok: true, architecture };
+}
+
+function plannedInteractionEntryCount(
+  page: CourseArchitecture["pageTasks"][number],
+) {
+  switch (page.interactionType) {
+    case "none":
+      return 0;
+    case "reveal":
+    case "explore":
+    case "sort":
+      return page.teachingPoints.length;
+    default:
+      return 1;
+  }
 }
 
 function pushReferenceIssues(

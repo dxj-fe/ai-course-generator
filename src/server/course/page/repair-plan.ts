@@ -41,6 +41,14 @@ const CSS_PRESENTATION_ISSUE_CODES = new Set([
   "TOUCH_TARGET_INSUFFICIENT",
   "TOUCH_TARGET_TOO_SMALL",
 ]);
+const HARNESS_ISSUE_CODES = new Set([
+  "SCREENSHOT_BROWSER_LAUNCH_FAILED",
+  "SCREENSHOT_CAPTURE_FAILED",
+  "SCREENSHOT_CAPTURE_SKIPPED",
+  "SCREENSHOT_EVIDENCE_MISSING",
+  "SCREENSHOT_STORAGE_PREPARE_FAILED",
+  "SCREENSHOT_STORAGE_WRITE_FAILED",
+]);
 
 export type RepairPlanningFailure = {
   status: "unavailable";
@@ -76,6 +84,14 @@ export function planRepairRound(input: {
   const actionableIssues = input.report.issues.filter(
     contributesToRepairDecision,
   );
+  if (actionableIssues.some(({ code }) => HARNESS_ISSUE_CODES.has(code))) {
+    return {
+      status: "unavailable",
+      failureClass: "harness_unavailable",
+      message:
+        "截图浏览器或证据存储不可用，页面内容 Repair 无法修复运行环境；应恢复 Harness 后重新执行 QA。",
+    };
+  }
   const semanticIssues = actionableIssues.filter((issue) =>
     DSL_DIMENSIONS.has(issue.dimension),
   );

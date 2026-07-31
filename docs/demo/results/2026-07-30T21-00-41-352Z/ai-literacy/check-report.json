@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "baselineId": "ai-literacy",
+  "courseId": "course-818b4fbd-9cac-4e65-b558-f216ac41998e",
+  "passed": false,
+  "checkedAt": "2026-07-30T21:51:30.521Z",
+  "metrics": {
+    "expectedPages": 5,
+    "actualPages": 5,
+    "qaPages": 3,
+    "screenshotPages": 3,
+    "firstPassAcceptedPages": 3,
+    "firstPassAcceptanceRate": 1,
+    "modelFirstPassAcceptedPages": 3,
+    "modelFirstPassAcceptanceRate": 1,
+    "modelRenderedPages": 3,
+    "modelRenderRate": 0.6,
+    "requestedAssets": 1,
+    "readyAssets": 1,
+    "fallbackAssets": 0,
+    "assetReadyRate": 1,
+    "architectureAttempts": 3,
+    "architectureRevisions": 2,
+    "replanCount": 0,
+    "courseRevisionCount": 0,
+    "courseFirstPassAccepted": false,
+    "repairAttemptCount": 0,
+    "averageRepairAttempts": 0,
+    "averageOverallScore": 90.67,
+    "averageVisualScore": 89.43,
+    "compositeScore": 86.09,
+    "minimumOverallScore": 90,
+    "archiveEntryCount": 0
+  },
+  "issues": [
+    {
+      "code": "COURSE_NOT_COMPLETED",
+      "message": "课程终态应为 completed，实际为 failed。"
+    },
+    {
+      "code": "OUTLINE_INTERACTION_MISMATCH",
+      "pageId": "page-02",
+      "message": "第 2 页允许交互为 reveal/explore，实际为 sort。"
+    },
+    {
+      "code": "OUTLINE_PAGE_TYPE_MISMATCH",
+      "pageId": "page-04",
+      "message": "第 4 页应承担“完成安全使用判断”，允许页型为 quiz/achievement，实际为 knowledge_card。"
+    },
+    {
+      "code": "OUTLINE_INTERACTION_MISMATCH",
+      "pageId": "page-04",
+      "message": "第 4 页允许交互为 choice/sort/input，实际为 none。"
+    },
+    {
+      "code": "OUTLINE_INTERACTION_MISMATCH",
+      "pageId": "page-05",
+      "message": "第 5 页允许交互为 none/navigate/input，实际为 choice。"
+    },
+    {
+      "code": "PAGE_NOT_COMPLETED",
+      "pageId": "page-02",
+      "message": "页面状态应为 completed，实际为 pending。"
+    },
+    {
+      "code": "PAGE_ARTIFACT_MISSING",
+      "pageId": "page-02",
+      "message": "页面缺少 PageContentDSL 或 HTML 输出。"
+    },
+    {
+      "code": "QUALITY_REPORT_MISSING",
+      "pageId": "page-02",
+      "message": "页面缺少最终 QualityReport。"
+    },
+    {
+      "code": "PAGE_NOT_COMPLETED",
+      "pageId": "page-05",
+      "message": "页面状态应为 completed，实际为 failed。"
+    },
+    {
+      "code": "PAGE_ARTIFACT_MISSING",
+      "pageId": "page-05",
+      "message": "页面缺少 PageContentDSL 或 HTML 输出。"
+    },
+    {
+      "code": "QUALITY_REPORT_MISSING",
+      "pageId": "page-05",
+      "message": "页面缺少最终 QualityReport。"
+    },
+    {
+      "code": "ARCHIVE_MISSING",
+      "message": "缺少课程 ZIP 导出结果。"
+    }
+  ]
+}

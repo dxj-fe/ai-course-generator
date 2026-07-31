@@ -190,7 +190,7 @@ src/
 │   │       │   └── course/
 │   │       │       ├── index.ts
 │   │       │       ├── architect.system.v1.md
-│   │       │       ├── director.system.v1.md
+│   │       │       ├── director.system.v2.md
 │   │       │       ├── page-builder.system.v1.md
 │   │       │       └── reviewer.system.v1.md
 │   │       ├── tools/

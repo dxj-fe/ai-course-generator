@@ -1,10 +1,12 @@
 import { getLanguageModel } from "@/server/infra/ai/model-provider";
+import { serializeErrorForLog } from "@/server/infra/ai/error";
 import {
   isRetryableModelError,
   resolveModelRoute,
   type ModelTier,
 } from "@/server/infra/ai/model-router";
 import {
+  AgentTerminalNotCommittedError,
   type AgentDefinition,
   type AgentExecutor,
   type AgentId,
@@ -595,7 +597,17 @@ async function executeOrder(
         }
         lastError = error;
         const hasFallback = index + 1 < tiers.length;
-        if (!hasFallback || !isRetryableModelError(error)) break;
+        console.error("[course-run]", {
+          event: "agent:model-tier-failed",
+          traceId: input.traceId,
+          workOrderId: claimed.id,
+          agentId,
+          modelTier: tiers[index],
+          retryable: isRetryableAgentExecutionError(error),
+          fallbackAvailable: hasFallback,
+          ...serializeErrorForLog(error),
+        });
+        if (!hasFallback || !isRetryableAgentExecutionError(error)) break;
       }
     }
 
@@ -789,7 +801,7 @@ function failWorkOrder(
         code: publicError.code,
         causeCode: publicError.causeCode,
         message: publicError.message,
-        retryable: isRetryableModelError(error),
+        retryable: isRetryableAgentExecutionError(error),
         occurredAt: now,
       },
       updatedAt: now,
@@ -818,6 +830,13 @@ function failWorkOrder(
       createdAt: now,
     });
   });
+}
+
+function isRetryableAgentExecutionError(error: unknown) {
+  return (
+    isRetryableModelError(error) ||
+    error instanceof AgentTerminalNotCommittedError
+  );
 }
 
 function projectCurrentState(

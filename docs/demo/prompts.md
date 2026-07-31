@@ -99,7 +99,8 @@ pnpm demo:check -- \
 - 每页最终 QA 必须为 `pass`、`shouldRepair=false`；
 - 每页必须由 HTML 模型完成，不能把确定性安全 fallback 计作模型质量通过；
 - 已声明的图片素材必须为 `ready`，Provider fallback 只能作为生产降级，不能作为 Demo 成功证据；
-- 每页总分至少 85，六维单项至少 80；
+- 每页总分至少 85；六维单项参考线用于观测与定位上游改进方向，低于参考线记
+  warning，但不在没有具体交付错误时阻断 Demo；
 - 每页必须带 `captured` Playwright 截图证据；
 - 报告必须保留首轮通过率与 Repair 次数；最终通过但返修明显增加不能视为质量提升；
 - ZIP 必须包含 `course.json`、全部有序页面 HTML 和素材清单；

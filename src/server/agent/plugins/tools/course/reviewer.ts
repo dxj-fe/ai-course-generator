@@ -57,9 +57,32 @@ const PageEvidenceInputSchema = z
   })
   .strict();
 
+const ReviewerDecisionIssueSchema = z
+  .object({
+    id: z.string().trim().min(1).max(160).optional(),
+    scope: z.enum(["course", "page"]),
+    pageId: z.string().trim().min(1).max(80).optional(),
+    code: z.string().trim().min(1).max(100),
+    severity: z.enum(["warning", "error"]),
+    message: z.string().trim().min(1).max(1_000),
+    targetArtifact: z.enum(["page_content", "page_html"]).optional(),
+    evidencePageIds: z.array(z.string().trim().min(1).max(80)).max(20).optional(),
+    evidenceArtifactRefs: z.array(z.unknown()).max(100).optional(),
+    suggestedAction: z.string().trim().min(1).max(1_000),
+  })
+  .passthrough();
+
 const ReviewCandidateInputSchema = z
   .object({
-    review: z.unknown().describe("完整 CourseReview 候选对象"),
+    review: z
+      .object({
+        decision: z.enum(["pass", "revise_pages", "replan"]),
+        issues: z.array(ReviewerDecisionIssueSchema).max(200).default([]),
+        summary: z.string().trim().min(2).max(2_000),
+      })
+      // 兼容旧 Agent 仍回传机器字段；提交边界会忽略并从封口快照重建。
+      .passthrough()
+      .describe("Reviewer 只需填写 decision、issues 和 summary"),
   })
   .strict();
 
@@ -97,8 +120,8 @@ export function createCourseReviewerTools(
         "读取整课目标、统一规则、事实底稿和目标到页面的计划矩阵。返回的是当前 accepted Architecture，不是旧计划。",
       inputSchema: EmptyInputSchema,
       execute: () => {
-        const { architecture, manifest } =
-          loadCourseReviewerSnapshot(execution);
+        const snapshot = loadCourseReviewerSnapshot(execution);
+        const { architecture, manifest } = snapshot;
         execution.evidenceReadProgress.courseMatrixRead = true;
         return success("已读取当前课程目标和页面职责矩阵。", {
           evidenceArtifactRefs: [manifest.architectureRef],
@@ -109,6 +132,7 @@ export function createCourseReviewerTools(
           facts: architecture.coursePack.facts,
           terms: architecture.coursePack.terms,
           constraints: architecture.coursePack.constraints,
+          submissionTemplate: buildCourseReviewSubmissionTemplate(),
           pages: architecture.pageTasks.map(
             ({
               pageId,
@@ -254,7 +278,7 @@ export function createCourseReviewerTools(
 
     [ToolIds.ValidateCourseReview]: tool({
       description:
-        "提交前校验 CourseReview 的目标覆盖、页面引用、证据范围、manifest 新鲜度和确定性跨页问题；失败只返回可修改反馈。",
+        "提交前校验 Reviewer 的 decision、issues 和 summary。机器会从封口快照补齐目标覆盖、manifestHash 和精确 ArtifactRef；失败只返回可修改反馈。",
       inputSchema: ReviewCandidateInputSchema,
       execute: ({ review }) => {
         const evidenceIssues =
@@ -280,7 +304,7 @@ export function createCourseReviewerTools(
 
     [ToolIds.SubmitCourseReview]: tool({
       description:
-        "提交完整 CourseReview。工具会重新校验当前 manifest 和全部证据；成功落库后才结束 Reviewer WorkOrder。",
+        "提交 Reviewer 的 decision、issues 和 summary。工具会绑定当前 manifest、补齐精确证据并重新校验；成功落库后才结束 Reviewer WorkOrder。",
       inputSchema: ReviewCandidateInputSchema,
       execute: ({ review }) => {
         const evidenceIssues =
@@ -412,11 +436,16 @@ export function validateCourseReviewerCandidate(
     }
   | { issues: CourseGateIssue[]; ok: false } {
   const snapshot = loadCourseReviewerSnapshot(execution);
+  const normalizedCandidate = normalizeCourseReviewerCandidate(
+    execution,
+    snapshot,
+    candidate,
+  );
   const gate = runCourseReviewGate({
     architecture: snapshot.architecture,
     manifest: snapshot.manifest,
     pageSummaries: [...snapshot.pageSummaries.values()],
-    candidate,
+    candidate: normalizedCandidate,
   });
   if (!gate.ok) return gate;
 
@@ -445,6 +474,148 @@ export function validateCourseReviewerCandidate(
     ok: true,
     review: CourseReviewSchema.parse(gate.review),
   };
+}
+
+/**
+ * CourseReview 的 scope、manifestHash 和目标覆盖映射都来自当前封口快照，
+ * 不应让模型重复抄写这些机器可判定字段。模型仍负责结论、问题和说明，
+ * 工具在提交边界补齐稳定合同，减少长 Artifact 合同造成的无效重试。
+ */
+function normalizeCourseReviewerCandidate(
+  execution: CourseReviewerExecution,
+  snapshot: ReturnType<typeof loadCourseReviewerSnapshot>,
+  candidate: unknown,
+) {
+  if (!isRecord(candidate)) return candidate;
+  const issues = Array.isArray(candidate.issues)
+    ? candidate.issues.map((issue, index) =>
+        normalizeCourseReviewerIssue(snapshot, issue, index),
+      )
+    : candidate.issues;
+  return {
+    version: 1,
+    courseId: execution.initialWorkOrder.courseId,
+    inputManifestHash: execution.frozenManifestHash,
+    decision: candidate.decision,
+    coverage: buildCourseReviewCoverage(snapshot),
+    issues,
+    summary: candidate.summary,
+  };
+}
+
+function buildCourseReviewSubmissionTemplate() {
+  return {
+    decision: "pass" as const,
+    issues: [],
+    summary: "请根据全部封口证据替换为最终整课审查结论。",
+  };
+}
+
+function normalizeCourseReviewerIssue(
+  snapshot: ReturnType<typeof loadCourseReviewerSnapshot>,
+  issue: unknown,
+  index: number,
+) {
+  if (!isRecord(issue)) return issue;
+  const scope = issue.scope;
+  const pageId =
+    typeof issue.pageId === "string" ? issue.pageId : undefined;
+  const evidencePageIds = [
+    ...(Array.isArray(issue.evidencePageIds)
+      ? issue.evidencePageIds.filter(
+          (value): value is string => typeof value === "string",
+        )
+      : []),
+    ...(Array.isArray(issue.evidenceArtifactRefs)
+      ? issue.evidenceArtifactRefs.flatMap((value) =>
+          isRecord(value) && typeof value.pageId === "string"
+            ? [value.pageId]
+            : [],
+        )
+      : []),
+    ...(scope === "page" && pageId ? [pageId] : []),
+  ];
+  const manifestPages = new Map(
+    snapshot.manifest.pages.map((page) => [page.pageId, page]),
+  );
+  const pageEvidence = [...new Set(evidencePageIds)].flatMap(
+    (evidencePageId) => {
+      const page = manifestPages.get(evidencePageId);
+      return page ? [page.summaryRef, page.qualityRef] : [];
+    },
+  );
+  const code =
+    typeof issue.code === "string" && issue.code.trim()
+      ? issue.code.trim()
+      : "COURSE_REVIEW_FINDING";
+  return {
+    id:
+      typeof issue.id === "string" && issue.id.trim()
+        ? issue.id.trim()
+        : `${code.toLowerCase()}-${pageId ?? "course"}-${index + 1}`,
+    scope,
+    ...(scope === "page" && pageId ? { pageId } : {}),
+    code,
+    severity: issue.severity,
+    message: issue.message,
+    ...(scope === "page"
+      ? {
+          targetArtifact:
+            issue.targetArtifact === "page_html"
+              ? ("page_html" as const)
+              : ("page_content" as const),
+        }
+      : {}),
+    evidenceArtifactRefs:
+      scope === "course"
+        ? [snapshot.manifest.architectureRef, ...pageEvidence]
+        : pageEvidence,
+    suggestedAction: issue.suggestedAction,
+  };
+}
+
+function buildCourseReviewCoverage(
+  snapshot: ReturnType<typeof loadCourseReviewerSnapshot>,
+) {
+  return snapshot.architecture.blueprint.objectives.map(({ id }) => {
+    const teachingPageIds = snapshot.architecture.pageTasks
+      .filter((pageTask) => {
+        const summary = snapshot.pageSummaries.get(pageTask.pageId);
+        return (
+          pageTask.pageType !== "cover" &&
+          pageTask.objectiveIds.includes(id) &&
+          summary?.objectiveIds.includes(id)
+        );
+      })
+      .map(({ pageId }) => pageId);
+    const assessmentPageIds = snapshot.architecture.pageTasks
+      .filter((pageTask) => {
+        const summary = snapshot.pageSummaries.get(pageTask.pageId);
+        return (
+          pageTask.pageType !== "cover" &&
+          pageTask.objectiveIds.includes(id) &&
+          summary?.objectiveIds.includes(id) &&
+          Boolean(pageTask.assessment) &&
+          Boolean(summary?.assessment)
+        );
+      })
+      .map(({ pageId }) => pageId);
+    return {
+      objectiveId: id,
+      teachingPageIds,
+      assessmentPageIds,
+      status:
+        teachingPageIds.length === 0
+          ? ("missing" as const)
+          : assessmentPageIds.length === 0
+            ? ("weak" as const)
+            : ("covered" as const),
+    };
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 export function collectDeterministicReviewerFindings(

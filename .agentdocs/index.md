@@ -16,11 +16,9 @@
 
 `../docs/architecture/backend-target-architecture.md` - 统一 Agent Registry/Runtime、代码插件目录、项目内 Agent Skills 资源与注册中心、受限本地资源读取、类型安全 ID、动态 Course Run、`course`/`infra` 目录与渐进迁移方案，新增 Agent、引入 Skill 或移动后端模块前必读。
 
-## 当前任务文档
-
-`workflow/260730-implement-backend-refactor.md` - 按目标架构实施后端迁移，并从 Prompt、Tool、Skill、模型路由和 Harness 提升课程一次生成质量。
-
 ## 已完成任务文档
+
+`workflow/done/260730-implement-backend-refactor.md` - 按目标架构完成后端迁移，并以三个真实 Provider Demo 验证 Prompt、Tool、Skill、模型路由和 Harness 的一次生成质量。
 
 `workflow/done/260730-redesign-backend-architecture.md` - 后端目标目录、统一 Agent 能力中心、动态 Course Run 与项目内 Agent Skills 注册中心的设计记录。
 

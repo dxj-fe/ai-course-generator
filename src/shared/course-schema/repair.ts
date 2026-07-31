@@ -13,6 +13,7 @@ export const RepairTargetArtifactSchema = z.enum(["dsl", "html"]);
 export const RepairContentFieldSchema = z.enum(["narration", "interaction"]);
 
 export const RepairFailureClassSchema = z.enum([
+  "harness_unavailable",
   "unlocatable_issue",
   "unsupported_asset_issue",
   "scope_violation",

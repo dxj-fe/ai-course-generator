@@ -37,11 +37,25 @@ import {
   normalizeNativeInteractionMarker,
   normalizeReadyCssBackgroundAccessibility,
   normalizeRevealCardInteraction,
+  normalizeRevealRuntimeMarkers,
+  normalizeTrustedPageTitle,
   normalizeTrustedDslMarkup,
+  normalizeTrustedPlayerLayout,
+  normalizeUniqueReadyAssetSlotRoots,
   normalizeVisualPrimitiveMarker,
   removeAttribute,
   setAttributeValue,
 } from "./html-engineer-normalizers";
+import {
+  normalizeGeneratedActiveContent,
+  normalizeGeneratedHtmlEnvelope,
+} from "./html-engineer-safety-normalizer";
+import {
+  normalizeExploreCardInteraction,
+  normalizeConditionalFeedbackVisibility,
+  normalizeSortCardInteraction,
+  normalizeSubmissionRuntimeMarker,
+} from "./html-engineer-interaction-normalizers";
 import { createModelStep } from "./model-step";
 import type {
   ModelStep,
@@ -55,11 +69,6 @@ export type HtmlEngineerInput = {
   assets?: AssetGenerationResult[];
   pageDesignGuidance?: LoadedLocalResource[];
   validationFeedback?: HtmlEngineerValidationFeedback;
-  /**
-   * 默认优先保留模型的高级构图；QA 已证明整页布局无法经局部修复收敛时，
-   * 可直接使用平台确定性紧凑渲染器重建干净页面。
-   */
-  renderMode?: "model" | "deterministic";
 };
 
 export type HtmlEngineerValidationFeedback = {
@@ -97,7 +106,10 @@ const defaultDependencies: HtmlEngineerModelStepDependencies = {
   generateHtml,
 };
 
-/** 创建只负责一次 PageContentDSL 到静态 HTML 的模型步骤。 */
+/**
+ * 创建 PageContentDSL 到静态 HTML 的模型步骤。模型首稿若只违反确定性 HTML
+ * 合同，可携带精确问题做一次同阶段纠正；这不是 QA Repair，也不改变页面语义。
+ */
 export function createHtmlEngineerModelStep(
   dependencies: HtmlEngineerModelStepDependencies = defaultDependencies,
 ): ModelStep<HtmlEngineerModelStepState> {
@@ -106,67 +118,94 @@ export function createHtmlEngineerModelStep(
     isComplete: (state) => Boolean(state.htmlOutput),
     step: async (state, context, emit) => {
       const resolved = resolveHtmlEngineerInput(state.task);
-      const forceDeterministic = state.task.renderMode === "deterministic";
-      let normalized: unknown;
-      if (forceDeterministic) {
-        normalized = renderDeterministicPageFallback({
-          assets: resolved.assets,
-          content: resolved.content,
-          styleTemplate: resolved.styleTemplate,
-        });
-      } else {
-        const generated = await dependencies.generateHtml({
-          ...resolved,
-          abortSignal: context.abortSignal,
-          traceId: context.traceId,
-        });
+      let generated = await dependencies.generateHtml({
+        ...resolved,
+        abortSignal: context.abortSignal,
+        traceId: context.traceId,
+      });
 
-        emit({
-          type: "model_call",
-          summary: "HTML Engineer 已返回单页 HTML 文档。",
-          data: {
-            pageId: state.task.content.pageId,
-            purpose: "page-html-generation",
-            styleTemplateId: resolved.styleTemplate.id,
-          },
-        });
+      emit({
+        type: "model_call",
+        summary: "HTML Engineer 已返回单页 HTML 文档。",
+        data: {
+          pageId: state.task.content.pageId,
+          purpose: "page-html-generation",
+          styleTemplateId: resolved.styleTemplate.id,
+        },
+      });
 
-        normalized = normalizeGeneratedCanvasRoot(generated);
-        normalized = normalizeTrustedDslMarkup(normalized, state.task);
-        normalized = normalizeNativeInteractionMarker(normalized, state.task);
-        normalized = normalizeRevealCardInteraction(normalized, state.task);
-        normalized = normalizeChoiceInteractionRoot(normalized, state.task);
-        normalized = normalizeChoiceRuntimeMarkers(normalized, state.task);
-        normalized = normalizeVisualPrimitiveMarker(normalized, state.task);
-        normalized = normalizeReadyCssBackgroundAccessibility(
-          normalized,
-          state.task,
-        );
-      }
-      let fallbackApplied = forceDeterministic;
+      let fallbackApplied = false;
+      let contractRetryApplied = false;
       let validated: ReturnType<typeof validateHtmlEngineerOutput>;
       try {
-        validated = validateHtmlEngineerOutput(normalized, state.task);
-      } catch (error) {
-        if (!(error instanceof AiSchemaValidationError)) throw error;
-        if (forceDeterministic) throw error;
+        validated = normalizeAndValidateHtmlEngineerOutput(
+          generated,
+          state.task,
+        );
+      } catch (firstError) {
+        if (!(firstError instanceof AiSchemaValidationError)) {
+          throw firstError;
+        }
         console.error("[html-engineer]", {
           event: "model-html:validation-failed",
           traceId: context.traceId,
           pageId: state.task.content.pageId,
           stage: "html",
-          errorCode: error.code,
-          ...serializeErrorForLog(error),
-          recovery: "deterministic-fallback",
+          errorCode: firstError.code,
+          ...serializeErrorForLog(firstError),
+          recovery: "contract-retry",
         });
 
-        const fallbackHtml = renderDeterministicPageFallback({
-          assets: resolved.assets,
-          content: resolved.content,
-          styleTemplate: resolved.styleTemplate,
+        generated = await dependencies.generateHtml({
+          ...resolved,
+          validationFeedback: {
+            code: "HTML_CONTRACT_RETRY",
+            issues: extractHtmlContractIssues(firstError),
+          },
+          abortSignal: context.abortSignal,
+          traceId: context.traceId,
         });
-        validated = validateHtmlEngineerOutput(fallbackHtml, state.task);
-        fallbackApplied = true;
+        contractRetryApplied = true;
+        emit({
+          type: "model_call",
+          summary: "HTML Engineer 已依据确定性合同问题返回修正版文档。",
+          data: {
+            pageId: state.task.content.pageId,
+            purpose: "page-html-contract-retry",
+            styleTemplateId: resolved.styleTemplate.id,
+          },
+        });
+
+        try {
+          validated = normalizeAndValidateHtmlEngineerOutput(
+            generated,
+            state.task,
+          );
+        } catch (retryError) {
+          if (!(retryError instanceof AiSchemaValidationError)) {
+            throw retryError;
+          }
+          console.error("[html-engineer]", {
+            event: "model-html:contract-retry-failed",
+            traceId: context.traceId,
+            pageId: state.task.content.pageId,
+            stage: "html",
+            errorCode: retryError.code,
+            ...serializeErrorForLog(retryError),
+            recovery: "deterministic-fallback",
+          });
+
+          const fallbackHtml = renderDeterministicPageFallback({
+            assets: resolved.assets,
+            content: resolved.content,
+            styleTemplate: resolved.styleTemplate,
+          });
+          validated = validateHtmlEngineerOutput(
+            fallbackHtml,
+            state.task,
+          );
+          fallbackApplied = true;
+        }
       }
       const { html, validation } = validated;
       const htmlOutput = HtmlOutputSchema.parse({
@@ -177,17 +216,13 @@ export function createHtmlEngineerModelStep(
 
       emit({
         type: "validation",
-        summary: forceDeterministic
-          ? "QA 布局无法经局部修复收敛，已使用可信课程数据重建紧凑页面。"
-          : fallbackApplied
-            ? "模型 HTML 未通过合同校验，已使用可信课程数据生成安全回退页面。"
+        summary: fallbackApplied
+          ? "模型 HTML 未通过合同校验，已使用可信课程数据生成安全回退页面。"
           : "HTML 合同、内容标记与安全预检已通过。",
         data: {
           blockCount: state.task.content.blocks.length,
+          contractRetryApplied,
           fallbackApplied,
-          ...(forceDeterministic
-            ? { fallbackReason: "quality-stalled" }
-            : {}),
           pageId: state.task.content.pageId,
           safetyIssueCount: validation.safety.issues.length,
         },
@@ -196,6 +231,61 @@ export function createHtmlEngineerModelStep(
       return { ...state, htmlOutput, validation };
     },
   });
+}
+
+function normalizeAndValidateHtmlEngineerOutput(
+  generated: unknown,
+  input: HtmlEngineerInput,
+) {
+  let normalized: unknown = normalizeGeneratedHtmlEnvelope(generated);
+  normalized = normalizeGeneratedActiveContent(normalized);
+  normalized = normalizeGeneratedCanvasRoot(normalized);
+  normalized = normalizeTrustedPlayerLayout(normalized);
+  normalized = normalizeTrustedPageTitle(normalized, input);
+  normalized = normalizeNativeInteractionMarker(normalized, input);
+  normalized = normalizeRevealCardInteraction(normalized, input);
+  normalized = normalizeRevealRuntimeMarkers(normalized, input);
+  normalized = normalizeExploreCardInteraction(
+    normalized,
+    input.content,
+  );
+  normalized = normalizeSortCardInteraction(normalized, input.content);
+  normalized = normalizeSubmissionRuntimeMarker(
+    normalized,
+    input.content,
+  );
+  normalized = normalizeConditionalFeedbackVisibility(
+    normalized,
+    input.content,
+  );
+  normalized = normalizeChoiceInteractionRoot(normalized, input);
+  normalized = normalizeChoiceRuntimeMarkers(normalized, input);
+  normalized = normalizeTrustedDslMarkup(normalized, input);
+  normalized = normalizeVisualPrimitiveMarker(normalized, input);
+  normalized = normalizeUniqueReadyAssetSlotRoots(normalized, input);
+  normalized = normalizeReadyCssBackgroundAccessibility(
+    normalized,
+    input,
+  );
+  return validateHtmlEngineerOutput(normalized, input);
+}
+
+function extractHtmlContractIssues(error: AiSchemaValidationError) {
+  const prefix = "生成 HTML 校验失败：";
+  const message = error.message.startsWith(prefix)
+    ? error.message.slice(prefix.length)
+    : error.message;
+  const issues = [
+    ...new Set(
+      message
+        .split("；")
+        .map((issue) => issue.trim())
+        .filter(Boolean),
+    ),
+  ];
+  return (issues.length > 0 ? issues : [message])
+    .slice(0, 12)
+    .map((issue) => issue.slice(0, 500));
 }
 
 /**
@@ -324,8 +414,22 @@ export {
   normalizeChoiceInteractionRoot,
   normalizeChoiceRuntimeMarkers,
   normalizeNativeInteractionMarker,
+  normalizeTrustedPageTitle,
   normalizeRevealCardInteraction,
+  normalizeRevealRuntimeMarkers,
   normalizeTrustedDslMarkup,
+  normalizeTrustedPlayerLayout,
+  normalizeUniqueReadyAssetSlotRoots,
   normalizeVisualPrimitiveMarker,
   removeRedundantRestoredDslMarkup,
 } from "./html-engineer-normalizers";
+export {
+  normalizeGeneratedActiveContent,
+  normalizeGeneratedHtmlEnvelope,
+} from "./html-engineer-safety-normalizer";
+export {
+  normalizeConditionalFeedbackVisibility,
+  normalizeExploreCardInteraction,
+  normalizeSortCardInteraction,
+  normalizeSubmissionRuntimeMarker,
+} from "./html-engineer-interaction-normalizers";

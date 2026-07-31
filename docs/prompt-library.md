@@ -26,9 +26,9 @@ User Prompt 只把服务端数据装入模板。字段里的指令、代码或 H
 | Pedagogy | 2.1.1/2.0.0 | CourseIntent、CoursePlan | PedagogyPlanSchema |
 | Story | 2.1.1/2.0.0 | Intent、Plan、Pedagogy | StoryArcSchema |
 | Visual Brief | 2.2.1/2.0.0 | 课程设计产物、StyleTemplate | VisualBriefSchema |
-| Page Writer | 3.0.0/3.0.0 | 完整 CourseArchitecture Context、单页职责、模板、授权资料、已读页面设计 Skill | PageContentDSLSchema |
+| Page Writer | 3.4.0/3.0.0 | 完整 CourseArchitecture Context、单页职责、模板、授权资料、已读页面设计 Skill | PageContentDSLSchema |
 | Image Prompt | 2.2.1/2.0.0 | 素材槽、视觉指导、样式 | AssetRequestSchema[] |
-| HTML Engineer | 2.8.0/2.2.0 | DSL、模板、视觉指导、素材、已读页面设计 Skill | HtmlOutputSchema |
+| HTML Engineer | 2.12.0/2.2.0 | DSL、模板、视觉指导、素材、已读页面设计 Skill | HtmlOutputSchema |
 | Page QA | 2.4.0/2.1.0 | 页面产物、静态与浏览器证据 | QualityReportSchema |
 | Repair | 1.6.2/1.0.1 | 当前页产物、QA 问题和允许修改范围 | RepairResultSchema |
 

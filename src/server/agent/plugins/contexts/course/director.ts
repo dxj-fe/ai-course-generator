@@ -550,14 +550,18 @@ export function inspectCourseArchitecture(
     objectives: blueprint.objectives.map((objective) => ({
       ...objective,
       teachingPageIds: pageTasks
-        .filter(({ objectiveIds }) =>
-          objectiveIds.includes(objective.id),
+        .filter(
+          ({ objectiveIds, pageType }) =>
+            pageType !== "cover" &&
+            objectiveIds.includes(objective.id),
         )
         .map(({ pageId }) => pageId),
       assessmentPageIds: pageTasks
         .filter(
-          ({ objectiveIds, assessment }) =>
-            objectiveIds.includes(objective.id) && Boolean(assessment),
+          ({ objectiveIds, assessment, pageType }) =>
+            pageType !== "cover" &&
+            objectiveIds.includes(objective.id) &&
+            Boolean(assessment),
         )
         .map(({ pageId }) => pageId),
     })),

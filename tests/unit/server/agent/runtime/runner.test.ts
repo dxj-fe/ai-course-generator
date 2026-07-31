@@ -319,6 +319,89 @@ describe("AgentRunner", () => {
       }),
     });
   });
+
+  it("允许 Harness 在当前 activeTools 中指定唯一工具", async () => {
+    let persisted: PersistedAgentTerminal<TestSubmission> | null = null;
+    const runner = new AgentRunner<TestTools, TestSubmission>({
+      createAgent: createFakeFactory(async (settings) => {
+        await expect(
+          settings.prepareStep({
+            messages: [],
+            stepNumber: 0,
+            steps: [],
+          }),
+        ).resolves.toMatchObject({
+          activeTools: ["submit_result"],
+          toolChoice: {
+            type: "tool",
+            toolName: "submit_result",
+          },
+        });
+        persisted = {
+          status: "submitted",
+          submission: { artifactId: "artifact-directed" },
+        };
+        return {};
+      }),
+      terminalStateLoader: {
+        load: async () => persisted,
+        parse: (value) =>
+          isPersistedTerminal(value) ? value : null,
+      },
+    });
+
+    await expect(
+      runner.run(
+        createRequest({
+          activeTools: ["submit_result"],
+          prepareStep: () => ({
+            activeTools: ["submit_result"],
+            toolChoice: {
+              type: "tool",
+              toolName: "submit_result",
+            },
+          }),
+        }),
+      ),
+    ).resolves.toMatchObject({
+      status: "submitted",
+      submission: { artifactId: "artifact-directed" },
+    });
+  });
+
+  it("拒绝 Harness 指定当前未开放的工具", async () => {
+    const runner = new AgentRunner<TestTools, TestSubmission>({
+      createAgent: createFakeFactory(async (settings) => {
+        await settings.prepareStep({
+          messages: [],
+          stepNumber: 0,
+          steps: [],
+        });
+        return {};
+      }),
+      terminalStateLoader: {
+        load: async () => null,
+        parse: () => null,
+      },
+    });
+
+    await expect(
+      runner.run(
+        createRequest({
+          activeTools: ["inspect"],
+          prepareStep: () => ({
+            activeTools: ["inspect"],
+            toolChoice: {
+              type: "tool",
+              toolName: "submit_result",
+            },
+          }),
+        }),
+      ),
+    ).rejects.toMatchObject({
+      name: "AgentRunnerConfigurationError",
+    });
+  });
 });
 
 function createFakeFactory(

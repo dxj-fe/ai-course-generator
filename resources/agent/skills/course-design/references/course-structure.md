@@ -22,6 +22,8 @@
 
 `purpose` 描述页面在整课中的唯一作用；`teachingPoints` 是必须讲清的事实或关系；`learnerAction` 是学习者行为；`acceptance` 描述结果，不规定唯一布局或文案。
 
+模板选择同时服从信息关系和槽位容量。`story_intro` 只建立情境、问题或任务；两个及以上同层级知识点应使用 knowledge card、comparison 或 timeline 等合适模板。reveal、explore、sort 的每个预期操作项、choice 的每道题都会占用一个 interaction slot，不能选择容量不足的模板后把压力留给 Page Writer 重试。
+
 ## 生成依赖
 
 只有出现以下情况才添加 `buildDependsOnPageIds`：

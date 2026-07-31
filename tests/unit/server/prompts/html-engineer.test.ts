@@ -35,7 +35,7 @@ describe("HTML Engineer prompts", () => {
       ],
     });
 
-    expect(prompts.version).toBe("2.8.0/2.2.0");
+    expect(prompts.version).toBe("2.12.0/2.2.0");
     expect(prompts.systemPrompt).toContain("禁止任何 `<script>`");
     expect(prompts.systemPrompt).toContain("不得交换槽位");
     expect(prompts.systemPrompt).toContain("精确 altText");
@@ -65,6 +65,9 @@ describe("HTML Engineer prompts", () => {
     );
     expect(prompts.systemPrompt).toContain(
       "input 页面必须逐字呈现页面 title",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "choice 是主要动作时，题目任务区占据主要空间",
     );
     expect(prompts.systemPrompt).not.toContain(
       "三个及以上内容块",

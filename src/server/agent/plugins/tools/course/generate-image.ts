@@ -1,4 +1,5 @@
 import { generateImage } from "ai";
+import type { SharedV4ProviderOptions } from "@ai-sdk/provider";
 import { z } from "zod";
 
 import { getImageModelConfig } from "@/config/env";
@@ -61,7 +62,11 @@ export function createGenerateImageTool(
       const startedAt = Date.now();
 
       try {
-        const generated = await dependencies.generate(input, context.abortSignal);
+        const generated = await generateWithRetry(
+          dependencies,
+          input,
+          context.abortSignal,
+        );
         throwIfAborted(context.abortSignal);
         const info = inspectRasterImage(generated.bytes, generated.mediaType);
 
@@ -116,6 +121,30 @@ export function createGenerateImageTool(
   };
 }
 
+async function generateWithRetry(
+  dependencies: GenerateImageToolDependencies,
+  input: GenerateImageToolInput,
+  abortSignal?: AbortSignal,
+) {
+  const maxAttempts = 2;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await dependencies.generate(input, abortSignal);
+    } catch (error) {
+      if (abortSignal?.aborted) throw error;
+      lastError = error;
+      if (
+        attempt === maxAttempts ||
+        classifyImageError(error) !== "IMAGE_GENERATION_ABORTED"
+      ) {
+        throw error;
+      }
+    }
+  }
+  throw lastError;
+}
+
 export const generateImageTool = createGenerateImageTool();
 
 async function generateWithConfiguredModel(
@@ -132,15 +161,7 @@ async function generateWithConfiguredModel(
     prompt: input.request.prompt,
     n: 1,
     size: imageSizeFor(input.request.aspectRatio),
-    providerOptions:
-      config.providerName === "volcengine-ark"
-        ? {
-            volcengineArk: {
-              sequential_image_generation: "disabled",
-              watermark: false,
-            },
-          }
-        : undefined,
+    providerOptions: buildImageGenerationProviderOptions(config),
     abortSignal: signal,
   });
 
@@ -150,6 +171,40 @@ async function generateWithConfiguredModel(
     provider: config.providerName,
     model: config.modelName,
   };
+}
+
+type ImageModelConfig = ReturnType<typeof getImageModelConfig>;
+
+/**
+ * OpenAI Compatible 图片适配器只解析 b64_json，而 Seedream 默认返回临时 URL。
+ * 对官方方舟端点显式请求 Base64，避免图片已经生成却被 SDK 当成无效响应。
+ */
+export function buildImageGenerationProviderOptions(
+  config: ImageModelConfig,
+): SharedV4ProviderOptions | undefined {
+  if (!isVolcengineArkImageConfig(config)) return undefined;
+
+  return {
+    [config.providerName]: {
+      response_format: "b64_json",
+      sequential_image_generation: "disabled",
+      watermark: false,
+    },
+  };
+}
+
+function isVolcengineArkImageConfig(config: ImageModelConfig) {
+  const providerName = config.providerName.toLowerCase();
+  if (providerName === "ark" || providerName === "volcengine-ark") {
+    return true;
+  }
+
+  try {
+    return new URL(config.baseURL).hostname ===
+      "ark.cn-beijing.volces.com";
+  } catch {
+    return false;
+  }
 }
 
 function imageSizeFor(

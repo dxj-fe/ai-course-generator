@@ -278,7 +278,6 @@ export function validatePageWriterOutput(
     issues.push(...validateTemplateSlots(dsl, template));
   }
   issues.push(...validateContentSubstance(dsl));
-  issues.push(...validateFixedCanvasCapacity(dsl, input));
 
   if (issues.length > 0) {
     throw new AiSchemaValidationError(
@@ -342,51 +341,65 @@ async function generateContent(
     draft.interaction,
     blocks,
   );
-  return validatePageWriterOutput(
-    {
-      version: 2,
-      pageId: input.page.id,
-      functionalTemplateId: input.page.functionalTemplateId,
-      title: input.page.title,
-      narration: draft.narration,
+  const candidate: PageContentDSL = {
+    version: 2,
+    pageId: input.page.id,
+    functionalTemplateId: input.page.functionalTemplateId,
+    title: input.page.title,
+    narration: draft.narration,
+    blocks,
+    interaction,
+    usedReferences: draft.usedReferences,
+    assetSlots: input.page.assetNeeds.map((need, index) => ({
+      id: `asset-slot-${String(index + 1).padStart(2, "0")}`,
+      ...need,
+      altTextGuidance:
+        need.role === "decorative"
+          ? "装饰性素材不传达信息，最终使用空 alt 文本。"
+          : `${need.purpose.replace(/[。.!！?？]+$/u, "")}。`,
+    })),
+    layoutHints: {
+      contentDensity: normalizePageContentDensity(
+        draft.contentDensity,
+        input.page.pageType,
+      ),
+      visualPriority: draft.visualPriority,
+      groupingStrategy: draft.groupingStrategy,
+      readingOrder: blocks.map(({ id }) => id),
+    },
+    runtime: buildLessonRuntime({
+      page: input.page,
       blocks,
       interaction,
-      usedReferences: draft.usedReferences,
-      assetSlots: input.page.assetNeeds.map((need, index) => ({
-        id: `asset-slot-${String(index + 1).padStart(2, "0")}`,
-        ...need,
-        altTextGuidance:
-          need.role === "decorative"
-            ? "装饰性素材不传达信息，最终使用空 alt 文本。"
-            : `${need.purpose.replace(/[。.!！?？]+$/u, "")}。`,
-      })),
-      layoutHints: {
-        contentDensity: normalizePageContentDensity(
-          draft.contentDensity,
-          input.page.pageType,
-        ),
-        visualPriority: draft.visualPriority,
-        groupingStrategy: draft.groupingStrategy,
-        readingOrder: blocks.map(({ id }) => id),
-      },
-      runtime: buildLessonRuntime({
-        page: input.page,
-        blocks,
-        interaction,
-      }),
-    },
-    input,
-  );
+    }),
+  };
+
+  // 静态容量只能提示渲染密度，不能替代真实浏览器证据拒绝教学所需内容。
+  if (exceedsFixedCanvasCapacity(candidate)) {
+    candidate.layoutHints.contentDensity = "dense";
+  }
+
+  return validatePageWriterOutput(candidate, input);
 }
 
 function normalizeInteractionFeedback(value: unknown): unknown {
   return typeof value === "string" ? [value] : value;
 }
 
+function normalizeConciseGuidance(value: unknown): unknown {
+  return Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((item) => typeof item === "string")
+    ? value.join("；")
+    : value;
+}
+
 /**
  * 收敛 Provider 已知的无损结构压缩：
  * - 单句 narration 字符串还原为单元素数组；
  * - 单条互动反馈字符串还原为单元素数组；
+ * - 单条输入评价标准字符串还原为单元素数组；
+ * - 被拆成字符串数组的视觉优先级与分组策略还原为单句；
  * - choice 不使用的 items 占位字段固定为空数组。
  * 其余未知形状保持原样，继续交给严格 Schema 拒绝。
  */
@@ -395,6 +408,8 @@ export function normalizePageWriterModelOutput(output: unknown): unknown {
 
   const normalizedOutput = {
     ...output,
+    visualPriority: normalizeConciseGuidance(output.visualPriority),
+    groupingStrategy: normalizeConciseGuidance(output.groupingStrategy),
     ...(typeof output.narration === "string"
       ? { narration: [output.narration] }
       : {}),
@@ -411,6 +426,9 @@ export function normalizePageWriterModelOutput(output: unknown): unknown {
         interaction.feedbackSuccess,
       ),
       feedbackRetry: normalizeInteractionFeedback(interaction.feedbackRetry),
+      evaluationCriteria: normalizeInteractionFeedback(
+        interaction.evaluationCriteria,
+      ),
       // choice 不使用 items；部分 Provider 会把空数组错误压缩成 0。
       ...(interaction.type === "choice" ? { items: [] } : {}),
     },
@@ -496,7 +514,11 @@ function normalizeBlocks(items: unknown[]) {
     const id = `block-${String(index + 1).padStart(2, "0")}`;
 
     if (parsed.success) {
-      return { id, ...parsed.data };
+      return {
+        id,
+        ...parsed.data,
+        body: normalizeMultilineBulletBody(parsed.data.body),
+      };
     }
 
     if (typeof item === "string" && semanticTextLength(item) >= 24) {
@@ -513,6 +535,26 @@ function normalizeBlocks(items: unknown[]) {
       `Page Writer blocks.${index} 不是有效内容块。`,
     );
   });
+}
+
+/** 将 Provider 偶发塞进 body 的多行清单无损收敛为适合 HTML 精确复现的一句话。 */
+export function normalizeMultilineBulletBody(body: string) {
+  const lines = body
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const bulletPattern = /^(?:✅|☑️?|✔️?|✓|•|[-*])\s*/u;
+  if (
+    lines.length < 2 ||
+    lines.some((line) => !bulletPattern.test(line))
+  ) {
+    return body;
+  }
+
+  return lines
+    .map((line) => line.replace(bulletPattern, "").trim())
+    .filter(Boolean)
+    .join("；");
 }
 
 /** 根据 interaction.type 投影必要字段，丢弃兼容草稿中的占位字段。 */
@@ -692,7 +734,6 @@ export function exceedsFixedCanvasCapacity(dsl: PageContentDSL) {
     (total, block) => total + block.supportingPoints.length,
     0,
   );
-  const textWidth = estimateFixedCanvasVisibleTextWidth(dsl);
 
   if (
     dsl.functionalTemplateId === "story-intro" &&
@@ -705,8 +746,7 @@ export function exceedsFixedCanvasCapacity(dsl: PageContentDSL) {
       supportingPointCount >
         STORY_INTRO_VISUAL_CHOICE_LIMITS.supportingPoints ||
       (question?.options.length ?? 0) >
-        STORY_INTRO_VISUAL_CHOICE_LIMITS.options ||
-      textWidth > STORY_INTRO_VISUAL_CHOICE_LIMITS.textWidth
+        STORY_INTRO_VISUAL_CHOICE_LIMITS.options
     );
   }
 
@@ -720,8 +760,7 @@ export function exceedsFixedCanvasCapacity(dsl: PageContentDSL) {
       supportingPointCount >
         ACHIEVEMENT_VISUAL_INPUT_LIMITS.supportingPoints ||
       dsl.interaction.evaluationCriteria.length >
-        ACHIEVEMENT_VISUAL_INPUT_LIMITS.evaluationCriteria ||
-      textWidth > ACHIEVEMENT_VISUAL_INPUT_LIMITS.textWidth
+        ACHIEVEMENT_VISUAL_INPUT_LIMITS.evaluationCriteria
     );
   }
 
@@ -731,123 +770,8 @@ export function exceedsFixedCanvasCapacity(dsl: PageContentDSL) {
     supportingPointCount >
       RENDERED_VISUAL_FIXED_CANVAS_LIMITS.supportingPoints ||
     fixedCanvasInteractionEntryCount(dsl.interaction) >
-      RENDERED_VISUAL_FIXED_CANVAS_LIMITS.interactionEntries ||
-    textWidth > RENDERED_VISUAL_FIXED_CANVAS_LIMITS.textWidth
+      RENDERED_VISUAL_FIXED_CANVAS_LIMITS.interactionEntries
   );
-}
-
-function validateFixedCanvasCapacity(
-  dsl: PageContentDSL,
-  input: PageWriterInput,
-) {
-  if (!exceedsFixedCanvasCapacity(dsl)) return [];
-
-  const supportingPointCount = dsl.blocks.reduce(
-    (total, block) => total + block.supportingPoints.length,
-    0,
-  );
-  const textWidth = estimateFixedCanvasVisibleTextWidth(dsl);
-
-  if (
-    input.page.pageType === "achievement" &&
-    dsl.functionalTemplateId === "achievement-task" &&
-    dsl.interaction.type === "input"
-  ) {
-    return [
-      `固定画布容量超限：achievement 同时包含必需插图和 input 时，最多 ${ACHIEVEMENT_VISUAL_INPUT_LIMITS.narration} 句 narration、${ACHIEVEMENT_VISUAL_INPUT_LIMITS.blocks} 个 blocks、合计 ${ACHIEVEMENT_VISUAL_INPUT_LIMITS.supportingPoints} 条 supportingPoints、${ACHIEVEMENT_VISUAL_INPUT_LIMITS.evaluationCriteria} 条 evaluationCriteria 且可见文本约 ${ACHIEVEMENT_VISUAL_INPUT_LIMITS.textWidth} 个汉字宽度；当前分别为 ${dsl.narration.length}、${dsl.blocks.length}、${supportingPointCount}、${dsl.interaction.evaluationCriteria.length}、${textWidth}。请把步骤与依据合并为最少充分的两块内容，保留一个明确提交条件并压缩文字，不能隐藏正文。`,
-    ];
-  }
-
-  if (
-    input.page.pageType === "story_intro" &&
-    dsl.functionalTemplateId === "story-intro" &&
-    dsl.interaction.type === "choice"
-  ) {
-    const question = dsl.interaction.questions[0];
-
-    return [
-      `固定画布容量超限：story_intro 同时包含必需插图和 choice 时，最多 ${STORY_INTRO_VISUAL_CHOICE_LIMITS.narration} 句 narration、${STORY_INTRO_VISUAL_CHOICE_LIMITS.blocks} 个 blocks、合计 ${STORY_INTRO_VISUAL_CHOICE_LIMITS.supportingPoints} 条 supportingPoints、${STORY_INTRO_VISUAL_CHOICE_LIMITS.options} 个选项且可见文本约 ${STORY_INTRO_VISUAL_CHOICE_LIMITS.textWidth} 个汉字宽度；当前分别为 ${dsl.narration.length}、${dsl.blocks.length}、${supportingPointCount}、${question?.options.length ?? 0}、${textWidth}。请保留一个核心情境与一项判断依据并压缩文字，不能隐藏正文。`,
-    ];
-  }
-
-  return [
-    `固定画布容量超限：包含实际渲染插图槽的 ${dsl.functionalTemplateId}/${dsl.interaction.type} 页面最多 ${RENDERED_VISUAL_FIXED_CANVAS_LIMITS.narration} 句 narration、${RENDERED_VISUAL_FIXED_CANVAS_LIMITS.blocks} 个 blocks、合计 ${RENDERED_VISUAL_FIXED_CANVAS_LIMITS.supportingPoints} 条 supportingPoints、${RENDERED_VISUAL_FIXED_CANVAS_LIMITS.interactionEntries} 个互动项或选项，且最大可见状态文本约 ${RENDERED_VISUAL_FIXED_CANVAS_LIMITS.textWidth} 个汉字宽度；当前分别为 ${dsl.narration.length}、${dsl.blocks.length}、${supportingPointCount}、${fixedCanvasInteractionEntryCount(dsl.interaction)}、${textWidth}。请保留达成学习目标所需的最小知识集合：知识卡、时间线和对比页避免在 blocks 与互动中重复整段正文，优先删除可由 body 表达的 supportingPoints，并把 narration 控制在 24 字内、每个 heading 控制在 12 字内、每个 body 控制在 40 字内、互动 prompt 和每条展开解释分别控制在 24 字内；测验只保留 2–3 个有效选项，总结合并为 2–3 个核心要点，不能靠缩放、裁切或隐藏正文适配。`,
-  ];
-}
-
-export function estimateFixedCanvasVisibleTextWidth(dsl: PageContentDSL) {
-  const visibleText = [
-    dsl.title,
-    ...dsl.narration,
-    ...dsl.blocks.flatMap((block) => [
-      block.label ?? "",
-      block.heading,
-      block.body,
-      ...block.supportingPoints,
-    ]),
-    ...fixedCanvasInteractionText(dsl.interaction),
-  ];
-
-  return Math.ceil(
-    visibleText.reduce(
-      (total, value) => total + estimateReadableTextWidth(value),
-      0,
-    ),
-  );
-}
-
-function fixedCanvasInteractionText(
-  interaction: PageContentInteraction,
-): string[] {
-  if (interaction.type === "choice") {
-    const question = interaction.questions[0];
-    return [
-      question?.prompt ?? "",
-      ...(question?.options.map((option) => option.label) ?? []),
-      question
-        ? longestReadableText([
-            question.feedback.success,
-            question.feedback.retry,
-          ])
-        : "",
-    ];
-  }
-
-  if (interaction.type === "input") {
-    return [
-      interaction.prompt,
-      interaction.placeholder,
-      ...interaction.evaluationCriteria,
-      longestReadableText([
-        interaction.feedback.success,
-        interaction.feedback.retry,
-      ]),
-    ];
-  }
-
-  if (
-    interaction.type === "reveal" ||
-    interaction.type === "explore" ||
-    interaction.type === "sort"
-  ) {
-    return [
-      interaction.prompt,
-      ...interaction.items.map((item) => item.label),
-      longestReadableText(
-        interaction.items.map((item) => item.content),
-      ),
-      ...(interaction.type === "sort"
-        ? [
-            longestReadableText([
-              interaction.feedback.success,
-              interaction.feedback.retry,
-            ]),
-          ]
-        : []),
-    ];
-  }
-
-  return interaction.type === "navigate" ? [interaction.actionLabel] : [];
 }
 
 function fixedCanvasInteractionEntryCount(
@@ -869,33 +793,6 @@ function fixedCanvasInteractionEntryCount(
   }
 }
 
-function longestReadableText(values: string[]) {
-  return (
-    values.sort(
-      (left, right) =>
-        estimateReadableTextWidth(right) -
-        estimateReadableTextWidth(left),
-    )[0] ?? ""
-  );
-}
-
-function estimateReadableTextWidth(value: string) {
-  let width = 0;
-
-  for (const character of value.normalize("NFKC")) {
-    if (/[\p{Script=Han}\u3040-\u30ff\uac00-\ud7af]/u.test(character)) {
-      width += 1;
-    } else if (/[\p{L}\p{N}]/u.test(character)) {
-      width += 0.5;
-    } else if (/\s/u.test(character)) {
-      width += 0.15;
-    } else {
-      width += 0.25;
-    }
-  }
-
-  return width;
-}
 
 function interactionFeedback(
   interaction: PageContentInteraction,

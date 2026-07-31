@@ -69,7 +69,7 @@ function collectInteractionStaticContentText(content: PageContentDSL) {
   return [...new Set(interactionText)];
 }
 
-function isAlignedBlockReference(
+export function isAlignedBlockReference(
   item: { label: string; content: string },
   block: PageContentDSL["blocks"][number] | undefined,
 ) {
@@ -87,3 +87,30 @@ function isAlignedBlockReference(
   );
 }
 
+/**
+ * reveal item 若只是同序正文块的交互入口，正文块已经承担可信内容展示，
+ * 不应再在交互控件内复制一份。除显式“卡片引用”外，也接受 item 的标签和
+ * 内容均已由该 block 的可信 DSL 文本覆盖。
+ */
+export function isRevealItemRepresentedByBlock(
+  item: { label: string; content: string },
+  block: PageContentDSL["blocks"][number] | undefined,
+) {
+  if (!block) return false;
+  if (isAlignedBlockReference(item, block)) return true;
+
+  const blockText = normalizeText(
+    [
+      block.label,
+      block.heading,
+      block.body,
+      ...block.supportingPoints,
+    ]
+      .filter((value): value is string => Boolean(value))
+      .join(" "),
+  );
+
+  return [item.label, item.content].every((text) =>
+    blockText.includes(normalizeText(text)),
+  );
+}

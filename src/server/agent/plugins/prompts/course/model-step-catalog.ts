@@ -131,7 +131,7 @@ export const MODEL_STEP_PROMPT_CATALOG = [
     ],
     system: {
       name: "page-writer-system",
-      version: "3.0.0",
+      version: "3.4.0",
       role: "system",
       inputContract: [
         "已校验的 CourseIntent、单页 PagePlan、同页 PageWorkerBrief 和唯一 FunctionalTemplate。",
@@ -197,7 +197,7 @@ export const MODEL_STEP_PROMPT_CATALOG = [
     ],
     system: {
       name: "html-engineer-system",
-      version: "2.8.0",
+      version: "2.12.0",
       role: "system",
       inputContract: [
         "只接收 DSL、服务端模板、视觉指导和已校验素材；不接收原始用户 Prompt。",

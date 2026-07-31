@@ -1,12 +1,31 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getLanguageModelIdentity } from "../../../../src/server/infra/ai/model-provider";
+import {
+  enforceSequentialToolCalls,
+  getLanguageModelIdentity,
+} from "../../../../src/server/infra/ai/model-provider";
 
 afterEach(() => {
   vi.unstubAllEnvs();
 });
 
 describe("model provider", () => {
+  it("disables parallel tool calls for stateful Agent tools", () => {
+    expect(
+      enforceSequentialToolCalls({
+        model: "test-model",
+        tools: [{ type: "function" }],
+      }),
+    ).toEqual({
+      model: "test-model",
+      tools: [{ type: "function" }],
+      parallel_tool_calls: false,
+    });
+
+    const body = { model: "test-model" };
+    expect(enforceSequentialToolCalls(body)).toBe(body);
+  });
+
   it("keeps strong and balanced fallback identities distinct across providers", () => {
     vi.stubEnv("MODEL_PROVIDER_STRONG", "generic");
     vi.stubEnv("MODEL_PROVIDER_BALANCED", "ark");

@@ -12,10 +12,10 @@ import {
   buildLessonRuntime,
   createPageWriterModelStep,
   createPageWriterModelStepState,
-  estimateFixedCanvasVisibleTextWidth,
   exceedsFixedCanvasCapacity,
   materializePageWriterInteraction,
   materializeInteractionItems,
+  normalizeMultilineBulletBody,
   normalizePageContentDensity,
   normalizePageNavigationDestination,
   normalizePageWriterModelOutput,
@@ -52,6 +52,17 @@ const referencePack: ReferencePack = {
 };
 
 describe("PageWriterModelStep", () => {
+  it("normalizes a multiline emoji checklist into stable prose for HTML", () => {
+    expect(
+      normalizeMultilineBulletBody(
+        "✅ 会自己发光发热\n✅ 太阳是恒星\n✅ 行星围绕太阳运行",
+      ),
+    ).toBe("会自己发光发热；太阳是恒星；行星围绕太阳运行");
+    expect(normalizeMultilineBulletBody("第一段\n第二段")).toBe(
+      "第一段\n第二段",
+    );
+  });
+
   it("generates one PageContentDSL in one bounded step", async () => {
     const generateContent = vi.fn().mockResolvedValue(pageContentDsl);
     const result = await createPageWriterModelStep({ generateContent }).run(
@@ -210,7 +221,7 @@ describe("PageWriterModelStep", () => {
     ).not.toThrow();
   });
 
-  it("keeps a story, required visual, and choice within the fixed canvas capacity", () => {
+  it("treats dense story composition as a layout hint instead of a content rejection", () => {
     const storyIntro = getFunctionalTemplateDslExample("story-intro");
     if (!storyIntro || storyIntro.interaction.type !== "choice") {
       throw new Error("story-intro fixture is required");
@@ -291,10 +302,10 @@ describe("PageWriterModelStep", () => {
 
     expect(() =>
       validatePageWriterOutput(denseStoryIntro, storyInput),
-    ).toThrow("固定画布容量超限");
+    ).not.toThrow();
   });
 
-  it("compresses an achievement with a required visual and input before fixed-canvas rendering", () => {
+  it("treats dense achievement composition as a layout hint instead of a content rejection", () => {
     const achievement = getFunctionalTemplateDslExample("achievement-task");
     if (!achievement || achievement.interaction.type !== "input") {
       throw new Error("achievement-task fixture is required");
@@ -348,9 +359,7 @@ describe("PageWriterModelStep", () => {
     expect(exceedsFixedCanvasCapacity(denseAchievement)).toBe(true);
     expect(() =>
       validatePageWriterOutput(denseAchievement, achievementInput),
-    ).toThrow(
-      "achievement 同时包含必需插图和 input",
-    );
+    ).not.toThrow();
 
     const compactAchievement = {
       ...denseAchievement,
@@ -372,35 +381,7 @@ describe("PageWriterModelStep", () => {
     ).not.toThrow();
   });
 
-  it("accepts the measured 273-width achievement boundary and rejects text beyond 280", () => {
-    const boundary = createAchievementCapacityBoundaryContent();
-    const achievementInput = pageWriterInputFor(boundary, "achievement");
-
-    expect(estimateFixedCanvasVisibleTextWidth(boundary)).toBe(273);
-    expect(exceedsFixedCanvasCapacity(boundary)).toBe(false);
-    expect(() =>
-      validatePageWriterOutput(boundary, achievementInput),
-    ).not.toThrow();
-
-    if (boundary.interaction.type !== "input") {
-      throw new Error("achievement boundary must use input");
-    }
-    const overCapacity = {
-      ...boundary,
-      interaction: {
-        ...boundary.interaction,
-        prompt: `${boundary.interaction.prompt}请再补充画面证据`,
-      },
-    };
-
-    expect(estimateFixedCanvasVisibleTextWidth(overCapacity)).toBe(281);
-    expect(exceedsFixedCanvasCapacity(overCapacity)).toBe(true);
-    expect(() =>
-      validatePageWriterOutput(overCapacity, achievementInput),
-    ).toThrow("可见文本约 280 个汉字宽度");
-  });
-
-  it("counts an optional timeline illustration as real fixed-canvas capacity", () => {
+  it("lets browser QA judge a timeline that needs all planned stages", () => {
     const timeline = structuredClone(
       getFunctionalTemplateDslExample("learning-timeline"),
     );
@@ -466,10 +447,10 @@ describe("PageWriterModelStep", () => {
         denseTimeline,
         pageWriterInputFor(denseTimeline, "timeline"),
       ),
-    ).toThrow("learning-timeline/explore");
+    ).not.toThrow();
   });
 
-  it("rewrites real dense card and comparison pages when a required visual shares the canvas", () => {
+  it("does not reject substantive card and comparison content by character estimate alone", () => {
     const knowledge = getFunctionalTemplateDslExample(
       "knowledge-card-grid",
     );
@@ -530,13 +511,13 @@ describe("PageWriterModelStep", () => {
       },
     };
 
-    expect(exceedsFixedCanvasCapacity(denseKnowledge)).toBe(true);
+    expect(exceedsFixedCanvasCapacity(denseKnowledge)).toBe(false);
     expect(() =>
       validatePageWriterOutput(
         denseKnowledge,
-        pageWriterInputFor(knowledgeWithVisual, "knowledge_card"),
+        pageWriterInputFor(denseKnowledge, "knowledge_card"),
       ),
-    ).toThrow("knowledge-card-grid/reveal");
+    ).not.toThrow();
     expect(exceedsFixedCanvasCapacity(knowledgeWithVisual)).toBe(false);
     expect(() =>
       validatePageWriterOutput(
@@ -607,13 +588,13 @@ describe("PageWriterModelStep", () => {
       })),
     };
 
-    expect(exceedsFixedCanvasCapacity(denseComparison)).toBe(true);
+    expect(exceedsFixedCanvasCapacity(denseComparison)).toBe(false);
     expect(() =>
       validatePageWriterOutput(
         denseComparison,
         pageWriterInputFor(denseComparison, "comparison"),
       ),
-    ).toThrow("comparison-board/explore");
+    ).not.toThrow();
     expect(exceedsFixedCanvasCapacity(compactComparison)).toBe(false);
     expect(() =>
       validatePageWriterOutput(
@@ -623,7 +604,7 @@ describe("PageWriterModelStep", () => {
     ).not.toThrow();
   });
 
-  it("keeps required-visual quiz and summary pages to three choices or cards", () => {
+  it("lets browser QA judge dense quiz and summary compositions", () => {
     const quiz = getFunctionalTemplateDslExample("interactive-quiz");
     const summary = getFunctionalTemplateDslExample("recap-summary");
     if (
@@ -671,7 +652,7 @@ describe("PageWriterModelStep", () => {
         denseQuiz,
         pageWriterInputFor(denseQuiz, "quiz"),
       ),
-    ).toThrow("interactive-quiz/choice");
+    ).not.toThrow();
     expect(exceedsFixedCanvasCapacity(compactQuiz)).toBe(false);
     expect(() =>
       validatePageWriterOutput(
@@ -709,7 +690,7 @@ describe("PageWriterModelStep", () => {
         denseSummary,
         pageWriterInputFor(denseSummary, "summary"),
       ),
-    ).toThrow("recap-summary/navigate");
+    ).not.toThrow();
     expect(exceedsFixedCanvasCapacity(compactSummary)).toBe(false);
     expect(() =>
       validatePageWriterOutput(
@@ -939,6 +920,38 @@ describe("PageWriterModelStep", () => {
     });
   });
 
+  it("restores a compressed single input evaluation criterion", () => {
+    const existingCriteria = [
+      "写出判断结果。",
+      "补充一个能够支持判断的事实依据。",
+    ];
+
+    expect(
+      normalizePageWriterModelOutput({
+        narration: [],
+        interaction: {
+          type: "input",
+          evaluationCriteria: "写出判断结果并给出依据。",
+        },
+      }),
+    ).toMatchObject({
+      interaction: {
+        evaluationCriteria: ["写出判断结果并给出依据。"],
+      },
+    });
+    expect(
+      normalizePageWriterModelOutput({
+        narration: [],
+        interaction: {
+          type: "input",
+          evaluationCriteria: existingCriteria,
+        },
+      }),
+    ).toMatchObject({
+      interaction: { evaluationCriteria: existingCriteria },
+    });
+  });
+
   it("restores a compressed single narration string without changing arrays", () => {
     const narration = "比较三个时期的色彩与造型差异。";
     const existingNarration = [
@@ -958,6 +971,18 @@ describe("PageWriterModelStep", () => {
         interaction: { type: "none" },
       }),
     ).toMatchObject({ narration: existingNarration });
+  });
+
+  it("joins guidance fields expanded into string arrays", () => {
+    expect(
+      normalizePageWriterModelOutput({
+        visualPriority: ["太阳是视觉中心", "行星轨道辅助理解关系"],
+        groupingStrategy: ["左侧标题与操作", "右侧太阳系插图"],
+      }),
+    ).toMatchObject({
+      visualPriority: "太阳是视觉中心；行星轨道辅助理解关系",
+      groupingStrategy: "左侧标题与操作；右侧太阳系插图",
+    });
   });
 
   it("leaves unknown interaction feedback shapes for strict schema rejection", () => {
@@ -1085,54 +1110,6 @@ function withRequiredVisual<T extends PageContentDSL>(
       },
     ],
   };
-}
-
-function createAchievementCapacityBoundaryContent(): PageContentDSL {
-  const achievement = getFunctionalTemplateDslExample("achievement-task");
-  if (!achievement || achievement.interaction.type !== "input") {
-    throw new Error("achievement-task fixture is required");
-  }
-
-  return withRequiredVisual({
-    ...achievement,
-    title: "独立赏析毕加索《亚维农少女》",
-    narration: ["观察人物空间与视角完成有画面依据的赏析"],
-    blocks: [
-      {
-        id: "block-period",
-        kind: "instruction",
-        heading: "判断时期与创作背景",
-        body: "说明作品创作于立体主义形成前夕，并联系毕加索对传统透视与人体造型的突破。",
-        supportingPoints: ["用作品年代和艺术转折作为判断依据。"],
-      },
-      {
-        id: "block-method",
-        kind: "instruction",
-        heading: "分析立体主义表现手法",
-        body: "指出人物被几何化处理、多个视角并置，以及空间被压缩切割的具体画面证据。",
-        supportingPoints: ["至少引用两个能在画面中直接观察到的特征。"],
-      },
-    ],
-    interaction: {
-      type: "input",
-      prompt: "写出作品所属时期，并结合画面说明两种立体主义表现手法。",
-      placeholder: "例如：作品处于……时期；画面通过……与……表现……",
-      evaluationCriteria: [
-        "准确说明作品所处时期或艺术转折位置",
-        "结合画面证据分析至少两种立体主义表现手法",
-      ],
-      feedback: {
-        success:
-          "你已准确判断时期，并用可观察的画面证据说明了两种立体主义手法。",
-        retry:
-          "请补充作品所处时期，并从几何化造型、多视角或压缩空间中选择两项结合画面说明。",
-      },
-    },
-    layoutHints: {
-      ...achievement.layoutHints,
-      readingOrder: ["block-period", "block-method"],
-    },
-  });
 }
 
 function pageWriterInputFor(

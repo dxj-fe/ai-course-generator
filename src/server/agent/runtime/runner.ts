@@ -61,6 +61,12 @@ export type RuntimePrepareStepResult = {
   instructions?: unknown;
   messages?: unknown[];
   providerOptions?: unknown;
+  toolChoice?:
+    | "required"
+    | {
+        type: "tool";
+        toolName: string;
+      };
   [key: string]: unknown;
 };
 
@@ -309,12 +315,16 @@ export class AgentRunner<Tools extends ToolSet, Terminal> {
           prepared?.activeTools ?? initialActiveTools,
           configuredToolNames,
         );
+        const toolChoice = validatePreparedToolChoice(
+          prepared?.toolChoice,
+          activeTools,
+        );
 
         return {
           ...prepared,
           activeTools,
           // 每一步都必须通过工具交活；普通文本永远不算完成。
-          toolChoice: "required",
+          toolChoice,
         };
       },
       stopWhen: [fatalStop, terminalStop, stepLimit],
@@ -376,6 +386,26 @@ function createAiSdkToolLoopAgent<Tools extends ToolSet>(
   return new ToolLoopAgent(
     settings as unknown as ToolLoopAgentSettings<never, Tools>,
   ) as unknown as RuntimeAgentLike<Tools>;
+}
+
+function validatePreparedToolChoice(
+  toolChoice: RuntimePrepareStepResult["toolChoice"],
+  activeTools: string[],
+): NonNullable<RuntimePrepareStepResult["toolChoice"]> {
+  if (toolChoice === undefined || toolChoice === "required") {
+    return "required";
+  }
+  if (
+    toolChoice.type !== "tool" ||
+    typeof toolChoice.toolName !== "string" ||
+    !activeTools.includes(toolChoice.toolName)
+  ) {
+    throw new AgentRunnerConfigurationError(
+      "prepareStep 的指定工具必须属于当前 activeTools。",
+    );
+  }
+
+  return toolChoice;
 }
 
 function toolLedgerKey(

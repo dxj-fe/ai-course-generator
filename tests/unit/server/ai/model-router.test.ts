@@ -16,7 +16,19 @@ describe("model router", () => {
       primary: "strong",
       fallback: "balanced",
     });
+    expect(resolveModelRoute("course-architecture")).toEqual({
+      primary: "balanced",
+      fallback: "strong",
+    });
     expect(resolveModelRoute("page-qa").primary).toBe("strong");
+    expect(resolveModelRoute("course-review")).toEqual({
+      primary: "balanced",
+      fallback: "strong",
+    });
+    expect(resolveModelRoute("html")).toEqual({
+      primary: "balanced",
+      fallback: "strong",
+    });
   });
 
   it("retries only transient provider failures and never user cancellation", () => {

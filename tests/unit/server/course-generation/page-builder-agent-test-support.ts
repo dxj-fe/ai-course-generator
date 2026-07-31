@@ -450,6 +450,14 @@ export function scriptedPageBuilderFactory(
           steps: [],
         });
         expect(prepared.activeTools).toContain(toolName);
+        if (toolName === "generate_page_content") {
+          expect(prepared.toolChoice).toBe("required");
+        } else {
+          expect(prepared.toolChoice).toEqual({
+            type: "tool",
+            toolName,
+          });
+        }
         await executeTool(
           settings.tools,
           toolName,

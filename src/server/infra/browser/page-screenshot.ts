@@ -416,7 +416,7 @@ async function captureViewport(
     );
     await page.setContent(
       input.runtimeConfig
-        ? buildTrustedLessonSrcDoc(htmlWithBase, input.runtimeConfig)
+        ? buildQaLessonSrcDoc(htmlWithBase, input.runtimeConfig)
         : htmlWithBase,
       {
         waitUntil: "domcontentloaded",
@@ -426,9 +426,9 @@ async function captureViewport(
     if (input.runtimeConfig) {
       await page.waitForFunction(
         () =>
-          document.documentElement.dataset.keyaViewportFitScale !== undefined,
+          document.documentElement.dataset.keyaRuntime === "ready",
       );
-      // Let image/font/resize observers coalesce into the next fitted frame.
+      // 等待图片、字体和可信互动运行时完成首帧布局。
       await page.waitForTimeout(32);
     }
 
@@ -476,6 +476,11 @@ async function captureViewport(
             element === body ||
             element.dataset.keyaFitExpanded === "true")
         ) {
+          return false;
+        }
+        // object-fit、受控画框和圆角裁切是素材呈现手段，不是正文丢失。
+        // 素材占比另有独立指标；这里仅统计正文或互动内容的真实裁切。
+        if (element.closest("[data-asset-slot-id]")) {
           return false;
         }
         const style = getComputedStyle(element);
@@ -714,10 +719,19 @@ async function captureViewport(
 }
 
 /**
- * QA 必须评估学习者实际看到的平台画布，而不是注入 contain-fit 之前的
- * authoring scroll size。原始裁切与互动指标仍保留；平台已完整收纳的文档
- * 尺寸、滚动和 fluid 画布覆盖率按最终视口归一化。
+ * QA 必须测量作者 HTML 的真实布局；播放器 contain-fit 只负责最终兜底展示，
+ * 若在截图前启用会掩盖溢出，并把正常响应式页面误判为整页缩放。
  */
+export function buildQaLessonSrcDoc(
+  html: string,
+  runtimeConfig: TrustedLessonRuntimeConfig,
+) {
+  return buildTrustedLessonSrcDoc(html, runtimeConfig, {
+    viewportFit: false,
+  });
+}
+
+/** 兼容显式启用 contain-fit 的诊断调用；常规 QA 不会走这条归一化路径。 */
 export function normalizeViewportFitMetrics(
   metrics: BrowserScreenshotMetrics,
   viewport: BrowserViewport,
@@ -773,7 +787,35 @@ async function exerciseInteraction(
   }
 
   try {
-    await firstControl.check();
+    // 互动控件可能位于渐进展开的 details 中。QA 需要主动进入该学习步骤，
+    // 否则 Playwright 会等待一个结构存在但不可见的控件直至整次截图超时。
+    const hasAssociatedLabel = await firstControl.evaluate((element) => {
+      let current: HTMLElement | null = element.parentElement;
+      while (current) {
+        if (current instanceof HTMLDetailsElement) current.open = true;
+        current = current.parentElement;
+      }
+      const label = (element as HTMLInputElement).labels?.[0];
+      if (!label) return false;
+      label.dataset.keyaQaChoiceTarget = "true";
+      return true;
+    });
+    const clickTarget = page
+      .locator('[data-keya-qa-choice-target="true"]')
+      .first();
+
+    if (
+      hasAssociatedLabel &&
+      (await clickTarget.count()) > 0 &&
+      (await clickTarget.isVisible())
+    ) {
+      await clickTarget.click();
+    } else {
+      await firstControl.check();
+    }
+    if (!(await firstControl.isChecked())) {
+      throw new Error("选择题控件在点击可见标签后仍未选中。");
+    }
     await submit.click();
     const feedback = page
       .locator('[data-interaction-type="choice"] [data-keya-runtime-feedback]')

@@ -65,10 +65,6 @@ const GenerateContentInputSchema = ScopeInputSchema.extend({
     .optional(),
 }).strict();
 
-const GenerateHtmlInputSchema = ScopeInputSchema.extend({
-  renderMode: z.enum(["model", "deterministic"]).optional(),
-}).strict();
-
 const BlockPageInputSchema = ScopeInputSchema.extend({
   code: z.string().trim().min(1).max(100),
   message: z.string().trim().min(2).max(500),
@@ -208,14 +204,17 @@ export function createPageBuilderTools(
               "已复用保存的页面内容。",
             );
           }
+          const validationFeedback = [
+            ...(execution.fixPlan?.feedback ?? []),
+            ...(input.validationFeedback ?? []),
+          ];
           const generated = await recoverableModelStep(
             () =>
               modelSteps.generateContent({
                 execution,
-                validationFeedback: [
-                  ...(execution.fixPlan?.feedback ?? []),
-                  ...(input.validationFeedback ?? []),
-                ],
+                ...(validationFeedback.length > 0
+                  ? { validationFeedback }
+                  : {}),
                 abortSignal:
                   options.abortSignal ?? execution.abortSignal,
               }),
@@ -320,8 +319,8 @@ export function createPageBuilderTools(
     [ToolIds.GeneratePageHtml]: tool({
       description:
         "把已保存的内容和素材实现为安全的单页 HTML，并立即保存 checkpoint。",
-      inputSchema: GenerateHtmlInputSchema,
-      execute: (input, options) =>
+      inputSchema: ScopeInputSchema,
+      execute: (_input, options) =>
         runExclusive(async () => {
           const snapshot =
             loadPageBuilderWorkingSnapshot(execution);
@@ -355,7 +354,6 @@ export function createPageBuilderTools(
                 execution,
                 content: snapshot.content!,
                 assets: snapshot.assets ?? [],
-                renderMode: input.renderMode,
                 validationFeedback: execution.fixPlan?.feedback,
                 abortSignal:
                   options.abortSignal ?? execution.abortSignal,

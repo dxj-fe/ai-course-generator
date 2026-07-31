@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createGenerateImageTool } from "../../../../src/server/agent/plugins/tools/course/generate-image";
+import {
+  buildImageGenerationProviderOptions,
+  createGenerateImageTool,
+} from "../../../../src/server/agent/plugins/tools/course/generate-image";
 import type { AssetRequest } from "../../../../src/shared/course-schema";
 
 const backgroundRequest: AssetRequest = {
@@ -27,6 +30,31 @@ function transparentPng() {
 }
 
 describe("generateImageTool", () => {
+  it("requests Seedream Base64 output using the configured provider key", () => {
+    expect(
+      buildImageGenerationProviderOptions({
+        apiKey: "test-key",
+        baseURL: "https://ark.cn-beijing.volces.com/api/v3",
+        modelName: "doubao-seedream-4-5-251128",
+        providerName: "ark",
+      }),
+    ).toEqual({
+      ark: {
+        response_format: "b64_json",
+        sequential_image_generation: "disabled",
+        watermark: false,
+      },
+    });
+    expect(
+      buildImageGenerationProviderOptions({
+        apiKey: "test-key",
+        baseURL: "https://images.example.test/v1",
+        modelName: "custom-image-model",
+        providerName: "custom-images",
+      }),
+    ).toBeUndefined();
+  });
+
   it("validates and stores a real raster result", async () => {
     const store = vi.fn().mockResolvedValue({
       id: "asset-123e4567-e89b-42d3-a456-426614174000",
@@ -78,6 +106,38 @@ describe("generateImageTool", () => {
       fallback: { kind: "css-gradient" },
       errorCode: "IMAGE_GENERATION_FAILED",
     });
+  });
+
+  it("retries one provider timeout before using the deterministic fallback", async () => {
+    const generate = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new DOMException("The operation was aborted due to timeout", "AbortError"),
+      )
+      .mockResolvedValueOnce({
+        bytes: transparentPng(),
+        mediaType: "image/png",
+        provider: "test-provider",
+        model: "test-image-model",
+      });
+    const store = vi.fn().mockResolvedValue({
+      id: "asset-123e4567-e89b-42d3-a456-426614174010",
+      uri: "/api/assets/asset-123e4567-e89b-42d3-a456-426614174010",
+    });
+    const imageTool = createGenerateImageTool({ generate, store });
+
+    const result = await imageTool.execute(
+      {
+        pageId: "page-02-knowledge",
+        altText: "星空背景",
+        request: backgroundRequest,
+      },
+      { traceId: "image-tool-timeout-retry" },
+    );
+
+    expect(result.status).toBe("ready");
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(store).toHaveBeenCalledOnce();
   });
 
   it("propagates cancellation instead of converting it into a fallback", async () => {

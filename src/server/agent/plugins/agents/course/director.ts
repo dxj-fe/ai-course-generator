@@ -13,7 +13,7 @@ export const courseDirectorAgent = defineAgent({
   description: "根据当前 CourseRun 事实决定下一轮 Agent 派工。",
   input: SchemaIds.CourseDirectorInputV1,
   output: SchemaIds.CourseDirectorDecisionV1,
-  prompt: PromptIds.CourseDirectorSystemV1,
+  prompt: PromptIds.CourseDirectorSystemV2,
   tools: AgentToolSets.CourseDirector,
   contexts: [
     ContextIds.CourseRun,

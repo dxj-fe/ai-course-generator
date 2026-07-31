@@ -386,6 +386,22 @@ describe("QA repair planning", () => {
     });
   });
 
+  it("does not send screenshot harness failures to the HTML repair model", () => {
+    const request = planRepairRound({
+      ...base,
+      report: qualityReportWithIssue({
+        code: "SCREENSHOT_CAPTURE_FAILED",
+        dimension: "layoutQuality",
+        selector: "style",
+      }),
+    });
+
+    expect(request).toMatchObject({
+      status: "unavailable",
+      failureClass: "harness_unavailable",
+    });
+  });
+
   it("refuses upstream asset failures and applies only an emergency guard", () => {
     const asset = planRepairRound({
       ...base,

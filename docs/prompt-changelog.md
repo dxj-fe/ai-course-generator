@@ -4,6 +4,11 @@
 
 ## 2026-07-30 — 首轮生成优先与 Agent 全局上下文
 
+- Architect、Course Director、Reviewer 顶层 Prompt 均升级到 `v4`：Architect 按模板真实槽位容量选型，避免把多知识点页面塞入低容量模板；Director/Reviewer 只在完整证据到齐后作终态决策，整课内容覆盖排除封面预告，warning 不再误触发返工。
+- Page Writer system 升级到 `3.4.0`：交互槽位按实际生成条目计数，`reveal`、`explore`、`sort` 的嵌套项不能误当成一个槽位；页面主要互动必须直接服务当前学习目标。
+- HTML Engineer system 升级到 `2.12.0`：补齐 reveal/explore/sort 的语义结构规范化、低高度两栏构图和 `366×500`、`712×650`、`922×460` 三视口布局守卫；运行层只重排可信现有节点，不创造教学内容。
+- Course Director system 升级到 `v2`：架构或 Review 的封口证据由 Harness 在单次决策前完整加载，只向模型开放当前合法的终态动作；移除“先读工具、再决策”的仪式性回合，避免 Provider 在读取后提前结束而未提交领域决策。
+- Page Writer system 升级到 `3.0.2`：FunctionalTemplate 槽位成为高于一般内容数量建议的显式输出合同；没有 `blocks` 槽的封面必须返回空数组，避免模型被“通常 2–4 blocks”的通用建议误导。`visualPriority` 与 `groupingStrategy` 明确为单句，并在 Provider 将单句拆成数组时做无损适配。固定画布字符宽度估算不再作为 PageContentDSL 硬拒绝条件，实际布局由 HTML 实现与真实浏览器证据判断。
 - Architect 系统 Prompt 接入 `course-design` Agent Skill、整课模板检索和受控资料摘录；统一 Skill Harness 会先完整注入核心说明，Agent 再按需读取目标证据或课程结构 reference。页面类型服从目标与课程弧线，不固定首页/末页序列。
 - Page Builder 接入标准 `course-page-design` Agent Skill：同一 Skill Harness 按 Agent 注册配置加载核心说明，Agent 再通过 `read_local_resource` 按页面职责渐进读取固定画布或学习互动 reference；已读内容会进入 Page Writer 和 HTML Engineer 的真实结构化输入。
 - Page Writer system/user 升级到 `3.0.0/3.0.0`，一次接收结构化 Brief、完整课程事实与规则、当前页面职责、相邻页面职责和已验收依赖摘要。

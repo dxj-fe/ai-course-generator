@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  buildQaLessonSrcDoc,
   capturePageScreenshot,
   countAuthoredTouchTargets,
   normalizeViewportFitMetrics,
@@ -35,6 +36,27 @@ describe("Playwright screenshot QA evidence", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
+  });
+
+  it("keeps the trusted interaction runtime but excludes player contain-fit from QA", () => {
+    const srcDoc = buildQaLessonSrcDoc(html, {
+      pageId: pageContentDsl.pageId,
+      interaction: pageContentDsl.interaction,
+      runtime: {
+        runtimeVersion: 1,
+        sceneKind: "practice",
+        visualPrimitive: "concept-map",
+        motionPlan: {
+          intensity: "none",
+          cuePoints: [],
+        },
+        completionRule: { type: "view" },
+      },
+    });
+
+    expect(srcDoc).toContain('id="keya-trusted-runtime"');
+    expect(srcDoc).not.toContain('id="keya-viewport-fit"');
+    expect(srcDoc).not.toContain('id="keya-viewport-fit-style"');
   });
 
   it("captures metrics, stores the PNG, and derives browser issues", async () => {
@@ -159,6 +181,33 @@ describe("Playwright screenshot QA evidence", () => {
         }),
       ]),
     );
+  });
+
+  it("ignores at most eight pixels of line-box rounding overflow", async () => {
+    const result = await capturePageScreenshot(
+      {
+        pageId: pageContentDsl.pageId,
+        html,
+        content: pageContentDsl,
+      },
+      {
+        enabled: true,
+        rootDir: "/tmp/ai-course-generator-rounding-screenshots",
+        captureBrowser: vi.fn().mockImplementation(async ({ viewport }) => ({
+          png: new Uint8Array([137, 80, 78, 71]),
+          metrics: {
+            ...cleanMetrics,
+            documentWidth: viewport.width,
+            documentHeight: viewport.height + 8,
+            verticalOverflowPx: 8,
+          },
+        })),
+      },
+    );
+
+    expect(
+      result.issues.some(({ code }) => code === "BROWSER_VERTICAL_OVERFLOW"),
+    ).toBe(false);
   });
 
   it("measures the delivered contain-fit canvas instead of its authoring scroll size", () => {
@@ -441,6 +490,44 @@ describe("Playwright screenshot QA evidence", () => {
         ({ code }) => code === "BROWSER_CANVAS_NOT_FILLED",
       )?.location.selector,
     ).toBe("main[data-page-id]");
+  });
+
+  it("allows an intentionally sparse course cover to keep its visual breathing room", async () => {
+    const content = {
+      ...pageContentDsl,
+      functionalTemplateId: "course-cover" as const,
+      blocks: [],
+      interaction: {
+        type: "navigate" as const,
+        actionLabel: "开始学习",
+        destination: "next" as const,
+      },
+      layoutHints: {
+        ...pageContentDsl.layoutHints,
+        contentDensity: "sparse" as const,
+      },
+    };
+    const result = await capturePageScreenshot(
+      { pageId: "page-cover", html, content },
+      {
+        enabled: true,
+        rootDir: "/tmp/ai-course-generator-sparse-cover",
+        captureBrowser: vi.fn().mockImplementation(async ({ viewport }) => ({
+          png: new Uint8Array([137, 80, 78, 71]),
+          metrics: {
+            ...cleanMetrics,
+            documentWidth: viewport.width,
+            documentHeight: viewport.height,
+            visibleContentAreaRatio: 0.06,
+            mainViewportCoverageRatio: 1,
+          },
+        })),
+      },
+    );
+
+    expect(result.issues.map(({ code }) => code)).not.toContain(
+      "BROWSER_FIRST_SCREEN_TOO_EMPTY",
+    );
   });
 
   it("rejects a required course illustration rendered as a tiny decoration", async () => {

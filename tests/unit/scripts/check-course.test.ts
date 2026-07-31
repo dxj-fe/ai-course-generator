@@ -24,27 +24,24 @@ import {
 import { buildValidGeneratedHtml } from "../../fixtures/generated-html";
 
 const baseline = DemoBaselineSchema.parse({
-  version: 1,
+  version: 2,
   id: "solar-system-test",
   name: "太阳系测试",
   prompt: "为儿童生成一门三页太阳系测试课程。",
   pageCount: 3,
-  expectedOutline: [
+  expectedCourseRoles: [
     {
-      order: 1,
-      purpose: "建立目标",
+      label: "建立目标",
       allowedPageTypes: ["cover"],
       allowedInteractionTypes: ["navigate"],
     },
     {
-      order: 2,
-      purpose: "解释知识",
+      label: "解释知识",
       allowedPageTypes: ["knowledge_card"],
       allowedInteractionTypes: ["reveal"],
     },
     {
-      order: 3,
-      purpose: "完成总结",
+      label: "完成总结",
       allowedPageTypes: ["summary"],
       allowedInteractionTypes: ["navigate"],
     },
@@ -103,6 +100,7 @@ describe("Day 36 course checker", () => {
         archiveEntryCount: 5,
       },
       issues: [],
+      warnings: [],
     });
   });
 
@@ -159,13 +157,49 @@ describe("Day 36 course checker", () => {
         "OUTLINE_CONCEPT_MISSING",
         "HTML_CONTRACT_FAILED",
         "QUALITY_OVERALL_BELOW_BASELINE",
-        "QUALITY_DIMENSION_BELOW_BASELINE",
         "ARCHIVE_ENTRY_MISSING",
       ]),
+    );
+    expect(report.warnings).toContainEqual(
+      expect.objectContaining({
+        code: "QUALITY_DIMENSION_BELOW_BASELINE",
+        pageId: "page-02-knowledge",
+      }),
     );
     expect(
       report.issues.find(({ code }) => code === "HTML_CONTRACT_FAILED")?.pageId,
     ).toBe("page-02-knowledge");
+  });
+
+  it("按整课能力验收，不把 Agent 的页序和单页职责固化成 workflow", () => {
+    const course = completedCourse();
+    const flexibleBaseline = DemoBaselineSchema.parse({
+      ...baseline,
+      expectedCourseRoles: [
+        {
+          label: "解释或组织知识",
+          allowedPageTypes: ["knowledge_card", "summary"],
+          allowedInteractionTypes: ["reveal", "navigate"],
+        },
+        {
+          label: "形成收束",
+          allowedPageTypes: ["summary"],
+          allowedInteractionTypes: ["navigate"],
+        },
+      ],
+    });
+
+    const report = checkDemoCourse({
+      course,
+      baseline: flexibleBaseline,
+      archiveBytes: archiveFor(course),
+    });
+
+    expect(report.issues).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "OUTLINE_ROLE_MISSING" }),
+      ]),
+    );
   });
 
   it("reports invalid course payloads without throwing", () => {

@@ -10,7 +10,7 @@ import {
 
 export const coursePageBuilderAgent = defineAgent({
   id: AgentIds.CoursePageBuilder,
-  version: 1,
+  version: 3,
   description: "依据页面职责和完整课程上下文生成可交付的课程页面。",
   input: SchemaIds.CoursePageBuilderInputV1,
   output: SchemaIds.CoursePageSubmissionV1,
@@ -22,11 +22,11 @@ export const coursePageBuilderAgent = defineAgent({
     ContextIds.CourseReferences,
   ],
   skills: [SkillIds.CoursePageDesign],
-  modelCapability: "page-writer",
+  modelCapability: "general",
   runtime: {
-    maxSteps: 12,
-    maxToolCalls: 14,
-    timeoutMs: 480_000,
-    maxOutputTokens: 64_000,
+    maxSteps: 24,
+    maxToolCalls: 36,
+    timeoutMs: 900_000,
+    maxOutputTokens: 8_000,
   },
 });

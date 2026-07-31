@@ -7,16 +7,16 @@ import { MODEL_STEP_PROMPT_IDS } from "./model-step-prompt-ids";
 const agentPromptDefinitions = [
   {
     id: PromptIds.CourseArchitectSystemV1,
-    version: 1,
+    version: 4,
     description: "课程架构师的职责、Skill 使用方式与课程架构合同。",
     templatePath: "course/architect.system.v1.md",
     variables: ["availableSkills", "skillInstructions"],
   },
   {
-    id: PromptIds.CourseDirectorSystemV1,
-    version: 1,
+    id: PromptIds.CourseDirectorSystemV2,
+    version: 4,
     description: "课程主 Agent 在关键语义决策点使用的系统指令。",
-    templatePath: "course/director.system.v1.md",
+    templatePath: "course/director.system.v2.md",
     variables: [],
   },
   {
@@ -32,7 +32,7 @@ const agentPromptDefinitions = [
   },
   {
     id: PromptIds.CourseReviewerSystemV1,
-    version: 1,
+    version: 4,
     description: "整课审查 Agent 的证据读取与课程质量判断指令。",
     templatePath: "course/reviewer.system.v1.md",
     variables: [],

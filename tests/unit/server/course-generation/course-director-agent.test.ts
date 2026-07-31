@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { createCourseRunCommands } from "../../../../src/server/course/run/commands";
 import {
-  AgentTerminalNotCommittedError,
   AgentToolAuthorizationError,
 } from "../../../../src/server/agent/runtime";
 import { CourseRunSchema } from "../../../../src/shared/course-schema";
@@ -41,6 +40,23 @@ describe("Course Director Agent", () => {
       expect(inspected).toMatchObject({
         ok: true,
         committed: false,
+        data: {
+          objectives: [
+            {
+              id: "objective-distinguish",
+              teachingPageIds: [
+                "page-concept",
+                "page-practice",
+                "page-summary",
+              ],
+              assessmentPageIds: [
+                "page-concept",
+                "page-practice",
+                "page-summary",
+              ],
+            },
+          ],
+        },
       });
       return executeTool(
         settings.tools,
@@ -75,10 +91,21 @@ describe("Course Director Agent", () => {
     ).toBe("accepted");
   });
 
-  it("没有先 inspect_architecture 时，Director 不能直接接受架构", async () => {
-    const prepared = await prepareArchitectureRound("accept-without-inspect");
+  it("封口架构证据预加载后只用一个终态动作完成接受", async () => {
+    const prepared = await prepareArchitectureRound("accept-preloaded");
     let toolOutput: unknown;
     const createAgent = createFakeFactory(async (settings) => {
+      const activeTools = (
+        await settings.prepareStep({
+          messages: [],
+          stepNumber: 0,
+          steps: [],
+        })
+      ).activeTools;
+      expect(activeTools).toContain(
+        "accept_architecture_and_dispatch_pages",
+      );
+      expect(activeTools).not.toContain("inspect_architecture");
       toolOutput = await executeTool(
         settings.tools,
         "accept_architecture_and_dispatch_pages",
@@ -87,75 +114,45 @@ describe("Course Director Agent", () => {
       return {};
     });
 
-    await expect(
-      runPreparedAgent(prepared, createAgent),
-    ).rejects.toBeInstanceOf(AgentTerminalNotCommittedError);
+    const result = await runPreparedAgent(prepared, createAgent);
+    expect(result.status).toBe("accepted");
     expect(toolOutput).toMatchObject({
-      ok: false,
-      code: "DIRECTOR_REQUIRED_INSPECTION_MISSING",
-      committed: false,
-      terminal: false,
+      ok: true,
+      committed: true,
+      terminal: true,
     });
     expect(
-      prepared.repository.workOrders
-        .listByTask(prepared.taskId)
-        .filter(({ kind }) => kind === "build_page"),
-    ).toEqual([]);
+      prepared.repository.runs.load(prepared.run.id)?.phase,
+    ).toBe("building");
   });
 
-  it("没有架构证据时，Director 不能直接退回架构或终止课程", async () => {
-    for (const action of [
-      "request_architecture_revision",
-      "fail_course",
-    ] as const) {
-      const prepared = await prepareArchitectureRound(
-        `negative-without-inspect-${action.replaceAll("_", "-")}`,
-      );
-      let toolOutput: unknown;
-      const createAgent = createFakeFactory(async (settings) => {
-        if (action === "fail_course") {
-          expect(
-            (
-              await settings.prepareStep({
-                messages: [],
-                stepNumber: 0,
-                steps: [],
-              })
-            ).activeTools,
-          ).not.toContain("fail_course");
-        }
-        toolOutput =
-          action === "request_architecture_revision"
-            ? await executeTool(
-                settings.tools,
-                "request_architecture_revision",
-                { issues: ["页面职责重复，需要重新划分。"] },
-              )
-            : await executeTool(settings.tools, "fail_course", {
-                code: "UNRECOVERABLE_INPUT",
-                message: "测试终止。",
-              });
-        return {};
-      });
-
-      await expect(runPreparedAgent(prepared, createAgent)).rejects.toBeInstanceOf(
-        action === "fail_course"
-          ? AgentToolAuthorizationError
-          : AgentTerminalNotCommittedError,
-      );
-      if (action !== "fail_course") {
-        expect(toolOutput).toMatchObject({
-          ok: false,
-          code: "DIRECTOR_REQUIRED_INSPECTION_MISSING",
-          committed: false,
-          terminal: false,
-        });
-      }
+  it("封口架构证据预加载后仍不能主观终止健康课程", async () => {
+    const prepared = await prepareArchitectureRound(
+      "preloaded-architecture-cannot-fail",
+    );
+    const createAgent = createFakeFactory(async (settings) => {
       expect(
-        prepared.repository.workOrders.load(prepared.director.id)
-          ?.status,
-      ).toBe("running");
-    }
+        (
+          await settings.prepareStep({
+            messages: [],
+            stepNumber: 0,
+            steps: [],
+          })
+        ).activeTools,
+      ).not.toContain("fail_course");
+      return executeTool(settings.tools, "fail_course", {
+        code: "UNRECOVERABLE_INPUT",
+        message: "测试终止。",
+      });
+    });
+
+    await expect(
+      runPreparedAgent(prepared, createAgent),
+    ).rejects.toBeInstanceOf(AgentToolAuthorizationError);
+    expect(
+      prepared.repository.workOrders.load(prepared.director.id)
+        ?.status,
+    ).toBe("running");
   });
 
   it("合法架构完成 inspect 后会隐藏并拒绝 fail_course", async () => {
@@ -431,13 +428,24 @@ describe("Course Director Agent", () => {
     },
   );
 
-  it("没有先 inspect_course_review 时，Director 不能直接决定发布", async () => {
+  it("封口 Review 证据预加载后只用一个终态动作完成发布", async () => {
     const prepared = await prepareReviewRound(
-      "publish-without-inspect",
+      "publish-preloaded",
       "pass",
     );
     let toolOutput: unknown;
     const createAgent = createFakeFactory(async (settings) => {
+      const activeTools = (
+        await settings.prepareStep({
+          messages: [],
+          stepNumber: 0,
+          steps: [],
+        })
+      ).activeTools;
+      expect(activeTools).toContain(
+        "accept_course_review_and_publish",
+      );
+      expect(activeTools).not.toContain("inspect_course_review");
       toolOutput = await executeTool(
         settings.tools,
         "accept_course_review_and_publish",
@@ -446,34 +454,32 @@ describe("Course Director Agent", () => {
       return {};
     });
 
-    await expect(
-      runPreparedAgent(prepared, createAgent),
-    ).rejects.toBeInstanceOf(AgentTerminalNotCommittedError);
+    const result = await runPreparedAgent(prepared, createAgent);
+    expect(result.status).toBe("accepted");
     expect(toolOutput).toMatchObject({
-      ok: false,
-      code: "DIRECTOR_REQUIRED_INSPECTION_MISSING",
-      committed: false,
-      terminal: false,
+      ok: true,
+      committed: true,
+      terminal: true,
     });
     expect(
       prepared.repository.runs.load(prepared.run.id)?.phase,
-    ).not.toBe("completed");
+    ).toBe("completed");
   });
 
-  it("没有 Review 证据时，Director 不能直接返工、重规划或终止课程", async () => {
+  it("封口 Review 证据预加载后可直接返工或重规划，但不能主观终止 pass 课程", async () => {
     const cases = [
       {
-        suffix: "fix-without-inspect",
+        suffix: "fix-preloaded",
         decision: "revise_pages" as const,
         action: "assign_page_fixes" as const,
       },
       {
-        suffix: "replan-without-inspect",
+        suffix: "replan-preloaded",
         decision: "replan" as const,
         action: "request_replan" as const,
       },
       {
-        suffix: "fail-without-review-inspect",
+        suffix: "fail-with-preloaded-pass-review",
         decision: "pass" as const,
         action: "fail_course" as const,
       },
@@ -520,23 +526,23 @@ describe("Course Director Agent", () => {
         return {};
       });
 
-      await expect(runPreparedAgent(prepared, createAgent)).rejects.toBeInstanceOf(
-        item.action === "fail_course"
-          ? AgentToolAuthorizationError
-          : AgentTerminalNotCommittedError,
-      );
-      if (item.action !== "fail_course") {
+      if (item.action === "fail_course") {
+        await expect(
+          runPreparedAgent(prepared, createAgent),
+        ).rejects.toBeInstanceOf(AgentToolAuthorizationError);
+        expect(
+          prepared.repository.workOrders.load(prepared.director.id)
+            ?.status,
+        ).toBe("running");
+      } else {
+        const result = await runPreparedAgent(prepared, createAgent);
+        expect(result.status).toBe("accepted");
         expect(toolOutput).toMatchObject({
-          ok: false,
-          code: "DIRECTOR_REQUIRED_INSPECTION_MISSING",
-          committed: false,
-          terminal: false,
+          ok: true,
+          committed: true,
+          terminal: true,
         });
       }
-      expect(
-        prepared.repository.workOrders.load(prepared.director.id)
-          ?.status,
-      ).toBe("running");
     }
   });
 

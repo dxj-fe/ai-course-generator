@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildDemoServerEnvironment,
   buildDemoTaskInput,
   findProviderConfigIssues,
   parseDemoCliOptions,
@@ -52,39 +53,34 @@ describe("Day 36 Demo SSE parser", () => {
 
   it("creates a structured agent-v2 input for the fixed demo", () => {
     const input = buildDemoTaskInput({
-      version: 1,
+      version: 2,
       id: "solar-system",
       name: "太阳系入门",
       prompt: "为 8–10 岁学生生成一门 5 页太阳系入门课程，并安排一次可观察练习。",
       pageCount: 5,
-      expectedOutline: [
+      expectedCourseRoles: [
         {
-          order: 1,
-          purpose: "建立目标",
+          label: "建立目标",
           allowedPageTypes: ["cover"],
           allowedInteractionTypes: ["navigate"],
         },
         {
-          order: 2,
-          purpose: "解释概念",
+          label: "解释概念",
           allowedPageTypes: ["knowledge_card"],
           allowedInteractionTypes: ["reveal"],
         },
         {
-          order: 3,
-          purpose: "组织关系",
+          label: "组织关系",
           allowedPageTypes: ["comparison"],
           allowedInteractionTypes: ["explore"],
         },
         {
-          order: 4,
-          purpose: "检查理解",
+          label: "检查理解",
           allowedPageTypes: ["quiz"],
           allowedInteractionTypes: ["choice"],
         },
         {
-          order: 5,
-          purpose: "总结迁移",
+          label: "总结迁移",
           allowedPageTypes: ["summary"],
           allowedInteractionTypes: ["input"],
         },
@@ -152,5 +148,21 @@ describe("Day 36 Demo SSE parser", () => {
       "文本模型 strong 的 Base URL 无效或仍是占位地址。",
     ]);
     expect(JSON.stringify(issues)).not.toContain(secret);
+  });
+
+  it("uses polling for the in-project Demo build cache", () => {
+    expect(
+      buildDemoServerEnvironment("/workspace/project", {
+        EXISTING_VALUE: "kept",
+        NODE_ENV: "test",
+        WATCHPACK_POLLING: "false",
+      }),
+    ).toMatchObject({
+      EXISTING_VALUE: "kept",
+      COURSE_TASK_STARTUP_RECOVERY: "0",
+      NEXT_DIST_DIR: ".data/demo-next",
+      PAGE_QA_SCREENSHOTS_ENABLED: "true",
+      WATCHPACK_POLLING: "true",
+    });
   });
 });

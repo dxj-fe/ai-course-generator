@@ -132,6 +132,12 @@ describe("Page Builder ToolLoopAgent", () => {
       pageId: PAGE_ID,
     });
 
+    const initialContentInput =
+      vi.mocked(steps.generateContent).mock.calls[0]?.[0];
+    expect(initialContentInput).toBeDefined();
+    expect(
+      "validationFeedback" in initialContentInput!,
+    ).toBe(false);
     expect(
       resolvePageBuilderActiveTools(prepared.execution),
     ).toEqual(
@@ -916,6 +922,70 @@ describe("Page Builder ToolLoopAgent", () => {
       prepared.repository.runs.load(prepared.run.id)
         ?.currentPages[PAGE_ID]?.sourceWorkOrderId,
     ).toBe(prepared.workOrder.id);
+  });
+
+  it("Agent 已保存新 checkpoint 但提前结束时由 Harness 续跑到持久化终态", async () => {
+    const prepared = await preparePageBuilder();
+    const content = pageContent();
+    const quality = passingQuality();
+    const html = htmlOutput();
+    const steps = modelSteps({ content, quality, html });
+    let runCount = 0;
+
+    const result = await runPageBuilderAgent(
+      {
+        repository: prepared.repository,
+        workOrder: prepared.workOrder,
+        workOrderLeaseOwner: PAGE_OWNER,
+        runLeaseOwner: ENGINE_OWNER,
+        traceId: prepared.run.traceId,
+        creationBrief: createAgentV2Brief(),
+        referencePacks: [createAgentV2ReferencePack()],
+      },
+      {
+        createAgent: (settings) => ({
+          generate: async ({ abortSignal }) => {
+            runCount += 1;
+            const sequence =
+              runCount === 1
+                ? ([
+                    "generate_page_content",
+                    "generate_page_html",
+                  ] as const)
+                : (["inspect_page", "submit_page"] as const);
+            for (const toolName of sequence) {
+              await executeTool(
+                settings.tools,
+                toolName,
+                { pageId: PAGE_ID },
+                abortSignal,
+              );
+            }
+            return {};
+          },
+        }),
+        model: {},
+        modelSteps: steps,
+        now: () => "2026-07-29T12:03:30.000Z",
+        pageGate: () => ({
+          ok: true,
+          payloads: {
+            content,
+            assets: [],
+            html,
+            quality,
+            summary: pageSummary(content, quality),
+          },
+        }),
+      },
+    );
+
+    expect(runCount).toBe(2);
+    expect(result.status).toBe("accepted");
+    expect(
+      prepared.repository.workOrders.load(prepared.workOrder.id)
+        ?.status,
+    ).toBe("accepted");
   });
 });
 

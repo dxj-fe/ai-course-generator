@@ -4,7 +4,7 @@ import {
   AiRequestError,
   createAiErrorResponse,
   createTraceId,
-} from "@/server/ai/error";
+} from "@/server/infra/ai/error";
 import { listRecommendedCourses } from "@/server/recommendations/recommended-course-registry";
 
 export const runtime = "nodejs";

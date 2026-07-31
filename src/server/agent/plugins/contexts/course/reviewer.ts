@@ -52,9 +52,9 @@ export function createCourseReviewerBudget(
   );
   // 必需调用：课程矩阵 1 次、摘要/质量各 N 批、校验 1 次、终态 1 次。
   const requiredToolCalls = 2 * evidenceBatchCount + 3;
-  // 每批额外留 1 次定向核对，再留 2 次修正/重试；最大课程仍只有 35 次。
+  // 每批额外留 1 次定向核对，再留 6 次修正/重试；最大课程仍只有 35 次。
   const boundedToolCalls =
-    requiredToolCalls + evidenceBatchCount + 2;
+    requiredToolCalls + evidenceBatchCount + 6;
 
   return {
     maxSteps: Math.min(

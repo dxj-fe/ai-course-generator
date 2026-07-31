@@ -26,7 +26,9 @@ import {
 } from "@/server/agent/plugins/tools/course/page-builder";
 import { prepareAgentSkillRuntime } from "@/server/agent/plugins/tools/system";
 import {
+  AgentTerminalNotCommittedError,
   AgentRunner,
+  AtomicBudgetMeter,
   type AgentRunnerResult,
   type RuntimeAgentFactory,
 } from "@/server/agent/runtime";
@@ -96,31 +98,33 @@ export async function runPageBuilderAgent(
         parsePageBuilderTerminal(execution, value),
     },
   });
-
-  return runner.run({
+  const budget = {
+    maxSteps: execution.initialWorkOrder.budget.maxSteps,
+    maxToolCalls:
+      execution.initialWorkOrder.budget.maxToolCalls,
+    maxOutputTokens:
+      execution.initialWorkOrder.budget.maxOutputTokens,
+    maxToolResultBytes: 16 * 1024,
+    timeout: execution.initialWorkOrder.budget.timeoutMs,
+  };
+  const budgetMeter = new AtomicBudgetMeter({
+    maxToolCalls: budget.maxToolCalls,
+  });
+  const request = {
     abortSignal: input.abortSignal,
     activeTools: resolvePageBuilderActiveTools(execution),
     authorizeToolCall: (toolCall) =>
       assertPageBuilderToolCall(execution, toolCall, now()),
     beforeToolCall: input.beforeToolCall,
-    budget: {
-      maxSteps: execution.initialWorkOrder.budget.maxSteps,
-      maxToolCalls:
-        execution.initialWorkOrder.budget.maxToolCalls,
-      maxOutputTokens:
-        execution.initialWorkOrder.budget.maxOutputTokens,
-      maxToolResultBytes: 16 * 1024,
-      timeout: execution.initialWorkOrder.budget.timeoutMs,
-    },
+    budget,
+    budgetMeter,
     instructions,
     model:
       dependencies.model ??
       getLanguageModel(
         resolveModelRoute(agentDefinition.modelCapability).primary,
       ),
-    prepareStep: () => ({
-      activeTools: resolvePageBuilderActiveTools(execution),
-    }),
+    prepareStep: () => preparePageBuilderStep(execution),
     prompt: buildPageBuilderPrompt(execution),
     resolveToolCost: (toolName) =>
       toolName === ToolIds.ResolvePageAssets
@@ -137,7 +141,91 @@ export async function runPageBuilderAgent(
     tools,
     traceId: execution.traceId,
     workOrderId: execution.initialWorkOrder.id,
-  });
+  } satisfies Parameters<typeof runner.run>[0];
+
+  let checkpointCount =
+    loadPageBuilderCheckpointCount(execution);
+  for (let continuation = 0; continuation < 3; continuation += 1) {
+    try {
+      return await runner.run({
+        ...request,
+        prompt:
+          continuation === 0
+            ? buildPageBuilderPrompt(execution)
+            : buildPageBuilderContinuationPrompt(execution),
+      });
+    } catch (error) {
+      if (!(error instanceof AgentTerminalNotCommittedError)) {
+        throw error;
+      }
+      const nextCheckpointCount =
+        loadPageBuilderCheckpointCount(execution);
+      if (
+        nextCheckpointCount <= checkpointCount ||
+        continuation === 2
+      ) {
+        throw error;
+      }
+      checkpointCount = nextCheckpointCount;
+    }
+  }
+
+  throw new AgentTerminalNotCommittedError(
+    execution.initialWorkOrder.id,
+  );
+}
+
+function loadPageBuilderCheckpointCount(
+  execution: ReturnType<typeof createPageBuilderExecution>,
+) {
+  return (
+    execution.repository.workOrders.load(
+      execution.initialWorkOrder.id,
+    )?.checkpointArtifactRefs.length ?? 0
+  );
+}
+
+function buildPageBuilderContinuationPrompt(
+  execution: ReturnType<typeof createPageBuilderExecution>,
+) {
+  return [
+    `继续完成页面《${execution.pageTask.title}》。`,
+    "上一次 Agent Run 已保存了新的 checkpoint，但没有提交终态。",
+    "读取当前持久化状态，只调用仍然开放的工具，直到 submit_page 或 block_page 成功。",
+  ].join("\n");
+}
+
+const DIRECTED_PAGE_BUILDER_TOOL_IDS = new Set<string>([
+  ToolIds.ResolvePageAssets,
+  ToolIds.GeneratePageHtml,
+  ToolIds.InspectPage,
+  ToolIds.RepairPageContent,
+  ToolIds.RepairPageHtml,
+  ToolIds.SubmitPage,
+]);
+
+function preparePageBuilderStep(
+  execution: ReturnType<typeof createPageBuilderExecution>,
+) {
+  const activeTools = resolvePageBuilderActiveTools(execution);
+  const directedTools = activeTools.filter((toolName) =>
+    DIRECTED_PAGE_BUILDER_TOOL_IDS.has(toolName),
+  );
+  const canDirect =
+    directedTools.length === 1 &&
+    !activeTools.includes(ToolIds.BlockPage);
+
+  return {
+    activeTools,
+    ...(canDirect
+      ? {
+          toolChoice: {
+            type: "tool" as const,
+            toolName: directedTools[0]!,
+          },
+        }
+      : {}),
+  };
 }
 
 function buildPageBuilderPrompt(

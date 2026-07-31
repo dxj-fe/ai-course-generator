@@ -314,7 +314,7 @@ async function runCase(input: {
 
     const passed = report.passed && Boolean(screenshots);
     process.stdout.write(
-      `[demo:${input.baseline.id}] ${passed ? "PASS" : "FAIL"} · 整课首轮 ${report.metrics.courseFirstPassAccepted ? "是" : "否"} · 架构尝试 ${report.metrics.architectureAttempts} 次 · 模型页面首轮 ${(report.metrics.modelFirstPassAcceptanceRate * 100).toFixed(0)}% · 模型 HTML ${(report.metrics.modelRenderRate * 100).toFixed(0)}% · 素材 ready ${(report.metrics.assetReadyRate * 100).toFixed(0)}% · Repair ${report.metrics.repairAttemptCount} 次 · 综合分 ${report.metrics.compositeScore} · ${report.issues.length} issues\n`,
+      `[demo:${input.baseline.id}] ${passed ? "PASS" : "FAIL"} · 整课首轮 ${report.metrics.courseFirstPassAccepted ? "是" : "否"} · 架构尝试 ${report.metrics.architectureAttempts} 次 · 模型页面首轮 ${(report.metrics.modelFirstPassAcceptanceRate * 100).toFixed(0)}% · 模型 HTML ${(report.metrics.modelRenderRate * 100).toFixed(0)}% · 素材 ready ${(report.metrics.assetReadyRate * 100).toFixed(0)}% · Repair ${report.metrics.repairAttemptCount} 次 · 综合分 ${report.metrics.compositeScore} · ${report.issues.length} issues · ${report.warnings.length} warnings\n`,
     );
     return {
       baselineId: input.baseline.id,
@@ -542,7 +542,9 @@ async function openCourseDetail(
   await page.goto(`${baseUrl}/course/${encodeURIComponent(courseId)}`, {
     waitUntil: "domcontentloaded",
   });
-  await page.getByRole("button", { name: "导出课程 ZIP" }).waitFor({
+  // 课程详情页当前是学习播放器，ZIP 已由 API 在截图前单独验收。
+  // 截图只等待播放器的稳定产品锚点，避免依赖聊天工作区里的导出按钮文案。
+  await page.locator('[aria-label="课程画布"]').waitFor({
     state: "visible",
     timeout: 30_000,
   });
@@ -585,20 +587,31 @@ async function startLocalServer(rootDir: string, runDir: string) {
     ],
     {
       cwd: rootDir,
-      env: {
-        ...process.env,
-        NEXT_DIST_DIR: path.relative(
-          rootDir,
-          path.join(rootDir, ".data", "demo-next"),
-        ),
-        PAGE_QA_SCREENSHOTS_ENABLED: "true",
-      },
+      env: buildDemoServerEnvironment(rootDir),
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
   child.stdout?.pipe(log);
   child.stderr?.pipe(log);
   return { child, baseUrl, log, logPath };
+}
+
+export function buildDemoServerEnvironment(
+  rootDir: string,
+  baseEnvironment: NodeJS.ProcessEnv = process.env,
+) {
+  return {
+    ...baseEnvironment,
+    NEXT_DIST_DIR: path.relative(
+      rootDir,
+      path.join(rootDir, ".data", "demo-next"),
+    ),
+    // 固定 Demo 只验证本次创建的 Task，不能顺带恢复数据库中的历史任务。
+    COURSE_TASK_STARTUP_RECOVERY: "0",
+    PAGE_QA_SCREENSHOTS_ENABLED: "true",
+    // Demo 构建目录位于项目内；强制轮询避免 Watchpack 为缓存树打开过多句柄。
+    WATCHPACK_POLLING: "true",
+  } satisfies NodeJS.ProcessEnv;
 }
 
 async function stopLocalServer(

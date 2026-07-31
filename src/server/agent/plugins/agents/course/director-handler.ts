@@ -7,6 +7,8 @@ import {
   buildCourseDirectorRunSummary,
   COURSE_DIRECTOR_TERMINAL_TOOLS,
   createCourseDirectorExecution,
+  inspectCourseArchitecture,
+  inspectCurrentCourseReview,
   loadCourseDirectorTerminal,
   resolveCourseDirectorActiveTools,
   type CourseDirectorExecutionInput,
@@ -53,6 +55,7 @@ export async function runCourseDirectorAgent(
     {},
   );
   const execution = createCourseDirectorExecution(input);
+  const decisionEvidence = preloadDirectorDecisionEvidence(execution);
   const tools = createCourseDirectorTools(execution, { now });
   const runner = new AgentRunner<CourseDirectorTools, Submission>({
     ...(dependencies.createAgent
@@ -66,9 +69,16 @@ export async function runCourseDirectorAgent(
     },
   });
 
+  const decisionTools = resolveCourseDirectorActiveTools(execution).filter(
+    (toolName) =>
+      COURSE_DIRECTOR_TERMINAL_TOOLS.includes(
+        toolName as (typeof COURSE_DIRECTOR_TERMINAL_TOOLS)[number],
+      ),
+  );
+
   return runner.run({
     abortSignal: input.abortSignal,
-    activeTools: resolveCourseDirectorActiveTools(execution),
+    activeTools: decisionTools,
     authorizeToolCall: (toolCall) =>
       assertCourseDirectorToolCall(execution, toolCall, now()),
     beforeToolCall: input.beforeToolCall,
@@ -90,9 +100,14 @@ export async function runCourseDirectorAgent(
         resolveModelRoute(agentDefinition.modelCapability).primary,
       ),
     prepareStep: () => ({
-      activeTools: resolveCourseDirectorActiveTools(execution),
+      activeTools: resolveCourseDirectorActiveTools(execution).filter(
+        (toolName) =>
+          COURSE_DIRECTOR_TERMINAL_TOOLS.includes(
+            toolName as (typeof COURSE_DIRECTOR_TERMINAL_TOOLS)[number],
+          ),
+      ),
     }),
-    prompt: buildCourseDirectorPrompt(execution),
+    prompt: buildCourseDirectorPrompt(execution, decisionEvidence),
     temperature: 0.1,
     terminalToolNames: [...COURSE_DIRECTOR_TERMINAL_TOOLS],
     toolLedger: createCourseToolLedger(
@@ -107,6 +122,7 @@ export async function runCourseDirectorAgent(
 
 function buildCourseDirectorPrompt(
   execution: ReturnType<typeof createCourseDirectorExecution>,
+  decisionEvidence: ReturnType<typeof preloadDirectorDecisionEvidence>,
 ) {
   const summary = buildCourseDirectorRunSummary(execution);
   if (execution.roundKind === "review_architecture") {
@@ -114,7 +130,8 @@ function buildCourseDirectorPrompt(
       "当前是课程架构语义验收回合。",
       `验收要求：${JSON.stringify(execution.initialWorkOrder.acceptance)}`,
       `初始 RunSummary：${JSON.stringify(summary)}`,
-      "请核对目标矩阵、页面职责、受众难度和真实生成依赖；合格就接受并派发，不合格就给出具体问题退回。",
+      `已封口的架构决策证据：${JSON.stringify(decisionEvidence)}`,
+      "证据已经完整加载，请直接执行一个终态决策工具：合格就接受并派发，不合格就给出具体问题退回。不要先调用读取工具。",
     ].join("\n");
   }
 
@@ -122,8 +139,21 @@ function buildCourseDirectorPrompt(
     "当前是整课 Review 决策回合。",
     `验收要求：${JSON.stringify(execution.initialWorkOrder.acceptance)}`,
     `初始 RunSummary：${JSON.stringify(summary)}`,
-    "请读取 Review 证据，确认发布、局部返工或重新规划。只能执行当前 Review 结论允许的领域动作。",
+    `已封口的 Review 决策证据：${JSON.stringify(decisionEvidence)}`,
+    "证据已经完整加载，请直接执行一个终态决策工具：确认发布、局部返工或重新规划。只能执行当前 Review 结论允许的领域动作，不要先调用读取工具。",
   ].join("\n");
+}
+
+function preloadDirectorDecisionEvidence(
+  execution: ReturnType<typeof createCourseDirectorExecution>,
+) {
+  if (execution.roundKind === "review_architecture") {
+    execution.inspections.architecture = true;
+    return inspectCourseArchitecture(execution);
+  }
+
+  execution.inspections.courseReview = true;
+  return inspectCurrentCourseReview(execution);
 }
 
 function parseDirectorTerminal(

@@ -452,9 +452,10 @@ export function buildRepairModelInput(input: RepairRequest) {
 
 /**
  * 只归一化可确定恢复的 Provider 形态偏差：DSL candidate 的已知别名、
- * 单项公开摘要、缺失的 patch 公开摘要，以及边界插入时可证明属于 CSS 的
- * `html, body` 定位。归一化后仍须通过严格结果 Schema、请求授权范围和
- * 完整原产物合同校验；无法安全收敛的边界会在已知请求范围时结构化拒绝。
+ * 单项公开摘要、patch.issueCode 的单值数组偏差、缺失的 patch 公开摘要，
+ * 以及边界插入时可证明属于 CSS 的 `html, body` 定位。归一化后仍须通过
+ * 严格结果 Schema、请求授权范围和完整原产物合同校验；无法安全收敛的边界
+ * 会在已知请求范围时结构化拒绝。
  */
 export function normalizeRepairModelOutput(
   output: unknown,
@@ -475,7 +476,8 @@ export function normalizeRepairModelOutput(
 
   let patchesChanged = false;
   const patches = normalized.patches.map((rawPatch) => {
-    let patch = rawPatch;
+    let patch = normalizePatchIssueCode(rawPatch, request);
+    if (patch !== rawPatch) patchesChanged = true;
     if (
       isRecord(patch) &&
       patch.summary === undefined &&
@@ -512,6 +514,7 @@ export function normalizeRepairModelOutput(
     const selector = normalizeBoundarySelector(
       patch.selector,
       patch.replacement,
+      request,
     );
     if (selector === patch.selector) return patch;
 
@@ -525,6 +528,30 @@ export function normalizeRepairModelOutput(
   return request
     ? declineUnsafeBoundaryCandidate(normalizedWithPatches, request)
     : normalizedWithPatches;
+}
+
+/**
+ * 兼容 Provider 把单个 patch 的 issueCode 错生成为数组。存在请求时只选择
+ * 该数组中按请求顺序出现的首个已授权 code；其余 code 保持 unresolved，
+ * 修复后的整页仍须重新通过原合同和 QA，不能借此扩大修复权限。
+ */
+function normalizePatchIssueCode(
+  patch: unknown,
+  request?: RepairRequest,
+): unknown {
+  if (!isRecord(patch) || !Array.isArray(patch.issueCode)) return patch;
+
+  const modelCodes = new Set(
+    patch.issueCode.filter(
+      (code): code is string => typeof code === "string" && code.length > 0,
+    ),
+  );
+  const issueCode = request
+    ? request.issueCodes.find((code) => modelCodes.has(code))
+    : modelCodes.size === 1
+      ? [...modelCodes][0]
+      : undefined;
+  return issueCode ? { ...patch, issueCode } : patch;
 }
 
 /**
@@ -687,6 +714,7 @@ function sameValue(left: unknown, right: unknown) {
 function normalizeBoundarySelector(
   selector: string,
   replacement: unknown,
+  request?: RepairRequest,
 ) {
   if (/^[a-z][a-z0-9-]*$/i.test(selector)) return selector;
 
@@ -699,16 +727,31 @@ function normalizeBoundarySelector(
    * explicitly authorize `style`.
    */
   if (
-    /^(?:html\s*,\s*body|body\s*,\s*html)$/i.test(selector.trim()) &&
-    typeof replacement === "string" &&
-    /(?:^|})\s*(?:@(?:media|supports|layer)\b|[^{}]+)\s*\{[\s\S]*\}\s*$/i.test(
-      replacement.trim(),
-    )
+    isCssRuleFragment(replacement) &&
+    (/^(?:html\s*,\s*body|body\s*,\s*html)$/i.test(selector.trim()) ||
+      (request?.targetArtifact === "html" &&
+        request.allowedSelectors.includes("style") &&
+        request.issueCodes.includes(selector)))
   ) {
     return "style";
   }
 
   return selector;
+}
+
+function isCssRuleFragment(value: unknown) {
+  if (
+    typeof value !== "string" ||
+    /[<>]/.test(value) ||
+    !/(?:^|})\s*(?:@(?:media|supports|layer)\b|[^{}]+)\s*\{[\s\S]*\}\s*$/i.test(
+      value.trim(),
+    )
+  ) {
+    return false;
+  }
+  const openingBraces = value.match(/\{/g)?.length ?? 0;
+  const closingBraces = value.match(/\}/g)?.length ?? 0;
+  return openingBraces > 0 && openingBraces === closingBraces;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

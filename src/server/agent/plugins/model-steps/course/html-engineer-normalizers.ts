@@ -1,7 +1,10 @@
 import type { PageContentDSL } from "@/shared/course-schema";
 
 import type { HtmlEngineerInput } from "./html-engineer-model-step";
-import { collectRequiredStaticContentText } from "./html-engineer-content-text";
+import {
+  collectRequiredStaticContentText,
+  isRevealItemRepresentedByBlock,
+} from "./html-engineer-content-text";
 import {
   escapeHtmlAttribute,
   findReadyCssAssetConsumer,
@@ -22,10 +25,249 @@ import {
   normalizeVisibleText,
 } from "./html-engineer-text";
 
+const TRUSTED_PLAYER_LAYOUT_GUARD = `<style data-keya-layout-guard="v21">
+html,body{width:100%!important;height:100%!important;margin:0!important;padding:0!important;overflow:visible!important;box-sizing:border-box}
+main[data-page-id]{position:relative;width:100%!important;height:100%!important;min-width:0;min-height:0;margin:0 auto!important;overflow:visible!important;box-sizing:border-box}
+main[data-page-id]>*{min-width:0;box-sizing:border-box}
+[data-asset-slot-id],[data-asset-slot-id] img{max-width:100%;box-sizing:border-box}
+@media (max-height:700px){
+  main[data-page-id]{padding:clamp(.5rem,1.6vh,.875rem)!important;gap:clamp(.5rem,2vh,1rem)!important}
+  main[data-page-id] h1{font-size:clamp(1.5rem,5vh,2.25rem)!important;line-height:1.08!important}
+  main[data-page-id] h2,main[data-page-id] h3{font-size:clamp(1.0625rem,3.5vh,1.625rem)!important;line-height:1.15!important}
+  main[data-page-id] p,main[data-page-id] li,main[data-page-id] label,main[data-page-id] summary{font-size:clamp(.875rem,2.5vh,1.0625rem)!important;line-height:1.35!important}
+  main[data-page-id]>:not([data-block-id]):not([data-asset-slot-id]){margin-block:0!important}
+  main[data-page-id] [data-block-id]{grid-column:auto!important;grid-row:auto!important;min-height:0;margin:0!important;padding:clamp(.5rem,1.5vh,.875rem)!important;font-size:clamp(.875rem,2.5vh,1.0625rem)!important;line-height:1.35!important}
+  main[data-page-id] [data-block-id]:has(>details){padding:0!important}
+  main[data-page-id] [data-block-id]>details:not([open]){min-height:44px!important;padding:0!important}
+  main[data-page-id] [data-block-id]>*{margin-block:.25rem!important}
+  main[data-page-id] *:has(>[data-block-id]){width:100%!important;min-height:0!important;max-height:none!important;overflow:visible!important;margin-block:clamp(.375rem,1vh,.625rem)!important}
+  main[data-page-id] [data-interaction-type]{margin:0!important;padding:clamp(.5rem,1.5vh,.875rem)!important}
+  main[data-page-id] [data-interaction-type]>p{margin-block:.25rem!important}
+  main[data-page-id] *:has(>[data-interaction-item-id]){display:grid!important;grid-template-columns:repeat(auto-fit,minmax(min(7rem,45%),1fr))!important;gap:clamp(.375rem,1vh,.625rem)!important}
+  main[data-page-id] *:has(>[data-interaction-item-id])>:not([data-interaction-item-id]){grid-column:1/-1}
+  main[data-page-id] [data-interaction-item-id]{width:auto!important;min-width:0!important;max-width:100%!important;min-height:44px;margin:0!important;padding:clamp(.375rem,1vh,.625rem)!important}
+  main[data-page-id] [data-interaction-item-id]>summary{width:100%!important;min-height:44px!important;padding:.375rem!important;justify-content:center!important;text-align:center!important}
+  main[data-page-id] details>summary{display:flex!important;align-items:center!important;min-height:44px!important;padding:.375rem!important;cursor:pointer!important}
+  main[data-page-id] details:not([open])>summary{margin:0!important}
+  main[data-page-id]>details[data-block-id]:not([open]){min-height:44px!important;padding:0!important}
+  main[data-page-id] details:not([open])>:not(summary){display:none!important}
+  main[data-page-id] details[open]>:not(summary){display:block!important;margin-top:.25rem!important;padding:.5rem!important;font-size:.8125rem!important;line-height:1.3!important}
+  main[data-page-id] *:has(>*>[data-block-id]):has(>[data-interaction-type="sort"]){display:grid!important;grid-template-columns:minmax(7rem,.75fr) minmax(0,1.25fr)!important;grid-template-rows:auto auto minmax(0,1fr)!important;align-items:start!important;gap:.375rem .5rem!important;width:100%!important;max-width:none!important;margin:0!important;padding:0!important}
+  main[data-page-id] *:has(>*>[data-block-id]):has(>[data-interaction-type="sort"])>h1,
+  main[data-page-id] *:has(>*>[data-block-id]):has(>[data-interaction-type="sort"])>.narration{grid-column:1/-1!important;margin:0!important}
+  main[data-page-id] *:has(>*>[data-block-id]):has(>[data-interaction-type="sort"])>*:has(>[data-block-id]){grid-column:1!important;margin:0!important;align-self:start!important}
+  main[data-page-id] *:has(>*>[data-block-id]):has(>[data-interaction-type="sort"])>[data-interaction-type="sort"]{grid-column:2!important;margin:0!important;align-self:start!important}
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="sort"]){display:grid!important;grid-template-columns:minmax(7rem,.75fr) minmax(0,1.25fr)!important;grid-template-rows:auto auto repeat(6,minmax(44px,auto))!important;align-items:start!important;gap:.25rem .5rem!important}
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="sort"])>h1,
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="sort"])>.narration{grid-column:1/-1!important;margin:0!important}
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="sort"])>[data-block-id]{grid-column:1!important}
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="sort"])>[data-block-id]:nth-of-type(1){grid-row:3!important}
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="sort"])>[data-block-id]:nth-of-type(2){grid-row:4!important}
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="sort"])>[data-block-id]:nth-of-type(3){grid-row:5!important}
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="sort"])>[data-block-id]:nth-of-type(4){grid-row:6!important}
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="sort"])>[data-block-id]:nth-of-type(5){grid-row:7!important}
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="sort"])>[data-block-id]:nth-of-type(6){grid-row:8!important}
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="sort"])>[data-interaction-type="sort"]{grid-column:2!important;grid-row:3/9!important;margin:0!important;align-self:start!important}
+  main[data-page-id] [data-interaction-type="sort"]{display:grid!important;align-content:start!important;gap:.25rem!important}
+  main[data-page-id] [data-interaction-type="sort"]>*{margin-block:0!important}
+  main[data-page-id] [data-interaction-type="sort"]>*:has(>[data-interaction-item-id]){margin:0!important}
+  main[data-page-id] [data-interaction-type="sort"] button[data-runtime-submit="true"]{min-height:44px!important;margin:0!important;padding:.375rem .75rem!important}
+  main[data-page-id] *:has(>[data-block-id]):has(>[data-interaction-type="choice"]){display:grid!important;grid-template-columns:minmax(10rem,.65fr) minmax(0,1.35fr)!important;grid-template-rows:minmax(0,1fr)!important;align-items:start!important;gap:.5rem!important}
+  main[data-page-id] *:has(>[data-block-id]):has(>[data-interaction-type="choice"])>:not([data-block-id]):not([data-interaction-type="choice"]){display:none!important}
+  main[data-page-id] *:has(>[data-block-id]):has(>[data-interaction-type="choice"])>[data-block-id]{grid-column:1!important}
+  main[data-page-id] *:has(>[data-block-id]):has(>[data-interaction-type="choice"])>[data-interaction-type="choice"]{grid-column:2!important}
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="choice"]){display:grid!important;grid-template-columns:minmax(10rem,.65fr) minmax(0,1.35fr)!important;grid-template-rows:auto minmax(0,1fr)!important;align-items:start!important;gap:.5rem!important}
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="choice"])>h1{grid-column:1/-1!important}
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="choice"])>:not(h1):not([data-block-id]):not([data-interaction-type="choice"]):not([data-asset-slot-id]){display:none!important}
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="choice"])>[data-block-id]{grid-column:1!important}
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="choice"])>[data-interaction-type="choice"]{grid-column:2!important}
+  main[data-page-id] [data-interaction-type="choice"]{display:grid!important;align-content:start!important;gap:.375rem!important;font-size:.8125rem!important;line-height:1.25!important}
+  main[data-page-id] [data-interaction-type="choice"] [data-question-id]{display:grid!important;gap:.25rem!important;margin:0!important;padding:0!important}
+  main[data-page-id] [data-interaction-type="choice"] label{min-height:44px!important;margin:0!important;padding:.25rem .5rem!important;font-size:.75rem!important;line-height:1.2!important}
+  main[data-page-id] [data-interaction-type="choice"] button[data-runtime-submit="true"]{min-height:44px!important;margin:0!important;padding:.375rem .75rem!important}
+  main[data-page-id] [data-visual-primitive]:has([data-block-id]):has([data-interaction-type]){display:flex!important;flex-direction:column!important;gap:clamp(.375rem,1vh,.625rem)!important}
+  main[data-page-id] [data-visual-primitive] *:has(>[data-block-id]){display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:clamp(.375rem,1vh,.625rem)!important}
+  main[data-page-id] [data-visual-primitive] [data-interaction-type]{width:100%!important}
+  main[data-page-id] [data-visual-primitive="timeline"]:has(>.timeline-dot){display:flex!important;flex-direction:column!important;justify-content:space-between!important;max-height:calc(100% - 3rem)!important}
+  main[data-page-id] [data-visual-primitive="timeline"]>.timeline-dot{position:relative!important;top:auto!important;flex:0 0 auto}
+  main[data-page-id] [data-asset-slot-id]{min-height:0!important;max-height:min(30vh,12rem)!important}
+  main[data-page-id] [data-keya-asset-type="icon"]{position:absolute!important;right:.75rem!important;top:.75rem!important;z-index:0!important;width:min(15vw,4.5rem)!important;height:min(15vw,4.5rem)!important;max-width:4.5rem!important;max-height:4.5rem!important;margin:0!important;opacity:.72!important;pointer-events:none!important}
+  main[data-page-id] [data-keya-asset-type="icon"] img{width:100%!important;height:100%!important;max-width:100%!important;max-height:100%!important;object-fit:contain!important}
+  main[data-page-id] [data-keya-asset-role="hero"]:not([data-keya-asset-type="icon"]){min-width:min(32vw,20rem)!important;max-width:min(100%,22rem)!important}
+  main[data-page-id] img[data-asset-slot-id],main[data-page-id] [data-asset-slot-id]>img{width:auto!important;height:auto!important;max-height:min(30vh,12rem)!important;object-fit:contain!important}
+  main[data-page-id] img[data-asset-slot-id][alt=""],main[data-page-id] [data-asset-slot-id][aria-hidden="true"]{position:absolute!important;right:clamp(.5rem,2vw,1.25rem);bottom:clamp(.5rem,2vh,1rem);width:min(18vw,6rem)!important;height:auto!important;margin:0!important;pointer-events:none}
+  main[data-page-id]>[data-asset-slot-id][role="img"]{position:absolute!important;inset:0 0 auto 0!important;z-index:0!important;width:100%!important;height:22%!important;min-height:4rem!important;margin:0!important;opacity:.55!important;background-position:right center!important;background-size:contain!important;background-repeat:no-repeat!important}
+  main[data-page-id]>[data-asset-slot-id][data-keya-asset-role="hero"][role="img"]{width:100%!important;height:32%!important;max-width:100%!important;max-height:none!important;background-size:contain!important}
+  main[data-page-id]>:not([data-asset-slot-id]):not([data-visual-primitive]){position:relative;z-index:1}
+}
+@media (max-width:480px){
+  main[data-page-id]{padding:.5rem!important;gap:clamp(.375rem,1.6vh,.75rem)!important}
+  main[data-page-id] h1{font-size:clamp(1.375rem,7vw,1.75rem)!important}
+  main[data-page-id]>p{font-size:.75rem!important;line-height:1.15!important;margin-block:.125rem!important}
+  main[data-page-id] [data-block-id]{padding:.25rem!important;font-size:.75rem!important;line-height:1.15!important}
+  main[data-page-id] [data-block-id] h2,main[data-page-id] [data-block-id] h3{font-size:.75rem!important;line-height:1.05!important}
+  main[data-page-id] [data-block-id] p{font-size:.75rem!important;line-height:1.15!important}
+  main[data-page-id] [data-block-id] ul,main[data-page-id] [data-block-id] ol{padding-inline-start:.5rem!important}
+  main[data-page-id] [data-block-id] li{font-size:.6875rem!important;line-height:1.1!important}
+  main[data-page-id] *:has(>[data-block-id]){margin-block:0!important;gap:.25rem!important}
+  main[data-page-id] *:has(>[data-interaction-item-id]){grid-template-columns:repeat(auto-fit,minmax(min(4.5rem,22%),1fr))!important}
+  main[data-page-id] [data-interaction-type]{padding:.375rem!important}
+  main[data-page-id] [data-interaction-item-id]{padding:0!important}
+  main[data-page-id] *:has(>[data-block-id]):has(>[data-interaction-type="choice"]){grid-template-columns:minmax(0,1fr)!important}
+  main[data-page-id] *:has(>[data-block-id]):has(>[data-interaction-type="choice"])>[data-block-id]{display:none!important}
+  main[data-page-id] *:has(>[data-block-id]):has(>[data-interaction-type="choice"])>[data-interaction-type="choice"]{grid-column:1!important}
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="choice"]){grid-template-columns:minmax(0,1fr)!important}
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="choice"])>[data-block-id]{display:none!important}
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="choice"])>[data-interaction-type="choice"]{grid-column:1!important}
+  main[data-page-id] [data-interaction-type="choice"]{padding:.25rem!important;font-size:.75rem!important;gap:.25rem!important}
+  main[data-page-id] [data-interaction-type="choice"] label{font-size:.6875rem!important;line-height:1.1!important;padding:.125rem .25rem!important}
+  main[data-page-id] [data-asset-slot-id]{max-height:26vh!important}
+  main[data-page-id] img[data-asset-slot-id],main[data-page-id] [data-asset-slot-id]>img{max-height:26vh!important}
+}
+@media (min-width:600px) and (max-height:520px){
+  main[data-page-id]{padding:.5rem 1rem!important;gap:.5rem!important}
+  main[data-page-id] h1{font-size:clamp(1.5rem,6vh,1.875rem)!important}
+  main[data-page-id] [data-asset-slot-id]{max-height:30vh!important}
+  main[data-page-id]:has(>details[data-block-id]):has(>[data-interaction-type="choice"]){display:grid!important;grid-template-columns:minmax(9rem,.6fr) minmax(0,1.4fr)!important;grid-template-rows:auto repeat(6,minmax(44px,1fr))!important;align-items:stretch!important;gap:.25rem .5rem!important}
+  main[data-page-id]:has(>details[data-block-id]):has(>[data-interaction-type="choice"])>h1{grid-column:1/-1!important;grid-row:1!important}
+  main[data-page-id]:has(>details[data-block-id]):has(>[data-interaction-type="choice"])>details[data-block-id]:not([data-interaction-type]){grid-column:1!important;min-height:0!important}
+  main[data-page-id]:has(>details[data-block-id]):has(>[data-interaction-type="choice"])>details[data-block-id]:nth-of-type(1){grid-row:2!important}
+  main[data-page-id]:has(>details[data-block-id]):has(>[data-interaction-type="choice"])>details[data-block-id]:nth-of-type(2){grid-row:3!important}
+  main[data-page-id]:has(>details[data-block-id]):has(>[data-interaction-type="choice"])>details[data-block-id]:nth-of-type(3){grid-row:4!important}
+  main[data-page-id]:has(>details[data-block-id]):has(>[data-interaction-type="choice"])>details[data-block-id]:nth-of-type(4){grid-row:5!important}
+  main[data-page-id]:has(>details[data-block-id]):has(>[data-interaction-type="choice"])>details[data-block-id]:nth-of-type(5){grid-row:6!important}
+  main[data-page-id]:has(>details[data-block-id]):has(>[data-interaction-type="choice"])>details[data-block-id]:nth-of-type(6){grid-row:7!important}
+  main[data-page-id]:has(>details[data-block-id]):has(>[data-interaction-type="choice"])>[data-interaction-type="choice"]{grid-column:2!important;grid-row:2/8!important;height:100%!important;min-height:0!important;align-self:stretch!important}
+}
+</style>`;
+
 /**
- * DSL 正文是服务端事实，但缺失正文不能在布局完成后机械追加，否则会把
- * 本应重试的生成错误变成超长、重复页面。这里只清理旧恢复节点并转义模型
- * 原样输出的数学比较符；缺失内容交给严格校验反馈后重新生成整页。
+ * HTML 模型负责构图，但固定播放器还有一组不可协商的根画布与低高度边界。
+ * 这里注入窄范围的可信 CSS 护栏，保留模型布局，只约束根尺寸、低高度间距、
+ * 字号和素材上限，避免全宽 16:9 素材自然高度把主操作推出播放器。
+ */
+export function normalizeTrustedPlayerLayout(output: unknown) {
+  if (
+    typeof output !== "string" ||
+    output.includes('data-keya-layout-guard="v21"')
+  ) {
+    return output;
+  }
+
+  const previousGuard =
+    /<style\s+data-keya-layout-guard=["']v\d+["'][^>]*>[\s\S]*?<\/style\s*>/i;
+  if (previousGuard.test(output)) {
+    return output.replace(previousGuard, TRUSTED_PLAYER_LAYOUT_GUARD);
+  }
+
+  const headClose = output.match(/<\/head\s*>/i);
+  if (headClose?.index === undefined) return output;
+  return (
+    output.slice(0, headClose.index) +
+    TRUSTED_PLAYER_LAYOUT_GUARD +
+    output.slice(headClose.index)
+  );
+}
+
+/**
+ * 模型偶尔会把同一个素材槽同时标在语义 wrapper 与其唯一的 img 上。仅当
+ * main 内存在唯一、直接消费已批准 URI 的节点时，将技术槽位标记收敛到
+ * 真实 consumer；若有多个 URI consumer 或标记跨出 main，则保持原样并由
+ * 严格校验拒绝。
+ */
+export function normalizeUniqueReadyAssetSlotRoots(
+  output: unknown,
+  input: HtmlEngineerInput,
+) {
+  if (typeof output !== "string") return output;
+
+  let html = output;
+  for (const result of input.assets ?? []) {
+    if (result.status !== "ready" || !result.asset?.uri) continue;
+    const { assetSlotId } = result.request;
+    const uri = result.asset.uri;
+    let markers = findTagMatchesWithAttributes(html, {
+      "data-asset-slot-id": assetSlotId,
+    });
+    let main = findTagMatchesWithAttributes(html, {
+      "data-page-id": input.content.pageId,
+    }).filter(({ tag }) => /^<main\b/i.test(tag));
+    if (main.length !== 1) continue;
+    if (markers.length > 1) {
+      const directConsumers = markers.filter((marker) => {
+        if (!isOpeningTagInsideElement(html, marker, main[0]!)) return false;
+        const tagName = marker.tag
+          .match(/^<\s*([a-z][\w:-]*)/i)?.[1]
+          ?.toLowerCase();
+        if (
+          tagName === "img" &&
+          hasAttributeValue(marker.tag, "src", uri)
+        ) {
+          return true;
+        }
+        return (
+          findReadyCssAssetConsumer(html, marker, uri)?.index ===
+          marker.index
+        );
+      });
+      if (directConsumers.length !== 1) continue;
+      const consumer = directConsumers[0]!;
+      const allInsideMain = markers.every((marker) =>
+        isOpeningTagInsideElement(html, marker, main[0]!),
+      );
+      if (!allInsideMain) continue;
+
+      for (const marker of [...markers]
+        .filter(({ index }) => index !== consumer.index)
+        .sort((left, right) => right.index - left.index)) {
+        html = replaceOpeningTag(
+          html,
+          marker,
+          removeAttribute(marker.tag, "data-asset-slot-id"),
+        );
+      }
+    }
+
+    markers = findTagMatchesWithAttributes(html, {
+      "data-asset-slot-id": assetSlotId,
+    });
+    main = findTagMatchesWithAttributes(html, {
+      "data-page-id": input.content.pageId,
+    }).filter(({ tag }) => /^<main\b/i.test(tag));
+    if (
+      markers.length !== 1 ||
+      main.length !== 1 ||
+      !isOpeningTagInsideElement(html, markers[0]!, main[0]!)
+    ) {
+      continue;
+    }
+    const slot = input.content.assetSlots.find(
+      ({ id }) => id === assetSlotId,
+    );
+    if (!slot) continue;
+    html = replaceOpeningTag(
+      html,
+      markers[0]!,
+      setAttributeValue(
+        setAttributeValue(
+          markers[0]!.tag,
+          "data-keya-asset-type",
+          slot.type,
+        ),
+        "data-keya-asset-role",
+        slot.role,
+      ),
+    );
+  }
+
+  return html;
+}
+
+/**
+ * DSL 正文是服务端事实，模型只负责布局。对可由稳定 block/item 标记唯一
+ * 定位的改写或遗漏，以可信 DSL 重建该节点内部正文，避免保留模型同义改写
+ * 形成重复内容；无法唯一定位的结构仍交给严格校验。数学比较符同时按 HTML
+ * 文本规则转义。
  */
 export function normalizeTrustedDslMarkup(
   output: unknown,
@@ -35,6 +277,13 @@ export function normalizeTrustedDslMarkup(
 
   const cleaned = removeRedundantRestoredDslMarkup(output, input);
   let html = typeof cleaned === "string" ? cleaned : output;
+  if (input.content.interaction.type !== "choice") {
+    html = restoreTrustedBlockMarkup(html, input.content);
+  }
+  html = restoreTrustedInteractionItemMarkup(html, input.content);
+  html = restoreTrustedInteractionPrompt(html, input.content);
+  html = restoreTrustedNarration(html, input.content);
+
   const requiredText = collectRequiredStaticContentText(input.content);
   for (const text of requiredText) {
     if (/[&<>]/.test(text) && html.includes(text)) {
@@ -42,6 +291,209 @@ export function normalizeTrustedDslMarkup(
     }
   }
   return html;
+}
+
+function restoreTrustedBlockMarkup(
+  html: string,
+  content: PageContentDSL,
+) {
+  let normalized = html;
+  for (const block of content.blocks) {
+    const markers = findTagMatchesWithAttributes(normalized, {
+      "data-block-id": block.id,
+    });
+    if (markers.length !== 1) continue;
+    const element = getElementHtml(normalized, markers[0]!);
+    if (!element) continue;
+    const visible = normalizeVisibleText(element);
+    const required = [
+      block.heading,
+      block.body,
+      ...block.supportingPoints,
+    ];
+    if (required.every((text) => containsTrustedText(visible, text))) {
+      continue;
+    }
+
+    const label =
+      block.label &&
+      normalizeText(block.label) !== normalizeText(block.heading)
+        ? `<span data-keya-trusted-block-label="true">${escapeHtmlText(block.label)}</span>`
+        : "";
+    const points =
+      block.supportingPoints.length > 0
+        ? `<ul>${block.supportingPoints
+            .map((point) => `<li>${escapeHtmlText(point)}</li>`)
+            .join("")}</ul>`
+        : "";
+    normalized = replaceElementInnerHtml(
+      normalized,
+      markers[0]!,
+      `<div data-course-contract-restored="block">${label}<h2>${escapeHtmlText(block.heading)}</h2><p>${escapeHtmlText(block.body)}</p>${points}</div>`,
+    );
+  }
+  return normalized;
+}
+
+function restoreTrustedInteractionItemMarkup(
+  html: string,
+  content: PageContentDSL,
+) {
+  if (
+    content.interaction.type !== "reveal" &&
+    content.interaction.type !== "explore" &&
+    content.interaction.type !== "sort"
+  ) {
+    return html;
+  }
+
+  let normalized = html;
+  for (const [index, item] of content.interaction.items.entries()) {
+    if (
+      content.interaction.type === "reveal" &&
+      isRevealItemRepresentedByBlock(item, content.blocks[index])
+    ) {
+      continue;
+    }
+    const markers = findTagMatchesWithAttributes(normalized, {
+      "data-interaction-item-id": item.id,
+    });
+    if (markers.length !== 1) continue;
+    const marker = markers[0]!;
+    const element = getElementHtml(normalized, marker);
+    if (!element) continue;
+    const visible = normalizeVisibleText(element);
+    if (
+      containsTrustedText(visible, item.label) &&
+      containsTrustedText(visible, item.content)
+    ) {
+      continue;
+    }
+
+    const alignedBlock = content.blocks[index];
+    const blockRoots = alignedBlock
+      ? findTagMatchesWithAttributes(normalized, {
+          "data-block-id": alignedBlock.id,
+        })
+      : [];
+    const containsAlignedBlock =
+      blockRoots.length === 1 &&
+      (blockRoots[0]!.index === marker.index ||
+        isOpeningTagInsideElement(normalized, blockRoots[0]!, marker));
+    if (containsAlignedBlock) {
+      normalized = insertBeforeElementClose(
+        normalized,
+        marker,
+        `<div data-course-contract-restored="interaction-item"><strong>${escapeHtmlText(item.label)}</strong><p>${escapeHtmlText(item.content)}</p></div>`,
+      );
+      continue;
+    }
+
+    const inner = /^<details\b/i.test(marker.tag)
+      ? `<summary>${escapeHtmlText(item.label)}</summary><div data-course-contract-restored="interaction-item">${escapeHtmlText(item.content)}</div>`
+      : `<strong>${escapeHtmlText(item.label)}</strong><p data-course-contract-restored="interaction-item">${escapeHtmlText(item.content)}</p>`;
+    normalized = replaceElementInnerHtml(normalized, marker, inner);
+  }
+  return normalized;
+}
+
+function restoreTrustedInteractionPrompt(
+  html: string,
+  content: PageContentDSL,
+) {
+  const interaction = content.interaction;
+  if (
+    interaction.type === "none" ||
+    interaction.type === "navigate" ||
+    interaction.type === "choice"
+  ) {
+    return html;
+  }
+  const root = findUniqueInteractionRoot(html, content);
+  const rootHtml = root ? getElementHtml(html, root) : undefined;
+  if (
+    !root ||
+    !rootHtml ||
+    containsTrustedText(
+      normalizeVisibleText(rootHtml),
+      interaction.prompt,
+    )
+  ) {
+    return html;
+  }
+
+  return insertAfterOpeningTag(
+    html,
+    root,
+    `<p data-course-contract-restored="interaction-prompt">${escapeHtmlText(interaction.prompt)}</p>`,
+  );
+}
+
+function restoreTrustedNarration(
+  html: string,
+  content: PageContentDSL,
+) {
+  const main = findTagMatchesWithAttributes(html, {
+    "data-page-id": content.pageId,
+  }).filter(({ tag }) => /^<main\b/i.test(tag));
+  if (main.length !== 1) return html;
+  const mainHtml = getElementHtml(html, main[0]!);
+  if (!mainHtml) return html;
+  const visible = normalizeVisibleText(mainHtml);
+  const missing = content.narration.filter(
+    (line) => !containsTrustedText(visible, line),
+  );
+  if (missing.length === 0) return html;
+
+  return insertAfterOpeningTag(
+    html,
+    main[0]!,
+    `<div data-course-contract-restored="narration">${missing
+      .map((line) => `<p>${escapeHtmlText(line)}</p>`)
+      .join("")}</div>`,
+  );
+}
+
+/**
+ * 页面标题来自封口 DSL，不属于模型可改写的文案。pageId 根唯一且已有唯一
+ * h1 时规范化其正文；模型完全漏掉 h1 时在主内容根起始处补入可信标题。
+ * 多个 h1 的歧义结构仍交给严格校验，不猜测哪一个是主标题。
+ */
+export function normalizeTrustedPageTitle(
+  output: unknown,
+  input: Pick<HtmlEngineerInput, "content">,
+) {
+  if (typeof output !== "string") return output;
+
+  const pageRoots = findTagMatchesWithAttributes(output, {
+    "data-page-id": input.content.pageId,
+  });
+  if (pageRoots.length !== 1) return output;
+  const pageHtml = getElementHtml(output, pageRoots[0]!);
+  if (!pageHtml) return output;
+
+  const headings = [...pageHtml.matchAll(/<h1\b([^>]*)>[\s\S]*?<\/h1\s*>/gi)];
+  if (headings.length === 0) {
+    const insertionIndex = pageRoots[0]!.index + pageRoots[0]!.tag.length;
+    const trustedHeading = `<h1 data-keya-trusted-page-title="true">${escapeHtmlText(input.content.title)}</h1>`;
+    return (
+      output.slice(0, insertionIndex) +
+      trustedHeading +
+      output.slice(insertionIndex)
+    );
+  }
+  if (headings.length !== 1) return output;
+  const heading = headings[0]!;
+  if (heading.index === undefined) return output;
+  const openingTag = `<h1${heading[1] ?? ""}>`;
+  const normalizedHeading = `${openingTag}${escapeHtmlText(input.content.title)}</h1>`;
+  const index = pageRoots[0]!.index + heading.index;
+
+  return (
+    output.slice(0, index) +
+    normalizedHeading +
+    output.slice(index + heading[0].length)
+  );
 }
 
 /**
@@ -163,6 +615,25 @@ function insertBeforeElementClose(
   return `${html.slice(0, insertionIndex)}${markup}${html.slice(insertionIndex)}`;
 }
 
+function replaceElementInnerHtml(
+  html: string,
+  marker: OpeningTagMatch,
+  innerHtml: string,
+) {
+  const element = getElementHtml(html, marker);
+  const tagName = marker.tag.match(/^<\s*([a-z][\w:-]*)/i)?.[1];
+  if (!element || !tagName) return html;
+
+  const escapedTagName = tagName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const closing = new RegExp(`</${escapedTagName}\\s*>\\s*$`, "i").exec(
+    element,
+  );
+  if (closing?.index === undefined) return html;
+  const start = marker.index + marker.tag.length;
+  const end = marker.index + closing.index;
+  return `${html.slice(0, start)}${innerHtml}${html.slice(end)}`;
+}
+
 function removeElement(html: string, marker: OpeningTagMatch) {
   const element = getElementHtml(html, marker);
   if (!element) return html;
@@ -225,6 +696,110 @@ export function normalizeNativeInteractionMarker(
     normalizedOpeningTag +
     output.slice(first.index + openingTag.length)
   );
+}
+
+/**
+ * reveal 的 item id 只承担平台运行时定位职责。模型已经逐项生成完整原生
+ * 控件、却漏掉 id 时，按 DSL 的 label 与 content 唯一定位最小控件根并补齐；
+ * 任何文本不完整、候选重叠或一项多解都保持原样交给严格校验。
+ */
+export function normalizeRevealRuntimeMarkers(
+  output: unknown,
+  input: HtmlEngineerInput,
+) {
+  if (
+    typeof output !== "string" ||
+    input.content.version !== 2 ||
+    input.content.interaction.type !== "reveal"
+  ) {
+    return output;
+  }
+
+  const root = findUniqueInteractionRoot(output, input.content);
+  if (!root) return output;
+  const interaction = input.content.interaction;
+  const allTags = findTagMatchesWithAttributes(output, {});
+  const resolved = interaction.items.map((item) => {
+    const existing = findTagMatchesWithAttributes(output, {
+      "data-interaction-item-id": item.id,
+    }).filter((marker) => isOpeningTagInsideElement(output, marker, root));
+    if (existing.length === 1) return existing[0];
+    if (existing.length > 1) return undefined;
+
+    const candidates = allTags
+      .filter(
+        (marker) =>
+          marker.index !== root.index &&
+          /^(?:<details|<section|<article|<div|<li|<button)\b/i.test(
+            marker.tag,
+          ) &&
+          isOpeningTagInsideElement(output, marker, root) &&
+          getAttributeValues(marker.tag, "data-interaction-item-id").length ===
+            0,
+      )
+      .map((marker) => ({
+        marker,
+        element: getElementHtml(output, marker),
+      }))
+      .filter(
+        (
+          candidate,
+        ): candidate is {
+          marker: OpeningTagMatch;
+          element: string;
+        } => Boolean(candidate.element),
+      )
+      .filter(({ element }) => {
+        const visible = normalizeVisibleText(element);
+        return (
+          containsTrustedText(visible, item.label) &&
+          containsTrustedText(visible, item.content)
+        );
+      })
+      .sort((left, right) => left.element.length - right.element.length);
+    if (
+      candidates.length === 0 ||
+      (candidates[1] &&
+        candidates[0]!.element.length === candidates[1].element.length)
+    ) {
+      return undefined;
+    }
+    return candidates[0]!.marker;
+  });
+  if (
+    resolved.some((marker) => !marker) ||
+    new Set(resolved.map((marker) => marker!.index)).size !== resolved.length
+  ) {
+    return output;
+  }
+
+  return resolved
+    .map((marker, index) => ({
+      marker: marker!,
+      item: interaction.items[index]!,
+    }))
+    .filter(
+      ({ marker, item }) =>
+        !hasAttributeValue(
+          marker.tag,
+          "data-interaction-item-id",
+          item.id,
+        ),
+    )
+    .sort((left, right) => right.marker.index - left.marker.index)
+    .reduce(
+      (html, { marker, item }) =>
+        replaceOpeningTag(
+          html,
+          marker,
+          setAttributeValue(
+            marker.tag,
+            "data-interaction-item-id",
+            item.id,
+          ),
+        ),
+      output,
+    );
 }
 
 /**
@@ -674,7 +1249,8 @@ export function normalizeVisualPrimitiveMarker(
     !assetMarkers.some(
       (assetMarker) =>
         marker.index === assetMarker.index ||
-        isOpeningTagInsideElement(output, marker, assetMarker),
+        (assetMarker.index !== main.index &&
+          isOpeningTagInsideElement(output, marker, assetMarker)),
     );
 
   const exact = findTagMatchesWithAttributes(output, {
@@ -686,6 +1262,17 @@ export function normalizeVisualPrimitiveMarker(
     ({ tag }) => getAttributeValues(tag, "data-visual-primitive").length > 0,
   );
   if (declared.length === 1) {
+    if (!isTrustedCandidate(declared[0]!)) {
+      const cleaned = replaceOpeningTag(
+        output,
+        declared[0]!,
+        removeAttribute(
+          declared[0]!.tag,
+          "data-visual-primitive",
+        ),
+      );
+      return normalizeVisualPrimitiveMarker(cleaned, input);
+    }
     const declaredValue = getAttributeValues(
       declared[0].tag,
       "data-visual-primitive",
@@ -723,10 +1310,140 @@ export function normalizeVisualPrimitiveMarker(
     );
   }
 
+  const interactionContainer = findVisualInteractionContainer(
+    output,
+    allTags,
+    input.content,
+    isTrustedCandidate,
+  );
+  if (interactionContainer) {
+    return replaceOpeningTag(
+      output,
+      interactionContainer,
+      setAttributeValue(
+        interactionContainer.tag,
+        "data-visual-primitive",
+        expected,
+      ),
+    );
+  }
+
+  const blockContainer = findVisualBlockContainer(
+    output,
+    allTags,
+    input.content,
+    isTrustedCandidate,
+  );
+  if (blockContainer) {
+    return replaceOpeningTag(
+      output,
+      blockContainer,
+      setAttributeValue(
+        blockContainer.tag,
+        "data-visual-primitive",
+        expected,
+      ),
+    );
+  }
+
   const fallback = buildVisualPrimitiveFallback(input.content, expected);
   return fallback
     ? insertBeforeElementClose(output, main, fallback)
     : output;
+}
+
+/**
+ * timeline/comparison 等页面常把代码原生图示直接实现成一组可操作节点。只在
+ * 全部稳定 interaction item 都唯一存在时，选择包含它们的最小非素材容器；
+ * 外层互动区和单个 item 都不会被误标。
+ */
+function findVisualInteractionContainer(
+  html: string,
+  allTags: OpeningTagMatch[],
+  content: PageContentDSL,
+  isTrustedCandidate: (marker: OpeningTagMatch) => boolean,
+) {
+  const itemIds =
+    content.interaction.type === "reveal" ||
+    content.interaction.type === "explore" ||
+    content.interaction.type === "sort"
+      ? content.interaction.items.map(({ id }) => id)
+      : [];
+  if (itemIds.length < 2) return undefined;
+
+  const itemMarkers = itemIds.map((id) =>
+    findTagMatchesWithAttributes(html, {
+      "data-interaction-item-id": id,
+    }),
+  );
+  if (itemMarkers.some((markers) => markers.length !== 1)) return undefined;
+  const items = itemMarkers.map(([marker]) => marker!);
+  const candidates = allTags
+    .filter(
+      (marker) =>
+        /^(?:<section|<div|<figure|<ol|<ul)\b/i.test(marker.tag) &&
+        isTrustedCandidate(marker) &&
+        items.every((item) =>
+          isOpeningTagInsideElement(html, item, marker),
+        ),
+    )
+    .map((marker) => ({
+      marker,
+      size: getElementHtml(html, marker)?.length ?? Number.MAX_SAFE_INTEGER,
+    }))
+    .sort((left, right) => left.size - right.size);
+  if (
+    candidates.length === 0 ||
+    (candidates[1] && candidates[0]!.size === candidates[1].size)
+  ) {
+    return undefined;
+  }
+  return candidates[0]!.marker;
+}
+
+/**
+ * comparison、process 等页面常已用稳定内容块构成代码原生图示，只是模型把
+ * primitive 错标在图片上或漏标。若至少两个 block 都唯一存在，则选择完整
+ * 包含它们的最小非素材容器作为图示根，避免再追加一份重复的兜底摘要。
+ */
+function findVisualBlockContainer(
+  html: string,
+  allTags: OpeningTagMatch[],
+  content: PageContentDSL,
+  isTrustedCandidate: (marker: OpeningTagMatch) => boolean,
+) {
+  if (content.blocks.length < 2) return undefined;
+  const blockMarkers = content.blocks.map(({ id }) =>
+    findTagMatchesWithAttributes(html, {
+      "data-block-id": id,
+    }),
+  );
+  if (blockMarkers.some((markers) => markers.length !== 1)) return undefined;
+  const blocks = blockMarkers.map(([marker]) => marker!);
+  const candidates = allTags
+    .filter(
+      (marker) =>
+        /^(?:<section|<div|<figure|<article|<ol|<ul)\b/i.test(
+          marker.tag,
+        ) &&
+        isTrustedCandidate(marker) &&
+        !blocks.some(({ index }) => index === marker.index) &&
+        blocks.every((block) =>
+          isOpeningTagInsideElement(html, block, marker),
+        ),
+    )
+    .map((marker) => ({
+      marker,
+      size: getElementHtml(html, marker)?.length ?? Number.MAX_SAFE_INTEGER,
+    }))
+    .sort((left, right) => left.size - right.size);
+  if (
+    candidates.length === 0 ||
+    (candidates[1] && candidates[0]!.size === candidates[1].size)
+  ) {
+    return undefined;
+  }
+  return candidates[0]!.marker;
 }
 
 function buildVisualPrimitiveFallback(
@@ -865,9 +1582,9 @@ export function setAttributeValue(
 }
 
 /**
- * CSS 背景的可访问名称来自服务端已批准的 Asset.altText。模型常会对
- * aria-label 做同义改写，导致相同输入在重试时重复失败；这里仅把已经
- * 唯一绑定到真实素材槽的 CSS consumer 规范化，再交给原严格校验器复验。
+ * 素材的可访问名称来自服务端已批准的 Asset.altText。模型常会做同义改写，
+ * 导致相同输入在重试时重复失败；这里只规范化已经唯一绑定的 img 或 CSS
+ * consumer，再交给原严格校验器复验。
  */
 export function normalizeReadyCssBackgroundAccessibility(
   output: unknown,
@@ -900,7 +1617,30 @@ export function normalizeReadyCssBackgroundAccessibility(
           assetSlotId,
           result.asset.uri,
         );
-    if (directImage || descendantImage) continue;
+    const altText = result.asset.altText ?? "";
+    if (directImage) {
+      html = replaceOpeningTagAt(
+        html,
+        marker.index,
+        marker.tag,
+        setAttributeValue(marker.tag, "alt", altText),
+      );
+      continue;
+    }
+    if (descendantImage) {
+      const elementHtml = getElementHtml(html, marker);
+      const localIndex = elementHtml?.indexOf(descendantImage) ?? -1;
+      if (localIndex >= 0) {
+        const index = marker.index + localIndex;
+        html = replaceOpeningTagAt(
+          html,
+          index,
+          descendantImage,
+          setAttributeValue(descendantImage, "alt", altText),
+        );
+      }
+      continue;
+    }
 
     const cssConsumer = findReadyCssAssetConsumer(
       html,
@@ -909,7 +1649,6 @@ export function normalizeReadyCssBackgroundAccessibility(
     );
     if (!cssConsumer) continue;
 
-    const altText = result.asset.altText ?? "";
     if (hasAccessibleBackgroundContract(cssConsumer.tag, altText)) continue;
 
     const normalizedTag = setBackgroundAccessibility(cssConsumer.tag, altText);
@@ -920,4 +1659,17 @@ export function normalizeReadyCssBackgroundAccessibility(
   }
 
   return html;
+}
+
+function replaceOpeningTagAt(
+  html: string,
+  index: number,
+  currentTag: string,
+  nextTag: string,
+) {
+  return (
+    html.slice(0, index) +
+    nextTag +
+    html.slice(index + currentTag.length)
+  );
 }

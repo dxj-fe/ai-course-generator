@@ -46,7 +46,7 @@ describe("Page Writer prompts", () => {
       },
     });
 
-    expect(prompts.version).toBe("3.0.0/3.0.0");
+    expect(prompts.version).toBe("3.4.0/3.0.0");
     expect(prompts.systemPrompt).toContain(
       "首轮结果应当已经值得交付",
     );
@@ -60,10 +60,22 @@ describe("Page Writer prompts", () => {
       "固定画布不是字符竞赛",
     );
     expect(prompts.systemPrompt).toContain(
+      "模板没有声明的槽必须返回空数组",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "不得受下面“通常使用 2–4 个 blocks”的一般建议影响",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "`visualPriority` 和 `groupingStrategy` 各自是一句简洁字符串",
+    );
+    expect(prompts.systemPrompt).toContain(
       "`contentDensity` 只能是 `sparse`、`balanced`、`dense`",
     );
     expect(prompts.systemPrompt).toContain(
       "choice 只保留最能检验核心判断依据的一题",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "支持性 blocks 只取模板允许的最小充分数量",
     );
     expect(prompts.systemPrompt).toContain(
       "不要无方向扩写",

@@ -175,6 +175,32 @@ export function failure(
   };
 }
 
+const RECOVERABLE_MODEL_STEP_CODES = new Set([
+  "MODEL_ERROR",
+  "MODEL_STEP_EXECUTION_ERROR",
+  "MODEL_STEP_OUTPUT_MISSING",
+  "RATE_LIMIT_ERROR",
+  "SCHEMA_ERROR",
+  "TIMEOUT_ERROR",
+]);
+
+/**
+ * ModelStep 会把 Provider 异常投影成可序列化 state.error。跨过工具适配层时
+ * 保留错误码，避免重新 new Error 后丢失“可重试”语义并误杀整个课程。
+ */
+export class PageBuilderModelStepError extends Error {
+  readonly retryable: boolean;
+
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "PageBuilderModelStepError";
+    this.retryable = RECOVERABLE_MODEL_STEP_CODES.has(code);
+  }
+}
+
 export async function recoverableModelStep<Data>(
   execute: () => Promise<Data>,
   abortSignal: AbortSignal | undefined,
@@ -191,6 +217,16 @@ export async function recoverableModelStep<Data>(
     };
   } catch (error) {
     throwIfAgentAborted(abortSignal);
+    if (error instanceof PageBuilderModelStepError) {
+      if (!error.retryable) {
+        throw new FatalAgentRuntimeError(code, message, error);
+      }
+      return failure(
+        code,
+        message,
+        [error.message.slice(0, 500)],
+      );
+    }
     if (!isRetryableModelError(error)) {
       throw new FatalAgentRuntimeError(code, message, error);
     }

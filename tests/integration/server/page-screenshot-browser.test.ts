@@ -1,0 +1,423 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { capturePageScreenshot } from "../../../src/server/infra/browser/page-screenshot";
+import { normalizeTrustedPlayerLayout } from "../../../src/server/agent/plugins/model-steps/course/html-engineer-normalizers";
+import {
+  PageContentDSLSchema,
+  type PageContentDSL,
+} from "../../../src/shared/course-schema";
+import { getFunctionalTemplateDslExample } from "../../../src/shared/templates/functional";
+
+describe.runIf(process.env.KEYA_BROWSER_INTEGRATION === "true")(
+  "真实浏览器截图 QA",
+  () => {
+    let rootDir = "";
+
+    beforeAll(async () => {
+      rootDir = await mkdtemp(
+        path.join(tmpdir(), "keya-page-screenshot-browser-"),
+      );
+    });
+
+    afterAll(async () => {
+      if (rootDir) {
+        await rm(rootDir, { recursive: true, force: true });
+      }
+    });
+
+    it(
+      "可点击隐藏原生控件的可见 label，并忽略素材画框中的预期裁切",
+      async () => {
+        const content = choiceContent();
+        const result = await capturePageScreenshot(
+          {
+            pageId: content.pageId,
+            content,
+            html: choiceHtml(content),
+            traceId: "trace-browser-choice-label",
+          },
+          {
+            enabled: true,
+            rootDir,
+            timeoutMs: 12_000,
+          },
+        );
+
+        expect(result.evidence.captures).toHaveLength(3);
+        for (const capture of result.evidence.captures ?? []) {
+          expect(capture.status).toBe("captured");
+          expect(capture.metrics).toMatchObject({
+            clippedElementCount: 0,
+            interactionSubmitTested: true,
+            interactionFeedbackVisible: true,
+          });
+        }
+        expect(result.issues.map(({ code }) => code)).not.toEqual(
+          expect.arrayContaining([
+            "BROWSER_CONTENT_CLIPPED",
+            "BROWSER_INTERACTION_SUBMIT_UNTESTED",
+          ]),
+        );
+      },
+      30_000,
+    );
+
+    it(
+      "保留绝对定位封面的作者 max-width，不由布局护栏制造横向溢出",
+      async () => {
+        const html = normalizeTrustedPlayerLayout(
+          `<!doctype html>
+<html lang="zh-CN" data-keya-canvas-mode="fluid">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>课程封面</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, main { width: 100%; height: 100%; }
+    body { padding: 2rem; }
+    main { position: relative; }
+    .content { position: absolute; top: 50%; left: 5vw; transform: translateY(-50%); max-width: 40%; }
+  </style>
+</head>
+<body>
+  <main data-page-id="page-cover">
+    <div class="content">
+      <h1>认识 AI，安全使用</h1>
+      <p>认识能力边界、核验事实，并保护个人信息。</p>
+      <button data-interaction-type="navigate" data-interaction-id="interaction-page-cover">开始学习</button>
+    </div>
+  </main>
+</body>
+</html>`,
+        );
+        if (typeof html !== "string") {
+          throw new Error("布局护栏必须返回 HTML 字符串。");
+        }
+
+        const result = await capturePageScreenshot(
+          {
+            pageId: "page-cover",
+            html,
+            traceId: "trace-browser-positioned-cover",
+          },
+          {
+            enabled: true,
+            rootDir,
+            timeoutMs: 12_000,
+          },
+        );
+
+        for (const capture of result.evidence.captures ?? []) {
+          expect(capture.status).toBe("captured");
+          expect(capture.metrics?.horizontalOverflowPx).toBe(0);
+          expect(capture.metrics?.mainViewportCoverageRatio).toBe(1);
+        }
+      },
+      30_000,
+    );
+
+    it(
+      "低高度画布中的折叠知识块不因 wrapper 与 details 双重内边距溢出",
+      async () => {
+        const blocks = Array.from(
+          { length: 4 },
+          (_, index) =>
+            `<div data-block-id="block-0${index + 1}"><details><summary>知识点 ${index + 1}</summary><p>按需展开的详细解释。</p></details></div>`,
+        ).join("");
+        const items = Array.from(
+          { length: 3 },
+          (_, index) =>
+            `<details data-interaction-item-id="item-0${index + 1}"><summary>对比项 ${index + 1}</summary><p>用于区分概念的短解释。</p></details>`,
+        ).join("");
+        const html = normalizeTrustedPlayerLayout(
+          `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>核心概念对比</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, main { width: 100%; height: 100%; }
+    main { padding: 2rem 1.5rem; }
+    [data-block-id] { margin-bottom: 2rem; }
+    [data-block-id] > details, [data-interaction-item-id] { padding: 1.5rem; }
+    [data-interaction-type="reveal"] { margin-top: 2rem; padding: 1.5rem; }
+  </style>
+</head>
+<body>
+  <main data-page-id="page-dense-reveal">
+    <h1>核心概念对比</h1>
+    ${blocks}
+    <section data-interaction-type="reveal" data-interaction-id="interaction-page-dense-reveal">
+      <p>逐项揭示区别</p>
+      <div>${items}</div>
+    </section>
+  </main>
+</body>
+</html>`,
+        );
+        if (typeof html !== "string") {
+          throw new Error("布局护栏必须返回 HTML 字符串。");
+        }
+
+        const result = await capturePageScreenshot(
+          {
+            pageId: "page-dense-reveal",
+            html,
+            traceId: "trace-browser-dense-reveal",
+          },
+          {
+            enabled: true,
+            rootDir,
+            timeoutMs: 12_000,
+          },
+        );
+
+        for (const capture of result.evidence.captures ?? []) {
+          expect(capture.status).toBe("captured");
+          expect(capture.metrics?.horizontalOverflowPx).toBe(0);
+          expect(capture.metrics?.verticalOverflowPx).toBe(0);
+        }
+      },
+      30_000,
+    );
+
+    it(
+      "blocks 与 sort 由嵌套分组承载时在低高度画布切为依据列和任务列",
+      async () => {
+        const blocks = Array.from(
+          { length: 3 },
+          (_, index) =>
+            `<details data-block-id="block-0${index + 1}"><summary>环境依据 ${index + 1}</summary><p>按需展开的完整比较依据。</p></details>`,
+        ).join("");
+        const items = Array.from(
+          { length: 3 },
+          (_, index) =>
+            `<details data-interaction-item-id="item-0${index + 1}"><summary>挑战 ${index + 1}</summary><p>用于排序的关键依据。</p></details>`,
+        ).join("");
+        const html = normalizeTrustedPlayerLayout(
+          `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>生存挑战分析</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, main { width: 100%; height: 100%; }
+    main { padding: 2rem 0; }
+    .content { padding-left: 40%; padding-right: 1.5rem; }
+    h1 { margin-bottom: 1rem; font-size: 2.5rem; }
+    .narration, .blocks { margin-bottom: 2.5rem; }
+    .blocks { display: flex; flex-direction: column; gap: 1.25rem; }
+    [data-block-id], [data-interaction-type="sort"] { padding: 1.25rem; }
+    [data-interaction-item-id] { padding: 1rem; margin-bottom: 1.25rem; }
+  </style>
+</head>
+<body>
+  <main data-page-id="page-sort-comparison">
+    <div class="content">
+      <h1>生存挑战分析</h1>
+      <div class="narration">先查看环境依据，再完成挑战排序。</div>
+      <div class="blocks">${blocks}</div>
+      <section data-interaction-type="sort" data-interaction-id="interaction-page-sort-comparison">
+        <h2>挑战排序</h2>
+        <p>按紧急程度排序</p>
+        <div>${items}</div>
+        <button data-runtime-submit="true">提交排序</button>
+        <p data-feedback-kind="success" hidden>排序依据正确。</p>
+        <p data-feedback-kind="retry" hidden>重新检查生存时限。</p>
+      </section>
+    </div>
+  </main>
+</body>
+</html>`,
+        );
+        if (typeof html !== "string") {
+          throw new Error("布局护栏必须返回 HTML 字符串。");
+        }
+
+        const result = await capturePageScreenshot(
+          {
+            pageId: "page-sort-comparison",
+            html,
+            traceId: "trace-browser-sort-comparison",
+          },
+          {
+            enabled: true,
+            rootDir,
+            timeoutMs: 12_000,
+          },
+        );
+
+        for (const capture of result.evidence.captures ?? []) {
+          expect(capture.status).toBe("captured");
+          expect(capture.metrics?.horizontalOverflowPx).toBe(0);
+          expect(capture.metrics?.verticalOverflowPx).toBe(0);
+        }
+      },
+      30_000,
+    );
+
+    it(
+      "blocks 与 sort 都是 main 直接子节点时在低高度画布保持双栏且无溢出",
+      async () => {
+        const blocks = Array.from(
+          { length: 3 },
+          (_, index) =>
+            `<details data-block-id="block-0${index + 1}"><summary>环境依据 ${index + 1}</summary><p>按需展开的完整比较依据。</p></details>`,
+        ).join("");
+        const items = Array.from(
+          { length: 3 },
+          (_, index) =>
+            `<details data-interaction-item-id="item-0${index + 1}"><summary>挑战 ${index + 1}</summary><p>用于排序的关键依据。</p></details>`,
+        ).join("");
+        const html = normalizeTrustedPlayerLayout(
+          `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>生存挑战分析</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, main { width: 100%; height: 100%; }
+    main { padding: 2rem; }
+    h1 { margin-bottom: 1rem; font-size: 2.5rem; }
+    .narration { margin-bottom: 2.5rem; }
+    [data-block-id], [data-interaction-type="sort"] { padding: 1.25rem; margin-bottom: 1.25rem; }
+    [data-interaction-item-id] { padding: 1rem; margin-bottom: 1.25rem; }
+  </style>
+</head>
+<body>
+  <main data-page-id="page-direct-sort">
+    <h1>生存挑战分析</h1>
+    <div class="narration">先查看环境依据，再完成挑战排序。</div>
+    ${blocks}
+    <section data-interaction-type="sort" data-interaction-id="interaction-page-direct-sort">
+      <h2>挑战排序</h2>
+      <p>按紧急程度排序</p>
+      <div>${items}</div>
+      <button data-runtime-submit="true">提交排序</button>
+      <p data-feedback-kind="success" hidden>排序依据正确。</p>
+      <p data-feedback-kind="retry" hidden>重新检查生存时限。</p>
+    </section>
+  </main>
+</body>
+</html>`,
+        );
+        if (typeof html !== "string") {
+          throw new Error("布局护栏必须返回 HTML 字符串。");
+        }
+
+        const result = await capturePageScreenshot(
+          {
+            pageId: "page-direct-sort",
+            html,
+            traceId: "trace-browser-direct-sort",
+          },
+          {
+            enabled: true,
+            rootDir,
+            timeoutMs: 12_000,
+          },
+        );
+
+        for (const capture of result.evidence.captures ?? []) {
+          expect(capture.status).toBe("captured");
+          expect(capture.metrics?.horizontalOverflowPx).toBe(0);
+          expect(capture.metrics?.verticalOverflowPx).toBe(0);
+        }
+      },
+      30_000,
+    );
+  },
+);
+
+function choiceContent() {
+  const example = getFunctionalTemplateDslExample("interactive-quiz");
+  if (!example || example.interaction.type !== "choice") {
+    throw new Error("interactive-quiz 示例必须包含 choice interaction。");
+  }
+  const question = example.interaction.questions[0];
+  if (!question) throw new Error("choice 示例必须至少包含一道题。");
+
+  return PageContentDSLSchema.parse({
+    ...example,
+    version: 2,
+    interaction: {
+      type: "choice",
+      questions: [question],
+    },
+    runtime: {
+      runtimeVersion: 1,
+      sceneKind: "practice",
+      visualPrimitive: "none",
+      motionPlan: {
+        intensity: "none",
+        cuePoints: [],
+      },
+      completionRule: {
+        type: "correct-answer",
+        interactionId: `interaction-${example.pageId}`,
+      },
+    },
+  });
+}
+
+function choiceHtml(content: PageContentDSL) {
+  if (content.interaction.type !== "choice") {
+    throw new Error("测试内容必须是 choice interaction。");
+  }
+  const question = content.interaction.questions[0]!;
+  const options = question.options
+    .map(
+      (option) =>
+        `<label class="choice-option"><input type="radio" name="${question.id}" value="${option.id}"><span>${option.label}</span></label>`,
+    )
+    .join("");
+
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${content.title}</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; }
+    body { font: 16px/1.4 system-ui, sans-serif; }
+    main { position: relative; width: 100%; height: 100%; padding: 12px; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 8px; }
+    h1 { margin: 0; font-size: 24px; }
+    [data-interaction-type="choice"] { min-height: 0; padding: 10px; border: 1px solid #889; border-radius: 12px; }
+    fieldset { margin: 0 0 8px; padding: 8px; }
+    .choice-option { min-height: 44px; display: flex; align-items: center; margin: 4px 0; padding: 6px 10px; border: 1px solid #ccd; border-radius: 8px; cursor: pointer; }
+    .choice-option input { position: absolute; width: 1px; height: 1px; opacity: .001; }
+    button { min-width: 44px; min-height: 44px; }
+    .asset-crop { position: absolute; right: 8px; top: 8px; width: 48px; height: 20px; overflow: hidden; opacity: .1; pointer-events: none; }
+    .asset-crop > span { display: block; width: 160px; height: 20px; }
+  </style>
+</head>
+<body>
+  <main data-page-id="${content.pageId}">
+    <h1>${content.title}</h1>
+    <section data-interaction-type="choice" data-interaction-id="interaction-${content.pageId}">
+      <fieldset data-question-id="${question.id}">
+        <legend>${question.prompt}</legend>
+        ${options}
+      </fieldset>
+      <button type="button" data-runtime-submit="true">提交答案</button>
+      <p data-feedback-kind="success" hidden>${question.feedback.success}</p>
+      <p data-feedback-kind="retry" hidden>${question.feedback.retry}</p>
+    </section>
+    <div class="asset-crop" data-asset-slot-id="asset-slot-99" aria-hidden="true"><span></span></div>
+  </main>
+</body>
+</html>`;
+}

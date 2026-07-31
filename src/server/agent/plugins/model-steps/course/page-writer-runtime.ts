@@ -112,7 +112,7 @@ function visualPrimitiveForPage(
   if (/步骤|流程|过程|阶段|控制|循环|遍历|条件/.test(searchable)) {
     return "process";
   }
-  return page.pageType === "knowledge_card" ? "concept-map" : "none";
+  return "none";
 }
 
 function interactionTargetIds(interaction: PageContentInteraction) {
@@ -150,4 +150,3 @@ export function selectPageReferenceContext(input: PageWriterInput) {
     ];
   });
 }
-

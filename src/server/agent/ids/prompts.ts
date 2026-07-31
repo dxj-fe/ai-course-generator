@@ -1,6 +1,6 @@
 export const PromptIds = {
   CourseArchitectSystemV1: "course.architect.system.v1",
-  CourseDirectorSystemV1: "course.director.system.v1",
+  CourseDirectorSystemV2: "course.director.system.v2",
   CoursePageBuilderSystemV1: "course.page-builder.system.v1",
   CourseReviewerSystemV1: "course.reviewer.system.v1",
   CoursePedagogySystemV2: "course.model-step.pedagogy.system.v2",

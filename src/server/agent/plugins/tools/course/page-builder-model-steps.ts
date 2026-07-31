@@ -5,6 +5,7 @@ import { runPageWriterModelStep } from "@/server/agent/plugins/model-steps/cours
 import type { PageWriterCourseContext } from "@/server/agent/plugins/model-steps/course/page-writer-model-step";
 import { runRepairModelStep } from "@/server/agent/plugins/model-steps/course/repair-model-step";
 import { runImageAssetWorkflow } from "@/server/agent/plugins/tools/course/image-assets";
+import { PageBuilderModelStepError } from "@/server/agent/plugins/tools/course/page-builder-support";
 import type {
   AssetGenerationResult,
   HtmlOutput,
@@ -47,7 +48,6 @@ export type PageBuilderModelSteps = {
     execution: PageBuilderExecution;
     content: PageContentDSL;
     assets: AssetGenerationResult[];
-    renderMode?: "model" | "deterministic";
     validationFeedback?: string[];
     abortSignal?: AbortSignal;
   }): Promise<HtmlOutput>;
@@ -91,7 +91,8 @@ export const defaultPageBuilderModelSteps: PageBuilderModelSteps = {
       },
     );
     if (state.status !== "completed" || !state.content) {
-      throw new Error(
+      throw new PageBuilderModelStepError(
+        state.error?.code ?? "MODEL_STEP_OUTPUT_MISSING",
         state.error?.message ?? "Page Writer 没有返回内容",
       );
     }
@@ -110,7 +111,8 @@ export const defaultPageBuilderModelSteps: PageBuilderModelSteps = {
       },
     );
     if (state.status !== "completed" || !state.results) {
-      throw new Error(
+      throw new PageBuilderModelStepError(
+        state.error?.code ?? "MODEL_STEP_OUTPUT_MISSING",
         state.error?.message ?? "素材工作流没有返回结果",
       );
     }
@@ -126,7 +128,6 @@ export const defaultPageBuilderModelSteps: PageBuilderModelSteps = {
         pageDesignGuidance: buildPageDesignGuidance(
           input.execution,
         ),
-        renderMode: input.renderMode,
         validationFeedback: input.validationFeedback
           ? {
               code: "PAGE_FIX_REVIEW_FEEDBACK",
@@ -140,7 +141,8 @@ export const defaultPageBuilderModelSteps: PageBuilderModelSteps = {
       },
     );
     if (state.status !== "completed" || !state.htmlOutput) {
-      throw new Error(
+      throw new PageBuilderModelStepError(
+        state.error?.code ?? "MODEL_STEP_OUTPUT_MISSING",
         state.error?.message ?? "HTML Engineer 没有返回页面",
       );
     }
@@ -188,7 +190,8 @@ export const defaultPageBuilderModelSteps: PageBuilderModelSteps = {
       },
     );
     if (state.status !== "completed" || !state.report) {
-      throw new Error(
+      throw new PageBuilderModelStepError(
+        state.error?.code ?? "MODEL_STEP_OUTPUT_MISSING",
         state.error?.message ?? "Page QA 没有返回报告",
       );
     }
@@ -201,7 +204,8 @@ export const defaultPageBuilderModelSteps: PageBuilderModelSteps = {
       abortSignal: input.abortSignal,
     });
     if (state.status !== "completed" || !state.result) {
-      throw new Error(
+      throw new PageBuilderModelStepError(
+        state.error?.code ?? "MODEL_STEP_OUTPUT_MISSING",
         state.error?.message ?? "修复模型步骤没有返回结果",
       );
     }

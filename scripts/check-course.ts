@@ -15,10 +15,9 @@ import {
   type CourseGenerationState,
 } from "@/shared/course-schema";
 
-const ExpectedOutlineSlotSchema = z
+const ExpectedCourseRoleSchema = z
   .object({
-    order: z.number().int().positive(),
-    purpose: z.string().min(2).max(120),
+    label: z.string().min(2).max(120),
     allowedPageTypes: z.array(z.string().min(1)).min(1),
     allowedInteractionTypes: z.array(z.string().min(1)).min(1),
   })
@@ -33,7 +32,7 @@ const RequiredConceptSchema = z
 
 export const DemoBaselineSchema = z
   .object({
-    version: z.literal(1),
+    version: z.literal(2),
     id: z
       .string()
       .min(2)
@@ -42,7 +41,10 @@ export const DemoBaselineSchema = z
     name: z.string().min(2).max(120),
     prompt: z.string().min(10).max(4_000),
     pageCount: z.union([z.literal(3), z.literal(4), z.literal(5)]),
-    expectedOutline: z.array(ExpectedOutlineSlotSchema).min(3).max(5),
+    expectedCourseRoles: z
+      .array(ExpectedCourseRoleSchema)
+      .min(2)
+      .max(8),
     requiredConcepts: z.array(RequiredConceptSchema).min(2).max(12),
     quality: z
       .object({
@@ -58,25 +60,7 @@ export const DemoBaselineSchema = z
       })
       .strict(),
   })
-  .strict()
-  .superRefine((baseline, context) => {
-    if (baseline.expectedOutline.length !== baseline.pageCount) {
-      context.addIssue({
-        code: "custom",
-        message: "expectedOutline 必须逐页覆盖 pageCount",
-        path: ["expectedOutline"],
-      });
-    }
-    baseline.expectedOutline.forEach((slot, index) => {
-      if (slot.order !== index + 1) {
-        context.addIssue({
-          code: "custom",
-          message: `expectedOutline 第 ${index + 1} 项的 order 必须为 ${index + 1}`,
-          path: ["expectedOutline", index, "order"],
-        });
-      }
-    });
-  });
+  .strict();
 
 export type DemoBaseline = z.infer<typeof DemoBaselineSchema>;
 
@@ -121,6 +105,7 @@ export type DemoCheckReport = {
     archiveEntryCount: number;
   };
   issues: DemoCheckIssue[];
+  warnings: DemoCheckIssue[];
 };
 
 type CheckDemoCourseInput = {
@@ -135,6 +120,7 @@ export function checkDemoCourse(input: CheckDemoCourseInput): DemoCheckReport {
   const baseline = DemoBaselineSchema.parse(input.baseline);
   const parsedCourse = CourseGenerationStateSchema.safeParse(input.course);
   const issues: DemoCheckIssue[] = [];
+  const warnings: DemoCheckIssue[] = [];
   const archiveEntries = input.archiveBytes
     ? readZipCentralDirectoryEntries(input.archiveBytes, issues)
     : [];
@@ -149,6 +135,7 @@ export function checkDemoCourse(input: CheckDemoCourseInput): DemoCheckReport {
     return reportFor({
       baseline,
       issues,
+      warnings,
       archiveEntries,
       now: input.now,
     });
@@ -183,7 +170,7 @@ export function checkDemoCourse(input: CheckDemoCourseInput): DemoCheckReport {
   if (course.outline) {
     checkOutline(course, baseline, issues);
   }
-  checkPages(course, baseline, issues);
+  checkPages(course, baseline, issues, warnings);
   checkArchive(course, input.archiveBytes, archiveEntries, issues);
 
   const scores = course.pages.flatMap((page) =>
@@ -193,6 +180,7 @@ export function checkDemoCourse(input: CheckDemoCourseInput): DemoCheckReport {
     baseline,
     course,
     issues,
+    warnings,
     archiveEntries,
     now: input.now,
     minimumOverallScore:
@@ -213,27 +201,19 @@ function checkOutline(
     });
   }
 
-  for (const slot of baseline.expectedOutline) {
-    const page = outline.pages.find(({ order }) => order === slot.order);
-    if (!page) {
+  for (const role of baseline.expectedCourseRoles) {
+    const matchingPage = outline.pages.find(
+      (page) =>
+        role.allowedPageTypes.includes(page.pageType) &&
+        role.allowedInteractionTypes.includes(page.interactionType),
+    );
+    if (!matchingPage) {
       issues.push({
-        code: "OUTLINE_SLOT_MISSING",
-        message: `大纲缺少第 ${slot.order} 页（${slot.purpose}）。`,
-      });
-      continue;
-    }
-    if (!slot.allowedPageTypes.includes(page.pageType)) {
-      issues.push({
-        code: "OUTLINE_PAGE_TYPE_MISMATCH",
-        pageId: page.id,
-        message: `第 ${slot.order} 页应承担“${slot.purpose}”，允许页型为 ${slot.allowedPageTypes.join("/")}，实际为 ${page.pageType}。`,
-      });
-    }
-    if (!slot.allowedInteractionTypes.includes(page.interactionType)) {
-      issues.push({
-        code: "OUTLINE_INTERACTION_MISMATCH",
-        pageId: page.id,
-        message: `第 ${slot.order} 页允许交互为 ${slot.allowedInteractionTypes.join("/")}，实际为 ${page.interactionType}。`,
+        code: "OUTLINE_ROLE_MISSING",
+        message:
+          `大纲缺少“${role.label}”这一课程能力；` +
+          `允许页型为 ${role.allowedPageTypes.join("/")}，` +
+          `允许交互为 ${role.allowedInteractionTypes.join("/")}。`,
       });
     }
   }
@@ -265,6 +245,7 @@ function checkPages(
   course: CourseGenerationState,
   baseline: DemoBaseline,
   issues: DemoCheckIssue[],
+  warnings: DemoCheckIssue[],
 ) {
   for (const page of course.pages) {
     if (page.status !== "completed") {
@@ -344,10 +325,12 @@ function checkPages(
     for (const dimension of QualityDimensionNameSchema.options) {
       const score = quality.dimensions[dimension].score;
       if (score < baseline.quality.minDimensionScore) {
-        issues.push({
+        warnings.push({
           code: "QUALITY_DIMENSION_BELOW_BASELINE",
           pageId: page.pageId,
-          message: `${dimension} 应不低于 ${baseline.quality.minDimensionScore}，实际为 ${score}。`,
+          message:
+            `${dimension} 的观测分低于参考线 ${baseline.quality.minDimensionScore}，` +
+            `实际为 ${score}；仅用于定位 Prompt、模型、Skill、Tool 或素材 Provider 的改进方向。`,
         });
       }
     }
@@ -454,6 +437,7 @@ function reportFor(input: {
   baseline: DemoBaseline;
   course?: CourseGenerationState;
   issues: DemoCheckIssue[];
+  warnings: DemoCheckIssue[];
   archiveEntries: string[];
   minimumOverallScore?: number;
   now?: () => string;
@@ -512,6 +496,7 @@ function reportFor(input: {
       archiveEntryCount: input.archiveEntries.length,
     },
     issues: input.issues,
+    warnings: input.warnings,
   };
 }
 

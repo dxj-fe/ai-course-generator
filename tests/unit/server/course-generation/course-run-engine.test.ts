@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ModelTier } from "../../../../src/server/infra/ai/model-router";
+import { AgentTerminalNotCommittedError } from "../../../../src/server/agent/runtime";
 import type { RunCourseDirectorAgentInput } from "../../../../src/server/agent/plugins/agents/course/director-handler";
 import type { CurriculumArchitectAgentInput } from "../../../../src/server/agent/plugins/agents/course/architect-handler";
 import type { CourseReviewerExecutionInput } from "../../../../src/server/agent/plugins/contexts/course/reviewer";
@@ -382,6 +383,47 @@ describe("CourseRunEngine", () => {
       prepared.repository.workOrders
         .listByTask(prepared.input.taskId)
         .filter(({ kind }) => kind === "architect_course"),
+    ).toHaveLength(1);
+  });
+
+  it("Agent 未提交终态时切换 fallback，避免瞬时工具循环异常直接终止课程", async () => {
+    const prepared = await prepare("terminal-not-committed-fallback");
+    const baseFakes = createSuccessfulFakes(prepared.repository);
+    const architectModels: ModelTier[] = [];
+    let architectAttempts = 0;
+
+    const runArchitect = vi.fn(
+      async (
+        input: CurriculumArchitectAgentInput,
+        dependencies?: { model?: unknown },
+      ) => {
+        architectAttempts += 1;
+        const tier = (dependencies?.model as { tier: ModelTier }).tier;
+        architectModels.push(tier);
+        if (architectAttempts === 1) {
+          throw new AgentTerminalNotCommittedError(input.workOrder.id);
+        }
+        return baseFakes.runArchitect(input);
+      },
+    );
+
+    const result = await createCourseRunEngine({
+      repository: prepared.repository,
+      now: prepared.now,
+      createWorkerId: () => "engine-terminal-fallback-worker",
+      getModel: fakeGetModel,
+      ...baseFakes,
+      runArchitect,
+    }).run(prepared.input);
+
+    expect(result.status).toBe("completed");
+    expect(architectModels).toEqual(["strong", "balanced"]);
+    expect(architectAttempts).toBe(2);
+    expect(
+      prepared.repository.artifacts.listByTask(
+        prepared.input.taskId,
+        "course_architecture",
+      ),
     ).toHaveLength(1);
   });
 

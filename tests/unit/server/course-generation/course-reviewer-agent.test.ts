@@ -49,7 +49,7 @@ afterEach(async () => {
 
 describe("Course Reviewer Agent", () => {
   it.each([
-    { pageCount: 81, expectedBatches: 5, expectedMaxToolCalls: 20 },
+    { pageCount: 81, expectedBatches: 5, expectedMaxToolCalls: 24 },
     { pageCount: 200, expectedBatches: 10, expectedMaxToolCalls: 35 },
   ])(
     "$pageCount 页课程的有限预算覆盖全部证据分页和终态调用",
@@ -293,6 +293,101 @@ describe("Course Reviewer Agent", () => {
       prepared.repository.runs.load(prepared.run.id)?.currentReview
         ?.workOrderId,
     ).toBe(prepared.workOrder.id);
+  });
+
+  it("提交边界从封口快照补齐稳定字段和目标覆盖，模型无需重复抄写机器合同", async () => {
+    const prepared = await prepareReviewer();
+    const createAgent = createFakeFactory(async (settings) => {
+      const matrix = await executeTool(
+        settings.tools,
+        "read_course_matrix",
+        {},
+      );
+      expect(matrix).toMatchObject({
+        ok: true,
+        data: {
+          submissionTemplate: {
+            decision: "pass",
+            issues: [],
+          },
+        },
+      });
+      await executeTool(settings.tools, "read_page_summary", {
+        offset: 0,
+        limit: 20,
+      });
+      await executeTool(settings.tools, "read_page_quality", {
+        offset: 0,
+        limit: 20,
+      });
+      return executeTool(settings.tools, "submit_course_review", {
+        review: {
+          version: 999,
+          courseId: "模型误抄的课程 ID",
+          inputManifestHash: "模型误抄的 manifest",
+          decision: "pass",
+          coverage: [],
+          issues: [],
+          summary: "目标讲解、练习证据和页面衔接完整，可以发布。",
+        },
+      });
+    });
+
+    const result = await runPreparedReviewer(prepared, createAgent);
+
+    expect(result.status).toBe("submitted");
+    expect(
+      prepared.repository.artifacts.listByTask(
+        TASK_ID,
+        "course_review",
+      )[0]?.payload,
+    ).toEqual(passReview(prepared.run.currentManifestHash!));
+  });
+
+  it("Reviewer 只声明页面证据 ID，提交边界写入当前精确 ArtifactRef", async () => {
+    const prepared = await prepareReviewer();
+    const createAgent = createFakeFactory(async (settings) => {
+      await executeTool(settings.tools, "read_course_matrix", {});
+      await executeTool(settings.tools, "read_page_summary", {
+        offset: 0,
+        limit: 20,
+      });
+      await executeTool(settings.tools, "read_page_quality", {
+        offset: 0,
+        limit: 20,
+      });
+      return executeTool(settings.tools, "submit_course_review", {
+        review: {
+          decision: "revise_pages",
+          issues: [
+            {
+              scope: "page",
+              pageId: "page-001",
+              code: "EXAMPLE_NEEDS_CLARIFICATION",
+              severity: "warning",
+              message: "示例说明还可以更明确。",
+              targetArtifact: "page_content",
+              evidencePageIds: ["page-001"],
+              suggestedAction: "补充示例中的判断依据。",
+            },
+          ],
+          summary: "课程结构成立，建议定向优化第一页示例。",
+        },
+      });
+    });
+
+    const result = await runPreparedReviewer(prepared, createAgent);
+    const review = prepared.repository.artifacts.listByTask(
+      TASK_ID,
+      "course_review",
+    )[0]?.payload as CourseReview;
+    const currentPage = prepared.run.currentPages["page-001"];
+
+    expect(result.status).toBe("submitted");
+    expect(review.issues[0]?.evidenceArtifactRefs).toEqual([
+      currentPage?.summaryRef,
+      currentPage?.qualityRef,
+    ]);
   });
 
   it(
