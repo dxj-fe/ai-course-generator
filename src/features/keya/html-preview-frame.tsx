@@ -64,10 +64,7 @@ export function routeLessonRuntimeMessage(
     };
   }
 
-  if (
-    parsed.data.pageId !== expectedRuntime.pageId ||
-    parsed.data.runtimeVersion !== expectedRuntime.runtime.runtimeVersion
-  ) {
+  if (parsed.data.pageId !== expectedRuntime.pageId) {
     return { kind: "ignored", reason: "stale-runtime" };
   }
 
@@ -232,7 +229,7 @@ export function HtmlPreviewFrame({
         <iframe
           key={
             trustedRuntime
-              ? `${trustedRuntime.pageId}:v${trustedRuntime.runtime.runtimeVersion}`
+              ? trustedRuntime.pageId
               : "static-preview"
           }
           className={cn(

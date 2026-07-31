@@ -1,17 +1,10 @@
 import type {
-  CourseDesignResponse,
   CourseGenerationError,
   CourseGenerationPublicEvent,
   CourseGenerationResponse,
   CourseGenerationStage,
   CourseGenerationState,
-  CoursePlannerResponse,
-  CourseTaskRuntimeSource,
-  HtmlEngineerResponse,
-  ImageAssetResponse,
   PageGenerationState,
-  PageQAResponse,
-  PageWriterResponse,
   PublicAgentEvent,
 } from "@/shared/course-schema";
 import type {
@@ -23,12 +16,11 @@ import type {
 type RunSeed = {
   id: string;
   taskId?: string;
-  source?: CourseTaskRuntimeSource;
   prompt: string;
   startedAt: number;
 };
 
-type AgentCompatibleGenerationEvent = CourseGenerationPublicEvent & {
+type AgentGenerationEvent = CourseGenerationPublicEvent & {
   type: PublicAgentEvent["type"];
 };
 
@@ -45,19 +37,6 @@ export function projectCourseStateToKeyaRun(
   const designError = findStageError(state, ["design"]);
   const plannerEvents = eventsFor(state, ["intent", "planner"]);
   const designPublicEvents = eventsFor(state, ["design"]);
-  const designAgentEvents = state.events
-    .filter(isAgentCompatibleEvent)
-    .filter(
-      (
-        event,
-      ): event is AgentCompatibleGenerationEvent & {
-        agent: "pedagogy" | "story" | "visual";
-      } =>
-        event.traceId === state.traceId &&
-        event.stage === "design" &&
-        isDesignAgent(event.agent),
-    )
-    .map((event) => ({ ...event, agent: event.agent }));
   const plannerStatus = stageStatus(
     Boolean(state.outline),
     plannerError,
@@ -70,39 +49,6 @@ export function projectCourseStateToKeyaRun(
     eventStatusForCurrentStage(state, ["design"]),
     isStageRunning(state, ["design"]),
   );
-  const plannerData = state.intent
-    ? ({
-        traceId: state.traceId,
-        intent: state.intent,
-        state: {
-          status: plannerStatus,
-          events: plannerEvents,
-          outline: state.outline,
-          error: plannerError
-            ? { code: plannerError.code, message: plannerError.message }
-            : undefined,
-        },
-      } satisfies CoursePlannerResponse)
-    : undefined;
-  const designData = state.outline && (state.briefs || designError)
-    ? ({
-        traceId: state.traceId,
-        state: {
-          status: state.briefs ? "completed" : "failed",
-          events: designAgentEvents,
-          briefs: state.briefs,
-          pageWorkerBriefs: state.pageWorkerBriefs,
-          error: designError
-            ? {
-                agent: "workflow",
-                code: designError.code,
-                message: designError.message,
-              }
-            : undefined,
-        },
-      } satisfies CourseDesignResponse)
-    : undefined;
-
   const pageWrites: KeyaCourseRun["pageWrites"] = {};
   const pageAssets: KeyaCourseRun["pageAssets"] = {};
   const pageHtml: KeyaCourseRun["pageHtml"] = {};
@@ -122,19 +68,16 @@ export function projectCourseStateToKeyaRun(
     courseId: state.courseId,
     prompt: seed.prompt,
     traceId: state.traceId,
-    source: seed.source,
     startedAt: seed.startedAt,
     generation: state,
     planner: {
       status: plannerStatus,
       events: plannerEvents,
-      data: plannerData,
       error: plannerError?.message,
     },
     design: {
       status: designStatus,
       events: designPublicEvents,
-      data: designData,
       error: designError?.message,
     },
     pageWrites,
@@ -147,7 +90,7 @@ export function projectCourseStateToKeyaRun(
 function buildPageWriterStage(
   state: CourseGenerationState,
   page: PageGenerationState,
-): CourseRunStage<PageWriterResponse> {
+): CourseRunStage {
   const error = findStageError(state, ["page_writer"], page.pageId);
   const events = eventsFor(state, ["page_writer"], page.pageId);
   const status = stageStatus(
@@ -161,27 +104,13 @@ function buildPageWriterStage(
     status,
     events,
     error: error?.message,
-    data:
-      page.content || error
-        ? {
-            traceId: state.traceId,
-            state: {
-              status,
-              events,
-              content: page.content,
-              error: error
-                ? { code: error.code, message: error.message }
-                : undefined,
-            },
-          }
-        : undefined,
   };
 }
 
 function buildAssetStage(
   state: CourseGenerationState,
   page: PageGenerationState,
-): CourseRunStage<ImageAssetResponse> {
+): CourseRunStage {
   const error = findStageError(state, ["assets"], page.pageId);
   const events = eventsFor(state, ["assets"], page.pageId);
   const completed =
@@ -199,27 +128,13 @@ function buildAssetStage(
     status,
     events,
     error: error?.message,
-    data:
-      completed || error
-        ? {
-            traceId: state.traceId,
-            state: {
-              status: status === "completed" ? "completed" : "failed",
-              events,
-              results: completed ? page.assets : undefined,
-              error: error
-                ? { code: error.code, message: error.message }
-                : undefined,
-            },
-          }
-        : undefined,
   };
 }
 
 function buildHtmlStage(
   state: CourseGenerationState,
   page: PageGenerationState,
-): CourseRunStage<HtmlEngineerResponse> {
+): CourseRunStage {
   const error = findStageError(state, ["html"], page.pageId);
   const events = eventsFor(state, ["html"], page.pageId);
   const status = stageStatus(
@@ -233,27 +148,13 @@ function buildHtmlStage(
     status,
     events,
     error: error?.message,
-    data:
-      page.htmlOutput || error
-        ? {
-            traceId: state.traceId,
-            state: {
-              status,
-              events,
-              htmlOutput: page.htmlOutput,
-              error: error
-                ? { code: error.code, message: error.message }
-                : undefined,
-            },
-          }
-        : undefined,
   };
 }
 
 function buildQaStage(
   state: CourseGenerationState,
   page: PageGenerationState,
-): CourseRunStage<PageQAResponse> | undefined {
+): CourseRunStage | undefined {
   const error = findStageError(state, ["qa"], page.pageId);
   const events = eventsFor(state, ["qa"], page.pageId);
   if (
@@ -275,20 +176,6 @@ function buildQaStage(
     status,
     events,
     error: error?.message,
-    data:
-      page.qualityReport || error
-        ? {
-            traceId: state.traceId,
-            state: {
-              status,
-              events,
-              report: page.qualityReport,
-              error: error
-                ? { code: error.code, message: error.message }
-                : undefined,
-            },
-          }
-        : undefined,
   };
 }
 
@@ -365,7 +252,7 @@ function eventsFor(
   stages: CourseGenerationStage[],
   pageId?: string,
 ): PublicAgentEvent[] {
-  return state.events.filter(isAgentCompatibleEvent).filter(
+  return state.events.filter(isAgentEvent).filter(
     (event) =>
       event.traceId === state.traceId &&
       stages.includes(event.stage) &&
@@ -373,9 +260,9 @@ function eventsFor(
   );
 }
 
-function isAgentCompatibleEvent(
+function isAgentEvent(
   event: CourseGenerationPublicEvent,
-): event is AgentCompatibleGenerationEvent {
+): event is AgentGenerationEvent {
   return event.type !== "supervisor_decision";
 }
 
@@ -391,10 +278,4 @@ function findStageError(
         stages.includes(error.stage) &&
         (pageId === undefined || error.pageId === pageId),
     );
-}
-
-function isDesignAgent(
-  value: string | undefined,
-): value is "pedagogy" | "story" | "visual" {
-  return value === "pedagogy" || value === "story" || value === "visual";
 }

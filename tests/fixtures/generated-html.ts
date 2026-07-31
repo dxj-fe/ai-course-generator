@@ -1,3 +1,4 @@
+import { renderInteraction } from "../../src/server/course/page/deterministic-fallback-markup";
 import type { PageContentDSL } from "../../src/shared/course-schema";
 
 /** 测试专用的最小合规文档；生产 HTML 必须来自 HtmlEngineerAgent。 */
@@ -5,11 +6,15 @@ export function buildValidGeneratedHtml(content: PageContentDSL) {
   const blocks = content.blocks
     .map(
       ({ body, heading, id, supportingPoints }) =>
-        `<article data-block-id="${id}"><h2>${heading}</h2><p>${body}</p><ul>${supportingPoints
+        `<article data-block-id="${id}" data-runtime-target-id="${id}"><h2>${heading}</h2><p>${body}</p><ul>${supportingPoints
           .map((point) => `<li>${point}</li>`)
           .join("")}</ul></article>`,
     )
     .join("");
+  const visualContent =
+    content.runtime.visualPrimitive === "none"
+      ? blocks
+      : `<section data-visual-primitive="${content.runtime.visualPrimitive}">${blocks}</section>`;
   const assets = content.assetSlots
     .map(
       ({ id, purpose }) =>
@@ -29,57 +34,10 @@ export function buildValidGeneratedHtml(content: PageContentDSL) {
     <main data-page-id="${content.pageId}">
       <h1>${content.title}</h1>
       ${content.narration.map((text) => `<p>${text}</p>`).join("")}
-      ${blocks}
+      ${visualContent}
       ${assets}
-      ${interactionHtml(content)}
+      ${renderInteraction(content, false)}
     </main>
   </body>
 </html>`;
-}
-
-function interactionHtml(content: PageContentDSL) {
-  return content.interaction.type === "none"
-    ? ""
-    : `<section data-interaction-type="${content.interaction.type}">${interactionText(content)}</section>`;
-}
-
-function interactionText(content: PageContentDSL) {
-  const interaction = content.interaction;
-
-  switch (interaction.type) {
-    case "none":
-      return "";
-    case "navigate":
-      return interaction.actionLabel;
-    case "reveal":
-    case "explore":
-      return [
-        interaction.prompt,
-        ...interaction.items.flatMap((item) => [item.label, item.content]),
-      ].join(" ");
-    case "choice":
-      return interaction.questions
-        .flatMap((question) => [
-          question.prompt,
-          ...question.options.map(({ label }) => label),
-          question.feedback.success,
-          question.feedback.retry,
-        ])
-        .join(" ");
-    case "sort":
-      return [
-        interaction.prompt,
-        ...interaction.items.flatMap((item) => [item.label, item.content]),
-        interaction.feedback.success,
-        interaction.feedback.retry,
-      ].join(" ");
-    case "input":
-      return [
-        interaction.prompt,
-        interaction.placeholder,
-        ...interaction.evaluationCriteria,
-        interaction.feedback.success,
-        interaction.feedback.retry,
-      ].join(" ");
-  }
 }

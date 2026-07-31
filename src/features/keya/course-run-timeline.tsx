@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import type { CourseTaskConnectionStatus } from "@/features/course-planner/hooks/use-sse-task";
+import type { CourseTaskConnectionStatus } from "@/features/keya/use-course-task-stream";
 import {
   CourseBriefCard,
   CourseJourney,
@@ -150,17 +150,15 @@ export function CourseRunTimeline({
   run,
   taskStatus,
 }: CourseRunTimelineProps) {
-  const outline =
-    run.generation?.outline ?? run.planner.data?.state.outline;
-  const intent = run.generation?.intent ?? run.planner.data?.intent;
+  const outline = run.generation?.outline;
+  const intent = run.generation?.intent;
   const pages = outline?.pages ?? [];
   const pageProgress = pages.map((page) => {
     const generated = run.generation?.pages.find(
       ({ pageId }) => pageId === page.id,
     );
     const htmlStage = run.pageHtml[page.id];
-    const html =
-      generated?.htmlOutput?.html ?? htmlStage?.data?.state.htmlOutput?.html;
+    const html = generated?.htmlOutput?.html;
     const status = generated?.status ?? htmlStage?.status ?? "idle";
     return { html, page, status };
   });
@@ -406,9 +404,8 @@ function briefFromRun(
   totalPages: number,
 ): CourseCreationBrief {
   const base = createCourseCreationBrief(run.prompt);
-  const intent = run.generation?.intent ?? run.planner.data?.intent;
-  const outline =
-    run.generation?.outline ?? run.planner.data?.state.outline;
+  const intent = run.generation?.intent;
+  const outline = run.generation?.outline;
   const interactionTypes = new Set(
     outline?.pages.map(({ interactionType }) => interactionType) ?? [],
   );

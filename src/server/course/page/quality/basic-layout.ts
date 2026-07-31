@@ -277,7 +277,7 @@ export function basicLayoutHeuristics({
 
   if (
     /overflow\s*:\s*hidden/i.test(html) &&
-    !/data-keya-layout-guard\s*=\s*["']v21["']/i.test(html)
+    !/data-keya-layout-guard\s*=\s*["']current["']/i.test(html)
   ) {
     add(
       "LAYOUT_CLIPPING_RISK",

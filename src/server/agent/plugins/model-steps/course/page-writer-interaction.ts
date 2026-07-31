@@ -99,12 +99,3 @@ function getInteractionItemCount(
       return 1;
   }
 }
-
-/** 将兼容输出中的占位文本替换为稳定默认语义。 */
-export function usable(value: string, fallback: string) {
-  const normalized = value.trim();
-
-  return !normalized || normalized === "未使用"
-    ? fallback
-    : normalized;
-}

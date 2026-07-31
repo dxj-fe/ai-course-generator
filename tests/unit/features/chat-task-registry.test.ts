@@ -71,6 +71,5 @@ function task(conversationId: string, taskId: string) {
     runStartedAt: 1,
     requestStartedAt: 1,
     mode: "create" as const,
-    source: "langgraph" as const,
   };
 }

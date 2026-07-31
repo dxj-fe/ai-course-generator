@@ -31,14 +31,7 @@ export {
   type TemplateCardSearchResult,
 } from "./retrieval";
 export type {
-  AgentCapabilityStatus,
-  CourseDesignResponse,
   CourseGenerationResponse,
-  CoursePlannerResponse,
-  HtmlEngineerResponse,
-  ImageAssetResponse,
-  PageQAResponse,
-  PageWriterResponse,
   PublicAgentEvent,
 } from "./course-capability";
 export {
@@ -127,6 +120,7 @@ export {
   type QualityIssueLocation,
   type QualityReport,
   type QualityScreenshotEvidence,
+  type QualityScreenshotCapture,
   type QualityScreenshotStatus,
   type QualitySeverity,
 } from "./quality";
@@ -313,7 +307,6 @@ export {
   CourseTaskCreateResponseSchema,
   CourseTaskIdSchema,
   CourseTaskRecordSchema,
-  CourseTaskRuntimeSourceSchema,
   CourseTaskStatusSchema,
   CourseTaskStreamMessageSchema,
   type CourseTaskControlAction,
@@ -322,7 +315,6 @@ export {
   type CourseTaskCreateResponse,
   type CourseTaskId,
   type CourseTaskRecord,
-  type CourseTaskRuntimeSource,
   type CourseTaskStatus,
   type CourseTaskStreamMessage,
 } from "./course-task-event";

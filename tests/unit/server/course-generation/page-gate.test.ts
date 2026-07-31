@@ -15,32 +15,23 @@ const PAGE_ID = "page-concept";
 const NOW = "2026-07-29T10:00:00.000Z";
 
 const screenshotEvidence: QualityScreenshotEvidence = {
-  status: "captured",
-  artifactId: "screenshot-page-concept-desktop",
-  viewport: { width: 922, height: 460 },
-  metrics: {
-    documentWidth: 922,
-    documentHeight: 460,
-    horizontalOverflowPx: 0,
-    clippedElementCount: 0,
-    zeroSizeInteractiveCount: 0,
-  },
-  capturedAt: NOW,
   captures: [
-    {
+    ["desktop", 922, 500],
+    ["tablet", 768, 500],
+    ["mobile", 366, 500],
+  ].map(([label, width, height]) => ({
       status: "captured",
-      artifactId: "screenshot-page-concept-mobile",
-      viewport: { width: 366, height: 500 },
+      artifactId: `screenshot-page-concept-${label}`,
+      viewport: { width: Number(width), height: Number(height) },
       metrics: {
-        documentWidth: 366,
-        documentHeight: 500,
+        documentWidth: Number(width),
+        documentHeight: Number(height),
         horizontalOverflowPx: 0,
         clippedElementCount: 0,
         zeroSizeInteractiveCount: 0,
       },
       capturedAt: NOW,
-    },
-  ],
+    })),
 };
 
 describe("页面确定性 Gate", () => {
@@ -154,7 +145,7 @@ function validCandidate() {
     html: {
       html,
       generatedAt: NOW,
-      version: 1,
+      revision: 1,
     },
     quality,
   };
@@ -162,10 +153,18 @@ function validCandidate() {
 
 function pageContent(): PageContentDSL {
   return {
-    version: 1,
     pageId: PAGE_ID,
     functionalTemplateId: "knowledge-card-grid",
     title: "恒星与行星",
+    runtime: {
+      sceneKind: "demo",
+      visualPrimitive: "concept-map",
+      motionPlan: { intensity: "none", cuePoints: [] },
+      completionRule: {
+        type: "interaction-complete",
+        interactionId: `interaction-${PAGE_ID}`,
+      },
+    },
     narration: ["先比较两类天体，再用是否自身发光来判断。"],
     blocks: [
       {
@@ -212,10 +211,8 @@ function pageContent(): PageContentDSL {
 
 function architecture(): CourseArchitecture {
   return {
-    version: 1,
     courseId: COURSE_ID,
     coursePack: {
-      version: 1,
       courseId: COURSE_ID,
       topic: "太阳系",
       facts: [],
@@ -224,7 +221,6 @@ function architecture(): CourseArchitecture {
       constraints: [],
     },
     blueprint: {
-      version: 1,
       courseId: COURSE_ID,
       title: "认识太阳系",
       audience: {
@@ -251,7 +247,6 @@ function architecture(): CourseArchitecture {
     },
     pageTasks: [
       {
-        version: 1,
         pageId: PAGE_ID,
         order: 1,
         title: "恒星与行星",

@@ -26,8 +26,6 @@ export type DeterministicPageFallbackInput = {
   styleTemplate: StyleTemplate;
 };
 
-export const DETERMINISTIC_PAGE_RENDERER_VERSION = 4;
-
 /**
  * 当模型 HTML 没有通过合同校验时，用已经通过 Schema 校验的服务端事实生成
  * 一份无脚本、可验证的页面。这里不复用任何模型标记，避免把残缺或危险片段
@@ -46,12 +44,11 @@ export function renderDeterministicPageFallback({
   const assetMarkup = renderAssets(content, assets);
   const visualPrimitive = renderVisualPrimitive(content);
   const density = resolveDensity(content);
-  const sceneKind =
-    content.version === 2 ? content.runtime?.sceneKind : undefined;
+  const sceneKind = content.runtime.sceneKind;
   const templateLabel = resolveTemplateLabel(content.functionalTemplateId);
 
   return `<!doctype html>
-<html lang="zh-CN" data-keya-canvas-mode="fluid" data-keya-renderer="deterministic" data-keya-renderer-version="${DETERMINISTIC_PAGE_RENDERER_VERSION}">
+<html lang="zh-CN" data-keya-canvas-mode="fluid" data-keya-renderer="deterministic">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">

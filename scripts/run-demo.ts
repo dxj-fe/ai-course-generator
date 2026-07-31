@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { copyFile, createWriteStream } from "node:fs";
+import { createWriteStream } from "node:fs";
 import {
   mkdir as mkdirAsync,
   readFile,
@@ -43,7 +43,6 @@ const SERVER_START_TIMEOUT_MS = 3 * 60 * 1_000;
 
 type DemoCliOptions = {
   caseIds: string[];
-  recordResults: boolean;
 };
 
 type ProviderConfig = {
@@ -77,7 +76,6 @@ type DemoCaseResult = {
 };
 
 type DemoRunSummary = {
-  version: 1;
   runId: string;
   startedAt: string;
   completedAt: string;
@@ -116,7 +114,6 @@ async function main() {
   }
 
   const summary: DemoRunSummary = {
-    version: 1,
     runId,
     startedAt,
     completedAt: new Date().toISOString(),
@@ -127,24 +124,15 @@ async function main() {
   const summaryPath = path.join(runDir, "summary.json");
   await writeJson(summaryPath, summary);
 
-  if (options.recordResults) {
-    await recordCuratedResults(rootDir, summary, runDir);
-  }
-
   printSummary(summary, summaryPath);
   if (!summary.passed) process.exitCode = 1;
 }
 
 export function parseDemoCliOptions(args: string[]): DemoCliOptions {
   const caseIds: string[] = [];
-  let recordResults = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]!;
-    if (argument === "--record") {
-      recordResults = true;
-      continue;
-    }
     if (argument === "--case") {
       const caseId = args[index + 1];
       if (!caseId || caseId.startsWith("--")) {
@@ -167,11 +155,7 @@ export function parseDemoCliOptions(args: string[]): DemoCliOptions {
       `未知固定 Demo：${unknownCaseIds.join(", ")}。可选值：${[...supportedCaseIds].join(", ")}。`,
     );
   }
-  if (recordResults && uniqueCaseIds.length > 0) {
-    throw new Error("--record 只允许留存完整的三个固定 Demo，不能与 --case 同时使用。");
-  }
-
-  return { caseIds: uniqueCaseIds, recordResults };
+  return { caseIds: uniqueCaseIds };
 }
 
 export function findProviderConfigIssues(configs: NamedProviderConfig[]) {
@@ -391,7 +375,6 @@ export function buildDemoTaskInput(baseline: DemoBaseline) {
     pageCount: baseline.pageCount,
     executionMode: "parallel" as const,
     concurrency: 1,
-    source: "agent-v2" as const,
   };
 }
 
@@ -667,62 +650,8 @@ function findFreePort() {
   });
 }
 
-async function recordCuratedResults(
-  rootDir: string,
-  summary: DemoRunSummary,
-  runDir: string,
-) {
-  const targetDir = path.join(rootDir, "docs", "demo", "results", summary.runId);
-  await mkdirAsync(targetDir, { recursive: true });
-  await writeJson(path.join(targetDir, "summary.json"), summary);
-
-  for (const result of summary.cases) {
-    const targetCaseDir = path.join(targetDir, result.baselineId);
-    await mkdirAsync(targetCaseDir, { recursive: true });
-    for (const key of [
-      "report",
-      "desktopScreenshot",
-      "mobileScreenshot",
-    ] as const) {
-      const relativePath = result.artifacts[key];
-      if (!relativePath) continue;
-      await new Promise<void>((resolve, reject) => {
-        copyFile(
-          path.join(runDir, relativePath),
-          path.join(targetCaseDir, path.basename(relativePath)),
-          (error) => (error ? reject(error) : resolve()),
-        );
-      });
-    }
-    await writeFileAsync(
-      path.join(targetCaseDir, "manual-review.md"),
-      manualReviewTemplate(result),
-      "utf8",
-    );
-  }
-}
-
-function manualReviewTemplate(result: DemoCaseResult) {
-  return `# ${result.name} · 人工质量复核
-
-- Course ID: \`${result.courseId ?? "未生成"}\`
-- 自动验收: ${result.passed ? "通过" : "未通过"}
-- 内容正确性（1–5）：
-- 教学连贯性（1–5）：
-- 页面排版（1–5）：
-- 风格一致性（1–5）：
-- HTML/交互可用性（1–5）：
-- 素材可用性（1–5）：
-- 总分（至少 24/30）：
-- 是否存在低于 3 分的单项：
-- 复核结论：
-- 主要证据：
-- 需要改进：
-`;
-}
-
 function printSummary(summary: DemoRunSummary, summaryPath: string) {
-  process.stdout.write(`\nDay 36 Demo ${summary.passed ? "PASS" : "FAIL"}\n`);
+  process.stdout.write(`\nDemo ${summary.passed ? "PASS" : "FAIL"}\n`);
   for (const result of summary.cases) {
     process.stdout.write(
       `- ${result.name}: ${result.passed ? "PASS" : "FAIL"} · ${Math.round(result.durationMs / 1_000)}s${result.error ? ` · ${result.error}` : ""}\n`,

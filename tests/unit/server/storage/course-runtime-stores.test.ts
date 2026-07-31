@@ -1,7 +1,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -37,7 +36,7 @@ import type {
   CourseRun,
   WorkOrder,
 } from "../../../../src/shared/course-schema";
-import { createAgentV2Architecture } from "../../../fixtures/agent-v2-course-architecture";
+import { createArchitecture } from "../../../fixtures/course-architecture";
 
 const directories: string[] = [];
 const NOW = "2026-07-29T08:00:00.000Z";
@@ -52,7 +51,6 @@ async function temporaryRoot() {
 
 function courseRun(overrides: Partial<CourseRun> = {}): CourseRun {
   return {
-    version: 1,
     id: "course-run-01",
     taskId: "task-runtime-01",
     courseId: "course-runtime-01",
@@ -70,13 +68,13 @@ function courseRun(overrides: Partial<CourseRun> = {}): CourseRun {
 
 function workOrder(overrides: Partial<WorkOrder> = {}): WorkOrder {
   return {
-    version: 1,
     lockVersion: 0,
     id: "work-order-01",
     taskId: "task-runtime-01",
     courseId: "course-runtime-01",
     causedByReviewIssueIds: [],
     dependencyWorkOrderIds: [],
+    agentId: "curriculum-architect",
     kind: "architect_course",
     scope: { type: "course" },
     status: "queued",
@@ -102,7 +100,7 @@ function workOrder(overrides: Partial<WorkOrder> = {}): WorkOrder {
 }
 
 function architectureForCourse(courseId: string): CourseArchitecture {
-  const architecture = createAgentV2Architecture();
+  const architecture = createArchitecture();
   return {
     ...architecture,
     courseId,
@@ -124,7 +122,7 @@ function artifactRefOf(artifact: CourseArtifact): ArtifactRef {
     courseId: artifact.courseId,
     pageId: artifact.pageId,
     scopeKey: artifact.scopeKey,
-    version: artifact.version,
+    revision: artifact.revision,
     contentHash: artifact.contentHash,
   };
 }
@@ -158,8 +156,8 @@ afterEach(async () => {
   );
 });
 
-describe("课程 Agent 运行时数据库迁移", () => {
-  it("在现有 SQLite 中建立五张窄表", async () => {
+describe("课程 Agent 运行时数据库", () => {
+  it("建立课程运行所需的数据表", async () => {
     const database = resolveAppDatabase({
       rootDir: await temporaryRoot(),
     });
@@ -183,52 +181,6 @@ describe("课程 Agent 运行时数据库迁移", () => {
     );
   });
 
-  it("把旧 Artifact 跨 WorkOrder 去重约束迁移为单 WorkOrder 去重", async () => {
-    const rootDir = await temporaryRoot();
-    const databasePath = path.join(rootDir, "keya.sqlite");
-    const legacy = new DatabaseSync(databasePath);
-    legacy.exec(`
-      CREATE TABLE course_artifacts (
-        id TEXT PRIMARY KEY,
-        task_id TEXT NOT NULL,
-        course_id TEXT NOT NULL,
-        page_id TEXT,
-        scope_key TEXT NOT NULL,
-        kind TEXT NOT NULL,
-        version INTEGER NOT NULL,
-        content_hash TEXT NOT NULL,
-        created_by_work_order_id TEXT NOT NULL,
-        payload TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        UNIQUE(task_id, course_id, scope_key, kind, version),
-        UNIQUE(task_id, course_id, scope_key, kind, content_hash)
-      );
-    `);
-    legacy.close();
-
-    const store = createCourseArtifactStore({ rootDir });
-    const base = {
-      taskId: "task-migration",
-      courseId: "course-migration",
-      pageId: "page-01",
-      scopeKey: "page:page-01",
-      kind: "page_html" as const,
-      payload: { html: "<main>相同内容</main>" },
-      createdAt: NOW,
-    };
-    const first = store.put({
-      ...base,
-      createdByWorkOrderId: "work-order-build",
-    });
-    const revision = store.put({
-      ...base,
-      createdByWorkOrderId: "work-order-fix",
-    });
-
-    expect(revision.id).not.toBe(first.id);
-    expect(revision.version).toBe(2);
-    expect(revision.createdByWorkOrderId).toBe("work-order-fix");
-  });
 });
 
 describe("CourseRun 与 WorkOrder lease", () => {
@@ -475,10 +427,10 @@ describe("Artifact、Tool operation 与事件幂等", () => {
     });
 
     expect(duplicate).toEqual(first);
-    expect(resubmitted.version).toBe(2);
+    expect(resubmitted.revision).toBe(2);
     expect(resubmitted.createdByWorkOrderId).toBe("work-order-page-retry");
-    expect(revised.version).toBe(3);
-    expect(otherTask.version).toBe(1);
+    expect(revised.revision).toBe(3);
+    expect(otherTask.revision).toBe(1);
     expect(otherTask.id).not.toBe(first.id);
   });
 
@@ -819,7 +771,7 @@ describe("Artifact、Tool operation 与事件幂等", () => {
       kind: "course_architecture",
       courseId,
       scopeKey: "course",
-      version: 1,
+      revision: 1,
       contentHash: "architecture-a-hash",
     };
     const architectA = workOrder({

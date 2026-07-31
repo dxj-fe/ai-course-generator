@@ -12,7 +12,6 @@ import { pageContentDsl } from "../../fixtures/course-design";
 import { buildValidGeneratedHtml } from "../../fixtures/generated-html";
 
 const runtime: LessonRuntime = {
-  runtimeVersion: 1,
   sceneKind: "practice",
   visualPrimitive: "concept-map",
   motionPlan: {
@@ -117,7 +116,6 @@ describe("trusted lesson runtime", () => {
         channel: "keya.lesson-runtime",
         type: "interaction-submitted",
         pageId: "page-02-knowledge",
-        runtimeVersion: 1,
         interactionId: "interaction-page-02-knowledge",
         attempt: 1,
         result: "correct",
@@ -128,7 +126,6 @@ describe("trusted lesson runtime", () => {
         channel: "keya.lesson-runtime",
         type: "interaction-submitted",
         pageId: "page-02-knowledge",
-        runtimeVersion: 1,
         interactionId: "interaction-page-02-knowledge",
         attempt: 1,
         result: "correct",

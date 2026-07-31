@@ -13,7 +13,6 @@ export type ProjectSkill = Readonly<{
   logicalDir: string;
   logicalSkillFile: string;
   license?: string;
-  compatibility?: string;
   metadata: Readonly<Record<string, string>>;
   resourcePaths: readonly string[];
   digest: string;

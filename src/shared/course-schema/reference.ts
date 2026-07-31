@@ -32,7 +32,6 @@ export const ReferenceKeyFactSchema = z
 
 export const ReferencePackSchema = z
   .object({
-    version: z.literal(1),
     id: z.string().regex(/^ref-[a-f0-9]{24}$/),
     sourceName: z.string().min(1).max(200),
     sourceType: ReferenceSourceTypeSchema,

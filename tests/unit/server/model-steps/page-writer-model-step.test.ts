@@ -16,9 +16,6 @@ import {
   materializePageWriterInteraction,
   materializeInteractionItems,
   normalizeMultilineBulletBody,
-  normalizePageContentDensity,
-  normalizePageNavigationDestination,
-  normalizePageWriterModelOutput,
   PageWriterNarrationDraftSchema,
   validatePageWriterOutput,
   type PageWriterInput,
@@ -29,6 +26,7 @@ import type {
   ReferencePack,
 } from "../../../../src/shared/course-schema";
 import { getFunctionalTemplateDslExample } from "../../../../src/shared/templates/functional/dsl-examples";
+import { PageWriterModelOutputSchema } from "../../../../src/server/agent/plugins/model-steps/course/page-writer-schema";
 
 const page = courseDesignOutline.pages[1];
 const brief: PageWorkerBrief = {
@@ -40,7 +38,6 @@ const brief: PageWorkerBrief = {
 };
 const input = { intent: courseDesignIntent, page, brief };
 const referencePack: ReferencePack = {
-  version: 1,
   id: "ref-1234567890abcdef12345678",
   sourceName: "solar.txt",
   sourceType: "txt",
@@ -52,6 +49,58 @@ const referencePack: ReferencePack = {
 };
 
 describe("PageWriterModelStep", () => {
+  it("只接受当前 Page Writer 模型合同", () => {
+    const currentOutput = {
+      narration: ["先观察两个天体是否会自己发光。"],
+      blocks: [
+        {
+          kind: "fact" as const,
+          heading: "恒星",
+          body: "恒星能够自行发光，太阳就是一颗恒星。",
+          supportingPoints: [],
+        },
+      ],
+      interaction: {
+        type: "reveal" as const,
+        prompt: "逐项揭示天体特点。",
+        items: [
+          {
+            label: "恒星",
+            content: "恒星会自己发光并向周围释放能量。",
+          },
+        ],
+        questions: [],
+        feedbackSuccess: [],
+        feedbackRetry: [],
+        maxAttempts: 1,
+        placeholder: "未使用",
+        evaluationCriteria: [],
+        actionLabel: "未使用",
+        destination: "next" as const,
+      },
+      contentDensity: "balanced" as const,
+      visualPriority: "突出恒星与行星的对比。",
+      groupingStrategy: "正文与互动按观察顺序排列。",
+      usedReferences: [],
+    };
+
+    expect(PageWriterModelOutputSchema.safeParse(currentOutput).success).toBe(
+      true,
+    );
+    expect(
+      PageWriterModelOutputSchema.safeParse({
+        ...currentOutput,
+        blocks: ["恒星会自己发光。"],
+      }).success,
+    ).toBe(false);
+    expect(
+      PageWriterModelOutputSchema.safeParse({
+        ...currentOutput,
+        contentDensity: "medium",
+      }).success,
+    ).toBe(false);
+  });
+
   it("normalizes a multiline emoji checklist into stable prose for HTML", () => {
     expect(
       normalizeMultilineBulletBody(
@@ -811,29 +860,6 @@ describe("PageWriterModelStep", () => {
     ).toThrow("Page Writer 的资料引用必须是 PagePlan 引用的子集");
   });
 
-  it.each([
-    ["low", "cover", "sparse"],
-    ["medium", "knowledge_card", "balanced"],
-    ["平衡", "knowledge_card", "balanced"],
-    ["comfortable", "story_intro", "balanced"],
-    ["spacious", "cover", "sparse"],
-    ["high", "knowledge_card", "dense"],
-    ["紧凑", "knowledge_card", "dense"],
-    ["Medium_Density", "knowledge_card", "balanced"],
-  ] as const)(
-    "normalizes model density alias %s for %s to %s",
-    (modelValue, pageType, expected) => {
-      expect(normalizePageContentDensity(modelValue, pageType)).toBe(expected);
-    },
-  );
-
-  it("uses a template-safe density when the model returns an unknown label", () => {
-    expect(normalizePageContentDensity("concise", "cover")).toBe("sparse");
-    expect(normalizePageContentDensity("regular", "story_intro")).toBe(
-      "balanced",
-    );
-  });
-
   it("distinguishes programming functions from mathematical function graphs", () => {
     const programmingRuntime = buildLessonRuntime({
       page: {
@@ -865,142 +891,6 @@ describe("PageWriterModelStep", () => {
 
     expect(programmingRuntime.visualPrimitive).toBe("process");
     expect(mathRuntime.visualPrimitive).toBe("function-graph");
-  });
-
-  it("keeps nested choice questions and resets the unused choice items field", () => {
-    const questions = [
-      {
-        prompt: "哪一项符合定义？",
-        options: ["选项一", "选项二"],
-        correctOptionIndex: 0,
-        feedbackSuccess: "选项一满足定义中的全部条件。",
-        feedbackRetry: "请重新核对定义中的必要条件。",
-        maxAttempts: 2,
-      },
-    ];
-
-    expect(
-      normalizePageWriterModelOutput({
-        narration: [],
-        interaction: {
-          type: "choice",
-          items: 5,
-          questions,
-        },
-      }),
-    ).toMatchObject({
-      interaction: {
-        items: [],
-        questions,
-      },
-    });
-  });
-
-  it("restores compressed interaction feedback strings without changing arrays", () => {
-    const existingRetryFeedback = [
-      "先对照评价标准检查答案是否完整。",
-      "再补充一个能够支撑结论的依据。",
-    ];
-
-    expect(
-      normalizePageWriterModelOutput({
-        narration: [],
-        interaction: {
-          type: "input",
-          items: [],
-          feedbackSuccess: "回答完整，已经覆盖两个关键判断依据。",
-          feedbackRetry: existingRetryFeedback,
-        },
-      }),
-    ).toMatchObject({
-      interaction: {
-        feedbackSuccess: ["回答完整，已经覆盖两个关键判断依据。"],
-        feedbackRetry: existingRetryFeedback,
-      },
-    });
-  });
-
-  it("restores a compressed single input evaluation criterion", () => {
-    const existingCriteria = [
-      "写出判断结果。",
-      "补充一个能够支持判断的事实依据。",
-    ];
-
-    expect(
-      normalizePageWriterModelOutput({
-        narration: [],
-        interaction: {
-          type: "input",
-          evaluationCriteria: "写出判断结果并给出依据。",
-        },
-      }),
-    ).toMatchObject({
-      interaction: {
-        evaluationCriteria: ["写出判断结果并给出依据。"],
-      },
-    });
-    expect(
-      normalizePageWriterModelOutput({
-        narration: [],
-        interaction: {
-          type: "input",
-          evaluationCriteria: existingCriteria,
-        },
-      }),
-    ).toMatchObject({
-      interaction: { evaluationCriteria: existingCriteria },
-    });
-  });
-
-  it("restores a compressed single narration string without changing arrays", () => {
-    const narration = "比较三个时期的色彩与造型差异。";
-    const existingNarration = [
-      "先观察作品中的色彩变化。",
-      "再比较人物造型的处理方式。",
-    ];
-
-    expect(
-      normalizePageWriterModelOutput({
-        narration,
-        interaction: { type: "none" },
-      }),
-    ).toMatchObject({ narration: [narration] });
-    expect(
-      normalizePageWriterModelOutput({
-        narration: existingNarration,
-        interaction: { type: "none" },
-      }),
-    ).toMatchObject({ narration: existingNarration });
-  });
-
-  it("joins guidance fields expanded into string arrays", () => {
-    expect(
-      normalizePageWriterModelOutput({
-        visualPriority: ["太阳是视觉中心", "行星轨道辅助理解关系"],
-        groupingStrategy: ["左侧标题与操作", "右侧太阳系插图"],
-      }),
-    ).toMatchObject({
-      visualPriority: "太阳是视觉中心；行星轨道辅助理解关系",
-      groupingStrategy: "左侧标题与操作；右侧太阳系插图",
-    });
-  });
-
-  it("leaves unknown interaction feedback shapes for strict schema rejection", () => {
-    expect(
-      normalizePageWriterModelOutput({
-        narration: [],
-        interaction: {
-          type: "input",
-          feedbackSuccess: { message: "回答正确。" },
-          feedbackRetry: 0,
-        },
-      }),
-    ).toMatchObject({
-      interaction: {
-        feedbackSuccess: { message: "回答正确。" },
-        feedbackRetry: 0,
-      },
-    });
   });
 
   it("adds stable technical IDs to each nested choice question", () => {
@@ -1068,30 +958,6 @@ describe("PageWriterModelStep", () => {
     ]);
   });
 
-  it("recovers a compressed item label from its matching content block", () => {
-    expect(
-      materializeInteractionItems(["恒星"], pageContentDsl.blocks),
-    ).toEqual([
-      {
-        id: "item-01",
-        label: "恒星",
-        content: "恒星会自己发光，太阳就是离我们最近的恒星。",
-      },
-    ]);
-  });
-
-  it.each([
-    ["next", "next"],
-    ["nextPage", "next"],
-    ["previous-page", "previous"],
-    ["home", "course-home"],
-    ["unused choice placeholder", "next"],
-  ] as const)(
-    "normalizes model navigation placeholder %s to %s",
-    (modelValue, expected) => {
-      expect(normalizePageNavigationDestination(modelValue)).toBe(expected);
-    },
-  );
 });
 
 function withRequiredVisual<T extends PageContentDSL>(

@@ -6,9 +6,10 @@ import {
   UpdateConversationInputSchema,
 } from "../../../src/shared/course-schema";
 
-const legacyConversation = {
+const conversation = {
   id: "conversation-schema-test",
   title: "物理课程",
+  pinned: false,
   createdAt: "2026-07-24T01:00:00.000Z",
   updatedAt: "2026-07-24T01:00:00.000Z",
   messages: [
@@ -22,8 +23,12 @@ const legacyConversation = {
 };
 
 describe("conversation schemas", () => {
-  it("keeps legacy records valid by defaulting pinned to false", () => {
-    expect(ConversationRecordSchema.parse(legacyConversation).pinned).toBe(
+  it("requires the current pinned field", () => {
+    expect(ConversationRecordSchema.parse(conversation).pinned).toBe(false);
+    const withoutPinned = Object.fromEntries(
+      Object.entries(conversation).filter(([key]) => key !== "pinned"),
+    );
+    expect(ConversationRecordSchema.safeParse(withoutPinned).success).toBe(
       false,
     );
   });
@@ -47,16 +52,16 @@ describe("conversation schemas", () => {
   it("defines the successful deletion response", () => {
     expect(
       DeleteConversationResponseSchema.parse({
-        id: legacyConversation.id,
+        id: conversation.id,
         deleted: true,
       }),
     ).toEqual({
-      id: legacyConversation.id,
+      id: conversation.id,
       deleted: true,
     });
     expect(
       DeleteConversationResponseSchema.safeParse({
-        id: legacyConversation.id,
+        id: conversation.id,
         deleted: false,
       }).success,
     ).toBe(false);

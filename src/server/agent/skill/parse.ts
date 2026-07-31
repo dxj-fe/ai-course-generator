@@ -8,7 +8,6 @@ export type ParsedSkillDocument = Readonly<{
   name: string;
   description: string;
   license?: string;
-  compatibility?: string;
   metadata: Readonly<Record<string, string>>;
 }>;
 
@@ -49,17 +48,6 @@ export function parseSkillDocument(
   }
 
   const license = readOptionalString(raw, "license", sourceName);
-  const compatibility = readOptionalString(
-    raw,
-    "compatibility",
-    sourceName,
-  );
-  if (compatibility && compatibility.length > 500) {
-    throw invalidSkill(
-      sourceName,
-      "compatibility 不能超过 500 个字符。",
-    );
-  }
 
   const metadataValue = raw.metadata;
   const metadata: Record<string, string> = {};
@@ -82,7 +70,6 @@ export function parseSkillDocument(
     name,
     description,
     ...(license ? { license } : {}),
-    ...(compatibility ? { compatibility } : {}),
     metadata: Object.freeze(metadata),
   });
 }

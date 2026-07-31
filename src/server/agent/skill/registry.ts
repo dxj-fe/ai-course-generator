@@ -158,9 +158,6 @@ function toProjectSkill(
     logicalDir: skill.logicalDir,
     logicalSkillFile: skill.logicalSkillFile,
     ...(skill.license ? { license: skill.license } : {}),
-    ...(skill.compatibility
-      ? { compatibility: skill.compatibility }
-      : {}),
     metadata: skill.metadata,
     resourcePaths: skill.resourcePaths,
     digest: skill.digest,

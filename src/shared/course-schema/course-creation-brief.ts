@@ -13,9 +13,7 @@ export const CourseLearningModeSchema = z.enum([
   "mixed",
 ]);
 
-/**
- * 用户确认后的课程输入。它与当前 Keya 前端类型保持兼容，后续可直接上移替换类型声明。
- */
+/** 用户确认后的课程输入，也是 Keya 前后端共享的唯一创建合同。 */
 export const CourseCreationBriefSchema = z
   .object({
     originalRequest: z.string().trim().min(2).max(4_000),

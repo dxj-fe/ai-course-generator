@@ -62,7 +62,7 @@ export function styleTemplateToCssText(
 }
 
 /**
- * 将完整 StyleTemplate 映射为 Day 07 CourseSchema 使用的精简 Theme。
+ * 将完整 StyleTemplate 映射为 CourseSchema 使用的精简 Theme。
  * 映射集中在适配器中，避免 Agent 自行猜测两套协议如何对应。
  */
 export function styleTemplateToTheme(template: StyleTemplate): Theme {

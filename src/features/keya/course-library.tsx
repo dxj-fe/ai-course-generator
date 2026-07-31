@@ -25,7 +25,7 @@ import {
 import {
   listCourseHistory,
   type CourseHistoryFilters,
-} from "@/features/course-planner/lib/course-library-api";
+} from "@/features/keya/api/course-library";
 import type {
   CourseHistoryItem,
   CourseHistoryListResponse,

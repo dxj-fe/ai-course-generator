@@ -6,8 +6,8 @@ import {
 } from "../../../../src/server/agent/runtime";
 import { CourseRunSchema } from "../../../../src/shared/course-schema";
 import {
-  createAgentV2Architecture,
-} from "../../../fixtures/agent-v2-course-architecture";
+  createArchitecture,
+} from "../../../fixtures/course-architecture";
 import {
   cleanupCourseDirectorAgentTestDirectories,
   createFakeFactory,
@@ -184,7 +184,7 @@ describe("Course Director Agent", () => {
     ).toBe("planning");
   });
 
-  it("架构语义不合格时退回旧版本，并创建携带具体问题的新 Architect WorkOrder", async () => {
+  it("架构语义不合格时保留上一修订，并创建携带具体问题的新 Architect WorkOrder", async () => {
     const prepared = await prepareArchitectureRound("revision");
     const issue = "练习页和总结页职责重复，需要让总结只负责迁移检查。";
     const createAgent = createFakeFactory(async (settings) => {
@@ -624,7 +624,7 @@ describe("Course Director Agent", () => {
       workOrderLeaseOwner: "architect-replan-round",
       runLeaseOwner: RUN_OWNER,
       traceId: TRACE_ID,
-      architecture: createAgentV2Architecture(),
+      architecture: createArchitecture(),
       now: timestamp(41),
     });
     const revisedRef = required(
@@ -633,8 +633,8 @@ describe("Course Director Agent", () => {
       ),
     );
     expect(revisedRef.id).not.toBe(prepared.architectureRef.id);
-    expect(revisedRef.version).toBeGreaterThan(
-      prepared.architectureRef.version,
+    expect(revisedRef.revision).toBeGreaterThan(
+      prepared.architectureRef.revision,
     );
 
     const queuedDirector = createCourseRunCommands(

@@ -12,7 +12,6 @@ export const VisualStyleSchema = z.enum([
   "nature",
   "blackboard",
   "game-quest",
-  "professional",
 ]);
 
 export const CourseDifficultySchema = z.enum([

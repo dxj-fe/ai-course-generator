@@ -44,7 +44,6 @@ export function createCourseArchive(input: CourseGenerationState): CourseArchive
   }
 
   const manifest = {
-    version: 1,
     courseId: course.courseId,
     generatedAt: course.completedAt,
     assets: course.pages.flatMap((page) =>

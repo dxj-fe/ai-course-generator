@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { chromium } from "playwright";
 
 import {
-  DETERMINISTIC_PAGE_RENDERER_VERSION,
   renderDeterministicPageFallback,
 } from "../../../../src/server/course/page/deterministic-fallback";
 import { buildFittedLessonSrcDoc } from "../../../../src/shared/html-preview";
@@ -413,16 +412,13 @@ function createFiveNodeTimelineContent(): PageContentDSL {
 }
 
 describe("renderDeterministicPageFallback advanced layout", () => {
-  it("marks generated HTML with the current deterministic renderer version", () => {
+  it("marks generated HTML as deterministic", () => {
     const html = renderDeterministicPageFallback({
       content: getExample("story-intro"),
       styleTemplate,
     });
 
     expect(html).toContain('data-keya-renderer="deterministic"');
-    expect(html).toContain(
-      `data-keya-renderer-version="${DETERMINISTIC_PAGE_RENDERER_VERSION}"`,
-    );
   });
 
   it("keeps lesson copy visible instead of hiding every block in closed details", () => {
@@ -440,7 +436,7 @@ describe("renderDeterministicPageFallback advanced layout", () => {
 
     for (const [index, block] of content.blocks.entries()) {
       expect(html).toContain(
-        `<article class="lesson-card" data-block-index="${String(index + 1).padStart(2, "0")}" data-block-id="${block.id}">`,
+        `<article class="lesson-card" data-block-index="${String(index + 1).padStart(2, "0")}" data-block-id="${block.id}" data-runtime-target-id="${block.id}">`,
       );
       expect(html).toContain(`<h2>${block.heading}</h2>`);
       expect(html).toContain(`<p>${block.body}</p>`);

@@ -105,7 +105,6 @@ export async function parseReferenceUpload(
   const id = `ref-${createHash("sha256").update(bytes).digest("hex").slice(0, 24)}`;
 
   const parsed = ReferencePackSchema.safeParse({
-    version: 1,
     id,
     sourceName,
     sourceType,
@@ -221,7 +220,7 @@ async function summarizeReference(input: {
       JSON.stringify(input.chunks),
       "请输出资料摘要和不超过 12 条关键事实。顶层字段只能使用 summary、keyFacts；keyFacts 每项只能使用 text、chunkIds。每条事实只能引用支持它的真实 chunkIds，不得创造资料外事实。",
     ].join("\n\n"),
-    promptVersion: "reference-pack-summary@1.0.1",
+    promptFingerprint: "reference-pack-summary",
     schema: ReferenceSummaryDraftSchema,
     schemaDescription:
       "A source-grounded summary and key facts whose chunkIds reference the supplied chunks.",
@@ -234,7 +233,7 @@ async function summarizeReference(input: {
 }
 
 /**
- * 部分 OpenAI-compatible Provider 会把顶层 JSON 字段本地化。这里只恢复
+ * 部分 OpenAI 协议 Provider 会把顶层 JSON 字段本地化。这里只恢复
  * 已观测到且语义唯一的两个别名；冲突字段和其他未知字段仍交给 strict schema 拒绝。
  */
 export function normalizeReferenceSummaryOutput(output: unknown): unknown {

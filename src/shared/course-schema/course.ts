@@ -94,7 +94,7 @@ export const CourseOutlineSchema = z
 export const CourseSchema = z
   .object({
     id: z.string().min(1).max(80),
-    version: z.number().int().positive(),
+    revision: z.number().int().positive(),
     title: z.string().min(2).max(160),
     goal: z.string().min(5).max(500),
     audience: CourseAudienceSchema,

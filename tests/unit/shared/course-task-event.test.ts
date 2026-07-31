@@ -25,9 +25,8 @@ function runningState(
   overrides: Partial<CourseGenerationState> = {},
 ): CourseGenerationState {
   return {
-    version: 1,
-    courseId: "course-day-19",
-    traceId: "trace-day-19",
+    courseId: "course-fixture-19",
+    traceId: "trace-fixture-19",
     userPrompt: "生成三页太阳系互动课程",
     status: "running",
     currentStage: "intent",
@@ -51,7 +50,7 @@ function publicEvent(
     id: `event-${type}`,
     sequence: 1,
     type,
-    traceId: "trace-day-19",
+    traceId: "trace-fixture-19",
     timestamp,
     step: 1,
     summary: `${type} summary`,
@@ -60,7 +59,7 @@ function publicEvent(
   };
 }
 
-describe("Day 19 course task protocol", () => {
+describe("course task protocol", () => {
   it.each([
     "agent_start",
     "agent_done",
@@ -77,13 +76,12 @@ describe("Day 19 course task protocol", () => {
 
   it("validates a persisted task record and queued creation response", () => {
     const record = CourseTaskRecordSchema.parse({
-      version: 1,
-      taskId: "task-day-19",
-      courseId: "course-day-19",
-      traceId: "trace-day-19",
+      taskId: "task-fixture-19",
+      courseId: "course-fixture-19",
+      traceId: "trace-fixture-19",
       userPrompt: "生成三页太阳系互动课程",
+      creationBrief,
       pageCount: 3,
-      source: "langgraph",
       status: "queued",
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -95,26 +93,22 @@ describe("Day 19 course task protocol", () => {
         courseId: record.courseId,
         traceId: record.traceId,
         status: record.status,
-        source: record.source,
       }),
     ).toEqual({
-      taskId: "task-day-19",
-      courseId: "course-day-19",
-      traceId: "trace-day-19",
+      taskId: "task-fixture-19",
+      courseId: "course-fixture-19",
+      traceId: "trace-fixture-19",
       status: "queued",
-      source: "langgraph",
     });
   });
 
-  it("requires a structured creation brief only for agent-v2 records", () => {
+  it("requires a structured creation brief", () => {
     expect(
       CourseTaskRecordSchema.safeParse({
-        version: 1,
-        taskId: "task-agent-v2",
-        courseId: "course-agent-v2",
-        traceId: "trace-agent-v2",
+        taskId: "task-current",
+        courseId: "course-current",
+        traceId: "trace-current",
         userPrompt: "生成三页太阳系互动课程",
-        source: "agent-v2",
         status: "queued",
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -123,36 +117,16 @@ describe("Day 19 course task protocol", () => {
 
     expect(
       CourseTaskRecordSchema.parse({
-        version: 1,
-        taskId: "task-agent-v2",
-        courseId: "course-agent-v2",
-        traceId: "trace-agent-v2",
+        taskId: "task-current",
+        courseId: "course-current",
+        traceId: "trace-current",
         userPrompt: "生成三页太阳系互动课程",
         creationBrief,
-        source: "agent-v2",
         status: "queued",
         createdAt: timestamp,
         updatedAt: timestamp,
       }),
-    ).toMatchObject({
-      source: "agent-v2",
-      creationBrief,
-    });
-  });
-
-  it("keeps legacy records readable when source or creationBrief is absent", () => {
-    expect(
-      CourseTaskRecordSchema.parse({
-        version: 1,
-        taskId: "task-legacy-record",
-        courseId: "course-legacy-record",
-        traceId: "trace-legacy-record",
-        userPrompt: "生成旧版课程",
-        status: "completed",
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      }),
-    ).toMatchObject({ source: "workflow" });
+    ).toMatchObject({ creationBrief });
   });
 
   it("keeps pause as a non-terminal task control state", () => {
@@ -161,15 +135,14 @@ describe("Day 19 course task protocol", () => {
     ).toEqual({ action: "pause" });
     expect(
       CourseTaskControlResponseSchema.parse({
-        taskId: "task-day-19",
-        courseId: "course-day-19",
-        traceId: "trace-day-19-resumed",
+        taskId: "task-fixture-19",
+        courseId: "course-fixture-19",
+        traceId: "trace-fixture-19-resumed",
         status: "paused",
-        source: "langgraph",
       }),
     ).toMatchObject({
       status: "paused",
-      traceId: "trace-day-19-resumed",
+      traceId: "trace-fixture-19-resumed",
     });
   });
 
@@ -181,9 +154,8 @@ describe("Day 19 course task protocol", () => {
     expect(
       CourseTaskStreamMessageSchema.parse({
         type: "snapshot",
-        taskId: "task-day-19",
+        taskId: "task-fixture-19",
         courseId: state.courseId,
-        source: "langgraph",
         taskStatus: "paused",
         state,
       }).type,
@@ -191,18 +163,16 @@ describe("Day 19 course task protocol", () => {
     expect(
       CourseTaskStreamMessageSchema.parse({
         type: "event",
-        taskId: "task-day-19",
+        taskId: "task-fixture-19",
         courseId: state.courseId,
-        source: "langgraph",
         event,
       }).type,
     ).toBe("event");
     expect(
       CourseTaskStreamMessageSchema.parse({
         type: "terminal",
-        taskId: "task-day-19",
+        taskId: "task-fixture-19",
         courseId: failedState.courseId,
-        source: "langgraph",
         status: "failed",
         state: failedState,
       }).type,
@@ -216,8 +186,8 @@ describe("Day 19 course task protocol", () => {
   ])("rejects non-public stream fields: %j", (privateField) => {
     const result = CourseTaskStreamMessageSchema.safeParse({
       type: "event",
-      taskId: "task-day-19",
-      courseId: "course-day-19",
+      taskId: "task-fixture-19",
+      courseId: "course-fixture-19",
       event: publicEvent("agent_done"),
       ...privateField,
     });
@@ -231,7 +201,7 @@ describe("Day 19 course task protocol", () => {
     expect(
       CourseTaskStreamMessageSchema.safeParse({
         type: "terminal",
-        taskId: "task-day-19",
+        taskId: "task-fixture-19",
         courseId: failedState.courseId,
         status: "completed",
         state: failedState,
@@ -240,7 +210,7 @@ describe("Day 19 course task protocol", () => {
     expect(
       CourseTaskStreamMessageSchema.safeParse({
         type: "snapshot",
-        taskId: "task-day-19",
+        taskId: "task-fixture-19",
         courseId: "course-other",
         state: failedState,
       }).success,

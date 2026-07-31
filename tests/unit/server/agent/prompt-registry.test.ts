@@ -13,7 +13,7 @@ describe("Prompt Registry", () => {
     expect(system.prompts.frozen).toBe(true);
 
     const architect = await system.prompts.render(
-      PromptIds.CourseArchitectSystemV1,
+      PromptIds.CourseArchitectSystem,
       {
         availableSkills: "<available_skills />",
         skillInstructions: "# 课程设计",
@@ -24,7 +24,7 @@ describe("Prompt Registry", () => {
     expect(architect).toContain("验证用于发现遗漏，不代替课程设计");
 
     await expect(
-      system.prompts.render(PromptIds.CourseArchitectSystemV1, {}),
+      system.prompts.render(PromptIds.CourseArchitectSystem, {}),
     ).rejects.toThrow("缺少 availableSkills");
   });
 
@@ -33,7 +33,7 @@ describe("Prompt Registry", () => {
     const system = await createAgentSystem(skills);
 
     const prompt = await system.prompts.render(
-      PromptIds.CoursePageBuilderSystemV1,
+      PromptIds.CoursePageBuilderSystem,
       {
         availableSkills: "<available_skills />",
         pageId: "page-02",

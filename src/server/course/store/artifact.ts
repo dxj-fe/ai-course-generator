@@ -54,7 +54,7 @@ type ArtifactRow = {
   page_id: string | null;
   scope_key: string;
   kind: ArtifactKind;
-  version: number;
+  revision: number;
   content_hash: string;
   created_by_work_order_id: string;
   payload: string;
@@ -62,7 +62,7 @@ type ArtifactRow = {
 };
 
 const SELECT_COLUMNS = `
-  id, task_id, course_id, page_id, scope_key, kind, version, content_hash,
+  id, task_id, course_id, page_id, scope_key, kind, revision, content_hash,
   created_by_work_order_id, payload, created_at
 `;
 
@@ -106,9 +106,9 @@ export function createCourseArtifactStore(
       });
       if (existing) return existing;
 
-      const versionRow = database
+      const revisionRow = database
         .prepare(`
-          SELECT COALESCE(MAX(version), 0) AS latest_version
+          SELECT COALESCE(MAX(revision), 0) AS latest_revision
           FROM course_artifacts
           WHERE task_id = ?
             AND course_id = ?
@@ -120,7 +120,7 @@ export function createCourseArtifactStore(
           input.courseId,
           input.scopeKey,
           input.kind,
-        ) as { latest_version: number };
+        ) as { latest_revision: number };
       const artifact = CourseArtifactSchema.parse({
         id: input.id ?? createStorageId("artifact"),
         taskId: input.taskId,
@@ -128,7 +128,7 @@ export function createCourseArtifactStore(
         pageId: input.pageId,
         scopeKey: input.scopeKey,
         kind: input.kind,
-        version: versionRow.latest_version + 1,
+        revision: revisionRow.latest_revision + 1,
         contentHash,
         createdByWorkOrderId: input.createdByWorkOrderId,
         payload: input.payload,
@@ -138,7 +138,7 @@ export function createCourseArtifactStore(
       database
         .prepare(`
           INSERT INTO course_artifacts (
-            id, task_id, course_id, page_id, scope_key, kind, version,
+            id, task_id, course_id, page_id, scope_key, kind, revision,
             content_hash, created_by_work_order_id, payload, created_at
           )
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -150,7 +150,7 @@ export function createCourseArtifactStore(
           artifact.pageId ?? null,
           artifact.scopeKey,
           artifact.kind,
-          artifact.version,
+          artifact.revision,
           artifact.contentHash,
           artifact.createdByWorkOrderId,
           JSON.stringify(artifact.payload),
@@ -185,7 +185,7 @@ export function createCourseArtifactStore(
               SELECT ${SELECT_COLUMNS}
               FROM course_artifacts
               WHERE task_id = ? AND kind = ?
-              ORDER BY scope_key, version
+              ORDER BY scope_key, revision
             `)
             .all(taskId, kind) as ArtifactRow[])
         : (database
@@ -193,7 +193,7 @@ export function createCourseArtifactStore(
               SELECT ${SELECT_COLUMNS}
               FROM course_artifacts
               WHERE task_id = ?
-              ORDER BY kind, scope_key, version
+              ORDER BY kind, scope_key, revision
             `)
             .all(taskId) as ArtifactRow[]);
       return rows.map((row) => parseArtifactRow(row)!);
@@ -212,7 +212,7 @@ function parseArtifactRow(row: ArtifactRow | undefined) {
     pageId: row.page_id ?? undefined,
     scopeKey: row.scope_key,
     kind: row.kind,
-    version: row.version,
+    revision: row.revision,
     contentHash: row.content_hash,
     createdByWorkOrderId: row.created_by_work_order_id,
     payload: JSON.parse(row.payload),

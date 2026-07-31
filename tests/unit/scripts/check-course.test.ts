@@ -24,7 +24,6 @@ import {
 import { buildValidGeneratedHtml } from "../../fixtures/generated-html";
 
 const baseline = DemoBaselineSchema.parse({
-  version: 2,
   id: "solar-system-test",
   name: "太阳系测试",
   prompt: "为儿童生成一门三页太阳系测试课程。",
@@ -58,7 +57,7 @@ const baseline = DemoBaselineSchema.parse({
   manualReview: { minimumTotal: 24, minimumDimension: 3 },
 });
 
-describe("Day 36 course checker", () => {
+describe("course checker", () => {
   it("accepts a completed course with semantic outline, HTML, QA, screenshots and export", () => {
     const course = completedCourse();
     const report = checkDemoCourse({
@@ -275,6 +274,16 @@ function completedCourse(): CourseGenerationState {
       pageId: page.id,
       functionalTemplateId: page.functionalTemplateId,
       title: page.title,
+      runtime: {
+        ...pageContentDsl.runtime,
+        completionRule:
+          page.interactionType === "reveal"
+            ? {
+                type: "interaction-complete",
+                interactionId: `interaction-${page.id}`,
+              }
+            : { type: "view" },
+      },
       interaction:
         page.interactionType === "reveal"
           ? pageContentDsl.interaction
@@ -289,7 +298,6 @@ function completedCourse(): CourseGenerationState {
   );
 
   return CourseGenerationStateSchema.parse({
-    version: 1,
     courseId: "course-demo-solar-system",
     traceId: "trace-demo-solar-system",
     userPrompt: baseline.prompt,
@@ -324,7 +332,7 @@ function completedCourse(): CourseGenerationState {
       content: contents[index],
       assets: [],
       htmlOutput: {
-        version: 1,
+        revision: 1,
         html: buildValidGeneratedHtml(contents[index]!),
         generatedAt: completedAt,
       },
@@ -354,17 +362,23 @@ function qualityReport(pageId: string, createdAt: string) {
     },
     issues: [],
     screenshotEvidence: {
-      status: "captured",
-      artifactId: `artifact-${pageId}`,
-      viewport: { width: 1440, height: 900 },
-      metrics: {
-        documentWidth: 1440,
-        documentHeight: 900,
-        horizontalOverflowPx: 0,
-        clippedElementCount: 0,
-        zeroSizeInteractiveCount: 0,
-      },
-      capturedAt: createdAt,
+      captures: [
+        { width: 922, height: 460, name: "desktop" },
+        { width: 712, height: 650, name: "tablet" },
+        { width: 366, height: 500, name: "mobile" },
+      ].map(({ width, height, name }) => ({
+        status: "captured" as const,
+        artifactId: `artifact-${pageId}-${name}`,
+        viewport: { width, height },
+        metrics: {
+          documentWidth: width,
+          documentHeight: height,
+          horizontalOverflowPx: 0,
+          clippedElementCount: 0,
+          zeroSizeInteractiveCount: 0,
+        },
+        capturedAt: createdAt,
+      })),
     },
     shouldRepair: false,
     decision: "pass",

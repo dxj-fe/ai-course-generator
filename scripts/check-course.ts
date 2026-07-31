@@ -32,7 +32,6 @@ const RequiredConceptSchema = z
 
 export const DemoBaselineSchema = z
   .object({
-    version: z.literal(2),
     id: z
       .string()
       .min(2)
@@ -71,7 +70,6 @@ export type DemoCheckIssue = {
 };
 
 export type DemoCheckReport = {
-  version: 1;
   baselineId: string;
   courseId?: string;
   passed: boolean;
@@ -115,7 +113,7 @@ type CheckDemoCourseInput = {
   now?: () => string;
 };
 
-/** 对持久化课程执行 Day 36 的结构、HTML、素材、QA 与导出聚合验收。 */
+/** 对持久化课程执行结构、HTML、素材、QA 与导出聚合验收。 */
 export function checkDemoCourse(input: CheckDemoCourseInput): DemoCheckReport {
   const baseline = DemoBaselineSchema.parse(input.baseline);
   const parsedCourse = CourseGenerationStateSchema.safeParse(input.course);
@@ -336,12 +334,14 @@ function checkPages(
     }
     if (
       baseline.quality.requireScreenshotEvidence &&
-      quality.screenshotEvidence?.status !== "captured"
+      !quality.screenshotEvidence?.captures.every(
+        ({ status }) => status === "captured",
+      )
     ) {
       issues.push({
         code: "SCREENSHOT_EVIDENCE_MISSING",
         pageId: page.pageId,
-        message: `应包含 captured 截图证据，实际为 ${quality.screenshotEvidence?.status ?? "missing"}。`,
+        message: "应包含三个视口的 captured 截图证据。",
       });
     }
   }
@@ -447,7 +447,6 @@ function reportFor(input: {
     ? summarizeCourseQuality(course)
     : undefined;
   return {
-    version: 1,
     baselineId: input.baseline.id,
     courseId: course?.courseId,
     passed: input.issues.length === 0,
@@ -461,7 +460,9 @@ function reportFor(input: {
       screenshotPages:
         course?.pages.filter(
           ({ qualityReport }) =>
-            qualityReport?.screenshotEvidence?.status === "captured",
+            qualityReport?.screenshotEvidence?.captures.every(
+              ({ status }) => status === "captured",
+            ),
         ).length ?? 0,
       firstPassAcceptedPages:
         quality?.firstPassAcceptedPageCount ?? 0,

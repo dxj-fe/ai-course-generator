@@ -103,8 +103,6 @@ function validateTrustedRuntimeMarkup(
   content: PageContentDSL,
   issues: string[],
 ) {
-  if (content.version !== 2 || !content.runtime) return;
-
   if (
     content.runtime.visualPrimitive !== "none" &&
     !hasUniqueVisualPrimitiveInMain(
@@ -127,7 +125,7 @@ function validateTrustedRuntimeMarkup(
     });
     if (markers.length !== 1) {
       issues.push(
-        `PageContentDSL v2 的内容块 ${block.id} 必须声明同值 data-runtime-target-id。`,
+        `PageContentDSL 内容块 ${block.id} 必须声明同值 data-runtime-target-id。`,
       );
     }
   }
@@ -394,14 +392,9 @@ function hasRequiredStaticContentText(
     content.interaction.type === "input" &&
     requiredText === content.interaction.placeholder
   ) {
-    const roots =
-      content.version === 2
-        ? [
-            findUniqueInteractionRoot(html, content),
-          ].filter((marker): marker is OpeningTagMatch => Boolean(marker))
-        : findTagMatchesWithAttributes(html, {
-            "data-interaction-type": "input",
-          });
+    const roots = [findUniqueInteractionRoot(html, content)].filter(
+      (marker): marker is OpeningTagMatch => Boolean(marker),
+    );
     if (roots.length !== 1) return false;
     const interactionHtml = getElementHtml(html, roots[0]!);
     if (!interactionHtml) return false;

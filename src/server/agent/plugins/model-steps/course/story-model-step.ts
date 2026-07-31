@@ -23,25 +23,27 @@ import type {
 
 const PROFESSIONAL_BRIEF_TIMEOUT_MS = 120_000;
 
-const StoryModelOutputSchema = z.object({
-  narrativeMode: NarrativeModeSchema,
-  premise: z.string().min(5).max(400),
-  learnerRole: z.string().min(2).max(200),
-  mission: z.string().min(5).max(300),
-  // 兼容会把简单角色对象压缩为名称字符串的模型输出。
-  // 领域层仍会在规范化后用 StoryArcSchema 严格校验。
-  characters: z.array(z.unknown()).max(6),
-  pageBeats: z
-    .array(
-      z.object({
-        beat: z.string().min(2).max(300),
-        transition: z.string().min(2).max(240),
-      }),
-    )
-    .min(1),
-  tone: z.string().min(2).max(160),
-  continuityRules: z.array(z.string().min(2).max(240)).min(1).max(10),
-});
+export const StoryModelOutputSchema = z
+  .object({
+    narrativeMode: NarrativeModeSchema,
+    premise: z.string().min(5).max(400),
+    learnerRole: z.string().min(2).max(200),
+    mission: z.string().min(5).max(300),
+    characters: z.array(StoryCharacterSchema).max(6),
+    pageBeats: z
+      .array(
+        z
+          .object({
+            beat: z.string().min(2).max(300),
+            transition: z.string().min(2).max(240),
+          })
+          .strict(),
+      )
+      .min(1),
+    tone: z.string().min(2).max(160),
+    continuityRules: z.array(z.string().min(2).max(240)).min(1).max(10),
+  })
+  .strict();
 
 export type StoryModelStepState = ModelStepStateBase & {
   task: {
@@ -143,10 +145,8 @@ async function generateArc(input: {
       6_000,
       2_200 + input.outline.pages.length * 380,
     ),
-    normalizeOutput: (output) =>
-      normalizeStoryModelOutput(output, input.outline),
     prompt: prompts.userPrompt,
-    promptVersion: prompts.version,
+    promptFingerprint: prompts.fingerprint,
     schema: StoryModelOutputSchema,
     schemaDescription:
       "A restrained cross-page narrative arc with one ordered beat per course page.",
@@ -165,10 +165,6 @@ async function generateArc(input: {
 
   return StoryArcSchema.parse({
     ...draft,
-    characters: normalizeStoryCharacters(
-      draft.narrativeMode,
-      draft.characters,
-    ),
     pageBeats: draft.pageBeats.map((beat, index) => {
       const page = input.outline.pages[index];
       const alignedBeat =
@@ -184,67 +180,5 @@ async function generateArc(input: {
         pageId: page.id,
       };
     }),
-  });
-}
-
-/**
- * mission 与 premise/learnerRole 是同一叙事草稿的交接字段。只在后两者均
- * 已有效且 mission 确实缺失时，用可信 CoursePlan 首尾页生成最小任务线；
- * 显式空值或其他损坏输出不会被掩盖。
- */
-export function normalizeStoryModelOutput(
-  output: unknown,
-  outline: CoursePlan,
-): unknown {
-  if (
-    !isRecord(output) ||
-    output.mission !== undefined ||
-    !z.string().trim().min(5).max(400).safeParse(output.premise).success ||
-    !z.string().trim().min(2).max(200).safeParse(output.learnerRole).success
-  ) {
-    return output;
-  }
-
-  const firstTitle = outline.pages[0]?.title.slice(0, 80);
-  const lastTitle = outline.pages.at(-1)?.title.slice(0, 80);
-  if (!firstTitle || !lastTitle) return output;
-
-  return {
-    ...output,
-    mission: `完成从“${firstTitle}”到“${lastTitle}”的连续学习任务，并达成课程既定目标。`,
-  };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-/**
- * none 表示没有虚构角色；模型即使返回占位角色，也由适配层确定性丢弃。
- * light/full 模式仍兼容名称字符串，并在进入领域 Schema 前补齐角色职责。
- */
-export function normalizeStoryCharacters(
-  narrativeMode: z.infer<typeof NarrativeModeSchema>,
-  characters: unknown[],
-) {
-  if (narrativeMode === "none") return [];
-
-  return characters.map((item) => {
-    const parsed = StoryCharacterSchema.safeParse(item);
-
-    if (parsed.success) {
-      return parsed.data;
-    }
-
-    if (typeof item === "string" && item.trim()) {
-      return {
-        name: item.trim(),
-        role: "连接课程任务并提供简短提示",
-      };
-    }
-
-    throw new AiSchemaValidationError(
-      "Story characters 必须是名称文字或包含 name/role 的对象。",
-    );
   });
 }

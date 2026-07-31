@@ -25,10 +25,15 @@ const modelIdentity = {
 };
 
 const content: PageContentDSL = {
-  version: 1,
   pageId: "page-02-knowledge",
   functionalTemplateId: "knowledge-card-grid",
   title: "恒星与行星观察任务",
+  runtime: {
+    sceneKind: "explain",
+    visualPrimitive: "concept-map",
+    motionPlan: { intensity: "none", cuePoints: [] },
+    completionRule: { type: "view" },
+  },
   narration: ["先观察背景，再跟随宇航员完成任务卡。"],
   blocks: [
     {
@@ -413,7 +418,7 @@ async function temporaryCache() {
   const directory = await mkdtemp(path.join(tmpdir(), "asset-workflow-test-"));
   directories.push(directory);
   return createAssetCache({
-    filePath: path.join(directory, "asset-cache.json"),
+    databasePath: path.join(directory, "asset-cache.json"),
     assetExists: vi.fn().mockResolvedValue(true),
   });
 }

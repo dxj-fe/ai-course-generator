@@ -14,7 +14,6 @@ function runningState(
   overrides: Partial<CourseGenerationState> = {},
 ): CourseGenerationState {
   return {
-    version: 1,
     courseId: "course-123",
     traceId: "trace-123",
     userPrompt: "生成太阳系课程",
@@ -109,7 +108,7 @@ describe("course store", () => {
     await expect(
       store.save({
         ...runningState(),
-        version: 2,
+        revision: 2,
       } as unknown as CourseGenerationState, { expected: undefined }),
     ).rejects.toThrow();
     await expect(store.list()).resolves.toEqual({
@@ -159,7 +158,6 @@ describe("course store", () => {
     const courseStore = createCourseStore({ rootDir });
     const taskStore = createCourseTaskStore({ rootDir });
     const task = {
-      version: 1 as const,
       taskId: "task-course-store-fence",
       courseId: "course-123",
       traceId: "trace-123",
@@ -173,7 +171,6 @@ describe("course store", () => {
         learningMode: "mixed" as const,
         language: "zh-CN" as const,
       },
-      source: "agent-v2" as const,
       status: "running" as const,
       createdAt: "2026-07-15T01:00:00.000Z",
       updatedAt: "2026-07-15T01:00:00.000Z",

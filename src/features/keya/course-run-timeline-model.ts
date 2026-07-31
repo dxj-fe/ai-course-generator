@@ -1,7 +1,6 @@
 import type {
   CourseGenerationError,
   CourseGenerationStage,
-  CourseTaskRuntimeSource,
   CourseTaskStatus,
 } from "@/shared/course-schema";
 import type {
@@ -62,7 +61,6 @@ export type CourseRunTimelineTaskSummary = {
   taskId?: string;
   courseId?: string;
   traceId: string;
-  source: CourseTaskRuntimeSource;
   status: CourseTaskStatus;
   connectionStatus: CourseRunTimelineConnectionStatus;
   completedPages: number;
@@ -148,7 +146,6 @@ export function buildCourseRunTimelineModel(
       taskId: run.taskId,
       courseId: run.courseId,
       traceId: run.traceId,
-      source: run.source ?? "workflow",
       status: options.taskStatus ?? deriveTaskStatus(run, pages),
       connectionStatus: options.connectionStatus ?? "idle",
       completedPages,
@@ -237,7 +234,7 @@ function buildGlobalStages(run: KeyaCourseRun, nowMs: number) {
 }
 
 function buildPages(run: KeyaCourseRun, nowMs: number) {
-  const outline = run.generation?.outline ?? run.planner.data?.state.outline;
+  const outline = run.generation?.outline;
   const outlinePages = outline?.pages ?? [];
   const pageIds = [
     ...outlinePages.map(({ id }) => id),
@@ -372,19 +369,18 @@ function buildPages(run: KeyaCourseRun, nowMs: number) {
 function buildPageStage(
   run: KeyaCourseRun,
   definition: StageDefinition,
-  source: CourseRunStage<unknown> | undefined,
+  source: CourseRunStage | undefined,
   nowMs: number,
 ) {
   const status = source?.status ?? "idle";
-  const responseError = getResponseError(source);
 
   return buildStage(
     run,
     definition,
     status,
     nowMs,
-    source?.error ?? responseError?.message,
-    responseError?.code,
+    source?.error,
+    undefined,
     source?.events.map(({ summary }) => summary),
   );
 }
@@ -571,30 +567,6 @@ function findFailureAgent(run: KeyaCourseRun, definition: StageDefinition) {
       )
       .at(-1)?.agent ?? "Workflow"
   );
-}
-
-function getResponseError(source: CourseRunStage<unknown> | undefined) {
-  const data = source?.data;
-
-  if (!data || typeof data !== "object" || !("state" in data)) return undefined;
-  const state = data.state;
-  if (!state || typeof state !== "object" || !("error" in state)) {
-    return undefined;
-  }
-  const error = state.error;
-
-  if (
-    !error ||
-    typeof error !== "object" ||
-    !("code" in error) ||
-    !("message" in error) ||
-    typeof error.code !== "string" ||
-    typeof error.message !== "string"
-  ) {
-    return undefined;
-  }
-
-  return { code: error.code, message: error.message };
 }
 
 function deriveTaskStatus(

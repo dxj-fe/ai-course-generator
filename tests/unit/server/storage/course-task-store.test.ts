@@ -14,27 +14,27 @@ import type {
 const directories: string[] = [];
 
 function taskRecord(
-  overrides: Partial<LegacyCourseTaskRecord> = {},
-): LegacyCourseTaskRecord {
+  overrides: Partial<CourseTaskRecord> = {},
+): CourseTaskRecord {
   return {
-    version: 1,
-    taskId: "task-day-19",
-    courseId: "course-day-19",
-    traceId: "trace-day-19",
+    taskId: "task-fixture-19",
+    courseId: "course-fixture-19",
+    traceId: "trace-fixture-19",
     userPrompt: "生成三页太阳系互动课程",
+    creationBrief: {
+      originalRequest: "生成三页太阳系互动课程",
+      topic: "太阳系",
+      audience: "初学者",
+      learningMode: "mixed",
+      language: "zh-CN",
+    },
     pageCount: 3,
-    source: "workflow",
     status: "queued",
     createdAt: "2026-07-15T03:00:00.000Z",
     updatedAt: "2026-07-15T03:00:00.000Z",
     ...overrides,
   };
 }
-
-type LegacyCourseTaskRecord = Extract<
-  CourseTaskRecord,
-  { source: "workflow" | "langgraph" }
->;
 
 async function temporaryRoot() {
   const directory = await mkdtemp(path.join(tmpdir(), "task-store-test-"));
@@ -63,7 +63,7 @@ describe("course task store", () => {
     await expect(store.load("task-missing")).resolves.toBeUndefined();
   });
 
-  it.each(["../outside", "task/other", "/tmp/task-other", "TASK-DAY-19"])(
+  it.each(["../outside", "task/other", "/tmp/task-other", "TASK-FIXTURE-19"])(
     "rejects unsafe task id %s before querying",
     async (taskId) => {
       const store = createCourseTaskStore({ rootDir: await temporaryRoot() });
@@ -83,7 +83,7 @@ describe("course task store", () => {
       )
       .run(
         "task-broken",
-        "course-day-19",
+        "course-fixture-19",
         "{}",
         "2026-07-15T03:00:00.000Z",
         "2026-07-15T03:00:00.000Z",
@@ -108,61 +108,17 @@ describe("course task store", () => {
          VALUES (?, ?, ?, ?, ?)`,
       )
       .run(
-        "task-day-19",
-        "course-day-19",
+        "task-fixture-19",
+        "course-fixture-19",
         JSON.stringify(taskRecord({ taskId: "task-different" })),
         "2026-07-15T03:00:00.000Z",
         "2026-07-15T03:00:00.000Z",
       );
     database.close();
 
-    await expect(store.load("task-day-19")).rejects.toThrow(
+    await expect(store.load("task-fixture-19")).rejects.toThrow(
       "课程任务 ID 与数据库主键不一致",
     );
-  });
-
-  it("uses the exact persisted payload as CAS token for legacy field ordering", async () => {
-    const rootDir = await temporaryRoot();
-    const store = createCourseTaskStore({ rootDir });
-    const record = taskRecord();
-    const legacyPayload = JSON.stringify({
-      updatedAt: record.updatedAt,
-      createdAt: record.createdAt,
-      status: record.status,
-      source: record.source,
-      pageCount: record.pageCount,
-      userPrompt: record.userPrompt,
-      traceId: record.traceId,
-      courseId: record.courseId,
-      taskId: record.taskId,
-      version: record.version,
-    });
-    const database = new DatabaseSync(path.join(rootDir, "keya.sqlite"));
-    database
-      .prepare(
-        `INSERT INTO course_tasks
-          (id, course_id, payload, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?)`,
-      )
-      .run(
-        record.taskId,
-        record.courseId,
-        legacyPayload,
-        record.createdAt,
-        record.updatedAt,
-      );
-    database.close();
-    const loaded = await store.load(record.taskId);
-    if (!loaded) throw new Error("测试任务未成功载入");
-    const running = taskRecord({
-      status: "running",
-      updatedAt: "2026-07-15T03:00:01.000Z",
-    });
-
-    await expect(
-      store.save(running, { expected: loaded }),
-    ).resolves.toBe(true);
-    await expect(store.load(record.taskId)).resolves.toEqual(running);
   });
 
   it.each([1, 20, 120])(
@@ -227,11 +183,9 @@ describe("course task store", () => {
     const secondStore = createCourseTaskStore({ rootDir });
     const first = taskRecord({
       taskId: "task-course-owner-a",
-      source: "workflow",
     });
     const second = taskRecord({
       taskId: "task-course-owner-b",
-      source: "workflow",
     });
 
     const results = await Promise.all([
@@ -248,7 +202,7 @@ describe("course task store", () => {
     await expect(firstStore.load(loser.taskId)).resolves.toBeUndefined();
   });
 
-  it("打开旧数据库时为已有活动任务补齐课程执行权", async () => {
+  it("启动时为已有活动任务补齐课程执行权", async () => {
     const rootDir = await temporaryRoot();
     await mkdir(rootDir, { recursive: true });
     const record = taskRecord({ status: "paused" });
@@ -447,15 +401,15 @@ describe("course task store", () => {
     await store.save(taskRecord(), { expected: undefined });
     await store.save(
       taskRecord({
-        taskId: "task-day-20",
-        courseId: "course-day-20",
+        taskId: "task-fixture-20",
+        courseId: "course-fixture-20",
         updatedAt: "2026-07-15T03:00:02.000Z",
       }),
       { expected: undefined },
     );
 
     await expect(store.list()).resolves.toMatchObject({
-      items: [{ taskId: "task-day-20" }, { taskId: "task-day-19" }],
+      items: [{ taskId: "task-fixture-20" }, { taskId: "task-fixture-19" }],
       unavailableCount: 0,
     });
   });
@@ -467,7 +421,6 @@ function failedCourseState(
 ): CourseGenerationState {
   const timestamp = "2026-07-15T03:00:00.000Z";
   return {
-    version: 1,
     courseId,
     traceId,
     userPrompt: "生成三页太阳系互动课程",

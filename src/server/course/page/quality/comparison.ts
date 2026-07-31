@@ -268,7 +268,7 @@ function visualPageScore(report: QualityReport) {
 function allRequiredScreenshotsCaptured(report: QualityReport) {
   const evidence = report.screenshotEvidence;
   if (!evidence) return false;
-  return (evidence.captures ?? [evidence]).every(
+  return evidence.captures.every(
     ({ status }) => status === "captured",
   );
 }

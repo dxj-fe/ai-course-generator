@@ -1,6 +1,6 @@
 import type { QualityDimensionName } from "@/shared/course-schema";
 
-/** Day 15 固定回归的十类页面失败，后续 QA 与 Repair 共用稳定 code。 */
+/** 固定回归的十类页面失败，QA 与 Repair 共用稳定 code。 */
 export const PAGE_QUALITY_FAILURE_TAXONOMY = [
   { code: "CONTENT_DRIFT", dimension: "contentAccuracy", label: "主题偏离或事实错误" },
   { code: "AUDIENCE_MISMATCH", dimension: "contentAccuracy", label: "难度不符合目标学习者" },

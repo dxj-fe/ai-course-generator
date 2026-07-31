@@ -38,13 +38,6 @@ export const CourseTaskControlRequestSchema = z
   })
   .strict();
 
-/** 保留旧运行源用于历史读取；新任务统一使用 agent-v2。 */
-export const CourseTaskRuntimeSourceSchema = z.enum([
-  "workflow",
-  "langgraph",
-  "agent-v2",
-]);
-
 const CourseTaskErrorSchema = z
   .object({
     code: z.string().min(1).max(100),
@@ -55,11 +48,11 @@ const CourseTaskErrorSchema = z
 
 const CourseTaskRecordBaseSchema = z
   .object({
-    version: z.literal(1),
     taskId: CourseTaskIdSchema,
     courseId: CourseIdSchema,
     traceId: z.string().min(1).max(120),
     userPrompt: z.string().min(2).max(4_000),
+    creationBrief: CourseCreationBriefSchema,
     referencePacks: z.array(ReferencePackSchema).max(REFERENCE_MAX_PACKS).optional(),
     pageCount: CoursePageCountSchema.optional(),
     executionMode: PageWorkerModeSchema.optional(),
@@ -72,34 +65,8 @@ const CourseTaskRecordBaseSchema = z
   })
   .strict();
 
-const LegacyCourseTaskRecordSchema = CourseTaskRecordBaseSchema.extend({
-  source: z.enum(["workflow", "langgraph"]),
-  creationBrief: CourseCreationBriefSchema.optional(),
-}).strict();
-
-const AgentV2CourseTaskRecordSchema = CourseTaskRecordBaseSchema.extend({
-  source: z.literal("agent-v2"),
-  creationBrief: CourseCreationBriefSchema,
-}).strict();
-
-/**
- * 持久化 taskId 与课程检查点之间的映射及任务生命周期。
- * 历史记录缺少 source 时继续按 workflow 读取；agent-v2 在运行时和类型层都强制保存 brief。
- */
-export const CourseTaskRecordSchema = z
-  .preprocess(
-    (value) =>
-      typeof value === "object" &&
-      value !== null &&
-      !Array.isArray(value) &&
-      !("source" in value)
-        ? { ...value, source: "workflow" }
-        : value,
-    z.discriminatedUnion("source", [
-      LegacyCourseTaskRecordSchema,
-      AgentV2CourseTaskRecordSchema,
-    ]),
-  )
+/** 持久化 taskId 与课程检查点之间的映射及任务生命周期。 */
+export const CourseTaskRecordSchema = CourseTaskRecordBaseSchema
   .superRefine((record, context) => {
     if (
       record.status === "paused" &&
@@ -119,7 +86,6 @@ export const CourseTaskCreateResponseSchema = z
     courseId: CourseIdSchema,
     traceId: z.string().min(1).max(120),
     status: z.literal("queued"),
-    source: CourseTaskRuntimeSourceSchema.default("workflow"),
   })
   .strict();
 
@@ -129,7 +95,6 @@ export const CourseTaskControlResponseSchema = z
     courseId: CourseIdSchema,
     traceId: z.string().min(1).max(120),
     status: CourseTaskStatusSchema,
-    source: CourseTaskRuntimeSourceSchema.default("workflow"),
   })
   .strict();
 
@@ -138,7 +103,6 @@ const CourseTaskStreamSnapshotSchema = z
     type: z.literal("snapshot"),
     taskId: CourseTaskIdSchema,
     courseId: CourseIdSchema,
-    source: CourseTaskRuntimeSourceSchema.default("workflow"),
     /** 课程 checkpoint 在暂停时仍是 running；任务控制态由此字段独立表达。 */
     taskStatus: CourseTaskStatusSchema.optional(),
     state: CourseGenerationStateSchema,
@@ -150,7 +114,6 @@ const CourseTaskStreamEventSchema = z
     type: z.literal("event"),
     taskId: CourseTaskIdSchema,
     courseId: CourseIdSchema,
-    source: CourseTaskRuntimeSourceSchema.default("workflow"),
     event: CourseGenerationPublicEventSchema,
   })
   .strict();
@@ -166,7 +129,6 @@ const CourseTaskStreamTerminalSchema = z
     type: z.literal("terminal"),
     taskId: CourseTaskIdSchema,
     courseId: CourseIdSchema,
-    source: CourseTaskRuntimeSourceSchema.default("workflow"),
     status: CourseTaskTerminalStatusSchema,
     state: CourseGenerationStateSchema,
   })
@@ -225,9 +187,6 @@ export type CourseTaskControlRequest = z.infer<
 >;
 export type CourseTaskControlResponse = z.infer<
   typeof CourseTaskControlResponseSchema
->;
-export type CourseTaskRuntimeSource = z.infer<
-  typeof CourseTaskRuntimeSourceSchema
 >;
 export type CourseTaskRecord = z.infer<typeof CourseTaskRecordSchema>;
 export type CourseTaskCreateResponse = z.infer<

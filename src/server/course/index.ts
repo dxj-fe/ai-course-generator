@@ -5,9 +5,8 @@ export {
 export { createCourseTaskRecoveryScanner } from "./task/recovery";
 export { createCourseHistoryService } from "./service/history";
 export { createCourseArchive } from "./service/export";
-export { runCourseDesignWorkflow } from "./service/design";
-export { runCourseGenerationAgentV2 } from "./run/engine";
-export { loadCourseGenerationAgentV2State } from "./run/state-loader";
+export { runCourseGeneration } from "./run/engine";
+export { loadCourseGenerationState } from "./run/state-loader";
 export {
   sanitizePublicCourseState,
   sanitizePublicCourseTaskStreamMessage,

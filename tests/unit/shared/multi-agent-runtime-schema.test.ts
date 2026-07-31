@@ -313,17 +313,17 @@ describe("多 Agent Artifact、Review 与 CourseRun Schema", () => {
 
 function createQueuedWorkOrder() {
   return {
-    version: 1,
     lockVersion: 0,
     id: "work-page-1",
     taskId: TASK_ID,
     courseId: COURSE_ID,
     causedByReviewIssueIds: [],
     dependencyWorkOrderIds: [],
+    agentId: "page-builder",
     kind: "build_page",
     scope: { type: "page", pageId: "page-1" },
     status: "queued",
-    idempotencyKey: "build:page-1:revision-1",
+    idempotencyKey: "build:page-1:initial",
     inputArtifactRefs: [createArtifactRef("course_architecture")],
     buildDependencyPageIds: [],
     inputSealedAt: NOW,
@@ -345,7 +345,6 @@ function createQueuedWorkOrder() {
 
 function createPassingReview() {
   return {
-    version: 1,
     courseId: COURSE_ID,
     inputManifestHash: "manifest-12345678",
     decision: "pass",
@@ -378,7 +377,6 @@ function createPassingReview() {
 
 function createCompletedRun() {
   return {
-    version: 1,
     id: "run-runtime-test",
     taskId: TASK_ID,
     courseId: COURSE_ID,
@@ -429,7 +427,7 @@ function createArtifactRef(
     courseId: COURSE_ID,
     pageId,
     scopeKey: pageId ? `page:${pageId}` : "course",
-    version: 1,
+    revision: 1,
     contentHash: `hash-${kind}-12345678`,
   };
 }

@@ -44,7 +44,7 @@ describe("Style Template Registry", () => {
     }
   });
 
-  it("serializes CSS variables and maps a style to the Day 07 Theme", () => {
+  it("serializes CSS variables and maps a style to the course Theme", () => {
     const template = listStyleTemplates()[0];
     const cssText = styleTemplateToCssText(template, ".course-preview");
     const theme = styleTemplateToTheme(template);
@@ -57,7 +57,6 @@ describe("Style Template Registry", () => {
   });
 
   it.each([
-    [{ visualStyle: "professional" as const }, "minimal"],
     [{ visualStyle: "sci-fi" as const }, "sci-fi"],
     [{ query: "适合孩子的明亮童趣风格" }, "kids-playful"],
     [{ query: "黑板粉笔数学课堂" }, "blackboard"],

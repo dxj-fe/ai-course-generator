@@ -52,7 +52,6 @@ export const CoursePackExampleSchema = z
 
 export const CoursePackSchema = z
   .object({
-    version: z.literal(1),
     courseId: CourseIdSchema,
     topic: z.string().trim().min(1).max(160),
     facts: z.array(CoursePackFactSchema).max(80),
@@ -106,7 +105,6 @@ export const CourseRulesSchema = z
 
 export const CourseBlueprintSchema = z
   .object({
-    version: z.literal(1),
     courseId: CourseIdSchema,
     title: z.string().trim().min(1).max(200),
     audience: CourseBlueprintAudienceSchema,
@@ -135,7 +133,6 @@ export const PageTaskAcceptanceSchema = z
 
 export const PageTaskSchema = z
   .object({
-    version: z.literal(1),
     pageId: DomainIdSchema,
     order: z.number().int().positive(),
     title: z.string().trim().min(1).max(160),
@@ -188,7 +185,6 @@ export const PageTaskSchema = z
 
 export const CourseArchitectureSchema = z
   .object({
-    version: z.literal(1),
     courseId: CourseIdSchema,
     coursePack: CoursePackSchema,
     blueprint: CourseBlueprintSchema,

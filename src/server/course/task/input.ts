@@ -29,23 +29,12 @@ export const CourseTaskCreateInputSchema = z
     creationBrief: CourseCreationBriefSchema.optional(),
     referencePacks: z.array(ReferencePackSchema).max(REFERENCE_MAX_PACKS).optional(),
     pageCount: CoursePageCountSchema.optional(),
-    // agent-v2 只按真实依赖 wave 调度；concurrency=1 已能获得串行效果，
-    // 不再暴露一个运行时不会执行的旧 serial 模式。
+    // 当前运行时只按真实依赖 wave 调度；concurrency=1 即为串行效果。
     executionMode: z.literal("parallel").optional(),
     concurrency: z.number().int().min(1).max(5).optional(),
-    source: z.literal("agent-v2").optional(),
     traceId: z.string().trim().min(1).max(120).optional(),
   })
   .strict()
   .refine((value) => Boolean(value.courseId || value.userPrompt), {
     message: "userPrompt 或 courseId 至少提供一个",
-  })
-  .superRefine((value, context) => {
-    if (value.source === "agent-v2" && !value.creationBrief) {
-      context.addIssue({
-        code: "custom",
-        message: "agent-v2 任务必须提供结构化 creationBrief",
-        path: ["creationBrief"],
-      });
-    }
   });

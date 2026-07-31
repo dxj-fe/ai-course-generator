@@ -3,7 +3,6 @@ import type { AgentDefinition } from "@/server/agent/types/agent";
 export function defineAgent<const Definition extends AgentDefinition>(
   definition: Definition,
 ): Definition {
-  assertPositiveInteger(definition.version, "version");
   assertNonEmpty(definition.description, "description");
   assertPositiveInteger(definition.runtime.maxSteps, "maxSteps");
   assertPositiveInteger(

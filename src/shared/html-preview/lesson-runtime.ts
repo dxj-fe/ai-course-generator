@@ -51,7 +51,7 @@ export function buildTrustedLessonSrcDoc(
     const channel = ${JSON.stringify(TRUSTED_LESSON_RUNTIME_CHANNEL)};
     const root = document.querySelector('main[data-page-id="' + cssEscape(config.pageId) + '"]');
     const post = (type, detail = {}) => {
-      window.parent.postMessage({ channel, type, pageId: config.pageId, runtimeVersion: config.runtime.runtimeVersion, ...detail }, "*");
+      window.parent.postMessage({ channel, type, pageId: config.pageId, ...detail }, "*");
     };
     const fail = (code) => post("section-error", { code });
     const complete = () => post("section-completed");

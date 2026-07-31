@@ -29,7 +29,7 @@ export const ConversationRecordSchema = z
   .object({
     id: ConversationIdSchema,
     title: z.string().trim().min(1).max(160),
-    pinned: z.boolean().default(false),
+    pinned: z.boolean(),
     courseId: CourseIdSchema.optional(),
     taskId: CourseTaskIdSchema.optional(),
     createdAt: z.string().datetime({ offset: true }),

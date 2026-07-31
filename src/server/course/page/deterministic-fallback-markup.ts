@@ -16,10 +16,7 @@ export function renderBlock(
   block: PageContentDSL["blocks"][number],
   content: PageContentDSL,
 ) {
-  const runtimeTarget =
-    content.version === 2
-      ? ` data-runtime-target-id="${escapeHtmlAttribute(block.id)}"`
-      : "";
+  const runtimeTarget = ` data-runtime-target-id="${escapeHtmlAttribute(block.id)}"`;
   const label =
     block.label && block.label !== block.heading
       ? `<p class="lesson-label">${escapeHtmlText(block.label)}</p>`
@@ -146,11 +143,7 @@ function renderChoiceQuestion(
   block: PageContentDSL["blocks"][number] | undefined,
 ) {
   const blockAttributes = block
-    ? ` data-block-id="${escapeHtmlAttribute(block.id)}"${
-        content.version === 2
-          ? ` data-runtime-target-id="${escapeHtmlAttribute(block.id)}"`
-          : ""
-      }`
+    ? ` data-block-id="${escapeHtmlAttribute(block.id)}" data-runtime-target-id="${escapeHtmlAttribute(block.id)}"`
     : "";
   const blockMarkup = block
     ? `${block.label && block.label !== block.heading ? `<p class="lesson-label">${escapeHtmlText(block.label)}</p>` : ""}
@@ -242,9 +235,8 @@ export function renderAssets(
 }
 
 export function renderVisualPrimitive(content: PageContentDSL) {
-  const primitive =
-    content.version === 2 ? content.runtime?.visualPrimitive : undefined;
-  if (!primitive || primitive === "none") return "";
+  const primitive = content.runtime.visualPrimitive;
+  if (primitive === "none") return "";
 
   return `<div class="course-native-visual" data-visual-primitive="${escapeHtmlAttribute(primitive)}" aria-hidden="true"></div>`;
 }

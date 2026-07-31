@@ -32,7 +32,7 @@ export function toArtifactRef(artifact: CourseArtifact) {
     courseId: artifact.courseId,
     pageId: artifact.pageId,
     scopeKey: artifact.scopeKey,
-    version: artifact.version,
+    revision: artifact.revision,
     contentHash: artifact.contentHash,
   });
 }

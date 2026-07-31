@@ -56,7 +56,6 @@ const QualityScreenshotMetricsSchema = z
     nestedVerticalOverflowCount: z.number().int().nonnegative().optional(),
     clippedElementCount: z.number().int().nonnegative(),
     zeroSizeInteractiveCount: z.number().int().nonnegative(),
-    // 新指标保持可选，确保已有截图证据仍能直接解析。
     touchTargetUnder24Count: z.number().int().nonnegative().optional(),
     touchTargetUnder44Count: z.number().int().nonnegative().optional(),
     primaryActionBelowFoldCount: z.number().int().nonnegative().optional(),
@@ -67,7 +66,6 @@ const QualityScreenshotMetricsSchema = z
     largestVisualSelector: z.string().min(1).max(240).optional(),
     visibleContentAreaRatio: z.number().min(0).max(1).optional(),
     mainViewportCoverageRatio: z.number().min(0).max(1).optional(),
-    viewportFitScale: z.number().min(0).max(1).optional(),
   })
   .strict();
 
@@ -107,15 +105,11 @@ function validateScreenshotCapture(
 const QualityScreenshotCaptureSchema =
   QualityScreenshotCaptureBaseSchema.superRefine(validateScreenshotCapture);
 
-export const QualityScreenshotEvidenceSchema =
-  QualityScreenshotCaptureBaseSchema.extend({
-    /**
-     * 多视口采集明细。顶层字段继续表示 primary（桌面）证据，以兼容旧报告。
-     */
-    captures: z.array(QualityScreenshotCaptureSchema).min(1).max(6).optional(),
+export const QualityScreenshotEvidenceSchema = z
+  .object({
+    captures: z.array(QualityScreenshotCaptureSchema).length(3),
   })
-    .strict()
-    .superRefine(validateScreenshotCapture);
+  .strict();
 
 /** Repair Agent 可直接消费的问题位置；description 为无法使用 selector 时的兜底。 */
 export const QualityIssueLocationSchema = z
@@ -207,6 +201,9 @@ export type QualityDimensionName = z.infer<typeof QualityDimensionNameSchema>;
 export type QualityDimension = z.infer<typeof QualityDimensionSchema>;
 export type QualityScreenshotStatus = z.infer<
   typeof QualityScreenshotStatusSchema
+>;
+export type QualityScreenshotCapture = z.infer<
+  typeof QualityScreenshotCaptureSchema
 >;
 export type QualityScreenshotEvidence = z.infer<
   typeof QualityScreenshotEvidenceSchema

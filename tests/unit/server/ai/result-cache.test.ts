@@ -12,9 +12,9 @@ describe("AI result cache", () => {
   it("normalizes object key order and invalidates every contract identity field", () => {
     const base = {
       namespace: "intent",
-      promptVersion: "intent@1",
+      promptFingerprint: "intent-current",
       model: "provider/model-a",
-      schemaVersion: "course-intent@1",
+      schemaFingerprint: "course-intent-current",
       input: { b: 2, a: "same" },
     };
     const key = createAiResultCacheKey(base);
@@ -23,13 +23,13 @@ describe("AI result cache", () => {
       createAiResultCacheKey({ ...base, input: { a: "same", b: 2 } }),
     ).toBe(key);
     expect(
-      createAiResultCacheKey({ ...base, promptVersion: "intent@2" }),
+      createAiResultCacheKey({ ...base, promptFingerprint: "intent-changed" }),
     ).not.toBe(key);
     expect(
       createAiResultCacheKey({ ...base, model: "provider/model-b" }),
     ).not.toBe(key);
     expect(
-      createAiResultCacheKey({ ...base, schemaVersion: "course-intent@2" }),
+      createAiResultCacheKey({ ...base, schemaFingerprint: "course-intent-changed" }),
     ).not.toBe(key);
   });
 
@@ -42,16 +42,16 @@ describe("AI result cache", () => {
     });
     const first = createAiResultCacheKey({
       namespace: "intent",
-      promptVersion: "intent@1",
+      promptFingerprint: "intent-current",
       model: "provider/model-a",
-      schemaVersion: "course-intent@1",
+      schemaFingerprint: "course-intent-current",
       input: { topic: "stars" },
     });
     const second = createAiResultCacheKey({
       namespace: "planner",
-      promptVersion: "planner@1",
+      promptFingerprint: "planner-current",
       model: "provider/model-a",
-      schemaVersion: "course-plan@1",
+      schemaFingerprint: "course-plan-current",
       input: { topic: "planets" },
     });
 

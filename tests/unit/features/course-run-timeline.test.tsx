@@ -12,25 +12,34 @@ import {
 } from "../../fixtures/course-design";
 
 function createRun(): KeyaCourseRun {
+  const timestamp = "2026-07-24T08:00:00.000Z";
   return {
     id: "run-course",
-    source: "langgraph",
     prompt: "为初学者生成 3 节太阳系互动课程",
     traceId: "trace-must-not-render",
     startedAt: 0,
-    planner: {
-      status: "completed",
+    generation: {
+      courseId: "course-current-run",
+      traceId: "trace-must-not-render",
+      userPrompt: "为初学者生成 3 节太阳系互动课程",
+      status: "running",
+      currentStage: "page_writer",
+      currentPageId: courseDesignOutline.pages[0]!.id,
+      intent: courseDesignIntent,
+      outline: courseDesignOutline,
+      pages: courseDesignOutline.pages.map((page, index) => ({
+        pageId: page.id,
+        order: page.order,
+        status: index === 0 ? "running" : "pending",
+        currentStage: "page_writer",
+        assets: [],
+      })),
       events: [],
-      data: {
-        traceId: "trace-must-not-render",
-        intent: courseDesignIntent,
-        state: {
-          status: "completed",
-          events: [],
-          outline: courseDesignOutline,
-        },
-      },
+      errors: [],
+      startedAt: timestamp,
+      updatedAt: timestamp,
     },
+    planner: { status: "completed", events: [] },
     design: { status: "completed", events: [] },
     pageWrites: {},
     pageAssets: {},
@@ -40,21 +49,20 @@ function createRun(): KeyaCourseRun {
 }
 
 function markPageReady(run: KeyaCourseRun, pageId: string) {
+  const page = run.generation?.pages.find(
+    (candidate) => candidate.pageId === pageId,
+  );
+  if (!page) throw new Error(`generation page ${pageId} is required`);
+  page.status = "completed";
+  page.currentStage = "complete";
+  page.htmlOutput = {
+    html: `<main>${pageId}</main>`,
+    generatedAt: "2026-07-24T08:00:00.000Z",
+    revision: 1,
+  };
   run.pageHtml[pageId] = {
     status: "completed",
     events: [],
-    data: {
-      traceId: "trace-ready",
-      state: {
-        status: "completed",
-        events: [],
-        htmlOutput: {
-          html: `<main>${pageId}</main>`,
-          generatedAt: "2026-07-24T08:00:00.000Z",
-          version: 1,
-        },
-      },
-    },
   };
 }
 
@@ -65,7 +73,6 @@ function attachParallelGeneration(
 ) {
   const timestamp = "2026-07-24T08:00:00.000Z";
   run.generation = {
-    version: 1,
     courseId: "course-parallel-progress",
     traceId: "trace-parallel-progress",
     userPrompt: run.prompt,
@@ -93,7 +100,7 @@ function attachParallelGeneration(
               htmlOutput: {
                 html: `<main>${page.title}</main>`,
                 generatedAt: timestamp,
-                version: 1 as const,
+                revision: 1 as const,
               },
             }
           : {}),
@@ -143,16 +150,21 @@ describe("CourseRunTimeline", () => {
 
   it("shows the real section count for a single-page micro-course", () => {
     const run = createRun();
-    run.planner.data = {
-      ...run.planner.data!,
+    const page = courseDesignOutline.pages[1]!;
+    run.generation = {
+      ...run.generation!,
       intent: { ...courseDesignIntent, courseLength: 1 },
-      state: {
-        ...run.planner.data!.state,
-        outline: {
-          ...courseDesignOutline,
-          pages: [courseDesignOutline.pages[1]!],
+      outline: { ...courseDesignOutline, pages: [page] },
+      currentPageId: page.id,
+      pages: [
+        {
+          pageId: page.id,
+          order: page.order,
+          status: "running",
+          currentStage: "page_writer",
+          assets: [],
         },
-      },
+      ],
     };
 
     const markup = renderToStaticMarkup(
@@ -167,6 +179,14 @@ describe("CourseRunTimeline", () => {
     const run = createRun();
     const [first, second] = courseDesignOutline.pages;
     markPageReady(run, first!.id);
+    const failedPage = run.generation!.pages.find(
+      ({ pageId }) => pageId === second!.id,
+    )!;
+    failedPage.status = "failed";
+    failedPage.error = {
+      code: "SCHEMA_ERROR",
+      message: "Schema validation failed at page-02",
+    };
     run.pageHtml[second!.id] = {
       status: "failed",
       events: [],
@@ -228,6 +248,7 @@ describe("CourseRunTimeline", () => {
 
   it("does not leave an initial task request failure looking active", () => {
     const run = createRun();
+    run.generation = undefined;
     run.planner.status = "failed";
     run.planner.error = "private request detail";
 

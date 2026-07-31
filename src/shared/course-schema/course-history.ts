@@ -9,7 +9,6 @@ import {
 } from "./course-generation-state";
 import {
   CourseTaskIdSchema,
-  CourseTaskRuntimeSourceSchema,
   CourseTaskStatusSchema,
 } from "./course-task-event";
 
@@ -18,7 +17,6 @@ export const CourseRunSummarySchema = z
     taskId: CourseTaskIdSchema,
     traceId: z.string().min(1).max(120),
     status: CourseTaskStatusSchema,
-    source: CourseTaskRuntimeSourceSchema,
     createdAt: z.string().datetime({ offset: true }),
     updatedAt: z.string().datetime({ offset: true }),
     completedAt: z.string().datetime({ offset: true }).optional(),
@@ -36,7 +34,7 @@ export const CourseRunSummarySchema = z
 export const CourseHistoryCoverSchema = z
   .object({
     pageId: z.string().min(1).max(80),
-    version: z.number().int().positive(),
+    revision: z.number().int().positive(),
     generatedAt: z.string().datetime({ offset: true }),
   })
   .strict();

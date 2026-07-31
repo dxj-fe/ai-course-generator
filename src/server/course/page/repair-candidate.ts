@@ -144,7 +144,6 @@ function validateDslCandidate(
   const original = request.content;
   const allowedContentFields = new Set(request.allowedContentFields);
   const immutablePairs: Array<[string, unknown, unknown]> = [
-    ["version", original.version, candidate.version],
     ["pageId", original.pageId, candidate.pageId],
     ["functionalTemplateId", original.functionalTemplateId, candidate.functionalTemplateId],
     ["title", original.title, candidate.title],

@@ -13,7 +13,7 @@ import {
   VisualBriefSchema,
 } from "../../../src/shared/course-schema";
 
-describe("Day 11 course design schemas", () => {
+describe("course design schemas", () => {
   it("accepts three aligned professional briefs", () => {
     expect(CoursePlanSchema.parse(courseDesignOutline).pages).toHaveLength(3);
     expect(

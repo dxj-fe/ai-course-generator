@@ -41,7 +41,6 @@ export const CourseManifestPageSchema = z
  */
 export const CourseManifestSchema = z
   .object({
-    version: z.literal(1),
     courseId: CourseIdSchema,
     architectureRef: ArtifactRefSchema,
     pages: z.array(CourseManifestPageSchema).min(1).max(200),

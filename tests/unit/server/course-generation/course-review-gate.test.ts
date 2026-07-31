@@ -12,7 +12,7 @@ import {
   type CourseManifest,
   type PageSummary,
 } from "../../../../src/shared/course-schema";
-import { createAgentV2Architecture } from "../../../fixtures/agent-v2-course-architecture";
+import { createArchitecture } from "../../../fixtures/course-architecture";
 
 describe("Course Review Gate 目标证据", () => {
   it("页面 issue 必须显式给出机器可判定的修订目标，课程 issue 禁止该字段", () => {
@@ -241,7 +241,7 @@ describe("Course Review Gate 目标证据", () => {
           evidenceArtifactRefs: [
             {
               ...qualityRef,
-              version: qualityRef.version + 1,
+              revision: qualityRef.revision + 1,
               contentHash: "forged-content-hash",
             },
           ],
@@ -291,7 +291,7 @@ describe("Course Review Gate 目标证据", () => {
             {
               ...prepared.manifest.architectureRef,
               id: "historical-course-architecture",
-              version: prepared.manifest.architectureRef.version + 1,
+              revision: prepared.manifest.architectureRef.revision + 1,
               contentHash: "historical-content-hash",
             },
           ],
@@ -357,9 +357,8 @@ describe("Course Review Gate 目标证据", () => {
 });
 
 function prepareGateInput() {
-  const architecture = createAgentV2Architecture();
+  const architecture = createArchitecture();
   const manifest: CourseManifest = {
-    version: 1,
     courseId: architecture.courseId,
     architectureRef: artifactRef(
       architecture.courseId,
@@ -393,7 +392,6 @@ function prepareGateInput() {
   };
   const pageSummaries: PageSummary[] = architecture.pageTasks.map(
     (pageTask) => ({
-      version: 1,
       courseId: architecture.courseId,
       pageId: pageTask.pageId,
       order: pageTask.order,
@@ -426,7 +424,6 @@ function reviewCandidate(
   },
 ) {
   return {
-    version: 1,
     courseId: architecture.courseId,
     inputManifestHash: computeCourseManifestHash(manifest),
     decision: "pass",
@@ -452,7 +449,7 @@ function artifactRef(
     courseId,
     pageId,
     scopeKey: pageId ? `page:${pageId}` : "course",
-    version: 1,
+    revision: 1,
     contentHash: `hash-${kind}-${suffix}`,
   };
 }

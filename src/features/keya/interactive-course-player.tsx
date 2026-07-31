@@ -60,7 +60,7 @@ type StoredLearningSession = {
 };
 
 type StoredPageRuntimeState = {
-  htmlVersion?: number;
+  htmlRevision?: number;
   runtimeStatus?: "ready" | "error";
   attempts: number;
   lastResult?: "correct" | "incorrect" | "partial";
@@ -118,7 +118,7 @@ export function InteractiveCoursePlayer({
       !completedSectionIds.includes(currentSection.id) &&
       pageStates[currentSection.id]?.runtimeStatus !== "error",
   );
-  const storageKey = `keya:course-session:${manifest.courseId}:v1`;
+  const storageKey = `keya:course-session:${manifest.courseId}`;
 
   useEffect(() => {
     try {
@@ -134,11 +134,11 @@ export function InteractiveCoursePlayer({
             if (section.id !== id || section.generationStatus !== "ready") {
               return false;
             }
-            const savedVersion = saved.pageStates[id]?.htmlVersion;
+            const savedRevision = saved.pageStates[id]?.htmlRevision;
             return (
-              savedVersion === undefined ||
-              section.htmlVersion === undefined ||
-              savedVersion === section.htmlVersion
+              savedRevision === undefined ||
+              section.htmlRevision === undefined ||
+              savedRevision === section.htmlRevision
             );
           }),
         ) ?? [],
@@ -307,7 +307,7 @@ export function InteractiveCoursePlayer({
       const previous = current[event.pageId] ?? { attempts: 0 };
       const next: StoredPageRuntimeState = {
         ...previous,
-        htmlVersion: currentSection.htmlVersion,
+        htmlRevision: currentSection.htmlRevision,
       };
       if (event.type === "section-ready") next.runtimeStatus = "ready";
       if (event.type === "section-error") next.runtimeStatus = "error";
@@ -461,7 +461,7 @@ export function InteractiveCoursePlayer({
               >
                 {currentSection?.html ? (
                   <HtmlPreviewFrame
-                    key={`${currentSection.id}:v${currentSection.htmlVersion ?? "unversioned"}`}
+                    key={`${currentSection.id}:${currentSection.htmlRevision ?? "current"}`}
                     chrome="learner"
                     className="h-full min-h-0"
                     frameClassName="h-full min-h-0"
@@ -1239,8 +1239,8 @@ function parseStoredPageStates(value: unknown) {
         [
           pageId,
           {
-            ...(typeof candidate.htmlVersion === "number"
-              ? { htmlVersion: candidate.htmlVersion }
+            ...(typeof candidate.htmlRevision === "number"
+              ? { htmlRevision: candidate.htmlRevision }
               : {}),
             ...(candidate.runtimeStatus === "ready" ||
             candidate.runtimeStatus === "error"

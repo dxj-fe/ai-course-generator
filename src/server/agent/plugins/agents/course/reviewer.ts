@@ -9,11 +9,10 @@ import {
 
 export const courseReviewerAgent = defineAgent({
   id: AgentIds.CourseReviewer,
-  version: 2,
   description: "基于整课目标和页面证据判断课程是否达到发布质量。",
-  input: SchemaIds.CourseReviewerInputV1,
-  output: SchemaIds.CourseReviewV1,
-  prompt: PromptIds.CourseReviewerSystemV1,
+  input: SchemaIds.CourseReviewerInput,
+  output: SchemaIds.CourseReview,
+  prompt: PromptIds.CourseReviewerSystem,
   tools: AgentToolSets.CourseReviewer,
   contexts: [
     ContextIds.CourseArchitecture,

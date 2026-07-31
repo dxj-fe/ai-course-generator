@@ -23,7 +23,6 @@ export async function POST(request: Request) {
     const input = isObjectRecord(payload)
       ? {
           ...payload,
-          source: "agent-v2",
           traceId:
             typeof payload.traceId === "string" && payload.traceId.trim()
               ? payload.traceId

@@ -59,7 +59,6 @@ const PageEvidenceInputSchema = z
 
 const ReviewerDecisionIssueSchema = z
   .object({
-    id: z.string().trim().min(1).max(160).optional(),
     scope: z.enum(["course", "page"]),
     pageId: z.string().trim().min(1).max(80).optional(),
     code: z.string().trim().min(1).max(100),
@@ -67,10 +66,9 @@ const ReviewerDecisionIssueSchema = z
     message: z.string().trim().min(1).max(1_000),
     targetArtifact: z.enum(["page_content", "page_html"]).optional(),
     evidencePageIds: z.array(z.string().trim().min(1).max(80)).max(20).optional(),
-    evidenceArtifactRefs: z.array(z.unknown()).max(100).optional(),
     suggestedAction: z.string().trim().min(1).max(1_000),
   })
-  .passthrough();
+  .strict();
 
 const ReviewCandidateInputSchema = z
   .object({
@@ -80,8 +78,7 @@ const ReviewCandidateInputSchema = z
         issues: z.array(ReviewerDecisionIssueSchema).max(200).default([]),
         summary: z.string().trim().min(2).max(2_000),
       })
-      // 兼容旧 Agent 仍回传机器字段；提交边界会忽略并从封口快照重建。
-      .passthrough()
+      .strict()
       .describe("Reviewer 只需填写 decision、issues 和 summary"),
   })
   .strict();
@@ -493,7 +490,6 @@ function normalizeCourseReviewerCandidate(
       )
     : candidate.issues;
   return {
-    version: 1,
     courseId: execution.initialWorkOrder.courseId,
     inputManifestHash: execution.frozenManifestHash,
     decision: candidate.decision,
@@ -526,13 +522,6 @@ function normalizeCourseReviewerIssue(
           (value): value is string => typeof value === "string",
         )
       : []),
-    ...(Array.isArray(issue.evidenceArtifactRefs)
-      ? issue.evidenceArtifactRefs.flatMap((value) =>
-          isRecord(value) && typeof value.pageId === "string"
-            ? [value.pageId]
-            : [],
-        )
-      : []),
     ...(scope === "page" && pageId ? [pageId] : []),
   ];
   const manifestPages = new Map(
@@ -549,10 +538,7 @@ function normalizeCourseReviewerIssue(
       ? issue.code.trim()
       : "COURSE_REVIEW_FINDING";
   return {
-    id:
-      typeof issue.id === "string" && issue.id.trim()
-        ? issue.id.trim()
-        : `${code.toLowerCase()}-${pageId ?? "course"}-${index + 1}`,
+    id: `${code.toLowerCase()}-${pageId ?? "course"}-${index + 1}`,
     scope,
     ...(scope === "page" && pageId ? { pageId } : {}),
     code,
@@ -748,10 +734,16 @@ function compactQuality(
     })),
     screenshotEvidence: quality.screenshotEvidence
       ? {
-          status: quality.screenshotEvidence.status,
-          viewport: quality.screenshotEvidence.viewport,
-          metrics: quality.screenshotEvidence.metrics,
-          reason: quality.screenshotEvidence.reason,
+          captures: quality.screenshotEvidence.captures.map((capture) => ({
+            status: capture.status,
+            viewport: `${capture.viewport.width}x${capture.viewport.height}`,
+            overflow: capture.metrics?.horizontalOverflowPx,
+            clipped: capture.metrics?.clippedElementCount,
+            zeroSizeInteractive: capture.metrics?.zeroSizeInteractiveCount,
+            ...(capture.status === "failed"
+              ? { reason: capture.reason }
+              : {}),
+          })),
         }
       : undefined,
   };
@@ -885,7 +877,7 @@ function toArtifactRef(artifact: {
   kind: ArtifactRef["kind"];
   pageId?: string;
   scopeKey: string;
-  version: number;
+  revision: number;
 }): ArtifactRef {
   return {
     contentHash: artifact.contentHash,
@@ -894,7 +886,7 @@ function toArtifactRef(artifact: {
     kind: artifact.kind,
     pageId: artifact.pageId,
     scopeKey: artifact.scopeKey,
-    version: artifact.version,
+    revision: artifact.revision,
   };
 }
 

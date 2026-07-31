@@ -25,17 +25,23 @@ const modelOutput = {
   issues: [],
 };
 const capturedEvidence = {
-  status: "captured" as const,
-  artifactId: "page-qa-test-desktop",
-  viewport: { width: 922, height: 460 },
-  metrics: {
-    documentWidth: 922,
-    documentHeight: 460,
-    horizontalOverflowPx: 0,
-    clippedElementCount: 0,
-    zeroSizeInteractiveCount: 0,
-  },
-  capturedAt: "2026-07-24T10:00:00.000Z",
+  captures: [
+    { width: 922, height: 460, name: "desktop" },
+    { width: 712, height: 650, name: "tablet" },
+    { width: 366, height: 500, name: "mobile" },
+  ].map(({ width, height, name }) => ({
+    status: "captured" as const,
+    artifactId: `page-qa-test-${name}`,
+    viewport: { width, height },
+    metrics: {
+      documentWidth: width,
+      documentHeight: height,
+      horizontalOverflowPx: 0,
+      clippedElementCount: 0,
+      zeroSizeInteractiveCount: 0,
+    },
+    capturedAt: "2026-07-24T10:00:00.000Z",
+  })),
 };
 
 function createTestPageQAModelStep(
@@ -134,151 +140,7 @@ describe("PageQAModelStep", () => {
     );
   });
 
-  it("normalizes bounded QA text, common severity aliases, and missing location descriptions", async () => {
-    const state = await createTestPageQAModelStep({
-      evaluate: vi.fn().mockResolvedValue({
-        ...modelOutput,
-        dimensions: {
-          ...modelOutput.dimensions,
-          contentAccuracy: {
-            score: 72,
-            summary: "内容结论需要进一步核对。".repeat(30),
-          },
-        },
-        issues: [
-          {
-            code: "CONTENT_EVIDENCE_WEAK",
-            dimension: "contentAccuracy",
-            severity: "high",
-            message: "正文中的结论缺少充分依据。",
-            location: { blockId: "block-01" },
-            repairHint: "补充与该结论直接相关的解释。",
-          },
-          {
-            code: "LAYOUT_DENSITY",
-            dimension: "layoutQuality",
-            severity: "minor",
-            message: "主要内容区域略显紧凑。",
-            location: { selector: "main" },
-            repairHint: "适当增加主要内容区域的留白。",
-          },
-        ],
-      }),
-    }).run(createPageQAModelStepState(createInput()), {
-      traceId: "trace-normalized-page-qa",
-    });
-
-    expect(state.status).toBe("completed");
-    expect(state.report?.dimensions.contentAccuracy.summary.length).toBe(300);
-    expect(state.report?.issues).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: "CONTENT_EVIDENCE_WEAK",
-          severity: "error",
-          location: expect.objectContaining({ description: "内容块 block-01" }),
-        }),
-        expect.objectContaining({
-          code: "LAYOUT_DENSITY",
-          severity: "warning",
-          location: expect.objectContaining({ description: "页面元素 main" }),
-        }),
-      ]),
-    );
-  });
-
-  it("normalizes the model's plural viewports alias without failing QA", async () => {
-    const state = await createTestPageQAModelStep({
-      evaluate: vi.fn().mockResolvedValue({
-        ...modelOutput,
-        dimensions: {
-          ...modelOutput.dimensions,
-          layoutQuality: {
-            score: 70,
-            summary: "多个固定视口存在布局问题。",
-          },
-        },
-        issues: [
-          {
-            code: "MULTI_VIEWPORT_LAYOUT_RISK",
-            dimension: "layoutQuality",
-            severity: "error",
-            message: "窄屏和横屏视口中的内容布局存在风险。",
-            location: {
-              viewports: ["366×500", "922×460", "366×500"],
-              description: "固定课程画布",
-            },
-            repairHint: "调整固定画布中的响应式布局。",
-          },
-          {
-            code: "TABLET_LAYOUT_RISK",
-            dimension: "layoutQuality",
-            severity: "warning",
-            message: "平板视口中的内容布局存在风险。",
-            location: {
-              viewports: "712×650",
-              description: "平板课程画布",
-            },
-            repairHint: "调整平板画布中的内容密度。",
-          },
-        ],
-      }),
-    }).run(createPageQAModelStepState(createInput()), {
-      traceId: "trace-plural-viewports-page-qa",
-    });
-
-    expect(state.status).toBe("completed");
-    expect(state.report?.issues).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: "MULTI_VIEWPORT_LAYOUT_RISK",
-          location: expect.objectContaining({
-            viewport: "366×500、922×460",
-          }),
-        }),
-        expect.objectContaining({
-          code: "TABLET_LAYOUT_RISK",
-          location: expect.objectContaining({ viewport: "712×650" }),
-        }),
-      ]),
-    );
-    expect(
-      state.report?.issues.some(({ location }) => "viewports" in location),
-    ).toBe(false);
-  });
-
-  it("lifts a repair hint misplaced inside the issue location", async () => {
-    const state = await createTestPageQAModelStep({
-      evaluate: vi.fn().mockResolvedValue({
-        ...modelOutput,
-        issues: [
-          {
-            code: "CONTENT_HIERARCHY_WEAK",
-            dimension: "layoutQuality",
-            severity: "warning",
-            message: "主要内容层级不够清晰。",
-            location: {
-              selector: "main",
-              description: "页面主要内容",
-              repairHint: "强化标题与正文之间的视觉层级。",
-            },
-          },
-        ],
-      }),
-    }).run(createPageQAModelStepState(createInput()), {
-      traceId: "trace-nested-repair-hint-page-qa",
-    });
-
-    expect(state.status).toBe("completed");
-    expect(state.report?.issues).toEqual([
-      expect.objectContaining({
-        code: "CONTENT_HIERARCHY_WEAK",
-        repairHint: "强化标题与正文之间的视觉层级。",
-        location: expect.not.objectContaining({ repairHint: expect.anything() }),
-      }),
-    ]);
-  });
-
-  it("keeps unknown location fields strict while lifting a misplaced repair hint", async () => {
+  it("拒绝 location 中不属于当前合同的字段", async () => {
     const state = await createTestPageQAModelStep({
       evaluate: vi.fn().mockResolvedValue({
         ...modelOutput,
@@ -705,9 +567,15 @@ describe("PageQAModelStep", () => {
 
   it("keeps browser evidence and sends capture failures through repair", async () => {
     const failedEvidence = {
-      status: "failed" as const,
-      viewport: { width: 1440, height: 900 },
-      reason: "截图 QA 超时。",
+      captures: [
+        { width: 922, height: 460 },
+        { width: 712, height: 650 },
+        { width: 366, height: 500 },
+      ].map(({ width, height }) => ({
+        status: "failed" as const,
+        viewport: { width, height },
+        reason: "截图 QA 超时。",
+      })),
     };
     const state = await createTestPageQAModelStep({
       evaluate: vi.fn().mockResolvedValue(modelOutput),

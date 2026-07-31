@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { ThemeDensitySchema } from "@/shared/course-schema";
 
-/** Day 09 要求实现的六个核心视觉方向。 */
+/** 当前支持的六个核心视觉方向。 */
 export const CoreVisualStyleSchema = z.enum([
   "sci-fi",
   "kids-playful",

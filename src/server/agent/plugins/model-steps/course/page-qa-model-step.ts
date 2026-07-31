@@ -79,30 +79,6 @@ export const PageQAModelOutputSchema = z
   })
   .strict();
 
-const PAGE_QA_DIMENSION_NAMES = [
-  "contentAccuracy",
-  "layoutQuality",
-  "courseCoherence",
-  "styleConsistency",
-  "htmlRuntime",
-  "assetUsability",
-] as const;
-
-const MODEL_SEVERITY_ALIASES = {
-  blocker: "error",
-  critical: "error",
-  fatal: "error",
-  high: "error",
-  major: "error",
-  severe: "error",
-  medium: "warning",
-  minor: "warning",
-  moderate: "warning",
-  low: "info",
-  notice: "info",
-  suggestion: "info",
-} as const;
-
 const CONTRACT_OWNED_MODEL_ISSUE_CODES = new Set([
   "ASSET_ALT_TEXT_INVALID",
   "INTERACTION_FEEDBACK_VISIBLE_BY_DEFAULT",
@@ -200,15 +176,18 @@ export function createPageQAModelStep(
         abortSignal: context.abortSignal,
         traceId: context.traceId,
       });
+      const screenshotStatus = screenshotEvidenceStatus(
+        screenshot.evidence,
+      );
       emit({
         type: "validation",
         summary:
-          screenshot.evidence.status === "captured"
+          screenshotStatus === "captured"
             ? `Playwright 截图检查完成，发现 ${screenshot.issues.length} 个浏览器问题。`
-            : `Playwright 截图检查${screenshot.evidence.status === "skipped" ? "已跳过" : "失败"}，页面将进入质量修复。`,
+            : `Playwright 截图检查${screenshotStatus === "skipped" ? "已跳过" : "失败"}，页面将进入质量修复。`,
         data: {
           pageId: state.task.page.id,
-          screenshotStatus: screenshot.evidence.status,
+          screenshotStatus,
           browserIssueCount: screenshot.issues.length,
         },
       });
@@ -322,9 +301,7 @@ export function validatePageQAOutput(
   heuristicIssues: QualityIssue[],
   screenshot?: PageScreenshotResult,
 ) {
-  const parsed = PageQAModelOutputSchema.safeParse(
-    normalizePageQAModelOutput(output),
-  );
+  const parsed = PageQAModelOutputSchema.safeParse(output);
 
   if (!parsed.success) {
     throw new AiSchemaValidationError(
@@ -460,102 +437,6 @@ function hasOnlySafelyContainedTransparencyFallbacks(input: PageQAInput) {
   );
 }
 
-/**
- * 兼容只提供 JSON object mode 的 Provider：仅收敛可无损确定的展示文本和
- * 常见严重度别名。维度、issue code、定位引用等语义字段仍由严格 Schema 拒绝。
- */
-export function normalizePageQAModelOutput(output: unknown): unknown {
-  if (!isRecord(output)) return output;
-
-  let changed = false;
-  let dimensions = output.dimensions;
-  if (isRecord(dimensions)) {
-    const normalizedDimensions = { ...dimensions };
-    for (const name of PAGE_QA_DIMENSION_NAMES) {
-      const dimension = normalizedDimensions[name];
-      if (!isRecord(dimension)) continue;
-      const summary = truncateString(dimension.summary, 300);
-      if (summary !== dimension.summary) {
-        normalizedDimensions[name] = { ...dimension, summary };
-        changed = true;
-      }
-    }
-    dimensions = normalizedDimensions;
-  }
-
-  let issues = output.issues;
-  if (Array.isArray(issues)) {
-    issues = issues.map((issue) => {
-      if (!isRecord(issue)) return issue;
-      let normalizedIssue = issue;
-
-      const issueWithCanonicalRepairHint =
-        normalizeMisplacedIssueRepairHint(normalizedIssue);
-      if (issueWithCanonicalRepairHint !== normalizedIssue) {
-        normalizedIssue = issueWithCanonicalRepairHint;
-        changed = true;
-      }
-
-      const severity = normalizeModelSeverity(issue.severity);
-      if (severity !== issue.severity) {
-        normalizedIssue = { ...normalizedIssue, severity };
-        changed = true;
-      }
-
-      for (const field of ["message", "repairHint"] as const) {
-        const value = truncateString(normalizedIssue[field], 500);
-        if (value !== normalizedIssue[field]) {
-          normalizedIssue = { ...normalizedIssue, [field]: value };
-          changed = true;
-        }
-      }
-
-      if (isRecord(normalizedIssue.location)) {
-        const location = normalizeModelIssueLocation(normalizedIssue.location);
-        if (location !== normalizedIssue.location) {
-          normalizedIssue = {
-            ...normalizedIssue,
-            location,
-          };
-          changed = true;
-        }
-      }
-
-      return normalizedIssue;
-    });
-  }
-
-  return changed ? { ...output, dimensions, issues } : output;
-}
-
-function normalizeModelSeverity(value: unknown) {
-  if (typeof value !== "string") return value;
-  const normalized = value.trim().toLowerCase();
-  if (["info", "warning", "error"].includes(normalized)) return normalized;
-  return MODEL_SEVERITY_ALIASES[
-    normalized as keyof typeof MODEL_SEVERITY_ALIASES
-  ] ?? value;
-}
-
-function normalizeMisplacedIssueRepairHint(
-  issue: Record<string, unknown>,
-): Record<string, unknown> {
-  if (!isRecord(issue.location)) return issue;
-
-  const misplacedRepairHint = issue.location.repairHint;
-  if (typeof misplacedRepairHint !== "string") return issue;
-
-  const canonicalLocation = { ...issue.location };
-  delete canonicalLocation.repairHint;
-  return {
-    ...issue,
-    ...(issue.repairHint === undefined
-      ? { repairHint: misplacedRepairHint }
-      : {}),
-    location: canonicalLocation,
-  };
-}
-
 function shouldKeepModelIssue(
   issue: z.infer<typeof PageQAModelIssueSchema>,
   input: PageQAInput,
@@ -594,38 +475,6 @@ function shouldKeepModelIssue(
     return false;
   }
   return true;
-}
-
-function normalizeModelIssueLocation(location: Record<string, unknown>) {
-  let normalizedLocation = location;
-
-  if ("viewports" in location) {
-    const { viewports, ...canonicalLocation } = location;
-    const viewport =
-      typeof location.viewport === "string"
-        ? location.viewport
-        : normalizeViewportAlias(viewports);
-    normalizedLocation =
-      viewport === undefined
-        ? canonicalLocation
-        : { ...canonicalLocation, viewport };
-  }
-
-  const description = normalizeLocationDescription(normalizedLocation);
-  return description === normalizedLocation.description
-    ? normalizedLocation
-    : { ...normalizedLocation, description };
-}
-
-function normalizeViewportAlias(value: unknown) {
-  const candidates = (Array.isArray(value) ? value : [value])
-    .filter((viewport): viewport is string => typeof viewport === "string")
-    .map((viewport) => viewport.trim())
-    .filter((viewport, index, viewports) => {
-      return viewport.length > 0 && viewports.indexOf(viewport) === index;
-    });
-  if (candidates.length === 0) return undefined;
-  return truncateString(candidates.join("、"), 80);
 }
 
 function isTrustedRestorationIssue(
@@ -679,33 +528,15 @@ function followsDeclaredBlockOrder(html: string, blockIds: string[]) {
   });
 }
 
-function normalizeLocationDescription(location: Record<string, unknown>) {
-  if (typeof location.description === "string") {
-    const description = truncateString(location.description, 240);
-    if (description.trim().length >= 2) return description;
+function screenshotEvidenceStatus(
+  evidence: QualityScreenshotEvidence,
+) {
+  if (evidence.captures.every(({ status }) => status === "captured")) {
+    return "captured" as const;
   }
-  if (typeof location.blockId === "string") {
-    return truncateString(`内容块 ${location.blockId}`, 240);
-  }
-  if (typeof location.selector === "string") {
-    return truncateString(`页面元素 ${location.selector}`, 240);
-  }
-  if (typeof location.viewport === "string") {
-    return truncateString(`${location.viewport} 视口`, 240);
-  }
-  return "当前页面相关内容";
-}
-
-function truncateString(value: string, maxLength: number): string;
-function truncateString(value: unknown, maxLength: number): unknown;
-function truncateString(value: unknown, maxLength: number) {
-  return typeof value === "string" && value.length > maxLength
-    ? value.slice(0, maxLength)
-    : value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  return evidence.captures.some(({ status }) => status === "failed")
+    ? "failed" as const
+    : "skipped" as const;
 }
 
 async function evaluate(
@@ -733,9 +564,8 @@ async function evaluate(
     abortSignal: input.abortSignal,
     capability: "page-qa",
     maxTokens: 4_000,
-    normalizeOutput: normalizePageQAModelOutput,
     prompt: prompts.userPrompt,
-    promptVersion: prompts.version,
+    promptFingerprint: prompts.fingerprint,
     schema: PageQAModelOutputSchema,
     schemaDescription:
       "Six-dimension page quality assessment with actionable issues; no repaired HTML.",

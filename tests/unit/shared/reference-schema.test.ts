@@ -6,7 +6,6 @@ import {
 } from "../../../src/shared/course-schema";
 
 const pack = {
-  version: 1 as const,
   id: "ref-1234567890abcdef12345678",
   sourceName: "solar.md",
   sourceType: "md" as const,

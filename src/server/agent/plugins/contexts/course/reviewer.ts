@@ -588,7 +588,7 @@ function sameArtifactRef(left: ArtifactRef, right: ArtifactRef) {
     left.courseId === right.courseId &&
     left.pageId === right.pageId &&
     left.scopeKey === right.scopeKey &&
-    left.version === right.version &&
+    left.revision === right.revision &&
     left.contentHash === right.contentHash
   );
 }
@@ -626,7 +626,7 @@ function assertArtifactMatchesRef(
     artifact.courseId !== ref.courseId ||
     artifact.pageId !== ref.pageId ||
     artifact.scopeKey !== ref.scopeKey ||
-    artifact.version !== ref.version ||
+    artifact.revision !== ref.revision ||
     artifact.contentHash !== ref.contentHash
   ) {
     throw fatal(

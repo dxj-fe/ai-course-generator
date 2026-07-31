@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   CourseRunLeaseUnavailableError,
-  type runCourseGenerationAgentV2,
+  type runCourseGeneration,
 } from "../../../../src/server/course/run/engine";
 import { createCourseGenerationTaskService } from "../../../../src/server/course/task/service";
 import type {
@@ -25,11 +25,11 @@ import {
 } from "./course-generation-task-service-test-support";
 
 describe("course generation task service lifecycle", () => {
-  it("persists and publishes a terminal failure when agent-v2 throws", async () => {
+  it("persists and publishes a terminal failure when 课程生成 throws", async () => {
     const fixture = createFixture({
-      runAgentV2: vi.fn(async () => {
-        throw new Error("agent-v2 crashed before its first checkpoint");
-      }) as typeof runCourseGenerationAgentV2,
+      runCourse: vi.fn(async () => {
+        throw new Error("课程生成 crashed before its first checkpoint");
+      }) as typeof runCourseGeneration,
     });
     const messages: CourseTaskStreamMessage[] = [];
     fixture.eventBus.subscribe(taskId, (message) => messages.push(message));
@@ -40,7 +40,7 @@ describe("course generation task service lifecycle", () => {
     });
 
     await expect(fixture.service.run(taskId)).rejects.toThrow(
-      "agent-v2 crashed before its first checkpoint",
+      "课程生成 crashed before its first checkpoint",
     );
 
     expect(fixture.tasks.get(taskId)).toMatchObject({
@@ -61,7 +61,7 @@ describe("course generation task service lifecycle", () => {
       ],
     });
     expect(JSON.stringify(fixture.courses.get(courseId))).not.toContain(
-      "agent-v2 crashed",
+      "课程生成 crashed",
     );
     expect(messages.at(-1)).toMatchObject({
       type: "terminal",
@@ -69,7 +69,7 @@ describe("course generation task service lifecycle", () => {
     });
   });
 
-  it("logs safe page and task metadata when agent-v2 resolves as failed", async () => {
+  it("logs safe page and task metadata when 课程生成 resolves as failed", async () => {
     const failed = courseState("failed", 2);
     failed.currentStage = "qa";
     failed.currentPageId = "page-03";
@@ -101,7 +101,7 @@ describe("course generation task service lifecycle", () => {
       },
     ];
     const fixture = createFixture({
-      runAgentV2: vi.fn(async () => failed) as typeof runCourseGenerationAgentV2,
+      runCourse: vi.fn(async () => failed) as typeof runCourseGeneration,
       eventBus: createSilentEventBus(),
     });
     await fixture.service.create({
@@ -118,7 +118,6 @@ describe("course generation task service lifecycle", () => {
         traceId,
         taskId,
         courseId,
-        source: "agent-v2",
         status: "running",
       }),
     );
@@ -154,9 +153,9 @@ describe("course generation task service lifecycle", () => {
 
   it("logs catch failures without leaking the raw provider error", async () => {
     const fixture = createFixture({
-      runAgentV2: vi.fn(async () => {
+      runCourse: vi.fn(async () => {
         throw new Error("PRIVATE_PROVIDER_SECRET");
-      }) as typeof runCourseGenerationAgentV2,
+      }) as typeof runCourseGeneration,
     });
     await fixture.service.create({
       ...agentTaskInput,
@@ -200,7 +199,7 @@ describe("course generation task service lifecycle", () => {
       durationMs: 0,
     } as CourseGenerationState;
     const fixture = createFixture({
-      runAgentV2: vi.fn(async () => completed) as typeof runCourseGenerationAgentV2,
+      runCourse: vi.fn(async () => completed) as typeof runCourseGeneration,
       eventBus: createSilentEventBus(),
     });
     await fixture.service.create({
@@ -222,13 +221,13 @@ describe("course generation task service lifecycle", () => {
     );
   });
 
-  it("keeps an active task cancelled when agent-v2 rejects on abort", async () => {
+  it("keeps an active task cancelled when 课程生成 rejects on abort", async () => {
     let markStarted: () => void = () => undefined;
     const started = new Promise<void>((resolve) => {
       markStarted = resolve;
     });
     const fixture = createFixture({
-      runAgentV2: vi.fn(
+      runCourse: vi.fn(
         async (_input, context) =>
           new Promise<CourseGenerationState>((_resolve, reject) => {
             context.abortSignal?.addEventListener(
@@ -238,7 +237,7 @@ describe("course generation task service lifecycle", () => {
             );
             markStarted();
           }),
-      ) as typeof runCourseGenerationAgentV2,
+      ) as typeof runCourseGeneration,
     });
     const messages: CourseTaskStreamMessage[] = [];
     fixture.eventBus.subscribe(taskId, (message) => messages.push(message));
@@ -269,7 +268,7 @@ describe("course generation task service lifecycle", () => {
       markStarted = resolve;
     });
     const checkpoint = courseState("running", 1);
-    const runAgentV2 = vi.fn(
+    const runCourse = vi.fn(
       async (_input, context, hooks) => {
         await hooks.checkpoint?.(checkpoint);
         markStarted();
@@ -281,8 +280,8 @@ describe("course generation task service lifecycle", () => {
           );
         });
       },
-    ) as typeof runCourseGenerationAgentV2;
-    const fixture = createFixture({ runAgentV2 });
+    ) as typeof runCourseGeneration;
+    const fixture = createFixture({ runCourse });
     const messages: CourseTaskStreamMessage[] = [];
     fixture.eventBus.subscribe(taskId, (message) => messages.push(message));
     await fixture.service.create({
@@ -342,7 +341,7 @@ describe("course generation task service lifecycle", () => {
   it("pause 后重查权威 CourseRun，并把已终态运行对齐到 Task/CourseStore", async () => {
     const authoritativeFailed = courseState("failed", 1);
     const fixture = createFixture({
-      loadAgentV2State: () => authoritativeFailed,
+      loadCourseState: () => authoritativeFailed,
     });
     await fixture.service.create({
       ...agentTaskInput,
@@ -377,7 +376,7 @@ describe("course generation task service lifecycle", () => {
       traceId,
       "生成三页太阳系互动课程",
     );
-    const runAgentV2 = vi.fn(async (input, context, hooks) => {
+    const runCourse = vi.fn(async (input, context, hooks) => {
       if (input.traceId !== "trace-cross-process-resumed") {
         await hooks.checkpoint?.(firstCheckpoint);
         markOldRunnerStarted();
@@ -389,21 +388,22 @@ describe("course generation task service lifecycle", () => {
         "旧 CourseRun lease 尚未释放",
         "trace_adoption_blocked",
       );
-    }) as typeof runCourseGenerationAgentV2;
+    }) as typeof runCourseGeneration;
     const resumedTraceIds = vi
       .fn()
       .mockReturnValueOnce(traceId)
       .mockReturnValueOnce("trace-cross-process-resumed");
     const fixture = createFixture({
-      runAgentV2,
+      runCourse,
       createTraceId: resumedTraceIds,
     });
     const controlService = createCourseGenerationTaskService({
       taskStore: fixture.taskStore,
       courseStore: fixture.courseStore,
       eventBus: fixture.eventBus,
-      runAgentV2,
-      cancelAgentV2Run: () => undefined,
+      runCourse,
+      cancelCourseRun: () => undefined,
+      loadCourseState: () => undefined,
       now: () => timestamp,
       createTaskId: () => "task-unused-cross-process-control",
       createCourseId: () => "course-unused-cross-process-control",
@@ -467,7 +467,7 @@ describe("course generation task service lifecycle", () => {
       finishAbort = resolve;
     });
     const checkpoint = courseState("running", 1);
-    const runAgentV2 = vi.fn(
+    const runCourse = vi.fn(
       async (_input, context, hooks) => {
         await hooks.checkpoint?.(checkpoint);
         markStarted();
@@ -484,9 +484,9 @@ describe("course generation task service lifecycle", () => {
           );
         });
       },
-    ) as typeof runCourseGenerationAgentV2;
+    ) as typeof runCourseGeneration;
     const fixture = createFixture({
-      runAgentV2,
+      runCourse,
       createTaskId: () => taskIds.shift()!,
     });
     const created = await fixture.service.create({
@@ -522,7 +522,7 @@ describe("course generation task service lifecycle", () => {
     const createResumedTraceId = vi
       .fn()
       .mockReturnValueOnce(traceId)
-      .mockReturnValueOnce("trace-day-19-resumed");
+      .mockReturnValueOnce("trace-fixture-19-resumed");
     const fixture = createFixture({
       createTraceId: createResumedTraceId,
     });
@@ -540,7 +540,7 @@ describe("course generation task service lifecycle", () => {
     expect(resumed).toMatchObject({
       taskId,
       courseId,
-      traceId: "trace-day-19-resumed",
+      traceId: "trace-fixture-19-resumed",
       status: "queued",
       completedAt: undefined,
       error: undefined,
@@ -548,15 +548,15 @@ describe("course generation task service lifecycle", () => {
     expect(fixture.courses.get(courseId)).toEqual(checkpointBeforeResume);
   });
 
-  it("runs a resumed agent-v2 task with the same task id and a new trace", async () => {
+  it("runs a resumed 课程生成 task with the same task id and a new trace", async () => {
     let markStarted: () => void = () => undefined;
     const started = new Promise<void>((resolve) => {
       markStarted = resolve;
     });
     const checkpoint = courseState("running", 1);
-    const runAgentV2Mock = vi.fn(
+    const runCourseMock = vi.fn(
       async (input, context, hooks) => {
-        if (runAgentV2Mock.mock.calls.length === 1) {
+        if (runCourseMock.mock.calls.length === 1) {
           await hooks.checkpoint?.(checkpoint);
           markStarted();
           return new Promise<CourseGenerationState>((_resolve, reject) => {
@@ -579,14 +579,14 @@ describe("course generation task service lifecycle", () => {
         };
       },
     );
-    const runAgentV2 =
-      runAgentV2Mock as unknown as typeof runCourseGenerationAgentV2;
+    const runCourse =
+      runCourseMock as unknown as typeof runCourseGeneration;
     const createResumedTraceId = vi
       .fn()
       .mockReturnValueOnce(traceId)
-      .mockReturnValueOnce("trace-day-19-resumed-run");
+      .mockReturnValueOnce("trace-fixture-19-resumed-run");
     const fixture = createFixture({
-      runAgentV2,
+      runCourse,
       createTraceId: createResumedTraceId,
     });
     await fixture.service.create({
@@ -602,17 +602,17 @@ describe("course generation task service lifecycle", () => {
 
     await fixture.service.run(taskId);
 
-    expect(runAgentV2Mock).toHaveBeenCalledTimes(2);
-    expect(runAgentV2Mock.mock.calls[1]?.[0]).toMatchObject({
+    expect(runCourseMock).toHaveBeenCalledTimes(2);
+    expect(runCourseMock.mock.calls[1]?.[0]).toMatchObject({
       taskId,
       courseId,
-      traceId: "trace-day-19-resumed-run",
+      traceId: "trace-fixture-19-resumed-run",
       creationBrief,
     });
     expect(fixture.tasks.get(taskId)).toMatchObject({
       taskId,
       courseId,
-      traceId: "trace-day-19-resumed-run",
+      traceId: "trace-fixture-19-resumed-run",
       status: "failed",
     });
   });
@@ -626,7 +626,7 @@ describe("course generation task service lifecycle", () => {
     const continueOldRunner = new Promise<void>((resolve) => {
       releaseOldRunner = resolve;
     });
-    const runAgentV2 = vi.fn(
+    const runCourse = vi.fn(
       async (input, _context, hooks) => {
         const firstCheckpoint = runningCheckpoint(
           input.courseId,
@@ -643,8 +643,8 @@ describe("course generation task service lifecycle", () => {
         await hooks.checkpoint?.(staleCheckpoint);
         return staleCheckpoint;
       },
-    ) as typeof runCourseGenerationAgentV2;
-    const fixture = createFixture({ runAgentV2 });
+    ) as typeof runCourseGeneration;
+    const fixture = createFixture({ runCourse });
     await fixture.service.create({
       ...agentTaskInput,
       userPrompt: "生成同一门太阳系课程",
@@ -656,7 +656,8 @@ describe("course generation task service lifecycle", () => {
       taskStore: fixture.taskStore,
       courseStore: fixture.courseStore,
       eventBus: fixture.eventBus,
-      runAgentV2,
+      runCourse,
+      loadCourseState: () => undefined,
       now: () => timestamp,
       createTaskId: () => "task-unused-second-service",
       createCourseId: () => "course-unused-second-service",
@@ -693,7 +694,7 @@ describe("course generation task service lifecycle", () => {
     const started = new Promise<void>((resolve) => {
       markStarted = resolve;
     });
-    const runAgentV2 = vi.fn(
+    const runCourse = vi.fn(
       async (input, context, hooks) => {
         await hooks.checkpoint?.(
           runningCheckpoint(
@@ -712,13 +713,11 @@ describe("course generation task service lifecycle", () => {
           );
         });
       },
-    ) as typeof runCourseGenerationAgentV2;
-    const fixture = createFixture({ runAgentV2 });
+    ) as typeof runCourseGeneration;
+    const fixture = createFixture({ runCourse });
     const taskBase = {
-      version: 1 as const,
       courseId,
       userPrompt: "生成同一门太阳系课程",
-      source: "agent-v2" as const,
       creationBrief,
       status: "queued" as const,
       createdAt: timestamp,
@@ -747,7 +746,7 @@ describe("course generation task service lifecycle", () => {
     await expect(loserRun).rejects.toThrow(
       "请先暂停或等待该任务完成",
     );
-    expect(runAgentV2).toHaveBeenCalledOnce();
+    expect(runCourse).toHaveBeenCalledOnce();
     expect(fixture.tasks.get(winnerTaskId)?.status).toBe("running");
     expect(fixture.tasks.get(loserTaskId)?.status).toBe("queued");
 
@@ -760,10 +759,8 @@ describe("course generation task service lifecycle", () => {
     const runningTaskId = "task-same-course-running";
     const fixture = createFixture();
     const taskBase = {
-      version: 1 as const,
       courseId,
       userPrompt: "生成同一门太阳系课程",
-      source: "agent-v2" as const,
       creationBrief,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -792,12 +789,10 @@ describe("course generation task service lifecycle", () => {
     const pausedTaskId = "task-resume-cancel-race";
     const fixture = createFixture();
     const paused: CourseTaskRecord = {
-      version: 1,
       taskId: pausedTaskId,
       courseId,
       traceId: "trace-before-resume-cancel-race",
       userPrompt: "生成同一门太阳系课程",
-      source: "agent-v2",
       creationBrief,
       status: "paused",
       createdAt: timestamp,
@@ -837,7 +832,7 @@ describe("course generation task service lifecycle", () => {
       ]),
     );
     const signals = new Map<string, AbortSignal | undefined>();
-    const runAgentV2 = vi.fn(
+    const runCourse = vi.fn(
       async (input, context, hooks) => {
         signals.set(input.courseId, context.abortSignal);
         const checkpoint = runningCheckpoint(
@@ -855,9 +850,9 @@ describe("course generation task service lifecycle", () => {
           );
         });
       },
-    ) as typeof runCourseGenerationAgentV2;
+    ) as typeof runCourseGeneration;
     const fixture = createFixture({
-      runAgentV2,
+      runCourse,
       createTaskId: () => taskIds.shift()!,
       createCourseId: () => courseIds.shift()!,
       createTraceId: () => traceIds.shift()!,
@@ -902,7 +897,6 @@ describe("course generation task service lifecycle", () => {
   it("marks the active page failed when cancellation happens in a page stage", async () => {
     const fixture = createFixture();
     fixture.courses.set(courseId, {
-      version: 1,
       courseId,
       traceId: "trace-previous-run",
       userPrompt: "生成三页太阳系互动课程",

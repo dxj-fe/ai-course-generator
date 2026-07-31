@@ -1,6 +1,5 @@
 import type { ModelTier } from "@/server/infra/ai/model-router";
 
-const DEFAULT_MODEL_NAME = "xai/grok-build-0.1";
 const DEFAULT_ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
 const DEFAULT_ARK_IMAGE_MODEL_ID = "doubao-seedream-4-5-251128";
 const DEFAULT_HTML_ENGINEER_TIMEOUT_MS = 120_000;
@@ -26,32 +25,25 @@ function requireEnv(name: string) {
 
 type LanguageModelProvider = "ark" | "generic";
 
-function resolveLanguageModelProvider(tier?: ModelTier): LanguageModelProvider {
-  const selectorName = tier
-    ? `MODEL_PROVIDER_${tier.toUpperCase()}`
-    : undefined;
-  const selector = selectorName ? optionalEnv(selectorName) : undefined;
+function resolveLanguageModelProvider(tier: ModelTier): LanguageModelProvider {
+  const selectorName = `MODEL_PROVIDER_${tier.toUpperCase()}`;
+  const selector = requireEnv(selectorName);
 
-  if (selector) {
-    if (selector === "ark" || selector === "generic") {
-      return selector;
-    }
-
-    throw new Error(`${selectorName} must be either "ark" or "generic".`);
+  if (selector === "ark" || selector === "generic") {
+    return selector;
   }
 
-  return optionalEnv("ARK_API_KEY") ? "ark" : "generic";
+  throw new Error(`${selectorName} must be either "ark" or "generic".`);
 }
 
-export function getModelConfig(tier?: ModelTier) {
-  const suffix = tier ? `_${tier.toUpperCase()}` : "";
+export function getModelConfig(tier: ModelTier) {
+  const suffix = `_${tier.toUpperCase()}`;
 
   if (resolveLanguageModelProvider(tier) === "ark") {
     return {
       apiKey: requireEnv("ARK_API_KEY"),
       baseURL: optionalEnv("ARK_BASE_URL") || DEFAULT_ARK_BASE_URL,
-      modelName:
-        optionalEnv(`ARK_MODEL_ID${suffix}`) || requireEnv("ARK_MODEL_ID"),
+      modelName: requireEnv(`ARK_MODEL_ID${suffix}`),
       providerName: "volcengine-ark",
     };
   }
@@ -59,10 +51,7 @@ export function getModelConfig(tier?: ModelTier) {
   return {
     apiKey: requireEnv("MODEL_API_KEY"),
     baseURL: requireEnv("MODEL_BASE_URL"),
-    modelName:
-      optionalEnv(`MODEL_NAME${suffix}`) ||
-      optionalEnv("MODEL_NAME") ||
-      DEFAULT_MODEL_NAME,
+    modelName: requireEnv(`MODEL_NAME${suffix}`),
     providerName: "model-provider",
   };
 }

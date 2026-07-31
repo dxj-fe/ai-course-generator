@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getCourseHistoryDetail,
   listCourseHistory,
-} from "../../../src/features/course-planner/lib/course-library-api";
+} from "../../../src/features/keya/api/course-library";
 
 describe("course library API client", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -38,13 +38,13 @@ describe("course library API client", () => {
       ),
     );
 
-    await expect(getCourseHistoryDetail("course-day-34")).rejects.toThrow();
+    await expect(getCourseHistoryDetail("course-fixture-34")).rejects.toThrow();
   });
 });
 
 function historyItem() {
   return {
-    courseId: "course-day-34",
+    courseId: "course-fixture-34",
     title: "太阳系课程",
     prompt: "生成太阳系课程",
     status: "completed",

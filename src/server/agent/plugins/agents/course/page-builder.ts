@@ -10,11 +10,10 @@ import {
 
 export const coursePageBuilderAgent = defineAgent({
   id: AgentIds.CoursePageBuilder,
-  version: 3,
   description: "依据页面职责和完整课程上下文生成可交付的课程页面。",
-  input: SchemaIds.CoursePageBuilderInputV1,
-  output: SchemaIds.CoursePageSubmissionV1,
-  prompt: PromptIds.CoursePageBuilderSystemV1,
+  input: SchemaIds.CoursePageBuilderInput,
+  output: SchemaIds.CoursePageSubmission,
+  prompt: PromptIds.CoursePageBuilderSystem,
   tools: AgentToolSets.CoursePageBuilder,
   contexts: [
     ContextIds.CourseArchitecture,

@@ -22,7 +22,6 @@ export function normalizeSubmissionRuntimeMarker(
 ) {
   if (
     typeof output !== "string" ||
-    content.version !== 2 ||
     (content.interaction.type !== "sort" &&
       content.interaction.type !== "input")
   ) {
@@ -136,7 +135,6 @@ export function normalizeSortCardInteraction(
 ) {
   if (
     typeof output !== "string" ||
-    content.version !== 2 ||
     content.interaction.type !== "sort"
   ) {
     return output;
@@ -225,8 +223,7 @@ export function normalizeExploreCardInteraction(
 ) {
   if (
     typeof output !== "string" ||
-    content.interaction.type !== "explore" ||
-    content.version !== 2
+    content.interaction.type !== "explore"
   ) {
     return output;
   }

@@ -8,6 +8,7 @@ import {
   QualityScreenshotEvidenceSchema,
   type PageContentDSL,
   type QualityIssue,
+  type QualityScreenshotCapture,
   type QualityScreenshotEvidence,
 } from "@/shared/course-schema";
 import {
@@ -27,12 +28,10 @@ const QA_VIEWPORTS = [
 const DEFAULT_TIMEOUT_MS = 12_000;
 
 export type BrowserScreenshotMetrics = NonNullable<
-  QualityScreenshotEvidence["metrics"]
+  QualityScreenshotCapture["metrics"]
 >;
-type BrowserViewport = QualityScreenshotEvidence["viewport"];
-type ScreenshotCapture = NonNullable<
-  QualityScreenshotEvidence["captures"]
->[number];
+type BrowserViewport = QualityScreenshotCapture["viewport"];
+type ScreenshotCapture = QualityScreenshotCapture;
 
 export type BrowserScreenshotSnapshot = {
   png: Uint8Array;
@@ -76,21 +75,16 @@ export function resolveDominantVisualMetrics(
 
 export function countAuthoredTouchTargets(
   rects: Array<{ width: number; height: number }>,
-  viewportFitScale = 1,
 ): Pick<
   BrowserScreenshotMetrics,
   "touchTargetUnder24Count" | "touchTargetUnder44Count"
 > {
-  const scale =
-    Number.isFinite(viewportFitScale) && viewportFitScale > 0
-      ? Math.min(1, viewportFitScale)
-      : 1;
   return {
     touchTargetUnder24Count: rects.filter(
-      (rect) => rect.width / scale < 24 || rect.height / scale < 24,
+      (rect) => rect.width < 24 || rect.height < 24,
     ).length,
     touchTargetUnder44Count: rects.filter(
-      (rect) => rect.width / scale < 44 || rect.height / scale < 44,
+      (rect) => rect.width < 44 || rect.height < 44,
     ).length,
   };
 }
@@ -124,7 +118,7 @@ type CaptureOutcome = {
 
 /**
  * 在禁用外部网络的浏览器上下文中采集强制 QA 证据。只有通过安全预检的
- * v2 页面会启用平台固定运行时；浏览器与写盘故障会被结构化为质量闸门失败。
+ * 页面会启用平台固定运行时；浏览器与写盘故障会被结构化为质量闸门失败。
  */
 export async function capturePageScreenshot(
   input: {
@@ -137,7 +131,6 @@ export async function capturePageScreenshot(
   },
   options: CapturePageScreenshotOptions = {},
 ): Promise<PageScreenshotResult> {
-  const primaryViewport = QA_VIEWPORTS[0].viewport;
   const enabled =
     options.enabled ?? process.env.PAGE_QA_SCREENSHOTS_ENABLED !== "false";
   if (!enabled) {
@@ -158,14 +151,13 @@ export async function capturePageScreenshot(
   const rootDir =
     options.rootDir ?? path.join(".data", "quality-screenshots");
   const capturedAt = (options.now ?? (() => new Date().toISOString()))();
-  const runtimeConfig =
-    input.content?.version === 2 && input.content.runtime
-      ? {
-          pageId: input.pageId,
-          runtime: input.content.runtime,
-          interaction: input.content.interaction,
-        }
-      : undefined;
+  const runtimeConfig = input.content
+    ? {
+        pageId: input.pageId,
+        runtime: input.content.runtime,
+        interaction: input.content.interaction,
+      }
+    : undefined;
   const outcomes = options.captureBrowser
     ? await captureWithInjectedBrowser({
         html: input.html,
@@ -244,11 +236,7 @@ export async function capturePageScreenshot(
     }
   }
 
-  const primary =
-    captures[0] ??
-    failedCapture(primaryViewport, new Error("未返回桌面截图结果"));
   const evidence = QualityScreenshotEvidenceSchema.parse({
-    ...primary,
     captures,
   });
   return {
@@ -435,16 +423,6 @@ async function captureViewport(
     const evaluated = await page.evaluate(() => {
       const root = document.documentElement;
       const body = document.body;
-      const viewportFitApplied = root.dataset.keyaViewportFit === "ready";
-      const rawViewportFitScale = Number.parseFloat(
-        root.dataset.keyaViewportFitScale ?? "1",
-      );
-      const viewportFitScale =
-        viewportFitApplied &&
-        Number.isFinite(rawViewportFitScale) &&
-        rawViewportFitScale > 0
-          ? Math.min(1, rawViewportFitScale)
-          : 1;
       const interactiveElements = Array.from(
         document.querySelectorAll<HTMLElement>(
           "a[href],button,input,select,textarea,[role='button'],[tabindex]",
@@ -470,14 +448,6 @@ async function captureViewport(
         ...contentElements,
       ];
       const clippedElementCount = layoutElements.filter((element) => {
-        if (
-          viewportFitApplied &&
-          (element === root ||
-            element === body ||
-            element.dataset.keyaFitExpanded === "true")
-        ) {
-          return false;
-        }
         // object-fit、受控画框和圆角裁切是素材呈现手段，不是正文丢失。
         // 素材占比另有独立指标；这里仅统计正文或互动内容的真实裁切。
         if (element.closest("[data-asset-slot-id]")) {
@@ -521,9 +491,7 @@ async function captureViewport(
       );
       const mainViewportCoverageRatio =
         root.dataset.keyaCanvasMode === "fluid" && lessonRoot
-          ? viewportFitApplied
-            ? 1
-            : (() => {
+          ? (() => {
               const rect = lessonRoot.getBoundingClientRect();
               const width = Math.max(
                 0,
@@ -651,8 +619,6 @@ async function captureViewport(
         body?.scrollHeight ?? 0,
       );
       return {
-        viewportFitApplied,
-        viewportFitScale,
         documentWidth,
         documentHeight,
         horizontalOverflowPx: Math.max(0, root.scrollWidth - root.clientWidth),
@@ -682,23 +648,13 @@ async function captureViewport(
       };
     });
     const {
-      viewportFitApplied,
-      viewportFitScale,
       visualCandidates,
       visibleInteractiveSizes,
       ...baseMetrics
     } = evaluated;
     const metrics: BrowserScreenshotMetrics = {
-      ...normalizeViewportFitMetrics(
-        baseMetrics,
-        input.viewport,
-        viewportFitApplied,
-      ),
-      viewportFitScale,
-      ...countAuthoredTouchTargets(
-        visibleInteractiveSizes,
-        viewportFitScale,
-      ),
+      ...baseMetrics,
+      ...countAuthoredTouchTargets(visibleInteractiveSizes),
       ...resolveDominantVisualMetrics(visualCandidates),
     };
     const png = await page.screenshot({ type: "png", fullPage: false });
@@ -718,10 +674,7 @@ async function captureViewport(
   }
 }
 
-/**
- * QA 必须测量作者 HTML 的真实布局；播放器 contain-fit 只负责最终兜底展示，
- * 若在截图前启用会掩盖溢出，并把正常响应式页面误判为整页缩放。
- */
+/** QA 必须测量作者 HTML 的真实布局，不能用播放器缩放掩盖溢出。 */
 export function buildQaLessonSrcDoc(
   html: string,
   runtimeConfig: TrustedLessonRuntimeConfig,
@@ -729,27 +682,6 @@ export function buildQaLessonSrcDoc(
   return buildTrustedLessonSrcDoc(html, runtimeConfig, {
     viewportFit: false,
   });
-}
-
-/** 兼容显式启用 contain-fit 的诊断调用；常规 QA 不会走这条归一化路径。 */
-export function normalizeViewportFitMetrics(
-  metrics: BrowserScreenshotMetrics,
-  viewport: BrowserViewport,
-  viewportFitApplied: boolean,
-): BrowserScreenshotMetrics {
-  if (!viewportFitApplied) return metrics;
-
-  return {
-    ...metrics,
-    documentWidth: viewport.width,
-    documentHeight: viewport.height,
-    horizontalOverflowPx: 0,
-    verticalOverflowPx: 0,
-    nestedVerticalOverflowCount: 0,
-    ...(metrics.mainViewportCoverageRatio === undefined
-      ? {}
-      : { mainViewportCoverageRatio: 1 }),
-  };
 }
 
 async function exerciseInteraction(
@@ -895,9 +827,6 @@ function skipped(reason: string): PageScreenshotResult {
   }));
   return {
     evidence: QualityScreenshotEvidenceSchema.parse({
-      status: "skipped",
-      viewport: QA_VIEWPORTS[0].viewport,
-      reason,
       captures,
     }),
     issues: [],

@@ -62,7 +62,6 @@ export const LessonCompletionRuleSchema = z.discriminatedUnion("type", [
 
 export const LessonRuntimeSchema = z
   .object({
-    runtimeVersion: z.literal(1),
     sceneKind: LessonSceneKindSchema,
     visualPrimitive: LessonVisualPrimitiveSchema,
     motionPlan: LessonMotionPlanSchema,
@@ -73,7 +72,6 @@ export const LessonRuntimeSchema = z
 const LessonRuntimeEventBaseSchema = z.object({
   channel: z.literal("keya.lesson-runtime"),
   pageId: z.string().min(1).max(80),
-  runtimeVersion: z.literal(1),
 });
 
 /** iframe 可信运行时允许发给宿主的唯一消息集合。 */

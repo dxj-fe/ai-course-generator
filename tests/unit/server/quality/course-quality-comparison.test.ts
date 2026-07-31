@@ -13,32 +13,23 @@ import type {
 } from "../../../../src/shared/course-schema";
 
 const screenshotEvidence: QualityScreenshotEvidence = {
-  status: "captured",
-  artifactId: "quality-comparison-desktop",
-  viewport: { width: 922, height: 460 },
-  metrics: {
-    documentWidth: 922,
-    documentHeight: 460,
-    horizontalOverflowPx: 0,
-    clippedElementCount: 0,
-    zeroSizeInteractiveCount: 0,
-  },
-  capturedAt: "2026-07-24T10:00:00.000Z",
   captures: [
-    {
+    ["desktop", 922, 460],
+    ["tablet", 768, 1024],
+    ["mobile", 390, 844],
+  ].map(([label, width, height]) => ({
       status: "captured",
-      artifactId: "quality-comparison-desktop",
-      viewport: { width: 922, height: 460 },
+      artifactId: `quality-comparison-${label}`,
+      viewport: { width: Number(width), height: Number(height) },
       metrics: {
-        documentWidth: 922,
-        documentHeight: 460,
+        documentWidth: Number(width),
+        documentHeight: Number(height),
         horizontalOverflowPx: 0,
         clippedElementCount: 0,
         zeroSizeInteractiveCount: 0,
       },
       capturedAt: "2026-07-24T10:00:00.000Z",
-    },
-  ],
+    })),
 };
 
 describe("course quality comparison", () => {
@@ -75,13 +66,13 @@ describe("course quality comparison", () => {
   it("separates provider-backed first-pass quality from graceful fallbacks", () => {
     const modelCourse = course("model-rendered", 94);
     modelCourse.pages[0]!.htmlOutput = {
-      version: 1,
+      revision: 1,
       html: "<!doctype html><html><body></body></html>",
       generatedAt: "2026-07-24T10:00:00.000Z",
     };
     const fallbackCourse = course("fallback-rendered", 94);
     fallbackCourse.pages[0]!.htmlOutput = {
-      version: 1,
+      revision: 1,
       html: '<!doctype html><html data-keya-renderer="deterministic"><body></body></html>',
       generatedAt: "2026-07-24T10:00:00.000Z",
     };
@@ -109,7 +100,7 @@ describe("course quality comparison", () => {
       courseRevisionCount: 0,
     };
     firstPass.pages[0]!.htmlOutput = {
-      version: 1,
+      revision: 1,
       html: "<!doctype html><html><body></body></html>",
       generatedAt: "2026-07-24T10:00:00.000Z",
     };
@@ -155,7 +146,6 @@ function course(
     screenshotEvidence,
   });
   return {
-    version: 1,
     courseId,
     traceId: `trace-${courseId}`,
     userPrompt: "同一条质量基准提示词",

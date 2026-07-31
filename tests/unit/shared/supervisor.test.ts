@@ -6,7 +6,7 @@ import {
   targetKey,
 } from "../../../src/shared/course-schema";
 
-describe("Day 23 supervisor schemas", () => {
+describe("supervisor schemas", () => {
   it("accepts run, retry, complete, and stop decisions", () => {
     const pageTarget = {
       nodeName: "html-engineer" as const,

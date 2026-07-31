@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { projectCourseStateToKeyaRun } from "../../../src/shared/course-view/keya-run";
-import type { CourseGenerationResponse } from "../../../src/features/course-planner/lib/course-planner-api";
+import type { CourseGenerationResponse } from "@/shared/course-schema";
 import { CourseGenerationStateSchema } from "../../../src/shared/course-schema";
 import {
   courseDesignIntent,
@@ -14,7 +14,6 @@ import {
 describe("course generation adapter", () => {
   it("maps the current batch attempt into existing Keya stages", () => {
     const state = CourseGenerationStateSchema.parse({
-      version: 1,
       courseId: "course-123e4567-e89b-42d3-a456-426614174000",
       traceId: "trace-current",
       userPrompt: "生成三页太阳系课程",
@@ -89,16 +88,12 @@ describe("course generation adapter", () => {
       "课程专业设计工作流已开始。",
       "Visual Agent failed",
     ]);
-    expect(
-      run.design.data?.state.events.map(({ summary }) => summary),
-    ).toEqual(["Visual Agent failed"]);
     expect(run.courseId).toBe(state.courseId);
     expect(run.generation).toBe(state);
   });
 
   it("maps the persisted current stage to a live Keya running stage", () => {
     const state = CourseGenerationStateSchema.parse({
-      version: 1,
       courseId: "course-123e4567-e89b-42d3-a456-426614174001",
       traceId: "trace-stream",
       userPrompt: "生成三页太阳系课程",
@@ -236,7 +231,6 @@ describe("course generation adapter", () => {
     const firstPageId = courseDesignOutline.pages[0].id;
     const secondPageId = courseDesignOutline.pages[1].id;
     const state = CourseGenerationStateSchema.parse({
-      version: 1,
       courseId: "course-123e4567-e89b-42d3-a456-426614174002",
       traceId: "trace-workers",
       userPrompt: "并行生成太阳系课程",

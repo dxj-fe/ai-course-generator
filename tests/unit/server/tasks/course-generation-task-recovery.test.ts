@@ -11,12 +11,11 @@ import type {
 const NOW = "2026-07-29T08:00:00.000Z";
 
 describe("course task recovery scanner", () => {
-  it("只领取 queued 和 lease 已失效的 agent-v2 任务", async () => {
+  it("只领取 queued 和 lease 已失效的课程任务", async () => {
     const queued = task("task-recover-queued", "queued");
     const stale = task("task-recover-stale", "running");
     const active = task("task-recover-active", "running");
     const paused = task("task-recover-paused", "paused");
-    const legacy = task("task-recover-legacy", "running", "langgraph");
     const runs = new Map<string, CourseRun>([
       [
         stale.taskId,
@@ -39,7 +38,7 @@ describe("course task recovery scanner", () => {
     const scanner = createCourseTaskRecoveryScanner({
       taskStore: {
         list: async () => ({
-          items: [active, paused, queued, legacy, stale],
+          items: [active, paused, queued, stale],
           unavailableCount: 1,
         }),
         loadControlIntent: async () => undefined,
@@ -54,7 +53,7 @@ describe("course task recovery scanner", () => {
     const report = await scanner.scanOnce({ concurrency: 2 });
 
     expect(report).toEqual({
-      scannedTaskCount: 5,
+      scannedTaskCount: 4,
       unavailableTaskCount: 1,
       candidateTaskIds: [queued.taskId, stale.taskId],
       skippedActiveLeaseTaskIds: [active.taskId],
@@ -261,26 +260,12 @@ describe("course task recovery scanner", () => {
 function task(
   taskId: string,
   status: CourseTaskRecord["status"],
-  source: CourseTaskRecord["source"] = "agent-v2",
 ): CourseTaskRecord {
-  const base = {
-    version: 1 as const,
+  return {
     taskId,
     courseId: `course-${taskId.slice(5)}`,
     traceId: `trace-${taskId.slice(5)}`,
     userPrompt: "生成一门太阳系课程",
-    source,
-    status,
-    createdAt: "2026-07-29T07:00:00.000Z",
-    updatedAt:
-      taskId === "task-recover-stale"
-        ? "2026-07-29T07:02:00.000Z"
-        : "2026-07-29T07:01:00.000Z",
-  };
-  if (source !== "agent-v2") return { ...base, source };
-  return {
-    ...base,
-    source,
     creationBrief: {
       originalRequest: "生成一门太阳系课程",
       topic: "太阳系",
@@ -290,6 +275,12 @@ function task(
       learningMode: "mixed",
       language: "zh-CN",
     },
+    status,
+    createdAt: "2026-07-29T07:00:00.000Z",
+    updatedAt:
+      taskId === "task-recover-stale"
+        ? "2026-07-29T07:02:00.000Z"
+        : "2026-07-29T07:01:00.000Z",
   };
 }
 
@@ -298,7 +289,6 @@ function run(
   overrides: Partial<CourseRun> = {},
 ): CourseRun {
   return {
-    version: 1,
     id: `run-${taskRecord.taskId}`,
     taskId: taskRecord.taskId,
     courseId: taskRecord.courseId,

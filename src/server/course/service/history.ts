@@ -30,11 +30,6 @@ export type CourseHistoryService = {
   >;
 };
 
-const VISIBLE_COURSE_TASK_SOURCES = new Set<CourseTaskRecord["source"]>([
-  "langgraph",
-  "agent-v2",
-]);
-
 export function createCourseHistoryService(input: {
   courseStore?: CourseStore;
   taskStore?: CourseTaskStore;
@@ -48,19 +43,10 @@ export function createCourseHistoryService(input: {
         courseStore.list(),
         taskStore.list(),
       ]);
-      const tasksByCourse = groupTasksByCourse(
-        tasks.items.filter(({ source }) =>
-          VISIBLE_COURSE_TASK_SOURCES.has(source),
-        ),
-      );
-      const latestTasksByCourse = groupTasksByCourse(tasks.items);
+      const tasksByCourse = groupTasksByCourse(tasks.items);
       const normalizedQuery = query.query?.trim().toLocaleLowerCase("zh-CN");
       const items = courses.items
-        .filter((course) =>
-          isVisibleCourseTask(
-            latestTasksByCourse.get(course.courseId)?.[0],
-          ),
-        )
+        .filter((course) => tasksByCourse.has(course.courseId))
         .map((course) =>
           historyItem(course, tasksByCourse.get(course.courseId) ?? []),
         )
@@ -91,26 +77,16 @@ export function createCourseHistoryService(input: {
       const courseTasks = tasks.items
         .filter((task) => task.courseId === safeCourseId)
         .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-      if (
-        !course ||
-        !isVisibleCourseTask(courseTasks[0])
-      ) {
+      if (!course || !courseTasks[0]) {
         return undefined;
       }
-      const visibleTasks = courseTasks.filter(({ source }) =>
-        VISIBLE_COURSE_TASK_SOURCES.has(source),
-      );
 
       return CourseHistoryDetailResponseSchema.parse({
         course,
-        runs: visibleTasks.map(runSummary),
+        runs: courseTasks.map(runSummary),
       });
     },
   };
-}
-
-function isVisibleCourseTask(task: CourseTaskRecord | undefined) {
-  return Boolean(task && VISIBLE_COURSE_TASK_SOURCES.has(task.source));
 }
 
 function groupTasksByCourse(tasks: CourseTaskRecord[]) {
@@ -136,7 +112,7 @@ function historyItem(
     firstPage?.status === "completed" && firstPage.htmlOutput
       ? {
           pageId: firstPage.pageId,
-          version: firstPage.htmlOutput.version,
+          revision: firstPage.htmlOutput.revision,
           generatedAt: firstPage.htmlOutput.generatedAt,
         }
       : undefined;
@@ -166,7 +142,6 @@ function runSummary(task: CourseTaskRecord) {
     taskId: task.taskId,
     traceId: task.traceId,
     status: task.status,
-    source: task.source,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
     completedAt: task.completedAt,

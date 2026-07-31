@@ -50,17 +50,17 @@ export const PageAssetNeedSchema = z.object({
 
 /**
  * 保存 HTML Engineer Agent 的可版本化输出。
- * generatedAt 和 version 用于缓存失效、审计和重新生成。
+ * generatedAt 和 revision 用于缓存失效、审计和重新生成。
  */
 export const HtmlOutputSchema = z.object({
   html: z.string().min(1),
   generatedAt: z.string().datetime({ offset: true }),
-  version: z.number().int().positive(),
+  revision: z.number().int().positive(),
 });
 
 /**
  * 多页课程流水线使用的完整页面计划。
- * 它比 Day 06 的 PagePlanDraft 多出顺序、模板、素材、依赖和 HTML 状态。
+ * 它在 PagePlanDraft 基础上补充顺序、模板、素材、依赖和 HTML 状态。
  */
 export const PagePlanSchema = z
   .object({

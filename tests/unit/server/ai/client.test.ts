@@ -102,7 +102,7 @@ describe("AI client", () => {
         capability: "page-qa",
         model: {} as never,
         prompt: "Evaluate this page",
-        promptVersion: "page-qa@diagnostic-test",
+        promptFingerprint: "page-qa@diagnostic-test",
         schema: z
           .object({
             issues: z.array(
@@ -127,7 +127,7 @@ describe("AI client", () => {
           'issues.0.location: Unrecognized key: "viewports"',
         ),
         event: "generate-object:error",
-        promptVersion: "page-qa@diagnostic-test",
+        promptFingerprint: "page-qa@diagnostic-test",
         schemaName: "page_quality_report",
         traceId: "schema-diagnostic-test",
       }),
@@ -144,11 +144,11 @@ describe("AI client", () => {
       cache: {
         input: { topic: "solar wind" },
         namespace: "test-page-writer",
-        schemaVersion: "test-schema@1",
+        schemaFingerprint: "test-schema-current",
       },
       capability: "page-writer" as const,
       prompt: "Generate page content",
-      promptVersion: "test-prompt@1",
+      promptFingerprint: "test-prompt-current",
       schema: z.object({ value: z.string() }),
       schemaName: "test_intent",
       traceId: "result-cache-test",

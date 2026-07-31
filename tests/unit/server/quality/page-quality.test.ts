@@ -14,7 +14,7 @@ const dimensions = {
 };
 
 describe("page quality rules", () => {
-  it("keeps the Day 15 failure taxonomy at exactly ten stable categories", () => {
+  it("keeps the failure taxonomy at exactly ten stable categories", () => {
     expect(PAGE_QUALITY_FAILURE_TAXONOMY).toHaveLength(10);
     expect(new Set(PAGE_QUALITY_FAILURE_TAXONOMY.map(({ code }) => code)).size).toBe(10);
   });

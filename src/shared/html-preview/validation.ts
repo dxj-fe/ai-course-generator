@@ -86,7 +86,7 @@ export function sanitizeHtmlLite(html: string) {
     /<script\b/i.test(html) &&
     !/<script\b[^>]*\bsrc\s*=\s*(?:["'][^"']*["']|[^\s>]+)/i.test(html)
   ) {
-    addIssue("inline_script", "Day 14 静态预览禁止任何内联脚本。");
+    addIssue("inline_script", "静态预览禁止任何内联脚本。");
   }
 
   if (

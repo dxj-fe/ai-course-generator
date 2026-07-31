@@ -48,7 +48,7 @@ describe("generateImageTool", () => {
     expect(
       buildImageGenerationProviderOptions({
         apiKey: "test-key",
-        baseURL: "https://images.example.test/v1",
+        baseURL: "https://images.example.test/api",
         modelName: "custom-image-model",
         providerName: "custom-images",
       }),

@@ -69,7 +69,6 @@ export const WorkOrderErrorSchema = z
 
 export const WorkOrderSchema = z
   .object({
-    version: z.literal(1),
     lockVersion: z.number().int().nonnegative(),
     id: z.string().min(1).max(160),
     taskId: CourseTaskIdSchema,
@@ -78,11 +77,7 @@ export const WorkOrderSchema = z
     supersedesWorkOrderId: z.string().min(1).max(160).optional(),
     causedByReviewIssueIds: z.array(z.string().min(1).max(160)).max(100),
     dependencyWorkOrderIds: z.array(z.string().min(1).max(160)).max(200),
-    /**
-     * 新写入 WorkOrder 必须指定执行 Agent。optional 仅用于读取迁移前的
-     * durable payload；Engine 会通过兼容映射补齐旧数据。
-     */
-    agentId: z.string().min(1).max(120).optional(),
+    agentId: z.string().min(1).max(120),
     kind: WorkOrderKindSchema,
     scope: WorkOrderScopeSchema,
     status: WorkOrderStatusSchema,

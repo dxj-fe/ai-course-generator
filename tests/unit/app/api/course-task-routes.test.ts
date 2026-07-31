@@ -67,9 +67,9 @@ import { GET } from "../../../../src/app/api/courses/tasks/[taskId]/events/route
 import { POST } from "../../../../src/app/api/courses/tasks/route";
 
 const timestamp = "2026-07-15T06:00:00.000Z";
-const taskId = "task-day-19-route";
-const courseId = "course-day-19-route";
-const traceId = "trace-day-19-route";
+const taskId = "task-fixture-19-route";
+const courseId = "course-fixture-19-route";
+const traceId = "trace-fixture-19-route";
 const creationBrief = {
   originalRequest: "生成三页太阳系互动课程",
   topic: "太阳系",
@@ -99,7 +99,6 @@ describe("course task Route Handlers", () => {
       courseId,
       traceId,
       status: "queued",
-      source: "agent-v2",
     });
     mocks.run.mockResolvedValue(runningState());
 
@@ -114,7 +113,6 @@ describe("course task Route Handlers", () => {
           userPrompt: "生成三页太阳系互动课程",
           creationBrief,
           pageCount: 3,
-          source: "workflow",
         }),
       }),
     );
@@ -125,13 +123,11 @@ describe("course task Route Handlers", () => {
       courseId,
       traceId,
       status: "queued",
-      source: "agent-v2",
     });
     expect(mocks.create).toHaveBeenCalledWith({
       userPrompt: "生成三页太阳系互动课程",
       creationBrief,
       pageCount: 3,
-      source: "agent-v2",
       traceId: "trace-from-header",
     });
     expect(mocks.run).not.toHaveBeenCalled();
@@ -238,7 +234,7 @@ describe("course task Route Handlers", () => {
 
     const first = await readSseChunk(reader!);
     expect(first).toContain(
-      `id: v1:${traceId}:1\nevent: snapshot\n`,
+      `id: ${traceId}:1\nevent: snapshot\n`,
     );
     expect(first).toContain('"type":"snapshot"');
     expect(first).toContain('"taskStatus":"running"');
@@ -247,11 +243,10 @@ describe("course task Route Handlers", () => {
       type: "event",
       taskId,
       courseId,
-      source: "workflow",
       event: publicEvent(2, "agent_done"),
     });
     const second = await readSseChunk(reader!);
-    expect(second).toContain(`id: v1:${traceId}:2\nevent: event\n`);
+    expect(second).toContain(`id: ${traceId}:2\nevent: event\n`);
     expect(second).toContain('"type":"agent_done"');
 
     await reader?.cancel();
@@ -278,7 +273,6 @@ describe("course task Route Handlers", () => {
       type: "event",
       taskId,
       courseId,
-      source: "workflow",
       event: {
         ...publicEvent(2, "agent_done"),
         summary: privateText,
@@ -294,7 +288,6 @@ describe("course task Route Handlers", () => {
       type: "terminal",
       taskId,
       courseId,
-      source: "workflow",
       status: "failed",
       state: runningState({
         status: "failed",
@@ -312,7 +305,7 @@ describe("course task Route Handlers", () => {
     });
     const terminalFrame = await readSseChunk(reader!);
     expect(terminalFrame).toContain(
-      `id: v1:${traceId}:2\nevent: terminal\n`,
+      `id: ${traceId}:2\nevent: terminal\n`,
     );
     expect(terminalFrame).toContain(
       "课程生成失败，请根据错误码排查后重试。",
@@ -329,11 +322,24 @@ describe("course task Route Handlers", () => {
     let durableState = runningState({ events: [publicEvent(1)] });
     mocks.loadTask.mockImplementation(async () => durableTask);
     mocks.loadCourse.mockImplementation(async () => durableState);
+    mocks.listPublicEvents.mockImplementation(
+      ({ afterSequence }: { afterSequence: number }) => {
+        const events = durableState.events.filter(
+          ({ sequence }) => sequence > afterSequence,
+        );
+        return {
+          traceId,
+          scannedThroughSequence:
+            events.at(-1)?.sequence ?? afterSequence,
+          events,
+        };
+      },
+    );
 
     try {
       const response = await GET(
         new Request(`http://localhost/api/courses/tasks/${taskId}/events`, {
-          headers: { "last-event-id": "1" },
+          headers: { "last-event-id": `${traceId}:1` },
         }),
         routeContext(taskId),
       );
@@ -342,7 +348,7 @@ describe("course task Route Handlers", () => {
 
       const initial = await readSseChunk(reader!);
       expect(initial).toContain(
-        `id: v1:${traceId}:1\nevent: snapshot\n`,
+        `id: ${traceId}:1\nevent: snapshot\n`,
       );
       expect(initial).not.toContain("\nevent: event\n");
 
@@ -356,11 +362,11 @@ describe("course task Route Handlers", () => {
       const newEvent = await readSseChunk(reader!);
       const refreshedSnapshot = await readSseChunk(reader!);
       expect(newEvent).toContain(
-        `id: v1:${traceId}:2\nevent: event\n`,
+        `id: ${traceId}:2\nevent: event\n`,
       );
       expect(newEvent).toContain('"sequence":2');
       expect(refreshedSnapshot).toContain(
-        `id: v1:${traceId}:2\nevent: snapshot\n`,
+        `id: ${traceId}:2\nevent: snapshot\n`,
       );
 
       durableState = runningState({
@@ -389,10 +395,10 @@ describe("course task Route Handlers", () => {
       const terminalEvent = await readSseChunk(reader!);
       const terminal = await readSseChunk(reader!);
       expect(terminalEvent).toContain(
-        `id: v1:${traceId}:3\nevent: event\n`,
+        `id: ${traceId}:3\nevent: event\n`,
       );
       expect(terminal).toContain(
-        `id: v1:${traceId}:3\nevent: terminal\n`,
+        `id: ${traceId}:3\nevent: terminal\n`,
       );
       expect(terminal).toContain('"status":"failed"');
       await expect(reader!.read()).resolves.toMatchObject({ done: true });
@@ -406,7 +412,7 @@ describe("course task Route Handlers", () => {
 
   it("GET 直接轮询 durable events，并与当前进程 EventBus 按 sequence 去重", async () => {
     vi.useFakeTimers();
-    const task = agentV2TaskRecord();
+    const task = currentTaskRecord();
     const state = runningState({ events: [publicEvent(1)] });
     let eventAvailable = false;
     mocks.loadTask.mockResolvedValue(task);
@@ -425,7 +431,7 @@ describe("course task Route Handlers", () => {
     try {
       const response = await GET(
         new Request(`http://localhost/api/courses/tasks/${taskId}/events`, {
-          headers: { "last-event-id": `v1:${traceId}:1` },
+          headers: { "last-event-id": `${traceId}:1` },
         }),
         routeContext(taskId),
       );
@@ -437,7 +443,7 @@ describe("course task Route Handlers", () => {
       await vi.advanceTimersByTimeAsync(500);
       const durableFrame = await readSseChunk(reader!);
       expect(durableFrame).toContain(
-        `id: v1:${traceId}:7\nevent: event\n`,
+        `id: ${traceId}:7\nevent: event\n`,
       );
       expect(mocks.listPublicEvents).toHaveBeenLastCalledWith({
         taskId,
@@ -449,19 +455,17 @@ describe("course task Route Handlers", () => {
         type: "event",
         taskId,
         courseId,
-        source: "agent-v2",
         event: publicEvent(7, "agent_done"),
       });
       publish({
         type: "event",
         taskId,
         courseId,
-        source: "agent-v2",
         event: publicEvent(8, "page_done"),
       });
       const busFrame = await readSseChunk(reader!);
       expect(busFrame).toContain(
-        `id: v1:${traceId}:8\nevent: event\n`,
+        `id: ${traceId}:8\nevent: event\n`,
       );
       await reader?.cancel();
     } finally {
@@ -471,7 +475,7 @@ describe("course task Route Handlers", () => {
 
   it("GET 在 durable event 已领先旧 terminal checkpoint 时仍发送终态并关闭", async () => {
     vi.useFakeTimers();
-    let durableTask = agentV2TaskRecord();
+    let durableTask = currentTaskRecord();
     let durableState = runningState({ events: [publicEvent(1)] });
     let eventAvailable = false;
     mocks.loadTask.mockImplementation(async () => durableTask);
@@ -499,10 +503,10 @@ describe("course task Route Handlers", () => {
       eventAvailable = true;
       await vi.advanceTimersByTimeAsync(500);
       expect(await readSseChunk(reader!)).toContain(
-        `id: v1:${traceId}:7\nevent: event\n`,
+        `id: ${traceId}:7\nevent: event\n`,
       );
 
-      durableTask = agentV2TaskRecord({
+      durableTask = currentTaskRecord({
         status: "failed",
         completedAt: "2026-07-15T06:01:00.000Z",
         error: {
@@ -527,7 +531,7 @@ describe("course task Route Handlers", () => {
 
       const terminalFrame = await readSseChunk(reader!);
       expect(terminalFrame).toContain(
-        `id: v1:${traceId}:7\nevent: terminal\n`,
+        `id: ${traceId}:7\nevent: terminal\n`,
       );
       expect(terminalFrame).toContain('"status":"failed"');
       await expect(reader!.read()).resolves.toMatchObject({ done: true });
@@ -540,8 +544,8 @@ describe("course task Route Handlers", () => {
 
   it("GET 在 resume 切换 trace 时先发新 snapshot，再发该 trace 的 durable events", async () => {
     vi.useFakeTimers();
-    const resumedTraceId = "trace-day-19-resumed";
-    let durableTask = agentV2TaskRecord();
+    const resumedTraceId = "trace-fixture-19-resumed";
+    let durableTask = currentTaskRecord();
     let durableState = runningState({ events: [publicEvent(1)] });
     mocks.loadTask.mockImplementation(async () => durableTask);
     mocks.loadCourse.mockImplementation(async () => durableState);
@@ -572,7 +576,7 @@ describe("course task Route Handlers", () => {
       expect(reader).toBeDefined();
       await readSseChunk(reader!);
 
-      durableTask = agentV2TaskRecord({
+      durableTask = currentTaskRecord({
         traceId: resumedTraceId,
         status: "running",
         updatedAt: "2026-07-15T06:00:01.000Z",
@@ -582,7 +586,6 @@ describe("course task Route Handlers", () => {
         type: "event",
         taskId,
         courseId,
-        source: "agent-v2",
         event: publicEvent(6, "agent_start", resumedTraceId),
       });
       durableState = runningState({
@@ -598,7 +601,7 @@ describe("course task Route Handlers", () => {
       expect(resumedSnapshot).toContain("event: snapshot\n");
       expect(resumedSnapshot).toContain(`"traceId":"${resumedTraceId}"`);
       expect(resumedEvent).toContain(
-        `id: v1:${resumedTraceId}:7\nevent: event\n`,
+        `id: ${resumedTraceId}:7\nevent: event\n`,
       );
       await reader?.cancel();
     } finally {
@@ -647,10 +650,15 @@ describe("course task Route Handlers", () => {
     });
     mocks.loadTask.mockResolvedValue(taskRecord({ status: "failed" }));
     mocks.loadCourse.mockResolvedValue(state);
+    mocks.listPublicEvents.mockReturnValue({
+      traceId,
+      scannedThroughSequence: 3,
+      events: events.slice(1),
+    });
 
     const response = await GET(
       new Request(`http://localhost/api/courses/tasks/${taskId}/events`, {
-        headers: { "last-event-id": "1" },
+        headers: { "last-event-id": `${traceId}:1` },
       }),
       routeContext(taskId),
     );
@@ -662,9 +670,9 @@ describe("course task Route Handlers", () => {
     expect(replayedEvents).toHaveLength(2);
     expect(replayedEvents[0]).toContain('"sequence":2');
     expect(replayedEvents[1]).toContain('"sequence":3');
-    expect(payload).toContain(`id: v1:${traceId}:2\nevent: event\n`);
-    expect(payload).toContain(`id: v1:${traceId}:3\nevent: event\n`);
-    expect(payload).toContain(`id: v1:${traceId}:3\nevent: terminal\n`);
+    expect(payload).toContain(`id: ${traceId}:2\nevent: event\n`);
+    expect(payload).toContain(`id: ${traceId}:3\nevent: event\n`);
+    expect(payload).toContain(`id: ${traceId}:3\nevent: terminal\n`);
     expect(payload).toContain('"status":"failed"');
     expect(mocks.subscribers.has(taskId)).toBe(false);
   });
@@ -680,7 +688,7 @@ describe("course task Route Handlers", () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
       code: "REQUEST_ERROR",
-      message: "Last-Event-ID 必须是非负整数或有效的 trace 游标。",
+      message: "Last-Event-ID 必须是有效的 trace 游标。",
     });
     expect(mocks.loadTask).not.toHaveBeenCalled();
     expect(mocks.subscribe).not.toHaveBeenCalled();
@@ -736,12 +744,11 @@ describe("course task Route Handlers", () => {
       courseId,
       traceId,
       status: "paused",
-      source: "workflow",
     });
     expect(mocks.pause).toHaveBeenCalledWith(taskId);
     expect(mocks.after).not.toHaveBeenCalled();
 
-    const resumedTraceId = "trace-day-19-route-resumed";
+    const resumedTraceId = "trace-fixture-19-route-resumed";
     mocks.resume.mockResolvedValueOnce(
       taskRecord({
         traceId: resumedTraceId,
@@ -763,7 +770,6 @@ describe("course task Route Handlers", () => {
       courseId,
       traceId: resumedTraceId,
       status: "queued",
-      source: "workflow",
     });
     expect(mocks.resume).toHaveBeenCalledWith(taskId);
     expect(mocks.run).not.toHaveBeenCalled();
@@ -800,33 +806,9 @@ function routeContext(id: string) {
 }
 
 function taskRecord(
-  overrides: Partial<LegacyCourseTaskRecord> = {},
-): LegacyCourseTaskRecord {
+  overrides: Partial<CourseTaskRecord> = {},
+): CourseTaskRecord {
   return {
-    version: 1,
-    taskId,
-    courseId,
-    traceId,
-    userPrompt: "生成三页太阳系互动课程",
-    pageCount: 3,
-    status: "running",
-    source: "workflow",
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    ...overrides,
-  };
-}
-
-type LegacyCourseTaskRecord = Extract<
-  CourseTaskRecord,
-  { source: "workflow" | "langgraph" }
->;
-
-function agentV2TaskRecord(
-  overrides: Partial<AgentV2CourseTaskRecord> = {},
-): AgentV2CourseTaskRecord {
-  return {
-    version: 1,
     taskId,
     courseId,
     traceId,
@@ -834,23 +816,33 @@ function agentV2TaskRecord(
     creationBrief,
     pageCount: 3,
     status: "running",
-    source: "agent-v2",
     createdAt: timestamp,
     updatedAt: timestamp,
     ...overrides,
   };
 }
 
-type AgentV2CourseTaskRecord = Extract<
-  CourseTaskRecord,
-  { source: "agent-v2" }
->;
+function currentTaskRecord(
+  overrides: Partial<CourseTaskRecord> = {},
+): CourseTaskRecord {
+  return {
+    taskId,
+    courseId,
+    traceId,
+    userPrompt: "生成三页太阳系互动课程",
+    creationBrief,
+    pageCount: 3,
+    status: "running",
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    ...overrides,
+  };
+}
 
 function runningState(
   overrides: Partial<CourseGenerationState> = {},
 ): CourseGenerationState {
   return {
-    version: 1,
     courseId,
     traceId,
     userPrompt: "生成三页太阳系互动课程",

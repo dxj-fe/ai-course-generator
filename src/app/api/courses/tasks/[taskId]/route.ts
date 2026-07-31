@@ -67,7 +67,6 @@ export async function PATCH(
       courseId: record.courseId,
       traceId: record.traceId,
       status: record.status,
-      source: record.source,
     });
     return Response.json(response, {
       status:

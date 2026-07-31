@@ -32,15 +32,12 @@ export function getStyleTemplate(id: string): StyleTemplate | undefined {
   return templatesById.get(id);
 }
 
-/**
- * 根据 visualStyle、自由文本和受众返回候选风格。
- * CourseIntent 的 professional 会映射到 minimal，保持六套核心 Registry 不重复。
- */
+/** 根据 visualStyle、自由文本和受众返回候选风格。 */
 export function searchStyleTemplates(
   input: StyleTemplateSearchInput,
 ): StyleTemplateMatch[] {
   const limit = Math.min(3, Math.max(1, input.limit ?? 3));
-  const requestedStyle = normalizeVisualStyle(input.visualStyle);
+  const requestedStyle = input.visualStyle;
   const searchText = normalize(`${input.query ?? ""} ${input.audience ?? ""}`);
   const ranked = styleTemplates
     .map((template, index) =>
@@ -60,13 +57,6 @@ export function searchStyleTemplates(
         ? reasons.join("；")
         : "未发现明确视觉关键词，返回通用候选供 Agent 继续判断。",
   }));
-}
-
-/** 将 CourseIntent 的兼容值收敛到六个核心视觉方向。 */
-function normalizeVisualStyle(
-  visualStyle?: VisualStyle,
-): CoreVisualStyle | undefined {
-  return visualStyle === "professional" ? "minimal" : visualStyle;
 }
 
 /** 对 visualStyle 精确匹配和文本关键词命中进行确定性计分。 */

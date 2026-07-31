@@ -81,7 +81,6 @@ export const CourseRunErrorSchema = z
 
 export const CourseRunSchema = z
   .object({
-    version: z.literal(1),
     id: z.string().min(1).max(160),
     taskId: CourseTaskIdSchema,
     courseId: CourseIdSchema,

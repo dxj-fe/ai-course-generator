@@ -22,7 +22,7 @@ export const CourseIdSchema = z
   .max(80)
   .regex(/^course-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/);
 
-/** Day 18 串行课程生成器对外公开的阶段。 */
+/** 课程生成器对外公开的阶段。 */
 export const CourseGenerationStageSchema = z.enum([
   "intent",
   "planner",
@@ -327,7 +327,6 @@ export const PageWorkerResultSchema = z
  */
 export const CourseGenerationStateSchema = z
   .object({
-    version: z.literal(1),
     courseId: CourseIdSchema,
     traceId: z.string().min(1).max(120),
     userPrompt: z.string().min(2).max(4_000),

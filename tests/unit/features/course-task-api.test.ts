@@ -5,7 +5,7 @@ import {
   createCourseTask,
   pauseCourseTask,
   resumeCourseTask,
-} from "../../../src/features/course-planner/lib/course-task-api";
+} from "../../../src/features/keya/api/course-task";
 
 describe("course task API client", () => {
   const creationBrief = {
@@ -28,7 +28,6 @@ describe("course task API client", () => {
       courseId: "course-123e4567-e89b-42d3-a456-426614174000",
       traceId: "trace-task-create",
       status: "queued",
-      source: "agent-v2",
     };
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(payload), {
@@ -142,7 +141,6 @@ describe("course task API client", () => {
         courseId: "course-123e4567-e89b-42d3-a456-426614174000",
         traceId: `trace-task-${action}`,
         status,
-        source: "langgraph",
       };
       const fetchMock = vi.fn().mockResolvedValue(
         new Response(JSON.stringify(payload), {

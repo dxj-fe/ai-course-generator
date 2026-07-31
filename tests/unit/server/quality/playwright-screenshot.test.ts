@@ -6,7 +6,6 @@ import {
   buildQaLessonSrcDoc,
   capturePageScreenshot,
   countAuthoredTouchTargets,
-  normalizeViewportFitMetrics,
   resolveDominantVisualMetrics,
 } from "../../../../src/server/infra/browser/page-screenshot";
 import { pageContentDsl } from "../../../fixtures/course-design";
@@ -43,7 +42,6 @@ describe("Playwright screenshot QA evidence", () => {
       pageId: pageContentDsl.pageId,
       interaction: pageContentDsl.interaction,
       runtime: {
-        runtimeVersion: 1,
         sceneKind: "practice",
         visualPrimitive: "concept-map",
         motionPlan: {
@@ -84,17 +82,17 @@ describe("Playwright screenshot QA evidence", () => {
       { pageId: "page-qa/evidence", html },
       {
         enabled: true,
-        rootDir: "/tmp/ai-course-generator-day-26-screenshots",
+        rootDir: "/tmp/ai-course-generator-fixture-26-screenshots",
         now: () => "2026-07-16T10:00:00+08:00",
         captureBrowser,
       },
     );
 
-    expect(result.evidence.status).toBe("captured");
-    expect(result.evidence.artifactId).toMatch(
+    expect(result.evidence.captures[0]!.status).toBe("captured");
+    expect(result.evidence.captures[0]!.artifactId).toMatch(
       /^page-qa-evidence-.+-desktop$/,
     );
-    expect(result.evidence.viewport).toEqual({ width: 922, height: 460 });
+    expect(result.evidence.captures[0]!.viewport).toEqual({ width: 922, height: 460 });
     expect(result.evidence.captures?.map(({ viewport }) => viewport)).toEqual([
       { width: 922, height: 460 },
       { width: 712, height: 650 },
@@ -210,82 +208,15 @@ describe("Playwright screenshot QA evidence", () => {
     ).toBe(false);
   });
 
-  it("measures the delivered contain-fit canvas instead of its authoring scroll size", () => {
-    const fitted = normalizeViewportFitMetrics(
-      {
-        ...cleanMetrics,
-        documentWidth: 1_480,
-        documentHeight: 1_260,
-        horizontalOverflowPx: 558,
-        verticalOverflowPx: 800,
-        nestedVerticalOverflowCount: 2,
-        mainViewportCoverageRatio: 0.62,
-      },
-      { width: 922, height: 460 },
-      true,
-    );
-
-    expect(fitted).toMatchObject({
-      documentWidth: 922,
-      documentHeight: 460,
-      horizontalOverflowPx: 0,
-      verticalOverflowPx: 0,
-      nestedVerticalOverflowCount: 0,
-      mainViewportCoverageRatio: 1,
-    });
+  it("evaluates touch targets in authored CSS pixels", () => {
     expect(
-      normalizeViewportFitMetrics(
-        fitted,
-        { width: 922, height: 460 },
-        false,
-      ),
-    ).toBe(fitted);
-  });
-
-  it("flags a page that only fits after unreadable whole-canvas scaling", async () => {
-    const result = await capturePageScreenshot(
-      { pageId: "page-overdense", html },
-      {
-        enabled: true,
-        rootDir: "/tmp/ai-course-generator-scale-screenshots",
-        captureBrowser: vi.fn().mockImplementation(async ({ viewport }) => ({
-          png: new Uint8Array([137, 80, 78, 71]),
-          metrics: {
-            ...cleanMetrics,
-            documentWidth: viewport.width,
-            documentHeight: viewport.height,
-            viewportFitScale: viewport.width === 922 ? 0.72 : 1,
-          },
-        })),
-      },
-    );
-
-    expect(result.issues).toMatchObject([
-      {
-        code: "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
-        dimension: "layoutQuality",
-        severity: "error",
-        location: {
-          viewport: "922x460",
-          selector: "main[data-page-id]",
-        },
-      },
-    ]);
-    expect(result.evidence.metrics?.viewportFitScale).toBe(0.72);
-  });
-
-  it("evaluates touch targets in authored CSS pixels before contain-fit scaling", () => {
-    expect(
-      countAuthoredTouchTargets(
-        [
-          { width: 22, height: 22 },
-          { width: 20, height: 20 },
-        ],
-        0.5,
-      ),
+      countAuthoredTouchTargets([
+        { width: 22, height: 22 },
+        { width: 20, height: 20 },
+      ]),
     ).toEqual({
-      touchTargetUnder24Count: 0,
-      touchTargetUnder44Count: 1,
+      touchTargetUnder24Count: 2,
+      touchTargetUnder44Count: 2,
     });
   });
 
@@ -308,9 +239,9 @@ describe("Playwright screenshot QA evidence", () => {
       { captureBrowser },
     );
 
-    expect(enabled.evidence.status).toBe("captured");
+    expect(enabled.evidence.captures[0]!.status).toBe("captured");
     expect(captureBrowser).toHaveBeenCalledTimes(3);
-    expect(disabled.evidence.status).toBe("skipped");
+    expect(disabled.evidence.captures[0]!.status).toBe("skipped");
     expect(disabled.evidence.captures).toHaveLength(3);
   });
 
@@ -342,7 +273,7 @@ describe("Playwright screenshot QA evidence", () => {
       },
     );
 
-    expect(result.evidence.status).toBe("captured");
+    expect(result.evidence.captures[0]!.status).toBe("captured");
     expect(result.evidence.captures?.map(({ status }) => status)).toEqual([
       "captured",
       "failed",
@@ -398,7 +329,7 @@ describe("Playwright screenshot QA evidence", () => {
       },
     );
 
-    expect(result.evidence.status).toBe("failed");
+    expect(result.evidence.captures[0]!.status).toBe("failed");
     expect(consoleError).toHaveBeenCalledWith(
       "[page-qa-browser]",
       expect.objectContaining({
@@ -434,14 +365,14 @@ describe("Playwright screenshot QA evidence", () => {
       },
     );
 
-    expect(timeout.evidence.status).toBe("failed");
+    expect(timeout.evidence.captures[0]!.status).toBe("failed");
     expect(timeout.evidence.captures?.map(({ status }) => status)).toEqual([
       "failed",
       "failed",
       "failed",
     ]);
     expect(timeout.issues).toEqual([]);
-    expect(unavailable.evidence.status).toBe("skipped");
+    expect(unavailable.evidence.captures[0]!.status).toBe("skipped");
     expect(unavailable.evidence.captures?.map(({ status }) => status)).toEqual([
       "skipped",
       "skipped",
@@ -629,7 +560,7 @@ describe("Playwright screenshot QA evidence", () => {
       { enabled: true, captureBrowser },
     );
 
-    expect(result.evidence.status).toBe("skipped");
+    expect(result.evidence.captures[0]!.status).toBe("skipped");
     expect(captureBrowser).not.toHaveBeenCalled();
   });
 });

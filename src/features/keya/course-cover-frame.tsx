@@ -61,7 +61,7 @@ export function CourseCoverFrame({
   const coverUrl = cover
     ? `/api/courses/${encodeURIComponent(courseId)}/cover?${new URLSearchParams({
         pageId: cover.pageId,
-        version: String(cover.version),
+        revision: String(cover.revision),
         generatedAt: cover.generatedAt,
       })}`
     : undefined;

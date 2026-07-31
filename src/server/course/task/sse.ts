@@ -11,11 +11,7 @@ export const COURSE_TASK_SSE_HEADERS = {
 } as const;
 
 export type CourseTaskReplayCursor = {
-  /**
-   * 旧版客户端只会回传数字游标，因此允许缺少 traceId。新版游标把 trace
-   * 一起编码，任务 pause/resume 更换 trace 后不会误把新事件当成旧重复项。
-   */
-  traceId?: string;
+  traceId: string;
   sequence: number;
 };
 
@@ -54,13 +50,9 @@ export function parseLastEventId(
   value: string | null,
 ): CourseTaskReplayCursor | undefined {
   if (value === null || value.trim() === "") return undefined;
-  if (/^\d+$/.test(value)) {
-    return { sequence: parseSequence(value) };
-  }
-
-  const match = /^v1:([^:]+):(\d+)$/.exec(value);
+  const match = /^([^:]+):(\d+)$/.exec(value);
   if (!match) {
-    throw new Error("Last-Event-ID 必须是非负整数或有效的 trace 游标。");
+    throw new Error("Last-Event-ID 必须是有效的 trace 游标。");
   }
   let traceId: string;
   try {
@@ -75,9 +67,7 @@ export function parseLastEventId(
 }
 
 function encodeReplayCursor(cursor: CourseTaskReplayCursor) {
-  return cursor.traceId
-    ? `v1:${encodeURIComponent(cursor.traceId)}:${cursor.sequence}`
-    : String(cursor.sequence);
+  return `${encodeURIComponent(cursor.traceId)}:${cursor.sequence}`;
 }
 
 function parseSequence(value: string) {

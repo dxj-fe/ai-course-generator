@@ -4,11 +4,11 @@ import {
   toAiErrorPayload,
 } from "@/server/infra/ai/error";
 import {
-  cancelCourseGenerationAgentV2Run,
+  cancelCourseGenerationRun,
   isCourseRunLeaseUnavailableError,
-  runCourseGenerationAgentV2,
+  runCourseGeneration,
 } from "@/server/course/run/engine";
-import { loadCourseGenerationAgentV2State } from "@/server/course/run/state-loader";
+import { loadCourseGenerationState } from "@/server/course/run/state-loader";
 import {
   createCourseStore,
   type CourseStore,
@@ -26,7 +26,6 @@ import {
   type CourseGenerationTaskService,
 } from "@/server/course/task/input";
 import {
-  assertAgentV2Task,
   cancelCourseGenerationTask,
   countCompletedPages,
   createPageFailureLogEntry,
@@ -64,9 +63,9 @@ type CourseGenerationTaskServiceDependencies = {
   taskStore: CourseTaskStore;
   courseStore: CourseStore;
   eventBus: CourseTaskEventBus;
-  runAgentV2: typeof runCourseGenerationAgentV2;
-  cancelAgentV2Run: typeof cancelCourseGenerationAgentV2Run;
-  loadAgentV2State: typeof loadCourseGenerationAgentV2State;
+  runCourse: typeof runCourseGeneration;
+  cancelCourseRun: typeof cancelCourseGenerationRun;
+  loadCourseState: typeof loadCourseGenerationState;
   now(): string;
   createTaskId(): string;
   createCourseId(): string;
@@ -84,9 +83,9 @@ const defaultDependencies: CourseGenerationTaskServiceDependencies = {
   taskStore: createCourseTaskStore(),
   courseStore: createCourseStore(),
   eventBus: createCourseTaskEventBus(),
-  runAgentV2: runCourseGenerationAgentV2,
-  cancelAgentV2Run: cancelCourseGenerationAgentV2Run,
-  loadAgentV2State: loadCourseGenerationAgentV2State,
+  runCourse: runCourseGeneration,
+  cancelCourseRun: cancelCourseGenerationRun,
+  loadCourseState: loadCourseGenerationState,
   now: () => new Date().toISOString(),
   createTaskId: () => `task-${crypto.randomUUID()}`,
   createCourseId: () => `course-${crypto.randomUUID()}`,
@@ -96,7 +95,7 @@ const defaultDependencies: CourseGenerationTaskServiceDependencies = {
 
 /**
  * 课程生成任务生命周期所有者。EventSource 只订阅；只有本服务持有的
- * AbortController 才能停止实际的 agent-v2 运行。
+ * AbortController 才能停止实际的课程生成运行。
  */
 export function createCourseGenerationTaskService(
   overrides: Partial<CourseGenerationTaskServiceDependencies> = {},
@@ -154,7 +153,7 @@ export function createCourseGenerationTaskService(
         throw new AiRequestError(`找不到课程 ${courseId} 的可恢复检查点。`);
       }
       if (!creationBrief) {
-        throw new AiRequestError("agent-v2 任务必须提供结构化 creationBrief");
+        throw new AiRequestError("课程任务必须提供结构化 creationBrief");
       }
       if (
         existingState &&
@@ -197,7 +196,6 @@ export function createCourseGenerationTaskService(
       const referencePacks =
         existingState?.referencePacks ?? parsed.data.referencePacks;
       const record = CourseTaskRecordSchema.parse({
-        version: 1,
         taskId,
         courseId,
         traceId,
@@ -209,7 +207,6 @@ export function createCourseGenerationTaskService(
           existingState?.workerConfig?.mode ?? parsed.data.executionMode,
         concurrency:
           existingState?.workerConfig?.concurrency ?? parsed.data.concurrency,
-        source: "agent-v2",
         status: "queued",
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -237,7 +234,6 @@ export function createCourseGenerationTaskService(
         courseId,
         traceId,
         status: "queued",
-        source: record.source,
       });
     },
 
@@ -262,7 +258,6 @@ export function createCourseGenerationTaskService(
             ? dependencies.courseStore.load(record.courseId)
             : undefined;
         }
-        assertAgentV2Task(record);
 
         await assertCourseIsAvailable(
           record.courseId,
@@ -297,7 +292,6 @@ export function createCourseGenerationTaskService(
       ) {
         return record;
       }
-      assertAgentV2Task(record);
       if (active) active.stopIntent = "pause";
 
       let pauseExpected = record;
@@ -327,7 +321,6 @@ export function createCourseGenerationTaskService(
         ) {
           return latest;
         }
-        assertAgentV2Task(latest);
         pauseExpected = latest;
       }
       if (!paused) return dependencies.taskStore.load(safeTaskId);
@@ -378,7 +371,6 @@ export function createCourseGenerationTaskService(
       const safeTaskId = CourseTaskIdSchema.parse(taskId);
       const record = await dependencies.taskStore.load(safeTaskId);
       if (!record || isTerminalStatus(record.status)) return record;
-      assertAgentV2Task(record);
       if (record.status !== "paused") return record;
 
       // 跨请求的重复 resume 仍只恢复这个 taskId。pause 正常会先等待旧
@@ -434,7 +426,7 @@ export function createCourseGenerationTaskService(
         taskStore: dependencies.taskStore,
         courseStore: dependencies.courseStore,
         eventBus: dependencies.eventBus,
-        cancelAgentV2Run: dependencies.cancelAgentV2Run,
+        cancelCourseRun: dependencies.cancelCourseRun,
         now: dependencies.now,
         onCancellationWon: () => {
           if (active) active.stopIntent = "cancel";
@@ -466,7 +458,7 @@ function reconcileTaskTerminal(
     courseStore: dependencies.courseStore,
     eventBus: dependencies.eventBus,
     loadAuthoritativeState: (record) =>
-      dependencies.loadAgentV2State({
+      dependencies.loadCourseState({
         taskId: record.taskId,
         courseId: record.courseId,
         traceId: record.traceId,
@@ -494,7 +486,6 @@ async function executeTask(
       ? dependencies.courseStore.load(queued.courseId)
       : undefined;
   }
-  assertAgentV2Task(queued);
 
   const running = CourseTaskRecordSchema.parse({
     ...queued,
@@ -503,7 +494,6 @@ async function executeTask(
     completedAt: undefined,
     error: undefined,
   });
-  assertAgentV2Task(running);
   try {
     if (
       !(await dependencies.taskStore.save(running, {
@@ -639,7 +629,6 @@ async function executeTask(
           type: "snapshot",
           taskId: running.taskId,
           courseId: running.courseId,
-          source: running.source,
           state: checkpoint,
         });
         sentSnapshot = true;
@@ -649,7 +638,6 @@ async function executeTask(
             type: "event",
             taskId: running.taskId,
             courseId: running.courseId,
-            source: running.source,
             event,
           });
         }
@@ -659,7 +647,6 @@ async function executeTask(
             type: "snapshot",
             taskId: running.taskId,
             courseId: running.courseId,
-            source: running.source,
             state: checkpoint,
           });
         }
@@ -687,7 +674,7 @@ async function executeTask(
         traceId: running.traceId,
       }),
     };
-    const state = await dependencies.runAgentV2(
+    const state = await dependencies.runCourse(
       agentInput,
       runtimeContext,
       {
@@ -745,7 +732,6 @@ async function executeTask(
       type: "terminal",
       taskId: running.taskId,
       courseId: running.courseId,
-      source: running.source,
       status: state.status,
       state,
     });
@@ -793,7 +779,6 @@ async function executeTask(
     if (!currentTask || isTerminalStatus(currentTask.status)) {
       return currentState;
     }
-    assertAgentV2Task(currentTask);
     dependencies.logSink.error({
       event: "task:error",
       traceId: running.traceId,
@@ -807,7 +792,6 @@ async function executeTask(
       durationMs: durationBetween(running.createdAt, completedAt),
       completedPages: countCompletedPages(currentState),
       totalPages: resolveTotalPages(running, currentState),
-      source: running.source,
       status: controller.signal.aborted ? "cancelled" : "failed",
     });
 
@@ -867,7 +851,6 @@ async function executeTask(
       type: "terminal",
       taskId: running.taskId,
       courseId: running.courseId,
-      source: running.source,
       status: terminalState.status,
       state: terminalState,
     });

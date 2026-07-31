@@ -4,13 +4,13 @@ import { describe, expect, it } from "vitest";
 import { CourseCoverFrame } from "../../../src/features/keya/course-cover-frame";
 
 describe("CourseCoverFrame", () => {
-  it("renders a versioned inert iframe without same-origin privileges", () => {
+  it("renders a revision-bound inert iframe without same-origin privileges", () => {
     const markup = renderToStaticMarkup(
       <CourseCoverFrame
-        courseId="course-day-34"
+        courseId="course-fixture-34"
         cover={{
           pageId: "page-01-cover",
-          version: 4,
+          revision: 4,
           generatedAt: "2026-07-22T03:05:00.000Z",
         }}
         loading="eager"
@@ -19,9 +19,9 @@ describe("CourseCoverFrame", () => {
     );
 
     expect(markup).toContain(
-      "/api/courses/course-day-34/cover?pageId=page-01-cover",
+      "/api/courses/course-fixture-34/cover?pageId=page-01-cover",
     );
-    expect(markup).toContain("version=4");
+    expect(markup).toContain("revision=4");
     expect(markup).toContain("loading=\"eager\"");
     expect(markup).toContain("sandbox=\"allow-scripts\"");
     expect(markup).not.toContain("allow-same-origin");
@@ -32,7 +32,7 @@ describe("CourseCoverFrame", () => {
   it("keeps the branded title fallback when no first lesson is ready", () => {
     const markup = renderToStaticMarkup(
       <CourseCoverFrame
-        courseId="course-day-34"
+        courseId="course-fixture-34"
         title="尚在生成的课程"
       />,
     );

@@ -44,8 +44,8 @@ describe("course history Route Handlers", () => {
   it("returns a persisted detail and handles a missing course", async () => {
     mocks.loadDetail.mockResolvedValueOnce({ course: {}, runs: [] });
     const found = await GET_DETAIL(
-      new Request("http://localhost/api/courses/course-day-34"),
-      context("course-day-34"),
+      new Request("http://localhost/api/courses/course-fixture-34"),
+      context("course-fixture-34"),
     );
     expect(found.status).toBe(200);
 
@@ -58,9 +58,9 @@ describe("course history Route Handlers", () => {
   });
 
   it("streams a ZIP with download headers and rejects unsafe ids", async () => {
-    mocks.loadCourse.mockResolvedValue({ courseId: "course-day-34" });
+    mocks.loadCourse.mockResolvedValue({ courseId: "course-fixture-34" });
     mocks.createArchive.mockReturnValue({
-      fileName: "course-day-34.zip",
+      fileName: "course-fixture-34.zip",
       stream: new ReadableStream({
         start(controller) {
           controller.enqueue(new Uint8Array([0x50, 0x4b]));
@@ -69,14 +69,14 @@ describe("course history Route Handlers", () => {
       }),
     });
     const response = await GET_EXPORT(
-      new Request("http://localhost/api/courses/course-day-34/export"),
-      context("course-day-34"),
+      new Request("http://localhost/api/courses/course-fixture-34/export"),
+      context("course-fixture-34"),
     );
 
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("application/zip");
     expect(response.headers.get("content-disposition")).toContain(
-      "course-day-34.zip",
+      "course-fixture-34.zip",
     );
 
     const invalid = await GET_EXPORT(
@@ -87,7 +87,7 @@ describe("course history Route Handlers", () => {
     expect(mocks.loadCourse).toHaveBeenCalledTimes(1);
   });
 
-  it("serves only the versioned first lesson as a sandbox-ready cover", async () => {
+  it("serves only the requested first-lesson revision as a sandbox-ready cover", async () => {
     const generatedAt = "2026-07-22T03:05:00.000Z";
     mocks.loadCourse.mockResolvedValue({
       pages: [
@@ -98,21 +98,21 @@ describe("course history Route Handlers", () => {
           htmlOutput: {
             html: buildValidGeneratedHtml(pageContentDsl),
             generatedAt,
-            version: 3,
+            revision: 3,
           },
         },
       ],
     });
     const query = new URLSearchParams({
       pageId: pageContentDsl.pageId,
-      version: "3",
+      revision: "3",
       generatedAt,
     });
     const response = await GET_COVER(
       new Request(
-        `http://localhost/api/courses/course-day-34/cover?${query}`,
+        `http://localhost/api/courses/course-fixture-34/cover?${query}`,
       ),
-      context("course-day-34"),
+      context("course-fixture-34"),
     );
 
     expect(response.status).toBe(200);
@@ -125,9 +125,9 @@ describe("course history Route Handlers", () => {
 
     const stale = await GET_COVER(
       new Request(
-        "http://localhost/api/courses/course-day-34/cover?pageId=page-02-knowledge&version=2&generatedAt=2026-07-22T03%3A05%3A00.000Z",
+        "http://localhost/api/courses/course-fixture-34/cover?pageId=page-02-knowledge&revision=2&generatedAt=2026-07-22T03%3A05%3A00.000Z",
       ),
-      context("course-day-34"),
+      context("course-fixture-34"),
     );
     expect(stale.status).toBe(404);
   });
@@ -136,9 +136,9 @@ describe("course history Route Handlers", () => {
     const generatedAt = "2026-07-22T03:05:00.000Z";
     const request = (pageId: string) =>
       new Request(
-        `http://localhost/api/courses/course-day-34/cover?${new URLSearchParams({
+        `http://localhost/api/courses/course-fixture-34/cover?${new URLSearchParams({
           pageId,
-          version: "1",
+          revision: "1",
           generatedAt,
         })}`,
       );
@@ -156,14 +156,14 @@ describe("course history Route Handlers", () => {
           htmlOutput: {
             html: buildValidGeneratedHtml(pageContentDsl),
             generatedAt,
-            version: 1,
+            revision: 1,
           },
         },
       ],
     });
     const laterLesson = await GET_COVER(
       request(pageContentDsl.pageId),
-      context("course-day-34"),
+      context("course-fixture-34"),
     );
     expect(laterLesson.status).toBe(404);
 
@@ -179,14 +179,14 @@ describe("course history Route Handlers", () => {
               "<script>alert('unsafe')</script></body>",
             ),
             generatedAt,
-            version: 1,
+            revision: 1,
           },
         },
       ],
     });
     const unsafe = await GET_COVER(
       request(pageContentDsl.pageId),
-      context("course-day-34"),
+      context("course-fixture-34"),
     );
     expect(unsafe.status).toBe(422);
     await expect(unsafe.text()).resolves.toBe("");

@@ -8,14 +8,13 @@ import {
   parseCourseTaskSseFrame,
 } from "../../../scripts/run-demo";
 
-describe("Day 36 Demo SSE parser", () => {
+describe("Demo SSE parser", () => {
   it("ignores heartbeat frames", () => {
     expect(parseCourseTaskSseFrame(": ping")).toBeUndefined();
   });
 
   it("parses and validates a strict terminal frame", () => {
     const state = {
-      version: 1,
       courseId: "course-demo-terminal",
       traceId: "trace-demo-terminal",
       userPrompt: "生成一门固定 Demo 课程",
@@ -39,7 +38,6 @@ describe("Day 36 Demo SSE parser", () => {
       type: "terminal",
       taskId: "task-demo-terminal",
       courseId: state.courseId,
-      source: "langgraph",
       status: "cancelled",
       state,
     };
@@ -51,9 +49,8 @@ describe("Day 36 Demo SSE parser", () => {
     ).toEqual(message);
   });
 
-  it("creates a structured agent-v2 input for the fixed demo", () => {
+  it("creates a structured 课程生成 input for the fixed demo", () => {
     const input = buildDemoTaskInput({
-      version: 2,
       id: "solar-system",
       name: "太阳系入门",
       prompt: "为 8–10 岁学生生成一门 5 页太阳系入门课程，并安排一次可观察练习。",
@@ -101,7 +98,6 @@ describe("Day 36 Demo SSE parser", () => {
     });
 
     expect(input).toMatchObject({
-      source: "agent-v2",
       executionMode: "parallel",
       concurrency: 1,
       creationBrief: {
@@ -113,16 +109,12 @@ describe("Day 36 Demo SSE parser", () => {
     });
   });
 
-  it("supports a focused fixed case without weakening recorded full runs", () => {
+  it("支持只运行一个固定案例", () => {
     expect(
       parseDemoCliOptions(["--case", "solar-system"]),
     ).toEqual({
       caseIds: ["solar-system"],
-      recordResults: false,
     });
-    expect(() =>
-      parseDemoCliOptions(["--record", "--case", "solar-system"]),
-    ).toThrow("--record 只允许留存完整的三个固定 Demo");
     expect(() =>
       parseDemoCliOptions(["--case", "unknown-course"]),
     ).toThrow("未知固定 Demo");
@@ -135,7 +127,7 @@ describe("Day 36 Demo SSE parser", () => {
         label: "文本模型 strong",
         config: {
           apiKey: secret,
-          baseURL: "https://your-openai-compatible-endpoint/v1",
+          baseURL: "https://your-model-endpoint/api",
           modelName: "your_model_name",
           providerName: "model-provider",
         },

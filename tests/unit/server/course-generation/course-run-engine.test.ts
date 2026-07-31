@@ -30,11 +30,11 @@ import {
   type PageTask,
 } from "../../../../src/shared/course-schema";
 import {
-  AGENT_V2_COURSE_ID,
-  createAgentV2Architecture,
-  createAgentV2Brief,
-  createAgentV2ReferencePack,
-} from "../../../fixtures/agent-v2-course-architecture";
+  COURSE_ID,
+  createArchitecture,
+  createBrief,
+  createReferencePack,
+} from "../../../fixtures/course-architecture";
 import { seedRunningCourseTask } from "../../../fixtures/running-course-task";
 import { prepareFixPageSubmission } from "./course-run-engine-test-support";
 
@@ -371,7 +371,7 @@ describe("CourseRunEngine", () => {
     }).run(prepared.input);
 
     expect(result.status).toBe("completed");
-    expect(architectModels).toEqual(["strong", "balanced"]);
+    expect(architectModels).toEqual(["balanced", "strong"]);
     expect(architectAttempts).toBe(2);
     expect(
       prepared.repository.artifacts.listByTask(
@@ -417,7 +417,7 @@ describe("CourseRunEngine", () => {
     }).run(prepared.input);
 
     expect(result.status).toBe("completed");
-    expect(architectModels).toEqual(["strong", "balanced"]);
+    expect(architectModels).toEqual(["balanced", "strong"]);
     expect(architectAttempts).toBe(2);
     expect(
       prepared.repository.artifacts.listByTask(
@@ -466,7 +466,6 @@ describe("CourseRunEngine", () => {
         type: "terminal",
         taskId: prepared.input.taskId,
         courseId: prepared.input.courseId,
-        source: "agent-v2",
         status: "failed",
         state: publicState,
       });
@@ -512,7 +511,7 @@ describe("CourseRunEngine", () => {
   it("HTML 定向返工保留相同内容，但必须真正修改 HTML 并生成当前 Artifact", async () => {
     const prepared = await prepare("same-content-fix");
     const baseFakes = createSuccessfulFakes(prepared.repository);
-    const architecture = createAgentV2Architecture();
+    const architecture = createArchitecture();
     let reviewRound = 0;
 
     const runReviewer = async (input: CourseReviewerExecutionInput) => {
@@ -527,11 +526,10 @@ describe("CourseRunEngine", () => {
         expectedWorkOrderLockVersion: input.workOrder.lockVersion,
         workOrderLeaseOwner: input.workOrderLeaseOwner,
         runLeaseOwner: input.runLeaseOwner,
-        traceId: input.traceId,
-        candidate:
-          reviewRound === 1
-            ? {
-                version: 1,
+          traceId: input.traceId,
+          candidate:
+            reviewRound === 1
+              ? {
                 courseId: run.courseId,
                 inputManifestHash: run.currentManifestHash,
                 decision: "revise_pages",
@@ -557,7 +555,6 @@ describe("CourseRunEngine", () => {
                 summary: "概念页布局需要局部返工。",
               }
             : {
-                version: 1,
                 courseId: run.courseId,
                 inputManifestHash: run.currentManifestHash,
                 decision: "pass",
@@ -663,7 +660,7 @@ function createSuccessfulFakes(
   repository: CourseRunRepository,
   hooks: SuccessfulFakeHooks = {},
 ) {
-  const architecture = createAgentV2Architecture();
+  const architecture = createArchitecture();
 
   return {
     async runArchitect(input: CurriculumArchitectAgentInput) {
@@ -800,7 +797,6 @@ function createSuccessfulFakes(
         runLeaseOwner: input.runLeaseOwner,
         traceId: input.traceId,
         candidate: {
-          version: 1,
           courseId: run.courseId,
           inputManifestHash: run.currentManifestHash,
           decision: "pass",
@@ -825,10 +821,22 @@ function pagePayloads(
   pageTask: PageTask,
 ) {
   const content = PageContentDSLSchema.parse({
-    version: 1,
     pageId: pageTask.pageId,
     functionalTemplateId: pageTask.functionalTemplateId,
     title: pageTask.title,
+    runtime: {
+      sceneKind: "demo",
+      visualPrimitive: "concept-map",
+      motionPlan: { intensity: "none", cuePoints: [] },
+      completionRule:
+        pageTask.interactionType === "none" ||
+        pageTask.interactionType === "navigate"
+          ? { type: "view" }
+          : {
+              type: "interaction-complete",
+              interactionId: `interaction-${pageTask.pageId}`,
+            },
+    },
     narration: [pageTask.purpose],
     blocks: [
       {
@@ -872,11 +880,10 @@ function pagePayloads(
     html: {
       html: `<!doctype html><html><body><main data-page-id="${pageTask.pageId}">${pageTask.title}</main></body></html>`,
       generatedAt: "2026-07-29T14:10:00.000Z",
-      version: 1,
+      revision: 1,
     },
     quality,
     summary: {
-      version: 1,
       courseId: architecture.courseId,
       pageId: pageTask.pageId,
       order: pageTask.order,
@@ -953,10 +960,10 @@ async function prepare(suffix: string) {
   const repository = createCourseRunRepository({ rootDir });
   const input: CourseRunEngineInput = {
     taskId: `task-course-run-engine-${suffix}`,
-    courseId: AGENT_V2_COURSE_ID,
+    courseId: COURSE_ID,
     traceId: `${TRACE_ID}-${suffix}`,
-    creationBrief: createAgentV2Brief(),
-    referencePacks: [createAgentV2ReferencePack()],
+    creationBrief: createBrief(),
+    referencePacks: [createReferencePack()],
     concurrency: 2,
   };
   seedRunningCourseTask(repository.runs.database, {

@@ -71,42 +71,15 @@ describe("PageContentDSL", () => {
     expect(quiz.interaction.questions[2].feedback.success).toContain("土星");
   });
 
-  it("keeps v1 content compatible and requires a runtime plan for v2", () => {
-    expect(PageContentDSLSchema.safeParse(pageContentDsl).success).toBe(true);
+  it("requires the current runtime plan", () => {
     expect(
       PageContentDSLSchema.safeParse({
         ...pageContentDsl,
-        version: 2,
+        runtime: undefined,
       }).success,
     ).toBe(false);
 
-    const parsed = PageContentDSLSchema.parse({
-      ...pageContentDsl,
-      version: 2,
-      runtime: {
-        runtimeVersion: 1,
-        sceneKind: "demo",
-        visualPrimitive: "concept-map",
-        motionPlan: {
-          intensity: "guided",
-          cuePoints: [
-            {
-              id: "cue-block-01",
-              action: "reveal",
-              targetId: "block-01",
-              delayMs: 120,
-              durationMs: 420,
-            },
-          ],
-        },
-        completionRule: {
-          type: "interaction-complete",
-          interactionId: "interaction-page-02-knowledge",
-        },
-      },
-    });
-
-    expect(parsed.version).toBe(2);
-    expect(parsed.runtime?.visualPrimitive).toBe("concept-map");
+    const parsed = PageContentDSLSchema.parse(pageContentDsl);
+    expect(parsed.runtime.visualPrimitive).toBe("concept-map");
   });
 });

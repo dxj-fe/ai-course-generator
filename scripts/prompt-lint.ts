@@ -157,17 +157,6 @@ async function lintPromptLibrary(rootDir = process.cwd()) {
       }
       files.add(definition.fileName);
 
-      if (entry.status === "active") {
-        const majorVersion = definition.version.split(".")[0];
-        if (!definition.fileName.endsWith(`.v${majorVersion}.md`)) {
-          pushIssue(issues, {
-            code: "PROMPT_FILE_VERSION_MISMATCH",
-            promptId: entry.id,
-            file: definition.fileName,
-            message: `文件主版本与合同版本 ${definition.version} 不一致。`,
-          });
-        }
-      }
     }
 
     const templateDirectory = path.join(

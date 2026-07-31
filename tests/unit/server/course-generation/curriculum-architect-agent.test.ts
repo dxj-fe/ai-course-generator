@@ -17,11 +17,11 @@ import {
   type RuntimeAgentFactory,
 } from "../../../../src/server/agent/runtime";
 import {
-  createAgentV2Architecture,
-  createAgentV2Brief,
-  createAgentV2ReferencePack,
-  AGENT_V2_COURSE_ID,
-} from "../../../fixtures/agent-v2-course-architecture";
+  createArchitecture,
+  createBrief,
+  createReferencePack,
+  COURSE_ID,
+} from "../../../fixtures/course-architecture";
 import { seedRunningCourseTask } from "../../../fixtures/running-course-task";
 
 const directories: string[] = [];
@@ -42,7 +42,7 @@ afterEach(async () => {
 describe("Curriculum Architect Agent", () => {
   it("统一 Harness 加载 Skill 核心说明，并允许渐进读取 reference 后提交架构", async () => {
     const prepared = await prepareArchitectWorkOrder();
-    const architecture = createAgentV2Architecture();
+    const architecture = createArchitecture();
     const createAgent = createFakeFactory(async (settings) => {
       expect(settings.activeTools).toContain("read_local_resource");
       expect(settings.instructions).toContain("<available_skills>");
@@ -107,7 +107,7 @@ describe("Curriculum Architect Agent", () => {
 
   it("submit 的确定性 Gate 失败时只返回修正反馈，不写 Artifact", async () => {
     const prepared = await prepareArchitectWorkOrder();
-    const invalid = structuredClone(createAgentV2Architecture());
+    const invalid = structuredClone(createArchitecture());
     invalid.pageTasks[0]!.functionalTemplateId = "missing-template";
     let toolOutput: unknown;
     const createAgent = createFakeFactory(async (settings) => {
@@ -145,7 +145,7 @@ describe("Curriculum Architect Agent", () => {
 
   it("可以不检索资料，在同一 ToolLoop 中按 Gate 反馈修正并从 Repository 重读终态", async () => {
     const prepared = await prepareArchitectWorkOrder();
-    const architecture = createAgentV2Architecture();
+    const architecture = createArchitecture();
     const calls: string[] = [];
     const createAgent = createFakeFactory(async (settings) => {
       calls.push("validate_course_architecture");
@@ -223,13 +223,13 @@ async function prepareArchitectWorkOrder(
   const repository = createCourseRunRepository({ rootDir });
   seedRunningCourseTask(repository.runs.database, {
     taskId: TASK_ID,
-    courseId: AGENT_V2_COURSE_ID,
+    courseId: COURSE_ID,
     traceId: TRACE_ID,
     now: "2026-07-29T09:00:00.000Z",
   });
   const bootstrapped = repository.bootstrapCourseRun({
     taskId: TASK_ID,
-    courseId: AGENT_V2_COURSE_ID,
+    courseId: COURSE_ID,
     traceId: TRACE_ID,
     now: "2026-07-29T09:00:00.000Z",
     architectAllowedTools: allowedTools,
@@ -266,8 +266,8 @@ function runPreparedAgent(
 ) {
   return runCurriculumArchitectAgent(
     {
-      creationBrief: createAgentV2Brief(),
-      referencePacks: [createAgentV2ReferencePack()],
+      creationBrief: createBrief(),
+      referencePacks: [createReferencePack()],
       repository: prepared.repository,
       runLeaseOwner: RUN_OWNER,
       traceId: TRACE_ID,

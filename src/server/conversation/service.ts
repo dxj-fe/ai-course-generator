@@ -123,7 +123,6 @@ function projectConversation(
           {
             id: `run-${task?.taskId ?? course.courseId}`,
             taskId: task?.taskId,
-            source: task?.source,
             prompt: course.userPrompt,
             startedAt: Date.parse(task?.createdAt ?? course.startedAt),
           },

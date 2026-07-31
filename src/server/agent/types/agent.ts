@@ -17,7 +17,6 @@ export type AgentRuntimeDefaults = Readonly<{
 
 export type AgentDefinition = Readonly<{
   id: AgentId;
-  version: number;
   description: string;
   input: SchemaId;
   output: SchemaId;

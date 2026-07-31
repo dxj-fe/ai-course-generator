@@ -22,10 +22,10 @@ import {
   type WorkOrder,
 } from "../../../../src/shared/course-schema";
 import {
-  createAgentV2Architecture,
-  createAgentV2Brief,
-  createAgentV2ReferencePack,
-} from "../../../fixtures/agent-v2-course-architecture";
+  createArchitecture,
+  createBrief,
+  createReferencePack,
+} from "../../../fixtures/course-architecture";
 import { seedRunningCourseTask } from "../../../fixtures/running-course-task";
 
 export const NOW = "2026-07-29T12:00:00.000Z";
@@ -134,8 +134,8 @@ export async function preparePageBuilder(
     workOrderLeaseOwner: PAGE_OWNER,
     runLeaseOwner: ENGINE_OWNER,
     traceId: run.traceId,
-    creationBrief: createAgentV2Brief(),
-    referencePacks: [createAgentV2ReferencePack()],
+    creationBrief: createBrief(),
+    referencePacks: [createReferencePack()],
   });
   return {
     repository,
@@ -191,7 +191,6 @@ export async function prepareContentFixPageBuilder(
     createdByWorkOrderId: "work-order-review-page-concept",
     createdAt: "2026-07-29T12:02:00.500Z",
     payload: {
-      version: 1,
       courseId: prepared.workOrder.courseId,
       inputManifestHash: "manifest-fix-page-concept",
       decision: "revise_pages",
@@ -263,8 +262,8 @@ export async function prepareContentFixPageBuilder(
     workOrderLeaseOwner: "page-builder-fix-test",
     runLeaseOwner: ENGINE_OWNER,
     traceId: prepared.run.traceId,
-    creationBrief: createAgentV2Brief(),
-    referencePacks: [createAgentV2ReferencePack()],
+    creationBrief: createBrief(),
+    referencePacks: [createReferencePack()],
   });
   const revisedContent = PageContentDSLSchema.parse({
     ...baselineContent,
@@ -276,7 +275,7 @@ export async function prepareContentFixPageBuilder(
       "</main>",
       "<p>返工后的页面实现</p></main>",
     ),
-    version: 2,
+    revision: 2,
   };
   const revisedQuality = passingQuality();
   return {
@@ -296,10 +295,18 @@ export async function prepareContentFixPageBuilder(
 
 export function pageContent(): PageContentDSL {
   return PageContentDSLSchema.parse({
-    version: 1,
     pageId: PAGE_ID,
     functionalTemplateId: "knowledge-card-grid",
     title: "恒星与行星的区别",
+    runtime: {
+      sceneKind: "demo",
+      visualPrimitive: "comparison",
+      motionPlan: { intensity: "none", cuePoints: [] },
+      completionRule: {
+        type: "interaction-complete",
+        interactionId: `interaction-${PAGE_ID}`,
+      },
+    },
     narration: ["先用是否自身发光来区分恒星和行星。"],
     blocks: [
       {
@@ -348,7 +355,7 @@ export function htmlOutput(): HtmlOutput {
   return {
     html: `<!doctype html><html><body><main data-page-id="${PAGE_ID}"></main></body></html>`,
     generatedAt: "2026-07-29T12:01:00.000Z",
-    version: 1,
+    revision: 1,
   };
 }
 
@@ -357,8 +364,7 @@ export function pageSummary(
   quality: QualityReport,
 ) {
   return PageSummarySchema.parse({
-    version: 1,
-    courseId: createAgentV2Architecture().courseId,
+    courseId: createArchitecture().courseId,
     pageId: PAGE_ID,
     order: 1,
     title: content.title,
@@ -481,7 +487,7 @@ function isAsyncIterable(
 }
 
 function onePageArchitecture(): CourseArchitecture {
-  const architecture = createAgentV2Architecture();
+  const architecture = createArchitecture();
   const pageTask = architecture.pageTasks.find(
     ({ pageId }) => pageId === PAGE_ID,
   );
@@ -513,7 +519,7 @@ function toRef(artifact: CourseArtifact) {
     courseId,
     pageId,
     scopeKey,
-    version,
+    revision,
     contentHash,
   } = artifact;
   return {
@@ -522,7 +528,7 @@ function toRef(artifact: CourseArtifact) {
     courseId,
     pageId,
     scopeKey,
-    version,
+    revision,
     contentHash,
   };
 }

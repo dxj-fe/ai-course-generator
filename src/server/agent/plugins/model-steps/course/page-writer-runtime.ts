@@ -49,7 +49,6 @@ export function buildLessonRuntime(input: {
   }
 
   return {
-    runtimeVersion: 1,
     sceneKind: sceneKindForPage(input.page),
     visualPrimitive: visualPrimitiveForPage(input.page, searchable),
     motionPlan: {

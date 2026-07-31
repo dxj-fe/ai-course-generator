@@ -5,7 +5,7 @@ import {
   reduceCourseTaskStreamState,
   shouldCloseCourseTaskStream,
   type CourseTaskStreamState,
-} from "../../../src/features/course-planner/hooks/use-sse-task";
+} from "../../../src/features/keya/use-course-task-stream";
 import {
   CourseTaskStreamMessageSchema,
   type CourseGenerationState,
@@ -20,7 +20,6 @@ function createState(
   overrides: Partial<CourseGenerationState> = {},
 ): CourseGenerationState {
   return {
-    version: 1,
     courseId,
     traceId,
     userPrompt: "生成三页太阳系课程",
@@ -48,7 +47,6 @@ describe("course task SSE client state", () => {
       type: "snapshot",
       taskId,
       courseId,
-      source: "langgraph",
       state: createState(),
     };
 
@@ -62,7 +60,6 @@ describe("course task SSE client state", () => {
           type: "event",
           taskId,
           courseId,
-          source: "langgraph",
           event: {
             id: "event-1",
             sequence: 1,
@@ -85,14 +82,12 @@ describe("course task SSE client state", () => {
       type: "snapshot",
       taskId,
       courseId,
-      source: "langgraph",
       state: createState(),
     });
     const eventMessage = CourseTaskStreamMessageSchema.parse({
       type: "event",
       taskId,
       courseId,
-      source: "langgraph",
       event: {
         id: "event-1",
         sequence: 1,
@@ -113,7 +108,6 @@ describe("course task SSE client state", () => {
     const withEvent = reduceMessage(withSnapshot, eventMessage);
 
     expect(withSnapshot.taskStatus).toBe("running");
-    expect(withSnapshot.source).toBe("langgraph");
     expect(withEvent.latestState?.events).toEqual([eventMessage.event]);
     expect(withEvent.latestState?.updatedAt).toBe(eventMessage.event.timestamp);
     expect(withEvent.messages).toEqual([snapshot, eventMessage]);
@@ -124,7 +118,6 @@ describe("course task SSE client state", () => {
       type: "snapshot",
       taskId,
       courseId,
-      source: "langgraph",
       taskStatus: "paused",
       state: createState({ status: "running" }),
     });
@@ -160,14 +153,12 @@ describe("course task SSE client state", () => {
       type: "event",
       taskId,
       courseId,
-      source: "langgraph",
       event,
     });
     const gap = CourseTaskStreamMessageSchema.parse({
       type: "event",
       taskId,
       courseId,
-      source: "langgraph",
       event: {
         ...event,
         id: "event-3",
@@ -212,7 +203,6 @@ describe("course task SSE client state", () => {
       type: "snapshot",
       taskId,
       courseId,
-      source: "langgraph",
       state: createState({
         events: [
           { ...event, id: "event-1", sequence: 1, type: "agent_start" },
@@ -238,7 +228,6 @@ describe("course task SSE client state", () => {
     const current: CourseTaskStreamState = {
       connectionStatus: "open",
       taskStatus: "running",
-      source: "agent-v2",
       lastEventSequence: 7,
       messages: [],
       latestState: createState({
@@ -250,7 +239,6 @@ describe("course task SSE client state", () => {
       type: "snapshot",
       taskId,
       courseId,
-      source: "agent-v2",
       state: createState({
         currentStage: "planner",
         events: [],
@@ -270,7 +258,6 @@ describe("course task SSE client state", () => {
     const previous: CourseTaskStreamState = {
       connectionStatus: "open",
       taskStatus: "running",
-      source: "agent-v2",
       lastEventSequence: 10,
       messages: [],
       latestState: createState({
@@ -295,7 +282,6 @@ describe("course task SSE client state", () => {
       type: "snapshot",
       taskId,
       courseId,
-      source: "agent-v2",
       taskStatus: "running",
       state: createState({
         traceId: resumedTraceId,
@@ -317,7 +303,6 @@ describe("course task SSE client state", () => {
       type: "event",
       taskId,
       courseId,
-      source: "agent-v2",
       event: {
         id: "event-new-11",
         sequence: 11,
@@ -364,7 +349,6 @@ describe("course task SSE client state", () => {
       type: "terminal",
       taskId,
       courseId,
-      source: "langgraph",
       status: "failed",
       state: createState({ status: "failed" }),
     });
@@ -375,24 +359,4 @@ describe("course task SSE client state", () => {
     expect(finished.latestState?.status).toBe("failed");
   });
 
-  it("rejects a runtime source switch inside one task stream", () => {
-    const current: CourseTaskStreamState = {
-      connectionStatus: "open",
-      taskStatus: "running",
-      source: "langgraph",
-      messages: [],
-      latestState: createState(),
-    };
-    const message = CourseTaskStreamMessageSchema.parse({
-      type: "snapshot",
-      taskId,
-      courseId,
-      source: "workflow",
-      state: createState(),
-    });
-
-    const invalid = reduceMessage(current, message);
-    expect(invalid.connectionStatus).toBe("closed");
-    expect(invalid.error?.message).toContain("切换了执行来源");
-  });
 });

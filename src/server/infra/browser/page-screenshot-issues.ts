@@ -25,25 +25,6 @@ export function collectBrowserIssues(
     description: "Playwright 固定视口渲染结果",
   };
   const issues: QualityIssue[] = [];
-  if (
-    evidence.metrics.viewportFitScale !== undefined &&
-    evidence.metrics.viewportFitScale < 0.9
-  ) {
-    issues.push({
-      code: "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
-      dimension: "layoutQuality",
-      severity: "error",
-      source: "browser",
-      message: `页面为装入画布被整体缩放到约 ${Math.round(evidence.metrics.viewportFitScale * 100)}%，正文和控件会难以阅读。`,
-      location: {
-        ...location,
-        selector: "main[data-page-id]",
-        description: "被播放器整体缩小的课程主画布",
-      },
-      repairHint:
-        "减少单页内容密度并重组为横向或紧凑网格；限制竖版素材高度，必要时重新生成或拆分页面。不要继续只增大控件 CSS，也不要裁切必要内容。",
-    });
-  }
   if (evidence.metrics.horizontalOverflowPx > 0) {
     issues.push({
       code: "BROWSER_HORIZONTAL_OVERFLOW",

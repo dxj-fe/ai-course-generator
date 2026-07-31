@@ -146,7 +146,6 @@ export function createCourseRunCommands(
 
         const workOrder = repository.workOrders.insert(
           WorkOrderSchema.parse({
-            version: 1,
             lockVersion: 0,
             id: createStorageId("work-order-director"),
             taskId: run.taskId,
@@ -300,7 +299,6 @@ export function createCourseRunCommands(
         const manifestRef = toArtifactRef(manifestArtifact);
         const reviewWorkOrder = repository.workOrders.insert(
           WorkOrderSchema.parse({
-            version: 1,
             lockVersion: 0,
             id: reviewWorkOrderId,
             taskId: run.taskId,
@@ -760,7 +758,7 @@ function loadManifestPageSummaries(
       artifact.courseId !== summaryRef.courseId ||
       artifact.pageId !== summaryRef.pageId ||
       artifact.scopeKey !== summaryRef.scopeKey ||
-      artifact.version !== summaryRef.version ||
+      artifact.revision !== summaryRef.revision ||
       artifact.contentHash !== summaryRef.contentHash
     ) {
       throw new Error(
@@ -842,10 +840,10 @@ function toArtifactRef(artifact: CourseArtifact): ArtifactRef {
     courseId,
     pageId,
     scopeKey,
-    version,
+    revision,
     contentHash,
   } = artifact;
-  return { id, kind, courseId, pageId, scopeKey, version, contentHash };
+  return { id, kind, courseId, pageId, scopeKey, revision, contentHash };
 }
 
 function reviewDecisionLabel(decision: CourseReview["decision"]) {

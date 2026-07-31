@@ -78,9 +78,9 @@ export function retrieveTemplateCards(
   const parsedInput = RetrieveTemplateCardsInputSchema.parse(input);
   const cacheKey = createAiResultCacheKey({
     namespace: "template-card-search",
-    promptVersion: "template-registry@2",
+    promptFingerprint: "template-registry",
     model: "deterministic-registry",
-    schemaVersion: "template-card-search-result@1",
+    schemaFingerprint: "template-card-search-result",
     input: parsedInput,
   });
   const cached = aiResultCache.lookup(cacheKey, TemplateCardSearchResultSchema);

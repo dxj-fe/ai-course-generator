@@ -51,7 +51,6 @@ describe("HtmlPreviewFrame", () => {
           pageId: pageContentDsl.pageId,
           interaction: pageContentDsl.interaction,
           runtime: {
-            runtimeVersion: 1,
             sceneKind: "demo",
             visualPrimitive: "concept-map",
             motionPlan: { intensity: "subtle", cuePoints: [] },
@@ -74,7 +73,6 @@ describe("HtmlPreviewFrame", () => {
       pageId: "page-06-achievement",
       interaction: pageContentDsl.interaction,
       runtime: {
-        runtimeVersion: 1 as const,
         sceneKind: "demo" as const,
         visualPrimitive: "concept-map" as const,
         motionPlan: { intensity: "subtle" as const, cuePoints: [] },
@@ -85,7 +83,6 @@ describe("HtmlPreviewFrame", () => {
       channel: "keya.lesson-runtime",
       type: "section-ready",
       pageId: runtimeConfig.pageId,
-      runtimeVersion: 1,
     };
 
     expect(
@@ -123,7 +120,6 @@ describe("HtmlPreviewFrame", () => {
         pageId: pageContentDsl.pageId,
         interaction: pageContentDsl.interaction,
         runtime: {
-          runtimeVersion: 1,
           sceneKind: "demo",
           visualPrimitive: "concept-map",
           motionPlan: { intensity: "subtle", cuePoints: [] },

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { validateHtmlEngineerOutput } from "@/server/agent/plugins/model-steps/course/html-engineer-model-step";
 import { validatePageWriterOutput } from "@/server/agent/plugins/model-steps/course/page-writer-model-step";
-import { projectCourseArchitectureToLegacy } from "@/server/course/legacy/architecture-adapter";
+import { projectCourseArchitecture } from "@/server/course/projection/architecture";
 import {
   AssetGenerationResultSchema,
   CourseArchitectureSchema,
@@ -85,7 +85,7 @@ export function runPageGate(input: {
     return { ok: false, issues };
   }
 
-  const projection = projectCourseArchitectureToLegacy(
+  const projection = projectCourseArchitecture(
     architecture,
     input.creationBrief,
   );
@@ -200,8 +200,7 @@ function validateQuality(
       message: "质量报告仍要求返工，页面不能提交",
     });
   }
-  const captures = report.screenshotEvidence?.captures ??
-    (report.screenshotEvidence ? [report.screenshotEvidence] : []);
+  const captures = report.screenshotEvidence?.captures ?? [];
   if (
     captures.length === 0 ||
     captures.some(({ status }) => status !== "captured")
@@ -234,7 +233,6 @@ function buildPageSummary(input: {
     .join("；")
     .slice(0, 2_000);
   return PageSummarySchema.parse({
-    version: 1,
     courseId: input.architecture.courseId,
     pageId: pageTask.pageId,
     order: pageTask.order,

@@ -53,7 +53,7 @@ export function classifyPublicAgentError(input: {
   };
 }
 
-/** 防御历史脏数据；新错误不应依赖正则清洗，而应先经过固定文案分类。 */
+/** 清洗公开诊断文本；错误仍应优先经过固定文案分类。 */
 export function sanitizePublicDiagnosticText(
   value: unknown,
   options: {
@@ -108,7 +108,7 @@ export function sanitizePublicErrorCode(
   return normalized;
 }
 
-/** SSE 最后一层防线，兼容升级前已经落盘的错误与事件摘要。 */
+/** SSE 出口的最后一层公开信息安全防线。 */
 export function sanitizePublicCourseState(
   state: CourseGenerationState,
 ): CourseGenerationState {
@@ -148,7 +148,7 @@ export function sanitizePublicCourseState(
   };
 }
 
-/** EventBus、durable reader 与历史 checkpoint 在统一 SSE 出口再次收敛。 */
+/** EventBus、durable reader 与 checkpoint 在统一 SSE 出口再次收敛。 */
 export function sanitizePublicCourseTaskStreamMessage(
   message: CourseTaskStreamMessage,
 ): CourseTaskStreamMessage {

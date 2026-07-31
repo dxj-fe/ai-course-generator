@@ -207,9 +207,8 @@ const PageContentDSLFields = {
 
 export const PageContentDSLSchema = z
   .object({
-    version: z.union([z.literal(1), z.literal(2)]),
     ...PageContentDSLFields,
-    runtime: LessonRuntimeSchema.optional(),
+    runtime: LessonRuntimeSchema,
   })
   .strict()
   .superRefine((dsl, context) => {
@@ -252,17 +251,7 @@ export const PageContentDSLSchema = z
       });
     }
 
-    if (dsl.version === 2 && !dsl.runtime) {
-      context.addIssue({
-        code: "custom",
-        message: "PageContentDSL v2 必须包含 runtime",
-        path: ["runtime"],
-      });
-    }
-
     if (
-      dsl.version === 2 &&
-      dsl.runtime &&
       dsl.runtime.completionRule.type !== "view" &&
       ["none", "navigate"].includes(dsl.interaction.type)
     ) {

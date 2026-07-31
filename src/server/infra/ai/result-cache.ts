@@ -5,9 +5,9 @@ const CACHE_KEY_PATTERN = /^[0-9a-f]{64}$/;
 
 export type AiResultCacheKeyInput = {
   namespace: string;
-  promptVersion: string;
+  promptFingerprint: string;
   model: string;
-  schemaVersion: string;
+  schemaFingerprint: string;
   input: unknown;
 };
 
@@ -35,9 +35,9 @@ type AiResultCacheOptions = {
 export function createAiResultCacheKey(input: AiResultCacheKeyInput) {
   for (const [name, value] of Object.entries({
     namespace: input.namespace,
-    promptVersion: input.promptVersion,
+    promptFingerprint: input.promptFingerprint,
     model: input.model,
-    schemaVersion: input.schemaVersion,
+    schemaFingerprint: input.schemaFingerprint,
   })) {
     if (!value.trim()) throw new Error(`AI cache ${name} 不能为空。`);
   }
@@ -45,18 +45,17 @@ export function createAiResultCacheKey(input: AiResultCacheKeyInput) {
   return createHash("sha256")
     .update(
       JSON.stringify({
-        version: 1,
         namespace: input.namespace,
-        promptVersion: input.promptVersion,
+        promptFingerprint: input.promptFingerprint,
         model: input.model,
-        schemaVersion: input.schemaVersion,
+        schemaFingerprint: input.schemaFingerprint,
         input: canonicalize(input.input),
       }),
     )
     .digest("hex");
 }
 
-/** 单进程、有限容量、短 TTL 的 Day 35 简单缓存；多实例部署需换共享缓存。 */
+/** 单进程、有限容量、短 TTL 的简单缓存；多实例部署需换共享缓存。 */
 export function createAiResultCache(
   options: AiResultCacheOptions = {},
 ): AiResultCache {

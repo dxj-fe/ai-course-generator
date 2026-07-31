@@ -64,7 +64,7 @@ const requestSetContent: PageContentDSL = {
 const requestSetInput = {
   content: requestSetContent,
   visualBrief,
-  promptVersion: "1.0.0/1.0.0",
+  promptFingerprint: "a".repeat(64),
 };
 
 function readyResult(
@@ -138,7 +138,7 @@ describe("asset cache", () => {
   it("reuses the compiled request set for the same page input", async () => {
     const filePath = await temporaryCacheFile();
     const cache = createAssetCache({
-      filePath,
+      databasePath: filePath,
       assetExists: vi.fn().mockResolvedValue(true),
     });
 
@@ -155,7 +155,7 @@ describe("asset cache", () => {
     await expect(
       cache.lookupRequestSet({
         ...requestSetInput,
-        promptVersion: "1.1.0/1.0.0",
+        promptFingerprint: "b".repeat(64),
       }),
     ).resolves.toEqual({ status: "miss" });
     await expect(
@@ -173,7 +173,7 @@ describe("asset cache", () => {
 
   it("rejects a compiled request set that does not cover every page slot", async () => {
     const filePath = await temporaryCacheFile();
-    const cache = createAssetCache({ filePath });
+    const cache = createAssetCache({ databasePath: filePath });
 
     await expect(cache.storeRequestSet(requestSetInput, [])).resolves.toEqual({
       status: "skipped",
@@ -187,7 +187,7 @@ describe("asset cache", () => {
   it("returns a validated hit without persisting page-specific metadata", async () => {
     const filePath = await temporaryCacheFile();
     const assetExists = vi.fn().mockResolvedValue(true);
-    const cache = createAssetCache({ filePath, assetExists });
+    const cache = createAssetCache({ databasePath: filePath, assetExists });
 
     await expect(cache.store(input, readyResult())).resolves.toEqual({
       status: "stored",
@@ -226,7 +226,7 @@ describe("asset cache", () => {
   it("reports stale when the indexed internal asset file is missing", async () => {
     const filePath = await temporaryCacheFile();
     const assetExists = vi.fn().mockResolvedValue(true);
-    const cache = createAssetCache({ filePath, assetExists });
+    const cache = createAssetCache({ databasePath: filePath, assetExists });
     await cache.store(input, readyResult());
     assetExists.mockResolvedValue(false);
 
@@ -236,7 +236,7 @@ describe("asset cache", () => {
   it("recovers a damaged cache on the next successful ready write", async () => {
     const filePath = await temporaryCacheFile();
     const cache = createAssetCache({
-      filePath,
+      databasePath: filePath,
       assetExists: vi.fn().mockResolvedValue(true),
     });
     const database = new DatabaseSync(filePath);
@@ -265,7 +265,7 @@ describe("asset cache", () => {
   it("rejects a cached remote URI even when the remaining record is valid", async () => {
     const filePath = await temporaryCacheFile();
     const cache = createAssetCache({
-      filePath,
+      databasePath: filePath,
       assetExists: vi.fn().mockResolvedValue(true),
     });
     await cache.store(input, readyResult());
@@ -293,7 +293,7 @@ describe("asset cache", () => {
   it("does not cache fallback or a result from another model identity", async () => {
     const filePath = await temporaryCacheFile();
     const cache = createAssetCache({
-      filePath,
+      databasePath: filePath,
       assetExists: vi.fn().mockResolvedValue(true),
     });
     const fallback: AssetGenerationResult = {
@@ -337,7 +337,7 @@ describe("asset cache", () => {
   it("serializes concurrent writes without losing either cache entry", async () => {
     const filePath = await temporaryCacheFile();
     const cache = createAssetCache({
-      filePath,
+      databasePath: filePath,
       assetExists: vi.fn().mockResolvedValue(true),
     });
     const secondRequest: AssetRequest = {

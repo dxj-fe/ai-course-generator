@@ -136,8 +136,8 @@ export function createCourseRunEngine(
   };
 }
 
-/** Task Service 的默认 agent-v2 入口。 */
-export async function runCourseGenerationAgentV2(
+/** Task Service 的默认课程生成入口。 */
+export async function runCourseGeneration(
   input: CourseRunEngineInput,
   context: CourseRunEngineContext = {},
   hooks: CourseRunEngineHooks = {},
@@ -146,7 +146,7 @@ export async function runCourseGenerationAgentV2(
 }
 
 /** 任务控制面用它先切断数据库执行权，再终态化旧 UI checkpoint。 */
-export function cancelCourseGenerationAgentV2Run(input: {
+export function cancelCourseGenerationRun(input: {
   taskId: string;
   courseId: string;
   traceId: string;

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { ToolIds } from "@/server/agent/ids";
-import { projectCourseArchitectureToLegacy } from "@/server/course/legacy/architecture-adapter";
+import { projectCourseArchitecture } from "@/server/course/projection/architecture";
 import {
   sanitizePublicDiagnosticText,
   sanitizePublicErrorCode,
@@ -71,7 +71,7 @@ export type CourseStateProjectorInput = {
  * 把多 Agent 的执行真相重建成旧 UI 可读的 CourseGenerationState。
  *
  * 该函数不读数据库、不取当前时间，也不修改传入对象。页面只读取 CourseRun 的 current
- * pointer；旧 WorkOrder 和历史 Artifact 即使仍在数据库中，也不会被投影成当前结果。
+ * pointer；非当前 WorkOrder 和 Artifact 不会被投影成当前结果。
  */
 export function projectCourseState(
   input: CourseStateProjectorInput,
@@ -178,15 +178,14 @@ export function projectCourseState(
     events: input.events,
   });
   const terminal = TERMINAL_RUN_PHASES.has(run.phase);
-  const legacy = architecture
-    ? projectCourseArchitectureToLegacy(architecture, creationBrief)
+  const architectureProjection = architecture
+    ? projectCourseArchitecture(architecture, creationBrief)
     : undefined;
   const workerConfig = PageWorkerConfigSchema.parse(
     input.workerConfig ?? defaultWorkerConfig(pageTasks.length),
   );
 
   return CourseGenerationStateSchema.parse({
-    version: 1,
     courseId: run.courseId,
     traceId: run.traceId,
     userPrompt: creationBrief.originalRequest,
@@ -194,10 +193,10 @@ export function projectCourseState(
     status,
     currentStage,
     currentPageId,
-    intent: legacy?.intent,
-    outline: legacy?.outline,
-    briefs: legacy?.briefs,
-    pageWorkerBriefs: legacy?.pageWorkerBriefs,
+    intent: architectureProjection?.intent,
+    outline: architectureProjection?.outline,
+    briefs: architectureProjection?.briefs,
+    pageWorkerBriefs: architectureProjection?.pageWorkerBriefs,
     workerConfig,
     generationMetrics: projectGenerationMetrics(run, workOrders),
     pages,
@@ -472,7 +471,7 @@ function requireCurrentArtifact(
     artifact.courseId !== ref.courseId ||
     artifact.pageId !== ref.pageId ||
     artifact.scopeKey !== ref.scopeKey ||
-    artifact.version !== ref.version ||
+    artifact.revision !== ref.revision ||
     artifact.contentHash !== ref.contentHash
   ) {
     throw new Error(`Artifact ${ref.id} 与 current ref 不一致`);

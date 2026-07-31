@@ -135,7 +135,7 @@ export function toArtifactRef(artifact: {
   courseId?: string;
   pageId?: string;
   scopeKey?: string;
-  version?: number;
+  revision?: number;
   contentHash?: string;
 }): ArtifactRef {
   return artifact as ArtifactRef;

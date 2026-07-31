@@ -13,12 +13,17 @@ export function seedRunningCourseTask(
   },
 ) {
   const task = CourseTaskRecordSchema.parse({
-    version: 1,
     taskId: input.taskId,
     courseId: input.courseId,
     traceId: input.traceId,
     userPrompt: "测试 CourseRun 控制围栏",
-    source: "workflow",
+    creationBrief: {
+      originalRequest: "测试 CourseRun 控制围栏",
+      topic: "太阳系",
+      audience: "初学者",
+      learningMode: "mixed",
+      language: "zh-CN",
+    },
     status: "running",
     createdAt: input.now,
     updatedAt: input.now,

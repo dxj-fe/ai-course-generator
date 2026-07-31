@@ -35,7 +35,7 @@ describe("HTML Engineer prompts", () => {
       ],
     });
 
-    expect(prompts.version).toBe("2.12.0/2.2.0");
+    expect(prompts.fingerprint).toMatch(/^[a-f0-9]{64}$/);
     expect(prompts.systemPrompt).toContain("禁止任何 `<script>`");
     expect(prompts.systemPrompt).toContain("不得交换槽位");
     expect(prompts.systemPrompt).toContain("精确 altText");

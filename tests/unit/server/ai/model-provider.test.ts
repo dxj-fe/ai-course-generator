@@ -30,10 +30,10 @@ describe("model provider", () => {
     vi.stubEnv("MODEL_PROVIDER_STRONG", "generic");
     vi.stubEnv("MODEL_PROVIDER_BALANCED", "ark");
     vi.stubEnv("MODEL_API_KEY", "generic-test-key");
-    vi.stubEnv("MODEL_BASE_URL", "https://models.example.test/v1");
-    vi.stubEnv("MODEL_NAME", "gpt-5.5");
+    vi.stubEnv("MODEL_BASE_URL", "https://models.example.test/api");
+    vi.stubEnv("MODEL_NAME_STRONG", "gpt-5.5");
     vi.stubEnv("ARK_API_KEY", "ark-test-key");
-    vi.stubEnv("ARK_MODEL_ID", "doubao-mini");
+    vi.stubEnv("ARK_MODEL_ID_BALANCED", "doubao-mini");
 
     expect(getLanguageModelIdentity("strong")).toBe(
       "model-provider/gpt-5.5",

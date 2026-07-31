@@ -25,7 +25,7 @@ import {
   normalizeVisibleText,
 } from "./html-engineer-text";
 
-const TRUSTED_PLAYER_LAYOUT_GUARD = `<style data-keya-layout-guard="v21">
+const TRUSTED_PLAYER_LAYOUT_GUARD = `<style data-keya-layout-guard="current">
 html,body{width:100%!important;height:100%!important;margin:0!important;padding:0!important;overflow:visible!important;box-sizing:border-box}
 main[data-page-id]{position:relative;width:100%!important;height:100%!important;min-width:0;min-height:0;margin:0 auto!important;overflow:visible!important;box-sizing:border-box}
 main[data-page-id]>*{min-width:0;box-sizing:border-box}
@@ -149,15 +149,9 @@ main[data-page-id]>*{min-width:0;box-sizing:border-box}
 export function normalizeTrustedPlayerLayout(output: unknown) {
   if (
     typeof output !== "string" ||
-    output.includes('data-keya-layout-guard="v21"')
+    output.includes('data-keya-layout-guard="current"')
   ) {
     return output;
-  }
-
-  const previousGuard =
-    /<style\s+data-keya-layout-guard=["']v\d+["'][^>]*>[\s\S]*?<\/style\s*>/i;
-  if (previousGuard.test(output)) {
-    return output.replace(previousGuard, TRUSTED_PLAYER_LAYOUT_GUARD);
   }
 
   const headClose = output.match(/<\/head\s*>/i);
@@ -497,7 +491,7 @@ export function normalizeTrustedPageTitle(
 }
 
 /**
- * 旧版正文恢复把 Markdown 反引号与等价的 <code> 文本误判为缺失，可能在
+ * 正文合同恢复可能把 Markdown 反引号与等价的 <code> 文本误判为缺失并在
  * block 内追加重复内容。仅当删除恢复节点后，该 block 仍完整包含可信 DSL
  * 正文时移除它；真实缺失内容继续保留。
  */
@@ -648,9 +642,8 @@ function escapeHtmlText(value: string) {
 }
 
 /**
- * data-interaction-type 是技术定位元数据。模型遗漏它时，只在 reveal 已经
- * 实现为与 DSL 逐项对应的完整 details/summary 结构时补到首个原生控件；
- * 不完整或静态伪互动仍交给严格校验拒绝。
+ * 模型遗漏 reveal 根标记时，只在完整 details/summary 结构存在唯一公共容器
+ * 时补齐当前运行时要求的 type 与 id；不完整或静态伪互动仍交给严格校验拒绝。
  */
 export function normalizeNativeInteractionMarker(
   output: unknown,
@@ -683,18 +676,45 @@ export function normalizeNativeInteractionMarker(
     return output;
   }
 
-  const first = details[0];
-  const openingTag = first?.[0].match(/^<details\b[^>]*>/i)?.[0];
-  if (first?.index === undefined || !openingTag) return output;
+  const detailMarkers = details.flatMap((match) => {
+    const tag = match[0].match(/^<details\b[^>]*>/i)?.[0];
+    return match.index === undefined || !tag
+      ? []
+      : [{ index: match.index, tag }];
+  });
+  const candidates = findTagMatchesWithAttributes(output, {})
+    .filter(({ tag }) => /^<(?:main|section|article|div|form)\b/i.test(tag))
+    .map((marker) => ({
+      marker,
+      element: getElementHtml(output, marker),
+    }))
+    .filter(
+      (
+        candidate,
+      ): candidate is { marker: OpeningTagMatch; element: string } =>
+        Boolean(candidate.element) &&
+        detailMarkers.every((detail) =>
+          isOpeningTagInsideElement(output, detail, candidate.marker),
+        ),
+    )
+    .sort((left, right) => left.element.length - right.element.length);
+  if (
+    candidates.length === 0 ||
+    (candidates[1] &&
+      candidates[0]!.element.length === candidates[1].element.length)
+  ) {
+    return output;
+  }
 
-  const normalizedOpeningTag = openingTag.replace(
-    />$/,
-    ' data-interaction-type="reveal">',
-  );
-  return (
-    output.slice(0, first.index) +
-    normalizedOpeningTag +
-    output.slice(first.index + openingTag.length)
+  const root = candidates[0]!.marker;
+  return replaceOpeningTag(
+    output,
+    root,
+    setAttributeValue(
+      setAttributeValue(root.tag, "data-interaction-type", "reveal"),
+      "data-interaction-id",
+      `interaction-${input.content.pageId}`,
+    ),
   );
 }
 
@@ -709,7 +729,6 @@ export function normalizeRevealRuntimeMarkers(
 ) {
   if (
     typeof output !== "string" ||
-    input.content.version !== 2 ||
     input.content.interaction.type !== "reveal"
   ) {
     return output;
@@ -814,7 +833,6 @@ export function normalizeChoiceInteractionRoot(
 ) {
   if (
     typeof output !== "string" ||
-    input.content.version !== 2 ||
     input.content.interaction.type !== "choice"
   ) {
     return output;
@@ -957,7 +975,6 @@ export function normalizeChoiceRuntimeMarkers(
 ) {
   if (
     typeof output !== "string" ||
-    input.content.version !== 2 ||
     input.content.interaction.type !== "choice"
   ) {
     return output;
@@ -1225,8 +1242,6 @@ export function normalizeVisualPrimitiveMarker(
 ) {
   if (
     typeof output !== "string" ||
-    input.content.version !== 2 ||
-    !input.content.runtime ||
     input.content.runtime.visualPrimitive === "none"
   ) {
     return output;

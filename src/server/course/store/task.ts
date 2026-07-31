@@ -56,7 +56,7 @@ export type CourseTaskStoreListResult = {
 
 type CourseTaskStoreOptions = {
   databasePath?: string;
-  /** 保留测试和调用方兼容性；数据会写入该目录内的 SQLite。 */
+  /** 测试可使用独立根目录隔离 SQLite 数据。 */
   rootDir?: string;
 };
 
@@ -127,8 +127,7 @@ export function createCourseTaskStore(
     DELETE FROM course_task_control_intents
     WHERE task_id = ? AND action = ?
   `);
-  // 兼容迁移进 SQLite 的历史 payload：字段顺序可能与当前 Zod 序列化不同。
-  // CAS 必须比较数据库中实际读到的字节，不能只比较重新 stringify 的对象。
+  // CAS 比较数据库中实际读到的字节，避免对象重建改变字段顺序。
   const persistedPayloads = new WeakMap<CourseTaskRecord, string>();
 
   return {

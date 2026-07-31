@@ -13,7 +13,7 @@ import {
   type AssetCache,
   type AssetCacheKeyInput,
 } from "@/server/agent/plugins/tools/course/image-cache";
-import { IMAGE_PROMPT_VERSION } from "@/server/agent/plugins/prompts/course/model-steps/image-prompt";
+import { buildImagePromptPrompts } from "@/server/agent/plugins/prompts/course/model-steps/image-prompt";
 import { ExecutableToolRegistry } from "@/server/agent/runtime/executable-tool-registry";
 import {
   generateImageTool,
@@ -71,10 +71,12 @@ export async function runImageAssetWorkflow(
     cacheErrorCount: 0,
     bypassCount: 0,
   };
+  const { fingerprint: promptFingerprint } =
+    await buildImagePromptPrompts(input);
   const requestSetCacheInput = {
     content: input.content,
     visualBrief: input.visualBrief,
-    promptVersion: IMAGE_PROMPT_VERSION,
+    promptFingerprint,
   };
   let requests: AssetRequest[] | undefined;
   let events: ModelStepEvent[] = [];

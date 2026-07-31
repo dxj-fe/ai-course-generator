@@ -1,5 +1,4 @@
-import { AiRequestError } from "@/server/infra/ai/error";
-import type { cancelCourseGenerationAgentV2Run } from "@/server/course/run/engine";
+import type { cancelCourseGenerationRun } from "@/server/course/run/engine";
 import type { CourseStore } from "@/server/course/store/course";
 import type {
   CourseTaskControlIntent,
@@ -35,7 +34,6 @@ export type CourseGenerationLogEntry = {
   durationMs?: number;
   completedPages?: number;
   totalPages?: number;
-  source?: CourseTaskRecord["source"];
   status?: CourseTaskRecord["status"];
 };
 
@@ -162,13 +160,12 @@ export async function reconcileCourseGenerationTaskTerminal(input: {
   courseStore: CourseStore;
   eventBus: CourseTaskEventBus;
   loadAuthoritativeState(
-    record: Extract<CourseTaskRecord, { source: "agent-v2" }>,
+    record: CourseTaskRecord,
   ): CourseGenerationState | undefined | PromiseLike<CourseGenerationState | undefined>;
   now(): string;
 }) {
   let currentTask = await input.taskStore.load(input.taskId);
   if (!currentTask || isTerminalStatus(currentTask.status)) return currentTask;
-  assertAgentV2Task(currentTask);
 
   const authoritativeState = await input.loadAuthoritativeState(currentTask);
   const initialCourseState = await input.courseStore.load(currentTask.courseId);
@@ -219,7 +216,6 @@ export async function reconcileCourseGenerationTaskTerminal(input: {
     ) {
       return latestTask;
     }
-    assertAgentV2Task(latestTask);
     currentTask = latestTask;
     currentCourseState = latestState;
   }
@@ -243,7 +239,6 @@ export async function reconcileCourseGenerationTaskTerminal(input: {
     type: "terminal",
     taskId: terminalTask.taskId,
     courseId: terminalTask.courseId,
-    source: terminalTask.source,
     status: terminalState.status,
     state: terminalState,
   });
@@ -255,7 +250,7 @@ export async function cancelCourseGenerationTask(input: {
   taskStore: CourseTaskStore;
   courseStore: CourseStore;
   eventBus: CourseTaskEventBus;
-  cancelAgentV2Run: typeof cancelCourseGenerationAgentV2Run;
+  cancelCourseRun: typeof cancelCourseGenerationRun;
   now(): string;
   onCancellationWon(): void;
   abortRunner(): void;
@@ -264,16 +259,14 @@ export async function cancelCourseGenerationTask(input: {
   if (!initialRecord || isTerminalStatus(initialRecord.status)) {
     return initialRecord;
   }
-  assertAgentV2Task(initialRecord);
   const timestamp = input.now();
   const record = await input.taskStore.requestCancel(
     input.taskId,
     timestamp,
   );
   if (!record || isTerminalStatus(record.status)) return record;
-  assertAgentV2Task(record);
 
-  const authoritativeState = input.cancelAgentV2Run({
+  const authoritativeState = input.cancelCourseRun({
     taskId: record.taskId,
     courseId: record.courseId,
     traceId: record.traceId,
@@ -336,7 +329,6 @@ export async function cancelCourseGenerationTask(input: {
     ) {
       return latest;
     }
-    assertAgentV2Task(latest);
     cancellationExpected = latest;
   }
   if (!cancelled) return input.taskStore.load(input.taskId);
@@ -345,7 +337,6 @@ export async function cancelCourseGenerationTask(input: {
     type: "terminal",
     taskId: cancelled.taskId,
     courseId: cancelled.courseId,
-    source: cancelled.source,
     status: persistedTerminalState.status,
     state: persistedTerminalState,
   });
@@ -379,7 +370,6 @@ export function createTaskLogEntry(
             : undefined),
     completedPages: countCompletedPages(state),
     totalPages: resolveTotalPages(record, state),
-    source: record.source,
     status: overrides.status,
   };
 }
@@ -415,7 +405,6 @@ export function createPageFailureLogEntry(
     durationMs: state.durationMs,
     completedPages: countCompletedPages(state),
     totalPages: resolveTotalPages(record, state),
-    source: record.source,
     status: state.status,
   };
 }
@@ -508,7 +497,6 @@ export function createTerminalCourseState(
       ? undefined
       : existingState;
   const base: CourseGenerationState = reusableExistingState ?? {
-    version: 1,
     courseId: record.courseId,
     traceId: record.traceId,
     userPrompt: record.userPrompt,
@@ -605,7 +593,6 @@ export function publishTaskSnapshot(
     type: "snapshot",
     taskId: task.taskId,
     courseId: task.courseId,
-    source: task.source,
     taskStatus: task.status,
     state,
   });
@@ -630,16 +617,6 @@ export function toCourseGenerationCauseCode(
 
 export function isTerminalStatus(status: CourseTaskRecord["status"]) {
   return status === "completed" || status === "failed" || status === "cancelled";
-}
-
-export function assertAgentV2Task(
-  record: CourseTaskRecord,
-): asserts record is Extract<CourseTaskRecord, { source: "agent-v2" }> {
-  if (record.source !== "agent-v2") {
-    throw new AiRequestError(
-      `历史 ${record.source} 任务仅支持查看，不能继续执行或修改。`,
-    );
-  }
 }
 
 export function isCourseTerminalStatus(

@@ -197,9 +197,7 @@ function getThumbnailListText(markup: string) {
 }
 
 function completedCourse(): CourseGenerationState {
-  const html = buildValidGeneratedHtml(pageContentDsl);
   return {
-    version: 1,
     courseId: "course-player",
     traceId: "trace-private",
     userPrompt: "生成太阳系课程",
@@ -209,28 +207,42 @@ function completedCourse(): CourseGenerationState {
     outline: courseDesignOutline,
     briefs: undefined,
     pageWorkerBriefs: undefined,
-    pages: courseDesignOutline.pages.map((page) => ({
-      pageId: page.id,
-      order: page.order,
-      status: "completed" as const,
-      currentStage: "complete" as const,
-      content: {
+    pages: courseDesignOutline.pages.map((page) => {
+      const interaction =
+        page.interactionType === pageContentDsl.interaction.type
+          ? pageContentDsl.interaction
+          : { type: "none" as const };
+      const content = {
         ...pageContentDsl,
         pageId: page.id,
         title: page.title,
         functionalTemplateId: page.functionalTemplateId,
-        interaction:
-          page.interactionType === pageContentDsl.interaction.type
-            ? pageContentDsl.interaction
-            : { type: "none" as const },
-      },
-      assets: [],
-      htmlOutput: {
-        html: html.replaceAll(pageContentDsl.title, page.title),
-        generatedAt: "2026-07-24T08:00:00.000Z",
-        version: 1,
-      },
-    })),
+        interaction,
+        runtime: {
+          ...pageContentDsl.runtime,
+          completionRule:
+            interaction.type === "none" || interaction.type === "navigate"
+              ? { type: "view" as const }
+              : {
+                  type: "interaction-complete" as const,
+                  interactionId: `interaction-${page.id}`,
+                },
+        },
+      };
+      return {
+        pageId: page.id,
+        order: page.order,
+        status: "completed" as const,
+        currentStage: "complete" as const,
+        content,
+        assets: [],
+        htmlOutput: {
+          html: buildValidGeneratedHtml(content),
+          generatedAt: "2026-07-24T08:00:00.000Z",
+          revision: 1,
+        },
+      };
+    }),
     events: [],
     errors: [],
     startedAt: "2026-07-24T07:55:00.000Z",

@@ -196,10 +196,29 @@ export const visualBrief: VisualBrief = {
 };
 
 export const pageContentDsl: PageContentDSL = {
-  version: 1,
   pageId: "page-02-knowledge",
   functionalTemplateId: "knowledge-card-grid",
   title: "恒星与行星",
+  runtime: {
+    sceneKind: "demo",
+    visualPrimitive: "concept-map",
+    motionPlan: {
+      intensity: "guided",
+      cuePoints: [
+        {
+          id: "cue-block-01",
+          action: "reveal",
+          targetId: "block-01",
+          delayMs: 120,
+          durationMs: 420,
+        },
+      ],
+    },
+    completionRule: {
+      type: "interaction-complete",
+      interactionId: "interaction-page-02-knowledge",
+    },
+  },
   narration: ["先观察太阳，再与一颗行星比较它们是否会自己发光。"],
   blocks: [
     {

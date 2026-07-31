@@ -6,7 +6,7 @@ import {
   ToolIds,
 } from "@/server/agent/ids";
 import type { LocalResourceSession } from "@/server/agent/skill";
-import { projectCourseArchitectureToLegacy } from "@/server/course/legacy/architecture-adapter";
+import { projectCourseArchitecture } from "@/server/course/projection/architecture";
 import {
   FatalAgentRuntimeError,
   throwIfAgentAborted,
@@ -62,14 +62,14 @@ export type PageBuilderExecution = {
   architecture: CourseArchitecture;
   creationBrief: CourseCreationBrief;
   referencePacks: ReferencePack[];
-  projection: ReturnType<typeof projectCourseArchitectureToLegacy>;
+  projection: ReturnType<typeof projectCourseArchitecture>;
   pageId: string;
   pageTask: CourseArchitecture["pageTasks"][number];
   pagePlan: ReturnType<
-    typeof projectCourseArchitectureToLegacy
+    typeof projectCourseArchitecture
   >["outline"]["pages"][number];
   pageBrief: ReturnType<
-    typeof projectCourseArchitectureToLegacy
+    typeof projectCourseArchitecture
   >["pageWorkerBriefs"][number];
   dependencySummaries: ReturnType<typeof PageSummarySchema.parse>[];
   baseline?: PageBuilderBaselineSnapshot;
@@ -166,7 +166,7 @@ export function createPageBuilderExecution(
     );
   }
 
-  const projection = projectCourseArchitectureToLegacy(
+  const projection = projectCourseArchitecture(
     architecture,
     creationBrief,
   );
@@ -190,7 +190,7 @@ export function createPageBuilderExecution(
             dependencyPageId,
           ),
       )
-      .sort((left, right) => left.version - right.version)
+      .sort((left, right) => left.revision - right.revision)
       .map((ref) => [ref.pageId!, ref]),
   );
   const dependencySummaries = [
@@ -873,7 +873,7 @@ function assertArtifactMatchesRef(
     kind: ArtifactKind;
     pageId?: string;
     scopeKey: string;
-    version: number;
+    revision: number;
   },
 ): asserts artifact is CourseArtifact {
   if (
@@ -884,7 +884,7 @@ function assertArtifactMatchesRef(
     artifact.kind !== ref.kind ||
     artifact.pageId !== ref.pageId ||
     artifact.scopeKey !== ref.scopeKey ||
-    artifact.version !== ref.version
+    artifact.revision !== ref.revision
   ) {
     throw staleFence(`Artifact ${ref.id} 与封口引用不一致`);
   }

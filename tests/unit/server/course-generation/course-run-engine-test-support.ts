@@ -72,7 +72,7 @@ export function prepareFixPageSubmission<
       "</main>",
       `<p data-fix-revision="${workOrder.revision}">已按 Review 修订</p></main>`,
     ),
-    version: original.html.version + 1,
+    revision: original.html.revision + 1,
   };
   if (target === "page_html") {
     const baselineRef = workOrder.inputArtifactRefs.find(

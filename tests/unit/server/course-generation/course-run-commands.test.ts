@@ -24,7 +24,7 @@ afterEach(async () => {
 });
 
 describe("整课 Review 与发布命令", () => {
-  it("冻结 current manifest，提交独立 Review，并只发布该精确版本", async () => {
+  it("冻结 current manifest，提交独立 Review，并只发布该精确修订", async () => {
     const rootDir = await mkdtemp(
       path.join(tmpdir(), "course-run-commands-test-"),
     );
@@ -93,7 +93,6 @@ describe("整课 Review 与发布命令", () => {
         html: { html: "<main>恒星与行星</main>" },
         quality: { decision: "pass" },
         summary: PageSummarySchema.parse({
-          version: 1,
           courseId: run.courseId,
           pageId: "page-01",
           order: 1,
@@ -144,7 +143,6 @@ describe("整课 Review 与发布命令", () => {
       runLeaseOwner: RUN_OWNER,
       traceId: TRACE_ID,
       candidate: {
-        version: 1,
         courseId: run.courseId,
         inputManifestHash: run.currentManifestHash,
         decision: "pass",
@@ -202,10 +200,8 @@ function timestamp(offsetSeconds: number) {
 
 function architecture(): CourseArchitecture {
   return {
-    version: 1,
     courseId: "course-review-command",
     coursePack: {
-      version: 1,
       courseId: "course-review-command",
       topic: "太阳系",
       facts: [],
@@ -214,7 +210,6 @@ function architecture(): CourseArchitecture {
       constraints: [],
     },
     blueprint: {
-      version: 1,
       courseId: "course-review-command",
       title: "认识太阳系",
       audience: {
@@ -241,7 +236,6 @@ function architecture(): CourseArchitecture {
     },
     pageTasks: [
       {
-        version: 1,
         pageId: "page-01",
         order: 1,
         title: "恒星与行星",

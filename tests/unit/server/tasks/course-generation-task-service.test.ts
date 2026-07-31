@@ -16,12 +16,11 @@ import {
 } from "../../../../src/server/course/task/service";
 import {
   CourseRunLeaseUnavailableError,
-  type runCourseGenerationAgentV2,
+  type runCourseGeneration,
 } from "../../../../src/server/course/run/engine";
 import { createCourseRunRepository } from "../../../../src/server/course/store/repository";
 import type {
   CourseGenerationState,
-  CourseTaskRecord,
   CourseTaskStreamMessage,
 } from "../../../../src/shared/course-schema";
 
@@ -49,13 +48,12 @@ afterEach(async () => {
 });
 
 describe("course generation task service", () => {
-  it("persists Reference Packs and forwards them to the selected runtime", async () => {
+  it("persists Reference Packs and forwards them to the course run", async () => {
     const terminal = courseState("failed", 2);
-    const runAgentV2 = vi.fn(async () => terminal) as typeof runCourseGenerationAgentV2;
-    const fixture = createFixture({ runAgentV2 });
+    const runCourse = vi.fn(async () => terminal) as typeof runCourseGeneration;
+    const fixture = createFixture({ runCourse });
     const referencePacks = [
       {
-        version: 1 as const,
         id: "ref-1234567890abcdef12345678",
         sourceName: "solar.txt",
         sourceType: "txt" as const,
@@ -78,7 +76,7 @@ describe("course generation task service", () => {
     await fixture.service.run(taskId);
 
     expect(fixture.tasks.get(taskId)?.referencePacks).toEqual(referencePacks);
-    expect(runAgentV2).toHaveBeenCalledWith(
+    expect(runCourse).toHaveBeenCalledWith(
       {
         taskId,
         courseId,
@@ -109,18 +107,17 @@ describe("course generation task service", () => {
     expect(fixture.tasks.get(taskId)).toMatchObject({
       executionMode: "parallel",
       concurrency: 2,
-      source: "agent-v2",
     });
   });
 
-  it("persists creationBrief for agent-v2 and rejects a missing brief", async () => {
+  it("persists creationBrief and rejects a missing brief", async () => {
     const fixture = createFixture();
 
     await expect(
       fixture.service.create({
         userPrompt: "生成三页太阳系互动课程",
       }),
-    ).rejects.toThrow("agent-v2 任务必须提供结构化 creationBrief");
+    ).rejects.toThrow("课程任务必须提供结构化 creationBrief");
 
     await fixture.service.create({
       ...agentTaskInput,
@@ -128,31 +125,8 @@ describe("course generation task service", () => {
     });
 
     expect(fixture.tasks.get(taskId)).toMatchObject({
-      source: "agent-v2",
       creationBrief,
     });
-  });
-
-  it("keeps legacy runtime records readable but refuses to execute them", async () => {
-    const fixture = createFixture();
-    const legacyRecord: CourseTaskRecord = {
-      version: 1,
-      taskId,
-      courseId,
-      traceId,
-      userPrompt: "历史 LangGraph 课程",
-      source: "langgraph",
-      status: "queued",
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    };
-    fixture.tasks.set(taskId, legacyRecord);
-
-    await expect(fixture.service.load(taskId)).resolves.toEqual(legacyRecord);
-    await expect(fixture.service.run(taskId)).rejects.toThrow(
-      "历史 langgraph 任务仅支持查看",
-    );
-    expect(fixture.runAgentV2).not.toHaveBeenCalled();
   });
 
   it("rejects creating a second non-terminal task for the same course", async () => {
@@ -192,15 +166,15 @@ describe("course generation task service", () => {
     },
   );
 
-  it("persists agent-v2 and publishes only mapped product messages", async () => {
+  it("persists tasks and publishes only mapped product messages", async () => {
     const running = courseState("running", 1);
     const failed = courseState("failed", 2);
-    const runAgentV2 = vi.fn(async (_input, _context, hooks) => {
+    const runCourse = vi.fn(async (_input, _context, hooks) => {
       await hooks.checkpoint?.(running);
       await hooks.checkpoint?.(failed);
       return failed;
-    }) as typeof runCourseGenerationAgentV2;
-    const fixture = createFixture({ runAgentV2 });
+    }) as typeof runCourseGeneration;
+    const fixture = createFixture({ runCourse });
     const messages: CourseTaskStreamMessage[] = [];
     fixture.eventBus.subscribe(taskId, (message) => messages.push(message));
 
@@ -211,9 +185,9 @@ describe("course generation task service", () => {
     });
     await fixture.service.run(taskId);
 
-    expect(created.source).toBe("agent-v2");
-    expect(fixture.tasks.get(taskId)?.source).toBe("agent-v2");
-    expect(runAgentV2).toHaveBeenCalledOnce();
+    expect(created.status).toBe("queued");
+    expect(fixture.tasks.get(taskId)?.creationBrief).toEqual(creationBrief);
+    expect(runCourse).toHaveBeenCalledOnce();
     expect(messages.map(({ type }) => type)).toEqual([
       "snapshot",
       "event",
@@ -224,7 +198,6 @@ describe("course generation task service", () => {
       type: "snapshot",
       state: { status: "failed" },
     });
-    expect(messages.every(({ source }) => source === "agent-v2")).toBe(true);
     expect(JSON.stringify(messages)).not.toContain("private");
   });
 
@@ -256,7 +229,7 @@ describe("course generation task service", () => {
     await expect(fixture.service.run(taskId)).resolves.toMatchObject({
       status: "cancelled",
     });
-    expect(fixture.runAgentV2).not.toHaveBeenCalled();
+    expect(fixture.runCourse).not.toHaveBeenCalled();
   });
 
   it("取消复用 courseId 的新任务时不会继承上一 attempt 的终态和 trace", async () => {
@@ -295,7 +268,7 @@ describe("course generation task service", () => {
       ],
     };
     const fixture = createFixture({
-      cancelAgentV2Run: () => authoritativeCancelled,
+      cancelCourseRun: () => authoritativeCancelled,
     });
     await fixture.service.create({
       ...agentTaskInput,
@@ -365,14 +338,14 @@ describe("course generation task service", () => {
         return durableStore.save(record, condition);
       },
     };
-    const runAgentV2 = vi.fn(async () => {
+    const runCourse = vi.fn(async () => {
       throw new Error("CAS 失败后不应启动 CourseRun");
-    }) as typeof runCourseGenerationAgentV2;
+    }) as typeof runCourseGeneration;
     const sharedDependencies = {
       courseStore,
       eventBus: createSilentEventBus(),
-      runAgentV2,
-      cancelAgentV2Run: () => undefined,
+      runCourse,
+      cancelCourseRun: () => undefined,
       now: () => timestamp,
       createTaskId: () => taskId,
       createCourseId: () => courseId,
@@ -406,7 +379,7 @@ describe("course generation task service", () => {
       status: "cancelled",
       traceId,
     });
-    expect(runAgentV2).not.toHaveBeenCalled();
+    expect(runCourse).not.toHaveBeenCalled();
   });
 
   it("跨进程 cancel 与旧 checkpoint 写入交错时，课程终态不会被旧 running 覆盖", async () => {
@@ -445,14 +418,14 @@ describe("course generation task service", () => {
       traceId,
       "生成三页太阳系互动课程",
     );
-    const runAgentV2 = vi.fn(async (_input, _context, hooks) => {
+    const runCourse = vi.fn(async (_input, _context, hooks) => {
       await hooks.checkpoint?.(staleCheckpoint);
       return staleCheckpoint;
-    }) as typeof runCourseGenerationAgentV2;
+    }) as typeof runCourseGeneration;
     const sharedDependencies = {
       eventBus: createSilentEventBus(),
-      runAgentV2,
-      cancelAgentV2Run: () => undefined,
+      runCourse,
+      cancelCourseRun: () => undefined,
       now: () => timestamp,
       createTaskId: () => taskId,
       createCourseId: () => courseId,
@@ -510,8 +483,8 @@ describe("course generation task service", () => {
       taskStore: seedTaskStore,
       courseStore: cancelCourseStore,
       eventBus: createSilentEventBus(),
-      runAgentV2: vi.fn() as typeof runCourseGenerationAgentV2,
-      cancelAgentV2Run: () => undefined,
+      runCourse: vi.fn() as typeof runCourseGeneration,
+      cancelCourseRun: () => undefined,
       now: () => timestamp,
       createTaskId: () => taskId,
       createCourseId: () => courseId,
@@ -579,7 +552,7 @@ describe("course generation task service", () => {
     };
     const sharedDependencies = {
       eventBus: createSilentEventBus(),
-      runAgentV2: vi.fn() as typeof runCourseGenerationAgentV2,
+      runCourse: vi.fn() as typeof runCourseGeneration,
       now: () => "2026-07-15T06:00:02.000Z",
       createTaskId: () => "task-unused-control-race",
       createCourseId: () => "course-unused-control-race",
@@ -593,7 +566,7 @@ describe("course generation task service", () => {
       ...sharedDependencies,
       taskStore: blockedCancelTaskStore,
       courseStore: cancelCourseStore,
-      cancelAgentV2Run: (input) => {
+      cancelCourseRun: (input) => {
         repository.cancelCourseRun({
           taskId: input.taskId,
           traceId: input.traceId,
@@ -606,7 +579,7 @@ describe("course generation task service", () => {
       ...sharedDependencies,
       taskStore: resumeTaskStore,
       courseStore: resumeCourseStore,
-      cancelAgentV2Run: () => undefined,
+      cancelCourseRun: () => undefined,
     });
 
     const cancelling = cancelService.cancel(taskId);
@@ -639,12 +612,12 @@ describe("course generation task service", () => {
   });
 
   it("跨进程重复 run 输掉 CourseRun lease 时保持 running，不误标失败", async () => {
-    const runAgentV2 = vi.fn(async () => {
+    const runCourse = vi.fn(async () => {
       throw new CourseRunLeaseUnavailableError(
         "CourseRun 已由另一个 worker 执行",
       );
-    }) as typeof runCourseGenerationAgentV2;
-    const fixture = createFixture({ runAgentV2 });
+    }) as typeof runCourseGeneration;
+    const fixture = createFixture({ runCourse });
     const messages: CourseTaskStreamMessage[] = [];
     fixture.eventBus.subscribe(taskId, (message) => messages.push(message));
     await fixture.service.create({
@@ -680,8 +653,8 @@ describe("course generation task service", () => {
       taskStore,
       courseStore,
       eventBus: createSilentEventBus(),
-      runAgentV2: vi.fn() as typeof runCourseGenerationAgentV2,
-      cancelAgentV2Run: () => undefined,
+      runCourse: vi.fn() as typeof runCourseGeneration,
+      cancelCourseRun: () => undefined,
       now: () => timestamp,
       createCourseId: () => courseId,
       createTraceId: () => traceId,
@@ -745,7 +718,7 @@ describe("course generation task service", () => {
     const sharedCourseId = "course-stale-memory-claim";
     const firstTraceId = "trace-stale-memory-claim-a";
     const secondTraceId = "trace-stale-memory-claim-b";
-    const runAgentV2 = vi.fn(async (input, _context, hooks) => {
+    const runCourse = vi.fn(async (input, _context, hooks) => {
       markOldRunnerStarted();
       await oldRunnerMayContinue;
       const checkpoint = runningCheckpoint(
@@ -755,14 +728,14 @@ describe("course generation task service", () => {
       );
       await hooks.checkpoint?.(checkpoint);
       return checkpoint;
-    }) as typeof runCourseGenerationAgentV2;
+    }) as typeof runCourseGeneration;
     const taskIds = [firstTaskId, secondTaskId];
     const traceIds = [firstTraceId, secondTraceId];
     const common = {
       eventBus: createSilentEventBus(),
-      runAgentV2,
-      cancelAgentV2Run: () => undefined,
-      loadAgentV2State: () => undefined,
+      runCourse,
+      cancelCourseRun: () => undefined,
+      loadCourseState: () => undefined,
       now: () => timestamp,
       createCourseId: () => sharedCourseId,
       logSink: {

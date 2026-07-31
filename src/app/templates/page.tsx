@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   description: "浏览课芽的功能模板、样式主题与课程页面示例。",
 };
 
-/** Day 08–09 功能与样式模板 Gallery 路由。 */
+/** 功能与样式模板 Gallery 路由。 */
 export default function TemplatesPage() {
   return <TemplateGallery />;
 }

@@ -281,7 +281,6 @@ export function createCourseRunRepository(
 
         const run = runs.insert(
           CourseRunSchema.parse({
-            version: 1,
             id: input.runId ?? createStorageId("course-run"),
             taskId: input.taskId,
             courseId: input.courseId,
@@ -298,7 +297,6 @@ export function createCourseRunRepository(
         );
         const architectWorkOrder = workOrders.insert(
           WorkOrderSchema.parse({
-            version: 1,
             lockVersion: 0,
             id:
               input.architectWorkOrderId ??
@@ -758,7 +756,6 @@ function createPageWorkOrder(input: {
 }) {
   const hasDependencies = input.pageTask.buildDependsOnPageIds.length > 0;
   return WorkOrderSchema.parse({
-    version: 1,
     lockVersion: 0,
     id: requiredMapValue(input.pageOrderIds, input.pageTask.pageId),
     taskId: input.run.taskId,
@@ -829,7 +826,7 @@ function supersedeOldArchitectureBranch(input: {
         expectedLeaseOwner: current.leaseOwner,
       })
     ) {
-      throw new Error(`旧 WorkOrder ${current.id} 失效处理发生并发冲突`);
+      throw new Error(`被替代 WorkOrder ${current.id} 失效处理发生并发冲突`);
     }
   }
 }

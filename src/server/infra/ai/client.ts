@@ -34,7 +34,7 @@ const DEFAULT_STRUCTURED_TIMEOUT_MS = 60_000;
 type AiCacheRequest = {
   input: unknown;
   namespace: string;
-  schemaVersion: string;
+  schemaFingerprint: string;
 };
 
 export type AiClientRequest = {
@@ -44,7 +44,7 @@ export type AiClientRequest = {
   maxTokens?: number;
   messages: UIMessage[];
   model?: LanguageModel;
-  promptVersion?: string;
+  promptFingerprint?: string;
   systemPrompt?: string;
   temperature?: number;
   timeoutMs?: number;
@@ -60,7 +60,7 @@ export type StructuredAiClientRequest<T> = {
   model?: LanguageModel;
   normalizeOutput?: (output: unknown) => unknown;
   prompt: string;
-  promptVersion?: string;
+  promptFingerprint?: string;
   schema: z.ZodType<T>;
   schemaDescription?: string;
   schemaName: string;
@@ -225,7 +225,7 @@ export async function generateStructuredObjectSafe<T>(
   } catch (error) {
     logAiError("generate-object:error", error, traceId, startedAt, {
       capability: request.capability ?? "general",
-      promptVersion: request.promptVersion,
+      promptFingerprint: request.promptFingerprint,
       schemaName: request.schemaName,
     });
     throw error;
@@ -302,7 +302,7 @@ function createRequestCacheKey<T>(
   request: StructuredAiClientRequest<T>,
   candidate: ModelCandidate | undefined,
 ) {
-  if (!request.cache || !request.promptVersion || !candidate) return undefined;
+  if (!request.cache || !request.promptFingerprint || !candidate) return undefined;
   if (candidate.tier === "custom") return undefined;
 
   try {
@@ -310,8 +310,8 @@ function createRequestCacheKey<T>(
       input: request.cache.input,
       model: candidate.identity,
       namespace: request.cache.namespace,
-      promptVersion: request.promptVersion,
-      schemaVersion: request.cache.schemaVersion,
+      promptFingerprint: request.promptFingerprint,
+      schemaFingerprint: request.cache.schemaFingerprint,
     });
   } catch {
     return undefined;
@@ -342,7 +342,7 @@ function logAiEvent(event: string, request: AiClientRequest) {
     hasSystemPrompt: Boolean(request.systemPrompt),
     temperature: request.temperature,
     maxTokens: request.maxTokens,
-    promptVersion: request.promptVersion,
+    promptFingerprint: request.promptFingerprint,
     timeoutMs: request.timeoutMs ?? DEFAULT_TEXT_TIMEOUT_MS,
     fallbackTimeoutMs: request.fallbackTimeoutMs,
   });
@@ -357,7 +357,7 @@ function logStructuredAiEvent<T>(
     traceId: request.traceId,
     capability: request.capability ?? "general",
     promptLength: request.prompt.length,
-    promptVersion: request.promptVersion,
+    promptFingerprint: request.promptFingerprint,
     schemaName: request.schemaName,
     hasSystemPrompt: Boolean(request.systemPrompt),
     temperature: request.temperature,
@@ -393,7 +393,7 @@ function logAiError(
   startedAt: number,
   context: {
     capability?: AiCapability | "general";
-    promptVersion?: string;
+    promptFingerprint?: string;
     schemaName?: string;
   } = {},
 ) {

@@ -367,7 +367,7 @@ function authorizeArchitectToolCall(
   ) {
     throw new FatalAgentRuntimeError(
       "ARCHITECT_TRACE_FENCING_FAILED",
-      "CourseRun trace 或课程范围已变化，拒绝旧 Agent 继续执行。",
+      "CourseRun trace 或课程范围已变化，拒绝失效 Agent 继续执行。",
     );
   }
   if (
@@ -608,7 +608,7 @@ function toArtifactRef(artifact: {
   courseId: string;
   pageId?: string;
   scopeKey: string;
-  version: number;
+  revision: number;
   contentHash: string;
 }): ArtifactRef {
   return {
@@ -617,7 +617,7 @@ function toArtifactRef(artifact: {
     courseId: artifact.courseId,
     pageId: artifact.pageId,
     scopeKey: artifact.scopeKey,
-    version: artifact.version,
+    revision: artifact.revision,
     contentHash: artifact.contentHash,
   };
 }

@@ -9,7 +9,6 @@ vi.mock("@/server/reference/parse", () => ({
 import { POST } from "../../../../src/app/api/references/parse/route";
 
 const pack = {
-  version: 1,
   id: "ref-1234567890abcdef12345678",
   sourceName: "solar.txt",
   sourceType: "txt",

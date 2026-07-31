@@ -116,7 +116,7 @@ async function runRecoveryScan(
   const skippedActiveLeaseTaskIds: string[] = [];
 
   const recoverableTasks = listed.items
-    .filter(isActiveAgentV2Task)
+    .filter(isActiveTask)
     .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
 
   for (const task of recoverableTasks) {
@@ -190,14 +190,11 @@ async function runRecoveryScan(
   };
 }
 
-function isActiveAgentV2Task(
-  task: CourseTaskRecord,
-): task is Extract<CourseTaskRecord, { source: "agent-v2" }> {
+function isActiveTask(task: CourseTaskRecord) {
   return (
-    task.source === "agent-v2" &&
-    (task.status === "queued" ||
+    task.status === "queued" ||
       task.status === "running" ||
-      task.status === "paused")
+      task.status === "paused"
   );
 }
 

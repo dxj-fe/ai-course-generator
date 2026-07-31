@@ -29,8 +29,7 @@ function createGeneration(
   overrides: Partial<CourseGenerationState> = {},
 ): CourseGenerationState {
   return {
-    version: 1,
-    courseId: "course-day-20",
+    courseId: "course-fixture-20",
     traceId: "trace-current",
     userPrompt: "生成三页课程",
     status: "running",
@@ -55,8 +54,8 @@ function createGeneration(
 
 function createRun(generation: CourseGenerationState): KeyaCourseRun {
   return {
-    id: "run-day-20",
-    taskId: "task-day-20",
+    id: "run-fixture-20",
+    taskId: "task-fixture-20",
     courseId: generation.courseId,
     prompt: generation.userPrompt,
     traceId: generation.traceId,

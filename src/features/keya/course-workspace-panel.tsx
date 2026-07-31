@@ -24,11 +24,6 @@ type CourseWorkspacePanelProps = {
   run?: KeyaCourseRun;
   brief?: CourseCreationBrief;
   busy?: boolean;
-  onGenerateDesign(): void;
-  onGenerateAssets(pageId: string): void;
-  onGenerateHtml(pageId: string): void;
-  onEvaluatePage(pageId: string): void;
-  onGeneratePage(pageId: string): void;
   onOpenHtmlPreview(pageId: string): void;
   onOpenCoursePlayer?(): void;
   onResumeCourse(): void;
@@ -62,9 +57,8 @@ export function CourseWorkspacePanel({
   exportError,
   taskStatus,
 }: CourseWorkspacePanelProps) {
-  const outline =
-    run?.generation?.outline ?? run?.planner.data?.state.outline;
-  const intent = run?.generation?.intent ?? run?.planner.data?.intent;
+  const outline = run?.generation?.outline;
+  const intent = run?.generation?.intent;
   const generationStatus = run?.generation?.status;
   const requestFailed =
     !run?.generation && run?.planner.status === "failed";
@@ -389,8 +383,7 @@ function buildDraftSections(
   run?: KeyaCourseRun,
   taskStatus?: CourseTaskStatus,
 ): DraftSection[] {
-  const outline =
-    run?.generation?.outline ?? run?.planner.data?.state.outline;
+  const outline = run?.generation?.outline;
   if (outline) {
     const generationFailed =
       taskStatus === "failed" || run?.generation?.status === "failed";
@@ -399,8 +392,7 @@ function buildDraftSections(
         ({ pageId }) => pageId === page.id,
       );
       const htmlStage = run?.pageHtml[page.id];
-      const html =
-        generated?.htmlOutput?.html ?? htmlStage?.data?.state.htmlOutput?.html;
+      const html = generated?.htmlOutput?.html;
       const status = generated?.status ?? htmlStage?.status ?? "idle";
 
       return {

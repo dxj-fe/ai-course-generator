@@ -211,7 +211,7 @@ export function createHtmlEngineerModelStep(
       const htmlOutput = HtmlOutputSchema.parse({
         html,
         generatedAt: new Date().toISOString(),
-        version: 1,
+        revision: 1,
       });
 
       emit({
@@ -288,10 +288,7 @@ function extractHtmlContractIssues(error: AiSchemaValidationError) {
     .map((issue) => issue.slice(0, 500));
 }
 
-/**
- * 新生成页面使用平台流式画布合同。运行时据此只覆盖根画布尺寸，
- * 旧课程没有此标记，仍按其原始固定尺寸做 contain-fit。
- */
+/** 生成页面统一声明平台流式画布合同。 */
 export function normalizeGeneratedCanvasRoot(output: unknown) {
   if (typeof output !== "string") return output;
 
@@ -398,7 +395,7 @@ async function generateHtml(
     capability: "html",
     maxTokens: 8_000,
     messages,
-    promptVersion: prompts.version,
+    promptFingerprint: prompts.fingerprint,
     systemPrompt: prompts.systemPrompt,
     temperature: 0.2,
     timeoutMs: getHtmlEngineerTimeoutMs(),

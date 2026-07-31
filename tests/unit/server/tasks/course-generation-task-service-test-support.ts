@@ -1,10 +1,10 @@
 import { vi } from "vitest";
 
 import type {
-  cancelCourseGenerationAgentV2Run,
-  runCourseGenerationAgentV2,
+  cancelCourseGenerationRun,
+  runCourseGeneration,
 } from "../../../../src/server/course/run/engine";
-import type { loadCourseGenerationAgentV2State } from "../../../../src/server/course/run/state-loader";
+import type { loadCourseGenerationState } from "../../../../src/server/course/run/state-loader";
 import type {
   CourseStore,
 } from "../../../../src/server/course/store/course";
@@ -26,9 +26,9 @@ import type {
 } from "../../../../src/shared/course-schema";
 
 export const timestamp = "2026-07-15T06:00:00.000Z";
-export const taskId = "task-day-19-service";
-export const courseId = "course-day-19-service";
-export const traceId = "trace-day-19-service";
+export const taskId = "task-fixture-19-service";
+export const courseId = "course-fixture-19-service";
+export const traceId = "trace-fixture-19-service";
 export const creationBrief = {
   originalRequest: "生成三页太阳系互动课程",
   topic: "太阳系",
@@ -39,15 +39,14 @@ export const creationBrief = {
   language: "zh-CN" as const,
 };
 export const agentTaskInput = {
-  source: "agent-v2" as const,
   creationBrief,
 };
 
 export function createTaskServiceFixture(
   overrides: {
-    runAgentV2?: typeof runCourseGenerationAgentV2;
-    cancelAgentV2Run?: typeof cancelCourseGenerationAgentV2Run;
-    loadAgentV2State?: typeof loadCourseGenerationAgentV2State;
+    runCourse?: typeof runCourseGeneration;
+    cancelCourseRun?: typeof cancelCourseGenerationRun;
+    loadCourseState?: typeof loadCourseGenerationState;
     logSink?: CourseGenerationLogSink;
     eventBus?: CourseTaskEventBus;
     createTaskId?: () => string;
@@ -159,11 +158,11 @@ export function createTaskServiceFixture(
     },
   };
   const eventBus = overrides.eventBus ?? createCourseTaskEventBus();
-  const runAgentV2 =
-    overrides.runAgentV2 ??
+  const runCourse =
+    overrides.runCourse ??
     (vi.fn(async () => {
-      throw new Error("runAgentV2 should not have been called");
-    }) as typeof runCourseGenerationAgentV2);
+      throw new Error("runCourse should not have been called");
+    }) as typeof runCourseGeneration);
   const infoLogs: CourseGenerationLogEntry[] = [];
   const errorLogs: CourseGenerationLogEntry[] = [];
   const logSink: CourseGenerationLogSink = overrides.logSink ?? {
@@ -174,9 +173,9 @@ export function createTaskServiceFixture(
     taskStore,
     courseStore,
     eventBus,
-    runAgentV2,
-    cancelAgentV2Run: overrides.cancelAgentV2Run ?? (() => undefined),
-    loadAgentV2State: overrides.loadAgentV2State ?? (() => undefined),
+    runCourse,
+    cancelCourseRun: overrides.cancelCourseRun ?? (() => undefined),
+    loadCourseState: overrides.loadCourseState ?? (() => undefined),
     now: () => timestamp,
     createTaskId: overrides.createTaskId ?? (() => taskId),
     createCourseId: overrides.createCourseId ?? (() => courseId),
@@ -189,7 +188,7 @@ export function createTaskServiceFixture(
     taskStore,
     courseStore,
     eventBus,
-    runAgentV2,
+    runCourse,
     tasks,
     courses,
     infoLogs,
@@ -209,7 +208,6 @@ export function courseState(
   eventCount: number,
 ): CourseGenerationState {
   return {
-    version: 1,
     courseId,
     traceId,
     userPrompt: "生成五页太阳系互动课程",
@@ -217,7 +215,7 @@ export function courseState(
     currentStage: "planner",
     pages: [],
     events: Array.from({ length: eventCount }, (_, index) => ({
-      id: `event-day-30-${index + 1}`,
+      id: `event-fixture-30-${index + 1}`,
       sequence: index + 1,
       type: index === 0 ? ("agent_start" as const) : ("error" as const),
       traceId,
@@ -251,7 +249,6 @@ export function runningCheckpoint(
   userPrompt: string,
 ): CourseGenerationState {
   return {
-    version: 1,
     courseId: checkpointCourseId,
     traceId: checkpointTraceId,
     userPrompt,

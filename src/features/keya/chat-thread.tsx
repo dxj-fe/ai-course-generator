@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown as ChevronDownIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import type { CourseTaskConnectionStatus } from "@/features/course-planner/hooks/use-sse-task";
+import type { CourseTaskConnectionStatus } from "@/features/keya/use-course-task-stream";
 import { CourseCreationCards } from "@/features/keya/course-creation-cards";
 import type {
   ClarificationQuestion,

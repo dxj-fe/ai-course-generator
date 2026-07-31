@@ -33,9 +33,9 @@ import {
   PageSummarySchema,
 } from "../../../../src/shared/course-schema";
 import {
-  createAgentV2Brief,
-  createAgentV2ReferencePack,
-} from "../../../fixtures/agent-v2-course-architecture";
+  createBrief,
+  createReferencePack,
+} from "../../../fixtures/course-architecture";
 import {
   ENGINE_OWNER,
   PAGE_ID,
@@ -219,7 +219,7 @@ describe("Page Builder ToolLoopAgent", () => {
         toolName: "search_references",
         input: {
           pageId: PAGE_ID,
-          referencePackId: createAgentV2ReferencePack().id,
+          referencePackId: createReferencePack().id,
           chunkIds: ["chunk-02"],
         },
       }, "2026-07-29T12:03:30.000Z"),
@@ -237,7 +237,7 @@ describe("Page Builder ToolLoopAgent", () => {
       label: "ReferencePack 缺少 PageTask 封口 chunk",
       referencePacks: [
         {
-          ...createAgentV2ReferencePack(),
+          ...createReferencePack(),
           keyFacts: [],
           chunks: [
             {
@@ -261,7 +261,7 @@ describe("Page Builder ToolLoopAgent", () => {
         workOrderLeaseOwner: PAGE_OWNER,
         runLeaseOwner: ENGINE_OWNER,
         traceId: prepared.run.traceId,
-        creationBrief: createAgentV2Brief(),
+        creationBrief: createBrief(),
         referencePacks,
       }),
     ).toThrowError(
@@ -283,8 +283,8 @@ describe("Page Builder ToolLoopAgent", () => {
           workOrderLeaseOwner: PAGE_OWNER,
           runLeaseOwner: ENGINE_OWNER,
           traceId: prepared.run.traceId,
-          creationBrief: createAgentV2Brief(),
-          referencePacks: [createAgentV2ReferencePack()],
+          creationBrief: createBrief(),
+          referencePacks: [createReferencePack()],
         },
         {
           createAgent: (settings) => ({
@@ -344,8 +344,8 @@ describe("Page Builder ToolLoopAgent", () => {
           workOrderLeaseOwner: PAGE_OWNER,
           runLeaseOwner: ENGINE_OWNER,
           traceId: prepared.run.traceId,
-          creationBrief: createAgentV2Brief(),
-          referencePacks: [createAgentV2ReferencePack()],
+          creationBrief: createBrief(),
+          referencePacks: [createReferencePack()],
         },
         {
           createAgent: (settings) => ({
@@ -421,8 +421,8 @@ describe("Page Builder ToolLoopAgent", () => {
         workOrderLeaseOwner: PAGE_OWNER,
         runLeaseOwner: ENGINE_OWNER,
         traceId: prepared.run.traceId,
-        creationBrief: createAgentV2Brief(),
-        referencePacks: [createAgentV2ReferencePack()],
+        creationBrief: createBrief(),
+        referencePacks: [createReferencePack()],
       },
       {
         createAgent: (settings) => ({
@@ -755,8 +755,8 @@ describe("Page Builder ToolLoopAgent", () => {
       workOrderLeaseOwner: "page-builder-recovered-2",
       runLeaseOwner: ENGINE_OWNER,
       traceId: prepared.run.traceId,
-      creationBrief: createAgentV2Brief(),
-      referencePacks: [createAgentV2ReferencePack()],
+      creationBrief: createBrief(),
+      referencePacks: [createReferencePack()],
     });
 
     expect(recovered.progress.contextRead).toBe(false);
@@ -828,8 +828,8 @@ describe("Page Builder ToolLoopAgent", () => {
       workOrderLeaseOwner: "page-builder-recovered-3",
       runLeaseOwner: ENGINE_OWNER,
       traceId: prepared.run.traceId,
-      creationBrief: createAgentV2Brief(),
-      referencePacks: [createAgentV2ReferencePack()],
+      creationBrief: createBrief(),
+      referencePacks: [createReferencePack()],
     });
     await executeTool(
       createPageBuilderTools(recoveredAfterSuccess, {
@@ -867,8 +867,8 @@ describe("Page Builder ToolLoopAgent", () => {
         workOrderLeaseOwner: PAGE_OWNER,
         runLeaseOwner: ENGINE_OWNER,
         traceId: prepared.run.traceId,
-        creationBrief: createAgentV2Brief(),
-        referencePacks: [createAgentV2ReferencePack()],
+        creationBrief: createBrief(),
+        referencePacks: [createReferencePack()],
       },
       {
         createAgent: scriptedPageBuilderFactory([
@@ -888,7 +888,6 @@ describe("Page Builder ToolLoopAgent", () => {
             html,
             quality,
             summary: PageSummarySchema.parse({
-              version: 1,
               courseId: prepared.workOrder.courseId,
               pageId: PAGE_ID,
               order: 1,
@@ -939,8 +938,8 @@ describe("Page Builder ToolLoopAgent", () => {
         workOrderLeaseOwner: PAGE_OWNER,
         runLeaseOwner: ENGINE_OWNER,
         traceId: prepared.run.traceId,
-        creationBrief: createAgentV2Brief(),
-        referencePacks: [createAgentV2ReferencePack()],
+        creationBrief: createBrief(),
+        referencePacks: [createReferencePack()],
       },
       {
         createAgent: (settings) => ({

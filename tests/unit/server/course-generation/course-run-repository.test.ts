@@ -30,10 +30,8 @@ async function temporaryRoot() {
 
 function architecture(): CourseArchitecture {
   return {
-    version: 1,
     courseId: "course-repository-01",
     coursePack: {
-      version: 1,
       courseId: "course-repository-01",
       topic: "太阳系",
       facts: [],
@@ -42,7 +40,6 @@ function architecture(): CourseArchitecture {
       constraints: ["用通俗中文解释"],
     },
     blueprint: {
-      version: 1,
       courseId: "course-repository-01",
       title: "三步看懂太阳系",
       audience: {
@@ -93,7 +90,6 @@ function pageTask(
 ): CourseArchitecture["pageTasks"][number] {
   const pageId = overrides.pageId ?? "page-01";
   return {
-    version: 1,
     pageId,
     order: overrides.order ?? 1,
     title: overrides.title ?? "课程页面",
@@ -383,12 +379,17 @@ describe("CourseRunRepository", () => {
     const repository = createCourseRunRepository({ rootDir });
     const taskStore = createCourseTaskStore({ rootDir });
     const task: CourseTaskRecord = {
-      version: 1,
       taskId: "task-control-trace-race",
       courseId: "course-control-trace-race",
       traceId: "trace-before-resume",
       userPrompt: "生成太阳系课程",
-      source: "workflow",
+      creationBrief: {
+        originalRequest: "生成太阳系课程",
+        topic: "太阳系",
+        audience: "初学者",
+        learningMode: "mixed",
+        language: "zh-CN",
+      },
       status: "paused",
       createdAt: NOW,
       updatedAt: NOW,

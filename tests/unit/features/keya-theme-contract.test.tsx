@@ -62,6 +62,5 @@ describe("课芽全产品主题契约", () => {
     expect(markup).toContain("样式主题");
     expect(markup).toContain("--course-color-background");
     expect(markup).not.toContain("返回工程训练台");
-    expect(markup).not.toContain("Day 09");
   });
 });

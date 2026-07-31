@@ -18,9 +18,8 @@ const completedAt = "2026-07-15T01:00:05.000Z";
 
 function createRunningState(): CourseGenerationState {
   return CourseGenerationStateSchema.parse({
-    version: 1,
-    courseId: "course-day-18",
-    traceId: "trace-day-18",
+    courseId: "course-fixture-18",
+    traceId: "trace-fixture-18",
     userPrompt: "为 8 岁儿童生成太阳系互动课程",
     status: "running",
     currentStage: "intent",
@@ -65,6 +64,16 @@ function createCompletedState(): CourseGenerationState {
         pageId: page.id,
         functionalTemplateId: page.functionalTemplateId,
         title: page.title,
+        runtime: {
+          ...pageContentDsl.runtime,
+          completionRule:
+            page.interactionType === "navigate"
+              ? { type: "view" as const }
+              : {
+                  type: "interaction-complete" as const,
+                  interactionId: `interaction-${page.id}`,
+                },
+        },
         interaction:
           page.interactionType === "navigate"
             ? {
@@ -78,7 +87,7 @@ function createCompletedState(): CourseGenerationState {
       htmlOutput: {
         html: `<!doctype html><html><body>${page.title}</body></html>`,
         generatedAt: completedAt,
-        version: 1,
+        revision: 1,
       },
     })),
     updatedAt: completedAt,
@@ -87,7 +96,7 @@ function createCompletedState(): CourseGenerationState {
   });
 }
 
-describe("Day 18 course generation state", () => {
+describe("course generation state", () => {
   it("accepts a minimal running checkpoint before planning", () => {
     expect(createRunningState()).toMatchObject({
       status: "running",
@@ -198,7 +207,7 @@ describe("Day 18 course generation state", () => {
           id: "event-01",
           sequence: 1,
           type: "model_call",
-          traceId: "trace-day-18",
+          traceId: "trace-fixture-18",
           timestamp: startedAt,
           step: 1,
           summary: "Intent Agent 已返回课程意图。",
@@ -215,7 +224,7 @@ describe("Day 18 course generation state", () => {
   it("接受有间隔的持久化事件游标，并拒绝游标回退", () => {
     const baseEvent = {
       type: "agent_start" as const,
-      traceId: "trace-day-18",
+      traceId: "trace-fixture-18",
       timestamp: startedAt,
       step: 1,
       summary: "课程 Agent 已开始。",
@@ -269,7 +278,7 @@ describe("Day 18 course generation state", () => {
           id: "event-01",
           sequence: 1,
           type: "finish",
-          traceId: "trace-day-18",
+          traceId: "trace-fixture-18",
           timestamp: completedAt,
           step: 1,
           summary: "页面 HTML 已生成。",

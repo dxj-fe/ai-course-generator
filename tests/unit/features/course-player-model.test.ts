@@ -45,18 +45,9 @@ describe("course player model", () => {
       interactionType: "reveal",
       generationStatus: "ready",
       html: "<!doctype html><html><head></head><body>恒星与行星</body></html>",
-      htmlVersion: 3,
+      htmlRevision: 3,
       interaction: pageContentDsl.interaction,
-      runtime: {
-        runtimeVersion: 1,
-        sceneKind: "demo",
-        visualPrimitive: "concept-map",
-        motionPlan: { intensity: "subtle", cuePoints: [] },
-        completionRule: {
-          type: "interaction-complete",
-          interactionId: "interaction-page-02-knowledge",
-        },
-      },
+      runtime: pageContentDsl.runtime,
       narration: pageContentDsl.narration,
     });
     expect(manifest.sections[0]).not.toHaveProperty("html");
@@ -135,7 +126,6 @@ describe("course player model", () => {
 
 function courseState(): CourseGenerationState {
   return {
-    version: 1,
     courseId: "course-player-model",
     traceId: "trace-should-not-leak",
     userPrompt: "生成三节太阳系课程",
@@ -161,7 +151,7 @@ function courseState(): CourseGenerationState {
         htmlOutput: {
           html: "<!doctype html><html><head></head><body>恒星与行星</body></html>",
           generatedAt: "2026-07-24T01:00:00.000Z",
-          version: 3,
+          revision: 3,
         },
       },
       {
@@ -212,7 +202,7 @@ function withoutReadySections(
       ...section,
       generationStatus: "pending",
       html: undefined,
-      htmlVersion: undefined,
+      htmlRevision: undefined,
     })),
   };
 }
@@ -243,7 +233,7 @@ function section(
     interactionType: "none",
     generationStatus,
     ...(generationStatus === "ready"
-      ? { html: `<html>${order}</html>`, htmlVersion: 1 }
+      ? { html: `<html>${order}</html>`, htmlRevision: 1 }
       : {}),
     narration: [],
   };

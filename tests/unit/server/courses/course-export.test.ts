@@ -30,15 +30,14 @@ describe("course export", () => {
     expect(searchable).toContain("course.json");
     expect(searchable).toContain("pages/01-page-01-cover.html");
     expect(searchable).toContain("assets/manifest.json");
-    expect(archive.fileName).toBe("course-day-34-export.zip");
+    expect(archive.fileName).toBe("course-fixture-34-export.zip");
   });
 });
 
 function runningState(): CourseGenerationState {
   return CourseGenerationStateSchema.parse({
-    version: 1,
-    courseId: "course-day-34-export",
-    traceId: "trace-day-34-export",
+    courseId: "course-fixture-34-export",
+    traceId: "trace-fixture-34-export",
     userPrompt: "生成太阳系课程",
     status: "running",
     currentStage: "intent",
@@ -76,6 +75,16 @@ function completedState() {
         pageId: page.id,
         functionalTemplateId: page.functionalTemplateId,
         title: page.title,
+        runtime: {
+          ...pageContentDsl.runtime,
+          completionRule:
+            page.interactionType === "navigate"
+              ? { type: "view" as const }
+              : {
+                  type: "interaction-complete" as const,
+                  interactionId: `interaction-${page.id}`,
+                },
+        },
         interaction:
           page.interactionType === "navigate"
             ? { type: "navigate", actionLabel: "继续学习", destination: "next" }
@@ -83,7 +92,7 @@ function completedState() {
       },
       assets: [],
       htmlOutput: {
-        version: 1,
+        revision: 1,
         html: `<!doctype html><html><body>${page.title}</body></html>`,
         generatedAt: completedAt,
       },

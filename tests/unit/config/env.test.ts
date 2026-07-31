@@ -31,13 +31,13 @@ describe("getImageModelConfig", () => {
   it("allows a dedicated image provider to override Ark", () => {
     vi.stubEnv("ARK_API_KEY", "ark-test-key");
     vi.stubEnv("IMAGE_API_KEY", "image-test-key");
-    vi.stubEnv("IMAGE_BASE_URL", "https://images.example.test/v1");
+    vi.stubEnv("IMAGE_BASE_URL", "https://images.example.test/api");
     vi.stubEnv("IMAGE_MODEL_ID", "image-model");
     vi.stubEnv("IMAGE_PROVIDER_NAME", "custom-images");
 
     expect(getImageModelConfig()).toEqual({
       apiKey: "image-test-key",
-      baseURL: "https://images.example.test/v1",
+      baseURL: "https://images.example.test/api",
       modelName: "image-model",
       providerName: "custom-images",
     });
@@ -50,7 +50,9 @@ describe("getModelConfig", () => {
     vi.stubEnv("MODEL_PROVIDER_BALANCED", "ark");
     vi.stubEnv("MODEL_PROVIDER_CHEAP", "ark");
     vi.stubEnv("ARK_API_KEY", "ark-test-key");
-    vi.stubEnv("ARK_MODEL_ID", "doubao-seed");
+    vi.stubEnv("ARK_MODEL_ID_STRONG", "doubao-seed");
+    vi.stubEnv("ARK_MODEL_ID_BALANCED", "doubao-seed");
+    vi.stubEnv("ARK_MODEL_ID_CHEAP", "doubao-seed");
     vi.stubEnv("MODEL_API_KEY", "");
 
     expect(
@@ -73,16 +75,17 @@ describe("getModelConfig", () => {
     ]);
   });
 
-  it("uses a tier model when configured and falls back to the legacy model", () => {
-    vi.stubEnv("MODEL_PROVIDER_STRONG", "");
-    vi.stubEnv("MODEL_PROVIDER_CHEAP", "");
+  it("requires a model for every selected tier", () => {
+    vi.stubEnv("MODEL_PROVIDER_STRONG", "ark");
+    vi.stubEnv("MODEL_PROVIDER_CHEAP", "ark");
     vi.stubEnv("ARK_API_KEY", "ark-test-key");
-    vi.stubEnv("ARK_MODEL_ID", "balanced-default");
     vi.stubEnv("ARK_MODEL_ID_STRONG", "strong-model");
     vi.stubEnv("ARK_MODEL_ID_CHEAP", "");
 
     expect(getModelConfig("strong").modelName).toBe("strong-model");
-    expect(getModelConfig("cheap").modelName).toBe("balanced-default");
+    expect(() => getModelConfig("cheap")).toThrow(
+      "Missing required environment variable: ARK_MODEL_ID_CHEAP",
+    );
   });
 
   it("selects Ark and generic providers independently for each tier", () => {
@@ -90,14 +93,15 @@ describe("getModelConfig", () => {
     vi.stubEnv("MODEL_PROVIDER_BALANCED", "ark");
     vi.stubEnv("MODEL_PROVIDER_CHEAP", "ark");
     vi.stubEnv("MODEL_API_KEY", "generic-test-key");
-    vi.stubEnv("MODEL_BASE_URL", "https://models.example.test/v1");
-    vi.stubEnv("MODEL_NAME", "gpt-5.5");
+    vi.stubEnv("MODEL_BASE_URL", "https://models.example.test/api");
+    vi.stubEnv("MODEL_NAME_STRONG", "gpt-5.5");
     vi.stubEnv("ARK_API_KEY", "ark-test-key");
-    vi.stubEnv("ARK_MODEL_ID", "doubao-mini");
+    vi.stubEnv("ARK_MODEL_ID_BALANCED", "doubao-mini");
+    vi.stubEnv("ARK_MODEL_ID_CHEAP", "doubao-mini");
 
     expect(getModelConfig("strong")).toEqual({
       apiKey: "generic-test-key",
-      baseURL: "https://models.example.test/v1",
+      baseURL: "https://models.example.test/api",
       modelName: "gpt-5.5",
       providerName: "model-provider",
     });
@@ -110,22 +114,24 @@ describe("getModelConfig", () => {
     expect(getModelConfig("cheap").providerName).toBe("volcengine-ark");
   });
 
-  it("keeps the legacy Ark-first behavior when no selector is configured", () => {
+  it("requires an explicit provider selector", () => {
     vi.stubEnv("MODEL_PROVIDER_STRONG", "");
     vi.stubEnv("ARK_API_KEY", "ark-test-key");
-    vi.stubEnv("ARK_MODEL_ID", "doubao-mini");
+    vi.stubEnv("ARK_MODEL_ID_STRONG", "doubao-mini");
     vi.stubEnv("MODEL_API_KEY", "generic-test-key");
-    vi.stubEnv("MODEL_BASE_URL", "https://models.example.test/v1");
-    vi.stubEnv("MODEL_NAME", "gpt-5.5");
+    vi.stubEnv("MODEL_BASE_URL", "https://models.example.test/api");
+    vi.stubEnv("MODEL_NAME_STRONG", "gpt-5.5");
 
-    expect(getModelConfig("strong").providerName).toBe("volcengine-ark");
+    expect(() => getModelConfig("strong")).toThrow(
+      "Missing required environment variable: MODEL_PROVIDER_STRONG",
+    );
   });
 
   it("does not silently switch providers when the selected provider is incomplete", () => {
     vi.stubEnv("MODEL_PROVIDER_STRONG", "generic");
     vi.stubEnv("MODEL_API_KEY", "");
     vi.stubEnv("ARK_API_KEY", "ark-test-key");
-    vi.stubEnv("ARK_MODEL_ID", "doubao-mini");
+    vi.stubEnv("ARK_MODEL_ID_STRONG", "doubao-mini");
 
     expect(() => getModelConfig("strong")).toThrow(
       "Missing required environment variable: MODEL_API_KEY",

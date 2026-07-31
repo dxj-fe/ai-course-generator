@@ -39,20 +39,6 @@ describe("template tool definitions", () => {
     expect(result.templates[0].visualStyle).toBe("minimal");
   });
 
-  it("maps the professional CourseIntent style to minimal", async () => {
-    const registry = new ExecutableToolRegistry(() => {}).register(
-      searchStyleTemplateTool,
-    );
-    const result = await registry.execute<TemplateSearchOutput>(
-      searchStyleTemplateTool.name,
-      { visualStyle: "professional", audience: "企业管理者", limit: 1 },
-      context,
-    );
-
-    expect(result.templates[0].id).toBe("minimal");
-    expect(result.templates[0].reason).toContain("visualStyle");
-  });
-
   it("reports an invalid CourseIntent", async () => {
     const registry = new ExecutableToolRegistry(() => {}).register(
       validateCourseIntentTool,

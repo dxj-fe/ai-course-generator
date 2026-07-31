@@ -15,7 +15,7 @@ const { courses: courseStore } = getWebServices();
 const CoverQuerySchema = z
   .object({
     pageId: z.string().min(1).max(80),
-    version: z.coerce.number().int().positive(),
+    revision: z.coerce.number().int().positive(),
     generatedAt: z.string().datetime({ offset: true }),
   })
   .strict();
@@ -64,7 +64,7 @@ export async function GET(
     firstPage?.status !== "completed" ||
     !output ||
     firstPage.pageId !== parsedQuery.data.pageId ||
-    output.version !== parsedQuery.data.version ||
+    output.revision !== parsedQuery.data.revision ||
     output.generatedAt !== parsedQuery.data.generatedAt
   ) {
     return new Response(null, { status: 404 });

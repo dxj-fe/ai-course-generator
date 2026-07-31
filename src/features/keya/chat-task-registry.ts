@@ -1,7 +1,4 @@
-import type {
-  CourseTaskRuntimeSource,
-  CourseTaskStatus,
-} from "@/shared/course-schema";
+import type { CourseTaskStatus } from "@/shared/course-schema";
 import type { KeyaConversation } from "@/types/keya";
 
 export type ActiveCourseTask = {
@@ -14,7 +11,6 @@ export type ActiveCourseTask = {
   runStartedAt: number;
   requestStartedAt: number;
   mode: "create" | "resume";
-  source: CourseTaskRuntimeSource;
 };
 
 export type ActiveCourseTaskRegistry = Record<string, ActiveCourseTask>;
@@ -58,7 +54,6 @@ export function createInitialTaskRegistry(
             runStartedAt: run.startedAt,
             requestStartedAt: run.startedAt,
             mode: "create" as const,
-            source: run.source ?? "workflow",
           },
         ],
       ];

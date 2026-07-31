@@ -16,7 +16,6 @@ function failedRun(): KeyaCourseRun {
     traceId: "trace-private",
     startedAt: 0,
     generation: {
-      version: 1,
       courseId: "course-failed-run",
       traceId: "trace-private",
       userPrompt: "生成前端面试课程",
@@ -46,24 +45,43 @@ function failedRun(): KeyaCourseRun {
 
 function readyRun(): KeyaCourseRun {
   const firstPage = courseDesignOutline.pages[0]!;
+  const generatedAt = "2026-07-24T08:00:00.000Z";
   return {
     id: "run-ready",
     prompt: "生成太阳系课程",
     traceId: "trace-ready",
     startedAt: 0,
-    planner: {
-      status: "completed",
+    generation: {
+      courseId: "course-ready-run",
+      traceId: "trace-ready",
+      userPrompt: "生成太阳系课程",
+      status: "running",
+      currentStage: "page_writer",
+      currentPageId: courseDesignOutline.pages[1]!.id,
+      intent: courseDesignIntent,
+      outline: courseDesignOutline,
+      pages: courseDesignOutline.pages.map((page, index) => ({
+        pageId: page.id,
+        order: page.order,
+        status: index === 0 ? "completed" : "pending",
+        currentStage: index === 0 ? "complete" : "page_writer",
+        assets: [],
+        ...(index === 0
+          ? {
+              htmlOutput: {
+                html: `<main>${firstPage.title}</main>`,
+                generatedAt,
+                revision: 1,
+              },
+            }
+          : {}),
+      })),
       events: [],
-      data: {
-        traceId: "trace-ready",
-        intent: courseDesignIntent,
-        state: {
-          status: "completed",
-          events: [],
-          outline: courseDesignOutline,
-        },
-      },
+      errors: [],
+      startedAt: generatedAt,
+      updatedAt: generatedAt,
     },
+    planner: { status: "completed", events: [] },
     design: { status: "completed", events: [] },
     pageWrites: {},
     pageAssets: {},
@@ -71,18 +89,6 @@ function readyRun(): KeyaCourseRun {
       [firstPage.id]: {
         status: "completed",
         events: [],
-        data: {
-          traceId: "trace-ready",
-          state: {
-            status: "completed",
-            events: [],
-            htmlOutput: {
-              html: `<main>${firstPage.title}</main>`,
-              generatedAt: "2026-07-24T08:00:00.000Z",
-              version: 1,
-            },
-          },
-        },
       },
     },
     pageQa: {},
@@ -107,7 +113,7 @@ function partiallyFailedRun(
     htmlOutput: {
       html: `<main>${page.title}</main>`,
       generatedAt,
-      version: 1,
+      revision: 1,
     },
   });
 
@@ -115,7 +121,6 @@ function partiallyFailedRun(
     ...readyRun(),
     id: `run-partial-${generationStatus}`,
     generation: {
-      version: 1,
       courseId: "course-partially-failed",
       traceId: "trace-partially-failed",
       userPrompt: "生成太阳系课程",
@@ -171,12 +176,7 @@ describe("CourseWorkspacePanel", () => {
     const markup = renderToStaticMarkup(
       <CourseWorkspacePanel
         brief={createCourseCreationBrief("目标是系统理解操作系统原理")}
-        onEvaluatePage={vi.fn()}
         onExportCourse={vi.fn()}
-        onGenerateAssets={vi.fn()}
-        onGenerateDesign={vi.fn()}
-        onGenerateHtml={vi.fn()}
-        onGeneratePage={vi.fn()}
         onOpenHtmlPreview={vi.fn()}
         onResumeCourse={vi.fn()}
       />,
@@ -191,12 +191,7 @@ describe("CourseWorkspacePanel", () => {
   it("shows actionable bounded failure guidance without raw provider details", () => {
     const markup = renderToStaticMarkup(
       <CourseWorkspacePanel
-        onEvaluatePage={vi.fn()}
         onExportCourse={vi.fn()}
-        onGenerateAssets={vi.fn()}
-        onGenerateDesign={vi.fn()}
-        onGenerateHtml={vi.fn()}
-        onGeneratePage={vi.fn()}
         onOpenHtmlPreview={vi.fn()}
         onResumeCourse={vi.fn()}
         run={failedRun()}
@@ -212,12 +207,7 @@ describe("CourseWorkspacePanel", () => {
   it("keeps the chapter list as the scroll region and uses a compact preview entry", () => {
     const markup = renderToStaticMarkup(
       <CourseWorkspacePanel
-        onEvaluatePage={vi.fn()}
         onExportCourse={vi.fn()}
-        onGenerateAssets={vi.fn()}
-        onGenerateDesign={vi.fn()}
-        onGenerateHtml={vi.fn()}
-        onGeneratePage={vi.fn()}
         onOpenHtmlPreview={vi.fn()}
         onOpenCoursePlayer={vi.fn()}
         onResumeCourse={vi.fn()}
@@ -234,12 +224,7 @@ describe("CourseWorkspacePanel", () => {
   it("projects checkpoint-running chapters as paused without a spinner", () => {
     const markup = renderToStaticMarkup(
       <CourseWorkspacePanel
-        onEvaluatePage={vi.fn()}
         onExportCourse={vi.fn()}
-        onGenerateAssets={vi.fn()}
-        onGenerateDesign={vi.fn()}
-        onGenerateHtml={vi.fn()}
-        onGeneratePage={vi.fn()}
         onOpenHtmlPreview={vi.fn()}
         onResumeCourse={vi.fn()}
         run={partiallyFailedRun("running")}
@@ -259,12 +244,7 @@ describe("CourseWorkspacePanel", () => {
   it("lets other chapters continue while one chapter is temporarily incomplete", () => {
     const markup = renderToStaticMarkup(
       <CourseWorkspacePanel
-        onEvaluatePage={vi.fn()}
         onExportCourse={vi.fn()}
-        onGenerateAssets={vi.fn()}
-        onGenerateDesign={vi.fn()}
-        onGenerateHtml={vi.fn()}
-        onGeneratePage={vi.fn()}
         onOpenHtmlPreview={vi.fn()}
         onResumeCourse={vi.fn()}
         run={partiallyFailedRun("running")}
@@ -281,12 +261,7 @@ describe("CourseWorkspacePanel", () => {
   it("offers one bounded retry action after the batch settles", () => {
     const markup = renderToStaticMarkup(
       <CourseWorkspacePanel
-        onEvaluatePage={vi.fn()}
         onExportCourse={vi.fn()}
-        onGenerateAssets={vi.fn()}
-        onGenerateDesign={vi.fn()}
-        onGenerateHtml={vi.fn()}
-        onGeneratePage={vi.fn()}
         onOpenHtmlPreview={vi.fn()}
         onResumeCourse={vi.fn()}
         run={partiallyFailedRun("failed")}
@@ -308,12 +283,7 @@ describe("CourseWorkspacePanel", () => {
 
     const markup = renderToStaticMarkup(
       <CourseWorkspacePanel
-        onEvaluatePage={vi.fn()}
         onExportCourse={vi.fn()}
-        onGenerateAssets={vi.fn()}
-        onGenerateDesign={vi.fn()}
-        onGenerateHtml={vi.fn()}
-        onGeneratePage={vi.fn()}
         onOpenHtmlPreview={vi.fn()}
         onResumeCourse={vi.fn()}
         run={run}

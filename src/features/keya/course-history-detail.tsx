@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { LoaderCircle, RefreshCw, TriangleAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { getCourseHistoryDetail } from "@/features/course-planner/lib/course-library-api";
+import { getCourseHistoryDetail } from "@/features/keya/api/course-library";
 import { InteractiveCoursePlayer } from "@/features/keya/interactive-course-player";
 import type { CourseHistoryDetailResponse } from "@/shared/course-schema";
 

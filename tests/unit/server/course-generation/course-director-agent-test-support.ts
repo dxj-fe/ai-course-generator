@@ -23,9 +23,9 @@ import {
   type WorkOrder,
 } from "../../../../src/shared/course-schema";
 import {
-  AGENT_V2_COURSE_ID,
-  createAgentV2Architecture,
-} from "../../../fixtures/agent-v2-course-architecture";
+  COURSE_ID,
+  createArchitecture,
+} from "../../../fixtures/course-architecture";
 import { seedRunningCourseTask } from "../../../fixtures/running-course-task";
 
 export const RUN_OWNER = "director-engine-test";
@@ -47,7 +47,7 @@ export async function prepareArchitectureRound(suffix: string) {
   const { repository, taskId } = await createRepository(suffix);
   const bootstrapped = repository.bootstrapCourseRun({
     taskId,
-    courseId: AGENT_V2_COURSE_ID,
+    courseId: COURSE_ID,
     traceId: TRACE_ID,
     now: timestamp(0),
   });
@@ -75,7 +75,7 @@ export async function prepareArchitectureRound(suffix: string) {
     workOrderLeaseOwner: `architect-${suffix}`,
     runLeaseOwner: RUN_OWNER,
     traceId: TRACE_ID,
-    architecture: createAgentV2Architecture(),
+    architecture: createArchitecture(),
     now: timestamp(3),
   });
   const architectureRef = required(
@@ -146,7 +146,7 @@ export async function reviseArchitectureAndPrepareNextRound(
     workOrderLeaseOwner: architectOwner,
     runLeaseOwner: RUN_OWNER,
     traceId: TRACE_ID,
-    architecture: createAgentV2Architecture(),
+    architecture: createArchitecture(),
     now: timestamp(11 + round * 3),
   });
   const architectureRef = required(
@@ -225,7 +225,7 @@ export async function prepareReviewRound(
         throw new Error("测试拿到了非页面 WorkOrder");
       }
       const pageId = claimed.scope.pageId;
-      const pageTask = createAgentV2Architecture().pageTasks.find(
+      const pageTask = createArchitecture().pageTasks.find(
         (candidate) => candidate.pageId === pageId,
       )!;
       const committed =
@@ -241,7 +241,6 @@ export async function prepareReviewRound(
             html: { html: `<main>${pageTask.title}</main>` },
             quality: pageQuality(pageId),
             summary: PageSummarySchema.parse({
-              version: 1,
               courseId: prepared.run.courseId,
               pageId,
               order: pageTask.order,
@@ -334,7 +333,6 @@ function reviewCandidate(
   evidence: ArtifactRef,
 ) {
   return {
-    version: 1 as const,
     courseId: run.courseId,
     inputManifestHash: run.currentManifestHash!,
     decision,
@@ -416,7 +414,7 @@ async function createRepository(suffix: string) {
   const taskId = `task-director-${suffix}`;
   seedRunningCourseTask(repository.runs.database, {
     taskId,
-    courseId: AGENT_V2_COURSE_ID,
+    courseId: COURSE_ID,
     traceId: TRACE_ID,
     now: timestamp(0),
   });
@@ -513,7 +511,7 @@ function toArtifactRef(artifact: {
   courseId: string;
   pageId?: string;
   scopeKey: string;
-  version: number;
+  revision: number;
   contentHash: string;
 }): ArtifactRef {
   return {
@@ -522,7 +520,7 @@ function toArtifactRef(artifact: {
     courseId: artifact.courseId,
     pageId: artifact.pageId,
     scopeKey: artifact.scopeKey,
-    version: artifact.version,
+    revision: artifact.revision,
     contentHash: artifact.contentHash,
   };
 }

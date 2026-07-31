@@ -1,9 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { parseReferenceFile } from "../../../src/features/course-planner/lib/reference-api";
+import { parseReferenceFile } from "../../../src/features/keya/api/reference";
 
 const pack = {
-  version: 1,
   id: "ref-1234567890abcdef12345678",
   sourceName: "solar.txt",
   sourceType: "txt",

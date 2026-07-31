@@ -28,7 +28,7 @@ const secondCourse = runningCourse({
       htmlOutput: {
         html: buildValidGeneratedHtml(pageContentDsl),
         generatedAt: "2026-07-22T04:58:00.000Z",
-        version: 2,
+        revision: 2,
       },
     },
   ],
@@ -36,48 +36,14 @@ const secondCourse = runningCourse({
 });
 const tasks: CourseTaskRecord[] = [
   taskRecord({
-    taskId: "task-history-one-langgraph",
-    courseId: firstCourse.courseId,
-    source: "langgraph",
-    createdAt: "2026-07-22T03:50:00.000Z",
-    updatedAt: "2026-07-22T03:50:00.000Z",
-  }),
-  taskRecord({
     taskId: "task-history-one",
     courseId: firstCourse.courseId,
-    source: "workflow",
     createdAt: "2026-07-22T04:00:00.000Z",
     updatedAt: "2026-07-22T04:00:00.000Z",
-  }),
-  {
-    ...taskRecord({
-      taskId: "task-history-one-agent-v2",
-      courseId: firstCourse.courseId,
-      createdAt: "2026-07-22T04:10:00.000Z",
-      updatedAt: "2026-07-22T04:10:00.000Z",
-    }),
-    source: "agent-v2",
-    creationBrief: {
-      originalRequest: "生成太阳系互动课程",
-      topic: "太阳系",
-      audience: "初学者",
-      goal: "理解太阳系结构",
-      sectionCount: "auto",
-      learningMode: "mixed",
-      language: "zh-CN",
-    },
-  },
-  taskRecord({
-    taskId: "task-history-two-workflow",
-    courseId: secondCourse.courseId,
-    source: "workflow",
-    createdAt: "2026-07-22T04:50:00.000Z",
-    updatedAt: "2026-07-22T04:50:00.000Z",
   }),
   taskRecord({
     taskId: "task-history-two",
     courseId: secondCourse.courseId,
-    source: "langgraph",
     status: "failed",
     createdAt: "2026-07-22T05:00:00.000Z",
     updatedAt: "2026-07-22T05:00:00.000Z",
@@ -106,7 +72,7 @@ const service = createCourseHistoryService({
 });
 
 describe("course history service", () => {
-  it("returns courses whose latest run uses agent-v2 or LangGraph", async () => {
+  it("returns courses with their latest run", async () => {
     const result = await service.list();
 
     expect(result.items.map(({ courseId }) => courseId)).toEqual([
@@ -116,17 +82,17 @@ describe("course history service", () => {
     expect(result.items[0]).toMatchObject({
       title: "生成高一数学课程",
       status: "failed",
-      latestRun: { source: "langgraph", status: "failed" },
+      latestRun: { status: "failed" },
       runCount: 1,
       cover: {
         pageId: pageContentDsl.pageId,
         generatedAt: "2026-07-22T04:58:00.000Z",
-        version: 2,
+        revision: 2,
       },
     });
     expect(result.items[1]).toMatchObject({
-      latestRun: { source: "agent-v2" },
-      runCount: 2,
+      latestRun: { taskId: "task-history-one" },
+      runCount: 1,
     });
     expect(result.unavailableCount).toBe(3);
   });
@@ -144,20 +110,14 @@ describe("course history service", () => {
     });
   });
 
-  it("loads agent-v2 and LangGraph runs while excluding workflow runs", async () => {
+  it("loads all current runs for a course", async () => {
     await expect(service.load(firstCourse.courseId)).resolves.toMatchObject({
       course: { courseId: firstCourse.courseId },
-      runs: [
-        { taskId: "task-history-one-agent-v2", source: "agent-v2" },
-        {
-          taskId: "task-history-one-langgraph",
-          source: "langgraph",
-        },
-      ],
+      runs: [{ taskId: "task-history-one" }],
     });
     await expect(service.load(secondCourse.courseId)).resolves.toMatchObject({
       course: { courseId: secondCourse.courseId },
-      runs: [{ taskId: "task-history-two", source: "langgraph" }],
+      runs: [{ taskId: "task-history-two" }],
     });
     await expect(service.load("course-history-missing")).resolves.toBeUndefined();
   });
@@ -167,7 +127,6 @@ function runningCourse(
   overrides: Partial<CourseGenerationState>,
 ): CourseGenerationState {
   return {
-    version: 1,
     courseId: "course-history-default",
     traceId: "trace-history",
     userPrompt: "生成课程",
@@ -183,23 +142,23 @@ function runningCourse(
 }
 
 function taskRecord(
-  overrides: Partial<LegacyCourseTaskRecord>,
-): LegacyCourseTaskRecord {
+  overrides: Partial<CourseTaskRecord>,
+): CourseTaskRecord {
   return {
-    version: 1,
     taskId: "task-history-default",
     courseId: "course-history-default",
     traceId: "trace-history",
     userPrompt: "生成课程",
-    source: "langgraph",
+    creationBrief: {
+      originalRequest: "生成课程",
+      topic: "课程",
+      audience: "学习者",
+      learningMode: "mixed",
+      language: "zh-CN",
+    },
     status: "completed",
     createdAt: "2026-07-22T03:00:00.000Z",
     updatedAt: "2026-07-22T03:00:00.000Z",
     ...overrides,
   };
 }
-
-type LegacyCourseTaskRecord = Extract<
-  CourseTaskRecord,
-  { source: "workflow" | "langgraph" }
->;

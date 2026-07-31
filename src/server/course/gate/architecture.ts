@@ -1,4 +1,4 @@
-import { projectCourseArchitectureToLegacy } from "@/server/course/legacy/architecture-adapter";
+import { projectCourseArchitecture } from "@/server/course/projection/architecture";
 import {
   CourseArchitectureSchema,
   type CourseArchitecture,
@@ -72,10 +72,7 @@ export function runArchitectureGate(input: {
       message: `找不到样式模板 ${architecture.blueprint.courseRules.styleTemplateId}`,
     });
   } else {
-    const requestedStyle =
-      architecture.blueprint.courseRules.visualStyle === "professional"
-        ? "minimal"
-        : architecture.blueprint.courseRules.visualStyle;
+    const requestedStyle = architecture.blueprint.courseRules.visualStyle;
     if (globalStyle.visualStyle !== requestedStyle) {
       issues.push({
         code: "STYLE_TEMPLATE_MISMATCH",
@@ -127,7 +124,7 @@ export function runArchitectureGate(input: {
       architecture.blueprint.courseRules.styleTemplateId
     ) {
       issues.push({
-        code: "PAGE_STYLE_VERSION_MISMATCH",
+        code: "PAGE_STYLE_MISMATCH",
         path: `pageTasks.${index}.styleTemplateId`,
         message: "所有页面必须引用当前 Architecture 的同一个样式模板",
       });
@@ -182,10 +179,10 @@ export function runArchitectureGate(input: {
   });
 
   try {
-    projectCourseArchitectureToLegacy(architecture, input.creationBrief);
+    projectCourseArchitecture(architecture, input.creationBrief);
   } catch (error) {
     issues.push({
-      code: "LEGACY_PROJECTION_INVALID",
+      code: "ARCHITECTURE_PROJECTION_INVALID",
       path: "root",
       message:
         error instanceof Error

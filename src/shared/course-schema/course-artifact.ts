@@ -20,7 +20,7 @@ const ArtifactRefFields = {
   courseId: CourseIdSchema,
   pageId: z.string().min(1).max(80).optional(),
   scopeKey: z.string().min(1).max(100),
-  version: z.number().int().positive(),
+  revision: z.number().int().positive(),
   contentHash: z.string().min(8).max(160),
 } as const;
 

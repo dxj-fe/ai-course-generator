@@ -130,13 +130,13 @@ async function temporaryRoot() {
 
 function runningWorkOrder(): WorkOrder {
   return {
-    version: 1,
     lockVersion: 1,
     id: "work-order-page-intro",
     taskId: "task-course-tool-ledger",
     courseId: "course-tool-ledger",
     causedByReviewIssueIds: [],
     dependencyWorkOrderIds: [],
+    agentId: "page-builder",
     kind: "build_page",
     scope: { type: "page", pageId: "page-intro" },
     status: "running",
@@ -169,7 +169,7 @@ function pageArtifactRef(): ArtifactRef {
     courseId: "course-tool-ledger",
     pageId: "page-intro",
     scopeKey: "page:page-intro",
-    version: 1,
+    revision: 1,
     contentHash: "1234567890abcdef",
   };
 }

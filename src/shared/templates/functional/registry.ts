@@ -80,7 +80,7 @@ function scoreTemplate(
   };
 }
 
-/** 在模块加载时验证 ID 唯一且 Day 07 的每种 pageType 都有一个模板。 */
+/** 在模块加载时验证 ID 唯一且每种 pageType 都有一个模板。 */
 function validateRegistry() {
   if (templatesById.size !== functionalTemplates.length) {
     throw new Error("Functional Template Registry 存在重复 ID。");

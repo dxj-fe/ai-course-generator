@@ -347,7 +347,6 @@ export function createCourseRevisionCommands(
           );
           return repository.workOrders.insert(
             WorkOrderSchema.parse({
-              version: 1,
               lockVersion: 0,
               id: fixIds.get(pageId)!,
               taskId: run.taskId,
@@ -613,7 +612,6 @@ function createArchitectWorkOrder(input: {
   idempotencyKey?: string;
 }) {
   return WorkOrderSchema.parse({
-    version: 1,
     lockVersion: 0,
     id: createStorageId("work-order-architect"),
     taskId: input.run.taskId,

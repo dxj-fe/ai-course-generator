@@ -119,7 +119,6 @@ function createTaskEventStream(
         if (closed) return;
         const message =
           sanitizePublicCourseTaskStreamMessage(unsafeMessage);
-        if (message.source !== task.source) return;
         const messageTraceId =
           message.type === "event"
             ? message.event.traceId
@@ -204,48 +203,29 @@ function createTaskEventStream(
               type: "snapshot",
               taskId: task.taskId,
               courseId: task.courseId,
-              source: task.source,
               taskStatus: currentTask.status,
               state: publicState,
             });
             needsTraceSnapshot = false;
           }
 
-          if (currentTask.source === "agent-v2") {
-            const batch = coursePublicEventReader.listAfter({
+          const batch = coursePublicEventReader.listAfter({
+            taskId: task.taskId,
+            traceId: activeTraceId,
+            afterSequence: durableReadSequence,
+          });
+          if (batch.traceId && batch.traceId !== activeTraceId) return;
+          durableReadSequence = Math.max(
+            durableReadSequence,
+            batch.scannedThroughSequence,
+          );
+          for (const event of batch.events) {
+            send({
+              type: "event",
               taskId: task.taskId,
-              traceId: activeTraceId,
-              afterSequence: durableReadSequence,
+              courseId: task.courseId,
+              event,
             });
-            if (batch.traceId && batch.traceId !== activeTraceId) return;
-            durableReadSequence = Math.max(
-              durableReadSequence,
-              batch.scannedThroughSequence,
-            );
-            for (const event of batch.events) {
-              send({
-                type: "event",
-                taskId: task.taskId,
-                courseId: task.courseId,
-                source: task.source,
-                event,
-              });
-            }
-          } else {
-            for (const event of publicState.events) {
-              if (
-                event.traceId === activeTraceId &&
-                event.sequence > deliveredSequence
-              ) {
-                send({
-                  type: "event",
-                  taskId: task.taskId,
-                  courseId: task.courseId,
-                  source: task.source,
-                  event,
-                });
-              }
-            }
           }
 
           if (
@@ -256,7 +236,6 @@ function createTaskEventStream(
               type: "terminal",
               taskId: task.taskId,
               courseId: task.courseId,
-              source: task.source,
               status: currentTask.status,
               state: publicState,
             });
@@ -270,7 +249,6 @@ function createTaskEventStream(
               type: "snapshot",
               taskId: task.taskId,
               courseId: task.courseId,
-              source: task.source,
               taskStatus: currentTask.status,
               state: publicState,
             });

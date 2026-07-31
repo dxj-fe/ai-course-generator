@@ -8,7 +8,6 @@ import {
 } from "../../../../src/server/agent/plugins/tools/course/retrieval";
 
 const solarPack: ReferencePack = {
-  version: 1,
   id: "ref-1234567890abcdef12345678",
   sourceName: "solar.md",
   sourceType: "md",

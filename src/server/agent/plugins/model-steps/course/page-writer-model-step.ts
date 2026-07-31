@@ -12,7 +12,6 @@ import {
   type CourseCreationBrief,
   type CoursePack,
   type PageContentDSL,
-  type PageContentBlock,
   type PageContentInteraction,
   type PagePlan,
   type PageSummary,
@@ -30,7 +29,6 @@ import {
   STORY_INTRO_VISUAL_CHOICE_LIMITS,
 } from "./page-writer-capacity";
 import {
-  PageWriterBlockDraftSchema,
   PageWriterInteractionDraftSchema,
   PageWriterInteractionItemDraftSchema,
   PageWriterModelOutputSchema,
@@ -41,7 +39,6 @@ import {
 } from "./page-writer-runtime";
 import {
   materializeChoiceQuestions,
-  usable,
   validateTemplateSlots,
 } from "./page-writer-interaction";
 import { createModelStep } from "./model-step";
@@ -318,9 +315,8 @@ async function generateContent(
     abortSignal: input.abortSignal,
     capability: "page-writer",
     maxTokens: 4_000,
-    normalizeOutput: normalizePageWriterModelOutput,
     prompt: prompts.userPrompt,
-    promptVersion: prompts.version,
+    promptFingerprint: prompts.fingerprint,
     schema: PageWriterModelOutputSchema,
     schemaDescription:
       "One page of semantic learning content without HTML or component details.",
@@ -329,7 +325,7 @@ async function generateContent(
     temperature: 0.2,
     traceId: input.traceId,
   });
-  const blocks = normalizeBlocks(draft.blocks);
+  const blocks = materializeBlocks(draft.blocks);
 
   if (draft.interaction.type !== input.page.interactionType) {
     throw new AiSchemaValidationError(
@@ -337,12 +333,8 @@ async function generateContent(
     );
   }
 
-  const interaction = materializePageWriterInteraction(
-    draft.interaction,
-    blocks,
-  );
+  const interaction = materializePageWriterInteraction(draft.interaction);
   const candidate: PageContentDSL = {
-    version: 2,
     pageId: input.page.id,
     functionalTemplateId: input.page.functionalTemplateId,
     title: input.page.title,
@@ -359,10 +351,7 @@ async function generateContent(
           : `${need.purpose.replace(/[。.!！?？]+$/u, "")}。`,
     })),
     layoutHints: {
-      contentDensity: normalizePageContentDensity(
-        draft.contentDensity,
-        input.page.pageType,
-      ),
+      contentDensity: draft.contentDensity,
       visualPriority: draft.visualPriority,
       groupingStrategy: draft.groupingStrategy,
       readingOrder: blocks.map(({ id }) => id),
@@ -382,162 +371,22 @@ async function generateContent(
   return validatePageWriterOutput(candidate, input);
 }
 
-function normalizeInteractionFeedback(value: unknown): unknown {
-  return typeof value === "string" ? [value] : value;
-}
-
-function normalizeConciseGuidance(value: unknown): unknown {
-  return Array.isArray(value) &&
-    value.length > 0 &&
-    value.every((item) => typeof item === "string")
-    ? value.join("；")
-    : value;
-}
-
-/**
- * 收敛 Provider 已知的无损结构压缩：
- * - 单句 narration 字符串还原为单元素数组；
- * - 单条互动反馈字符串还原为单元素数组；
- * - 单条输入评价标准字符串还原为单元素数组；
- * - 被拆成字符串数组的视觉优先级与分组策略还原为单句；
- * - choice 不使用的 items 占位字段固定为空数组。
- * 其余未知形状保持原样，继续交给严格 Schema 拒绝。
- */
-export function normalizePageWriterModelOutput(output: unknown): unknown {
-  if (!isRecord(output)) return output;
-
-  const normalizedOutput = {
-    ...output,
-    visualPriority: normalizeConciseGuidance(output.visualPriority),
-    groupingStrategy: normalizeConciseGuidance(output.groupingStrategy),
-    ...(typeof output.narration === "string"
-      ? { narration: [output.narration] }
-      : {}),
-  };
-  if (!isRecord(output.interaction)) return normalizedOutput;
-
-  const interaction = output.interaction;
-
-  return {
-    ...normalizedOutput,
-    interaction: {
-      ...interaction,
-      feedbackSuccess: normalizeInteractionFeedback(
-        interaction.feedbackSuccess,
-      ),
-      feedbackRetry: normalizeInteractionFeedback(interaction.feedbackRetry),
-      evaluationCriteria: normalizeInteractionFeedback(
-        interaction.evaluationCriteria,
-      ),
-      // choice 不使用 items；部分 Provider 会把空数组错误压缩成 0。
-      ...(interaction.type === "choice" ? { items: [] } : {}),
-    },
-  };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-const contentDensityAliases: Readonly<
-  Record<string, PageContentDSL["layoutHints"]["contentDensity"]>
-> = {
-  sparse: "sparse",
-  low: "sparse",
-  light: "sparse",
-  minimal: "sparse",
-  airy: "sparse",
-  spacious: "sparse",
-  lowdensity: "sparse",
-  稀疏: "sparse",
-  简洁: "sparse",
-  极简: "sparse",
-  低密度: "sparse",
-  balanced: "balanced",
-  medium: "balanced",
-  moderate: "balanced",
-  normal: "balanced",
-  standard: "balanced",
-  comfortable: "balanced",
-  mediumdensity: "balanced",
-  平衡: "balanced",
-  均衡: "balanced",
-  适中: "balanced",
-  中等: "balanced",
-  dense: "dense",
-  high: "dense",
-  compact: "dense",
-  highdensity: "dense",
-  密集: "dense",
-  紧凑: "dense",
-  高密度: "dense",
-};
-
-/** 将模型使用的内容密度别名收敛为严格 PageContentDSL 枚举。 */
-export function normalizePageContentDensity(
-  value: string,
-  pageType: PagePlan["pageType"],
-): PageContentDSL["layoutHints"]["contentDensity"] {
-  const normalized = value.trim().toLowerCase().replace(/[\s_-]+/g, "");
-  const aliased = contentDensityAliases[normalized];
-
-  if (aliased) {
-    return aliased;
-  }
-
-  return pageType === "cover" || pageType === "quiz"
-    ? "sparse"
-    : "balanced";
-}
-
-/** 将模型的导航别名或非导航占位值收敛为稳定协议值。 */
-export function normalizePageNavigationDestination(
-  value: string,
-): Extract<PageContentInteraction, { type: "navigate" }>["destination"] {
-  const normalized = value.trim().toLowerCase().replace(/[\s_-]+/g, "");
-
-  if (normalized === "previous" || normalized === "previouspage") {
-    return "previous";
-  }
-
-  if (normalized === "coursehome" || normalized === "home") {
-    return "course-home";
-  }
-
-  return "next";
-}
-
-/** 将兼容层草稿收敛为带稳定 blockId 的严格内容块。 */
-function normalizeBlocks(items: unknown[]) {
+/** 为模型内容块补齐稳定 blockId。 */
+function materializeBlocks(
+  items: z.infer<typeof PageWriterModelOutputSchema>["blocks"],
+) {
   return items.map((item, index) => {
-    const parsed = PageWriterBlockDraftSchema.safeParse(item);
     const id = `block-${String(index + 1).padStart(2, "0")}`;
 
-    if (parsed.success) {
-      return {
-        id,
-        ...parsed.data,
-        body: normalizeMultilineBulletBody(parsed.data.body),
-      };
-    }
-
-    if (typeof item === "string" && semanticTextLength(item) >= 24) {
-      return {
-        id,
-        kind: "fact" as const,
-        heading: `内容要点 ${index + 1}`,
-        body: item.trim(),
-        supportingPoints: [],
-      };
-    }
-
-    throw new AiSchemaValidationError(
-      `Page Writer blocks.${index} 不是有效内容块。`,
-    );
+    return {
+      id,
+      ...item,
+      body: normalizeMultilineBulletBody(item.body),
+    };
   });
 }
 
-/** 将 Provider 偶发塞进 body 的多行清单无损收敛为适合 HTML 精确复现的一句话。 */
+/** 将正文中的多行清单转换为适合 HTML 精确复现的一句话。 */
 export function normalizeMultilineBulletBody(body: string) {
   const lines = body
     .split(/\r?\n/u)
@@ -557,12 +406,10 @@ export function normalizeMultilineBulletBody(body: string) {
     .join("；");
 }
 
-/** 根据 interaction.type 投影必要字段，丢弃兼容草稿中的占位字段。 */
+/** 根据 interaction.type 投影当前领域协议所需字段。 */
 export function materializePageWriterInteraction(
   draft: z.infer<typeof PageWriterInteractionDraftSchema>,
-  blocks: PageContentBlock[] = [],
 ): PageContentInteraction {
-  const prompt = usable(draft.prompt, "请完成本页互动。");
   const feedback = {
     success: draft.feedbackSuccess[0] ?? "回答正确。",
     retry: draft.feedbackRetry[0] ?? "请根据页面内容再试一次。",
@@ -574,14 +421,14 @@ export function materializePageWriterInteraction(
     case "navigate":
       return {
         type: "navigate",
-        actionLabel: usable(draft.actionLabel, "继续"),
-        destination: normalizePageNavigationDestination(draft.destination),
+        actionLabel: draft.actionLabel,
+        destination: draft.destination,
       };
     case "reveal":
       return {
         type: "reveal",
-        prompt,
-        items: materializeInteractionItems(draft.items, blocks),
+        prompt: draft.prompt,
+        items: materializeInteractionItems(draft.items),
       };
     case "choice": {
       return {
@@ -590,11 +437,11 @@ export function materializePageWriterInteraction(
       };
     }
     case "sort": {
-      const items = materializeInteractionItems(draft.items, blocks);
+      const items = materializeInteractionItems(draft.items);
 
       return {
         type: "sort",
-        prompt,
+        prompt: draft.prompt,
         items,
         correctOrderIds: items.map(({ id }) => id),
         feedback,
@@ -603,44 +450,29 @@ export function materializePageWriterInteraction(
     case "input":
       return {
         type: "input",
-        prompt,
-        placeholder: usable(draft.placeholder, "请输入你的答案"),
+        prompt: draft.prompt,
+        placeholder: draft.placeholder,
         evaluationCriteria: draft.evaluationCriteria,
         feedback,
       };
     case "explore":
       return {
         type: "explore",
-        prompt,
-        items: materializeInteractionItems(draft.items, blocks),
+        prompt: draft.prompt,
+        items: materializeInteractionItems(draft.items),
       };
   }
 }
 
-/** 把模型的标签与解释补齐为可被 QA 定位的互动项。 */
+/** 为互动项补齐可被 QA 定位的稳定 ID。 */
 export function materializeInteractionItems(
   items: Array<z.infer<typeof PageWriterInteractionItemDraftSchema>>,
-  blocks: PageContentBlock[] = [],
 ) {
   return items.map((item, index) => {
-    const label = typeof item === "string" ? item.trim() : item.label.trim();
-    const matchingBlock = blocks.find(
-      (block) =>
-        normalizeComparableText(block.heading) ===
-          normalizeComparableText(label) ||
-        (block.label &&
-          normalizeComparableText(block.label) ===
-            normalizeComparableText(label)),
-    );
-    const content =
-      typeof item === "string"
-        ? (matchingBlock?.body ?? label)
-        : item.content.trim();
-
     return {
       id: `item-${String(index + 1).padStart(2, "0")}`,
-      label,
-      content,
+      label: item.label.trim(),
+      content: item.content.trim(),
     };
   });
 }

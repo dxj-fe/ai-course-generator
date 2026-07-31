@@ -45,7 +45,7 @@ export type CourseStoreListResult = {
 
 type CourseStoreOptions = {
   databasePath?: string;
-  /** 保留测试和调用方兼容性；数据会写入该目录内的 SQLite。 */
+  /** 测试可使用独立根目录隔离 SQLite 数据。 */
   rootDir?: string;
 };
 
@@ -62,8 +62,7 @@ export function createCourseStore(
   const listStatement = database.prepare(
     "SELECT payload FROM courses ORDER BY updated_at DESC",
   );
-  // CAS 必须比较 load() 实际读到的 payload 字节；历史 JSON 字段顺序可能
-  // 与当前 Schema 重新序列化后的顺序不同。
+  // CAS 比较 load() 实际读到的 payload 字节，避免对象重建改变字段顺序。
   const persistedPayloads = new WeakMap<CourseGenerationState, string>();
 
   return {

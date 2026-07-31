@@ -322,11 +322,7 @@ describe("Course Reviewer Agent", () => {
       });
       return executeTool(settings.tools, "submit_course_review", {
         review: {
-          version: 999,
-          courseId: "模型误抄的课程 ID",
-          inputManifestHash: "模型误抄的 manifest",
           decision: "pass",
-          coverage: [],
           issues: [],
           summary: "目标讲解、练习证据和页面衔接完整，可以发布。",
         },
@@ -815,7 +811,6 @@ function passReview(
     (_, index) => `page-${String(index + 1).padStart(3, "0")}`,
   );
   return {
-    version: 1,
     courseId: COURSE_ID,
     inputManifestHash: manifestHash,
     decision: "pass",
@@ -839,7 +834,6 @@ function pageSummary(
   qualityScore = 96,
 ): PageSummary {
   return {
-    version: 1,
     courseId: COURSE_ID,
     pageId,
     order,
@@ -882,19 +876,25 @@ function quality(pageId: string): QualityReport {
     },
     issues: [],
     screenshotEvidence: {
-      status: "captured",
-      artifactId: `screenshot-${pageId}`,
-      viewport: { width: 922, height: 460 },
-      metrics: {
-        documentWidth: 922,
-        documentHeight: 460,
-        horizontalOverflowPx: 0,
-        clippedElementCount: 0,
-        zeroSizeInteractiveCount: 0,
-        interactionSubmitTested: true,
-        interactionFeedbackVisible: true,
-      },
-      capturedAt: timestamp(6),
+      captures: [
+        { width: 922, height: 460, name: "desktop" },
+        { width: 712, height: 650, name: "tablet" },
+        { width: 366, height: 500, name: "mobile" },
+      ].map(({ width, height, name }) => ({
+        status: "captured" as const,
+        artifactId: `screenshot-${pageId}-${name}`,
+        viewport: { width, height },
+        metrics: {
+          documentWidth: width,
+          documentHeight: height,
+          horizontalOverflowPx: 0,
+          clippedElementCount: 0,
+          zeroSizeInteractiveCount: 0,
+          interactionSubmitTested: true,
+          interactionFeedbackVisible: true,
+        },
+        capturedAt: timestamp(6),
+      })),
     },
     shouldRepair: false,
     decision: "pass",
@@ -904,10 +904,8 @@ function quality(pageId: string): QualityReport {
 
 function architecture(pageCount = 2): CourseArchitecture {
   return {
-    version: 1,
     courseId: COURSE_ID,
     coursePack: {
-      version: 1,
       courseId: COURSE_ID,
       topic: "恒星和行星",
       facts: [],
@@ -916,7 +914,6 @@ function architecture(pageCount = 2): CourseArchitecture {
       constraints: [],
     },
     blueprint: {
-      version: 1,
       courseId: COURSE_ID,
       title: `${pageCount} 页学会区分恒星和行星`,
       audience: {
@@ -944,7 +941,6 @@ function architecture(pageCount = 2): CourseArchitecture {
     pageTasks: Array.from({ length: pageCount }, (_, index) => {
       const order = index + 1;
       return {
-        version: 1,
         pageId: `page-${String(order).padStart(3, "0")}`,
         order,
         title: `第 ${order} 页：判断天体`,

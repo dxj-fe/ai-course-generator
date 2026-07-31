@@ -17,7 +17,6 @@ import {
   type VisualBrief,
 } from "@/shared/course-schema";
 
-const ASSET_CACHE_VERSION = 1;
 const ASSET_ID_PATTERN =
   /^asset-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const AssetCacheKeyInputSchema = z
@@ -33,7 +32,7 @@ const AssetRequestSetCacheInputSchema = z
   .object({
     content: PageContentDSLSchema,
     visualBrief: VisualBriefSchema,
-    promptVersion: z.string().trim().min(1).max(80),
+    promptFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
   })
   .strict();
 
@@ -86,7 +85,7 @@ export type AssetCacheKeyInput = {
 export type AssetRequestSetCacheInput = {
   content: PageContentDSL;
   visualBrief: VisualBrief;
-  promptVersion: string;
+  promptFingerprint: string;
 };
 
 export type CachedGeneratedAsset = z.infer<
@@ -144,8 +143,6 @@ export type AssetCache = {
 
 type AssetCacheOptions = {
   databasePath?: string;
-  /** 兼容旧调用方；该路径现在是 SQLite 数据库文件。 */
-  filePath?: string;
   assetExists?: (id: string) => Promise<boolean>;
 };
 
@@ -153,7 +150,6 @@ type AssetCacheOptions = {
 export function createAssetCacheKey(input: AssetCacheKeyInput) {
   const parsed = AssetCacheKeyInputSchema.parse(input);
   const keyMaterial = {
-    version: ASSET_CACHE_VERSION,
     provider: parsed.provider,
     model: parsed.model,
     styleTemplateId: parsed.styleTemplateId,
@@ -181,8 +177,7 @@ export function createAssetRequestSetCacheKey(
   return createHash("sha256")
     .update(
       JSON.stringify({
-        version: ASSET_CACHE_VERSION,
-        promptVersion: parsed.promptVersion,
+        promptFingerprint: parsed.promptFingerprint,
         content: parsed.content,
         visualBrief: parsed.visualBrief,
       }),
@@ -194,7 +189,7 @@ export function createAssetRequestSetCacheKey(
 export function createAssetCache(
   options: AssetCacheOptions = {},
 ): AssetCache {
-  const database = getAppDatabase(options.databasePath ?? options.filePath);
+  const database = getAppDatabase(options.databasePath);
   const assetExists = options.assetExists ?? hasGeneratedAsset;
   const loadEntry = database.prepare(
     "SELECT payload FROM asset_cache_entries WHERE cache_key = ?",

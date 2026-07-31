@@ -187,10 +187,8 @@ function withTrustedRuntime(
 ): PageContentDSL {
   return {
     ...base,
-    version: 2,
     interaction,
     runtime: {
-      runtimeVersion: 1,
       sceneKind: interaction.type === "none" ? "explain" : "practice",
       visualPrimitive: "comparison",
       motionPlan: {
@@ -325,7 +323,7 @@ describe("HtmlEngineerModelStep", () => {
     });
   });
 
-  it("renders a strictly valid v2 fallback for every interaction type", () => {
+  it("renders a strictly valid fallback for every interaction type", () => {
     const interactions: PageContentDSL["interaction"][] = [
       { type: "none" },
       {
@@ -607,7 +605,7 @@ describe("HtmlEngineerModelStep", () => {
       normalizeTrustedPlayerLayout(generated),
     );
 
-    expect(normalized).toContain('data-keya-layout-guard="v21"');
+    expect(normalized).toContain('data-keya-layout-guard="current"');
     expect(normalized).toContain(
       "html,body{width:100%!important;height:100%!important;margin:0!important;padding:0!important",
     );
@@ -648,20 +646,9 @@ describe("HtmlEngineerModelStep", () => {
     );
     expect(normalized).toContain("grid-row:2/8!important");
     expect(String(normalized).match(/data-keya-layout-guard=/g)).toHaveLength(1);
-    expect(String(normalized).indexOf('data-keya-layout-guard="v21"')).toBeLessThan(
+    expect(String(normalized).indexOf('data-keya-layout-guard="current"')).toBeLessThan(
       String(normalized).indexOf("</head>"),
     );
-  });
-
-  it("replaces a previous trusted player layout guard instead of stacking versions", () => {
-    const generated =
-      '<!doctype html><html><head><style data-keya-layout-guard="v19">old</style></head><body><main data-page-id="page-01"></main></body></html>';
-
-    const normalized = normalizeTrustedPlayerLayout(generated);
-
-    expect(normalized).toContain('data-keya-layout-guard="v21"');
-    expect(normalized).not.toContain('data-keya-layout-guard="v19"');
-    expect(String(normalized).match(/data-keya-layout-guard=/g)).toHaveLength(1);
   });
 
   it("restores the immutable page title when the model omits the h1", () => {
@@ -681,9 +668,7 @@ describe("HtmlEngineerModelStep", () => {
   it("marks a uniquely named code-native visual root with the trusted primitive", () => {
     const runtimeContent = {
       ...pageContentDsl,
-      version: 2 as const,
       runtime: {
-        runtimeVersion: 1 as const,
         sceneKind: "demo" as const,
         visualPrimitive: "concept-map" as const,
         motionPlan: {
@@ -711,9 +696,7 @@ describe("HtmlEngineerModelStep", () => {
   it("uses the smallest complete block group as a code-native comparison visual", () => {
     const runtimeContent = {
       ...pageContentDsl,
-      version: 2 as const,
       runtime: {
-        runtimeVersion: 1 as const,
         sceneKind: "demo" as const,
         visualPrimitive: "comparison" as const,
         motionPlan: {
@@ -747,12 +730,10 @@ describe("HtmlEngineerModelStep", () => {
     );
   });
 
-  it("restores a bounded code-native visual when the model omits the required primitive", () => {
+  it("marks a complete native interaction visual when the model omits the primitive", () => {
     const runtimeContent = {
       ...pageContentDsl,
-      version: 2 as const,
       runtime: {
-        runtimeVersion: 1 as const,
         sceneKind: "demo" as const,
         visualPrimitive: "concept-map" as const,
         motionPlan: {
@@ -765,7 +746,10 @@ describe("HtmlEngineerModelStep", () => {
         },
       },
     } satisfies PageContentDSL;
-    const generated = buildValidGeneratedHtml(runtimeContent);
+    const generated = buildValidGeneratedHtml(runtimeContent).replace(
+      ' data-visual-primitive="concept-map"',
+      "",
+    );
 
     const normalized = normalizeVisualPrimitiveMarker(generated, {
       content: runtimeContent,
@@ -773,7 +757,7 @@ describe("HtmlEngineerModelStep", () => {
     });
 
     expect(normalized).toContain('data-visual-primitive="concept-map"');
-    expect(normalized).toContain(
+    expect(normalized).not.toContain(
       'data-course-contract-restored="visual-primitive"',
     );
   });
@@ -782,9 +766,7 @@ describe("HtmlEngineerModelStep", () => {
     const runtimeContent = {
       ...assetRichContent,
       assetSlots: [assetRichContent.assetSlots[0]!],
-      version: 2 as const,
       runtime: {
-        runtimeVersion: 1 as const,
         sceneKind: "demo" as const,
         visualPrimitive: "concept-map" as const,
         motionPlan: {
@@ -817,9 +799,7 @@ describe("HtmlEngineerModelStep", () => {
     }
     const runtimeContent = {
       ...pageContentDsl,
-      version: 2 as const,
       runtime: {
-        runtimeVersion: 1 as const,
         sceneKind: "demo" as const,
         visualPrimitive: "timeline" as const,
         motionPlan: {
@@ -853,12 +833,10 @@ describe("HtmlEngineerModelStep", () => {
     );
   });
 
-  it("does not relabel incompatible or out-of-main visual content", () => {
+  it("does not relabel mismatched or out-of-main visual content", () => {
     const runtimeContent = {
       ...pageContentDsl,
-      version: 2 as const,
       runtime: {
-        runtimeVersion: 1 as const,
         sceneKind: "demo" as const,
         visualPrimitive: "concept-map" as const,
         motionPlan: {
@@ -871,15 +849,15 @@ describe("HtmlEngineerModelStep", () => {
         },
       },
     } satisfies PageContentDSL;
-    const incompatible = `<!doctype html><html><head><title>${runtimeContent.title}</title></head><body><main data-page-id="${runtimeContent.pageId}"><section class="course-concept-map" data-visual-primitive="timeline"><article>${runtimeContent.blocks[0]?.heading}</article><article>${runtimeContent.blocks[1]?.heading}</article></section></main></body></html>`;
+    const mismatched = `<!doctype html><html><head><title>${runtimeContent.title}</title></head><body><main data-page-id="${runtimeContent.pageId}"><section class="course-concept-map" data-visual-primitive="timeline"><article>${runtimeContent.blocks[0]?.heading}</article><article>${runtimeContent.blocks[1]?.heading}</article></section></main></body></html>`;
     const outsideMain = `<!doctype html><html><head><title>${runtimeContent.title}</title></head><body><section class="course-concept-map"><article>${runtimeContent.blocks[0]?.heading}</article><article>${runtimeContent.blocks[1]?.heading}</article></section><main data-page-id="${runtimeContent.pageId}"></main></body></html>`;
 
     expect(
-      normalizeVisualPrimitiveMarker(incompatible, {
+      normalizeVisualPrimitiveMarker(mismatched, {
         content: runtimeContent,
         visualBrief,
       }),
-    ).toBe(incompatible);
+    ).toBe(mismatched);
     const normalizedOutside = normalizeVisualPrimitiveMarker(outsideMain, {
       content: runtimeContent,
       visualBrief,
@@ -897,12 +875,10 @@ describe("HtmlEngineerModelStep", () => {
       .toHaveLength(1);
   });
 
-  it("removes an asset-bound primitive marker before restoring the code-native visual", () => {
+  it("moves an asset-bound primitive marker to the complete native visual", () => {
     const runtimeContent = {
       ...assetRichContent,
-      version: 2 as const,
       runtime: {
-        runtimeVersion: 1 as const,
         sceneKind: "demo" as const,
         visualPrimitive: "comparison" as const,
         motionPlan: {
@@ -915,10 +891,12 @@ describe("HtmlEngineerModelStep", () => {
         },
       },
     } satisfies PageContentDSL;
-    const generated = buildValidGeneratedHtml(runtimeContent).replace(
-      '<figure data-asset-slot-id="asset-slot-01">',
-      '<figure data-asset-slot-id="asset-slot-01" data-visual-primitive="comparison">',
-    );
+    const generated = buildValidGeneratedHtml(runtimeContent)
+      .replace(' data-visual-primitive="comparison"', "")
+      .replace(
+        '<figure data-asset-slot-id="asset-slot-01">',
+        '<figure data-asset-slot-id="asset-slot-01" data-visual-primitive="comparison">',
+      );
 
     const normalized = normalizeVisualPrimitiveMarker(generated, {
       content: runtimeContent,
@@ -931,7 +909,7 @@ describe("HtmlEngineerModelStep", () => {
     expect(
       normalized.match(/data-visual-primitive="comparison"/g),
     ).toHaveLength(1);
-    expect(normalized).toContain(
+    expect(normalized).not.toContain(
       'data-course-contract-restored="visual-primitive"',
     );
     expect(normalized).not.toContain(
@@ -943,9 +921,7 @@ describe("HtmlEngineerModelStep", () => {
     const choice = getChoiceContent();
     const content = {
       ...choice,
-      version: 2 as const,
       runtime: {
-        runtimeVersion: 1 as const,
         sceneKind: "practice" as const,
         visualPrimitive: "none" as const,
         motionPlan: {
@@ -1036,9 +1012,7 @@ describe("HtmlEngineerModelStep", () => {
     const choice = getChoiceContent();
     const content = {
       ...choice,
-      version: 2 as const,
       runtime: {
-        runtimeVersion: 1 as const,
         sceneKind: "practice" as const,
         visualPrimitive: "none" as const,
         motionPlan: {
@@ -1077,9 +1051,7 @@ describe("HtmlEngineerModelStep", () => {
     const choice = getChoiceContent();
     const content = {
       ...choice,
-      version: 2 as const,
       runtime: {
-        runtimeVersion: 1 as const,
         sceneKind: "practice" as const,
         visualPrimitive: "none" as const,
         motionPlan: {
@@ -1119,9 +1091,7 @@ describe("HtmlEngineerModelStep", () => {
     const choice = getChoiceContent();
     const content = {
       ...choice,
-      version: 2 as const,
       runtime: {
-        runtimeVersion: 1 as const,
         sceneKind: "practice" as const,
         visualPrimitive: "none" as const,
         motionPlan: {
@@ -1161,9 +1131,7 @@ describe("HtmlEngineerModelStep", () => {
     const choice = getChoiceContent();
     const content = {
       ...choice,
-      version: 2 as const,
       runtime: {
-        runtimeVersion: 1 as const,
         sceneKind: "practice" as const,
         visualPrimitive: "none" as const,
         motionPlan: {
@@ -1202,9 +1170,7 @@ describe("HtmlEngineerModelStep", () => {
     const choice = getChoiceContent();
     const content = {
       ...choice,
-      version: 2 as const,
       runtime: {
-        runtimeVersion: 1 as const,
         sceneKind: "practice" as const,
         visualPrimitive: "none" as const,
         motionPlan: {
@@ -1249,9 +1215,7 @@ describe("HtmlEngineerModelStep", () => {
     const choice = getChoiceContent();
     const content = {
       ...choice,
-      version: 2 as const,
       runtime: {
-        runtimeVersion: 1 as const,
         sceneKind: "practice" as const,
         visualPrimitive: "none" as const,
         motionPlan: {
@@ -1287,9 +1251,7 @@ describe("HtmlEngineerModelStep", () => {
     const choice = getChoiceContent();
     const content = {
       ...choice,
-      version: 2 as const,
       runtime: {
-        runtimeVersion: 1 as const,
         sceneKind: "practice" as const,
         visualPrimitive: "none" as const,
         motionPlan: {
@@ -1312,18 +1274,16 @@ describe("HtmlEngineerModelStep", () => {
     expect(normalized).not.toContain('data-runtime-submit="true"');
   });
 
-  it("moves a legacy single-question marker to the scope that contains its options", () => {
+  it("moves a misplaced single-question marker to the scope that contains its options", () => {
     const choice = getChoiceContent();
     const question = choice.interaction.questions[0];
     const content = {
       ...choice,
-      version: 2 as const,
       interaction: {
         ...choice.interaction,
         questions: [question],
       },
       runtime: {
-        runtimeVersion: 1 as const,
         sceneKind: "practice" as const,
         visualPrimitive: "none" as const,
         motionPlan: {
@@ -1361,9 +1321,7 @@ describe("HtmlEngineerModelStep", () => {
     const choice = getChoiceContent();
     const content = {
       ...choice,
-      version: 2 as const,
       runtime: {
-        runtimeVersion: 1 as const,
         sceneKind: "practice" as const,
         visualPrimitive: "none" as const,
         motionPlan: {
@@ -1406,9 +1364,7 @@ describe("HtmlEngineerModelStep", () => {
     const choice = getChoiceContent();
     const content = {
       ...choice,
-      version: 2 as const,
       runtime: {
-        runtimeVersion: 1 as const,
         sceneKind: "practice" as const,
         visualPrimitive: "none" as const,
         motionPlan: {
@@ -1587,8 +1543,8 @@ describe("HtmlEngineerModelStep", () => {
   it("rejects disabled choice controls before Page QA", () => {
     const content = getChoiceContent();
     const html = buildValidGeneratedHtml(content).replace(
-      `<section data-interaction-type="choice">`,
-      `<section data-interaction-type="choice"><input type="radio" name="question-1" disabled>`,
+      '<input type="radio"',
+      '<input type="radio" disabled',
     );
 
     expect(() =>
@@ -1688,20 +1644,26 @@ describe("HtmlEngineerModelStep", () => {
   });
 
   it("adds a missing reveal marker only to a complete DSL-aligned details structure", () => {
+    const interaction = pageContentDsl.interaction;
+    if (interaction.type !== "reveal") {
+      throw new Error("reveal fixture is required");
+    }
     const details = pageContentDsl.blocks
       .map(
-        (block) =>
-          `<details><summary>${block.heading}</summary><p>${block.body}</p></details>`,
+        (block, index) =>
+          `<details data-interaction-item-id="${interaction.items[index]!.id}"><summary>${block.heading}</summary><p>${block.body}</p></details>`,
       )
       .join("");
     const html = buildValidGeneratedHtml(pageContentDsl).replace(
-      /<section data-interaction-type="reveal">[\s\S]*?<\/section>/,
+      /<section class="interaction-panel"[^>]*data-interaction-type="reveal"[^>]*>[\s\S]*?<\/section>/,
       `<section>${pageContentDsl.interaction.type === "reveal" ? pageContentDsl.interaction.prompt : ""}${details}</section>`,
     );
 
     const normalized = normalizeNativeInteractionMarker(html, input);
 
-    expect(normalized).toContain('<details data-interaction-type="reveal">');
+    expect(normalized).toContain(
+      `<section data-interaction-type="reveal" data-interaction-id="interaction-${pageContentDsl.pageId}">`,
+    );
     expect(() => validateHtmlEngineerOutput(normalized, input)).not.toThrow();
   });
 
@@ -2031,7 +1993,7 @@ describe("HtmlEngineerModelStep", () => {
   it("does not invent a reveal marker for an incomplete native interaction", () => {
     const block = pageContentDsl.blocks[0];
     const html = buildValidGeneratedHtml(pageContentDsl).replace(
-      /<section data-interaction-type="reveal">[\s\S]*?<\/section>/,
+      /<section class="interaction-panel"[^>]*data-interaction-type="reveal"[^>]*>[\s\S]*?<\/section>/,
       `<section><details><summary>${block.heading}</summary><p>${block.body}</p></details></section>`,
     );
 
@@ -2269,9 +2231,7 @@ describe("HtmlEngineerModelStep", () => {
     const interaction = example.interaction;
     const content: PageContentDSL = {
       ...example,
-      version: 2,
       runtime: {
-        runtimeVersion: 1,
         sceneKind: "practice",
         visualPrimitive: "none",
         motionPlan: { intensity: "subtle", cuePoints: [] },
@@ -2281,21 +2241,7 @@ describe("HtmlEngineerModelStep", () => {
         },
       },
     };
-    let html = buildValidGeneratedHtml(content)
-      .replace(
-        'data-interaction-type="input"',
-        `data-interaction-type="input" data-interaction-id="interaction-${content.pageId}"`,
-      )
-      .replace(
-        interaction.placeholder,
-        `<textarea data-runtime-input="true" placeholder="${interaction.placeholder}"></textarea><button data-runtime-submit="true">提交</button>`,
-      );
-    for (const block of content.blocks) {
-      html = html.replace(
-        `data-block-id="${block.id}"`,
-        `data-block-id="${block.id}" data-runtime-target-id="${block.id}"`,
-      );
-    }
+    const html = buildValidGeneratedHtml(content);
 
     expect(() =>
       validateHtmlEngineerOutput(html, { content, visualBrief }),

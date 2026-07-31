@@ -3,7 +3,6 @@ import type {
   LessonRuntime,
   PageContentInteraction,
   PageInteractionType,
-  PagePlan,
 } from "@/shared/course-schema";
 
 export type CoursePlayerSectionGenerationStatus =
@@ -20,7 +19,7 @@ export type CoursePlayerSection = {
   interactionType: PageInteractionType;
   generationStatus: CoursePlayerSectionGenerationStatus;
   html?: string;
-  htmlVersion?: number;
+  htmlRevision?: number;
   interaction?: PageContentInteraction;
   runtime?: LessonRuntime;
   narration: string[];
@@ -64,16 +63,13 @@ export function buildCoursePlayerManifest(
         ...(readyHtml
           ? {
               html: readyHtml.html,
-              htmlVersion: readyHtml.version,
+              htmlRevision: readyHtml.revision,
             }
           : {}),
         ...(content
           ? {
               interaction: content.interaction,
-              runtime:
-                content.version === 2 && content.runtime
-                  ? content.runtime
-                  : fallbackLessonRuntime(page, content.interaction),
+              runtime: content.runtime,
             }
           : {}),
         narration: [...(generatedPage?.content?.narration ?? [])],
@@ -87,43 +83,6 @@ export function buildCoursePlayerManifest(
       ? { overview: course.outline.overview }
       : {}),
     sections,
-  };
-}
-
-function fallbackLessonRuntime(
-  page: PagePlan,
-  interaction: PageContentInteraction,
-): LessonRuntime {
-  const interactionId = `interaction-${page.id}`;
-  return {
-    runtimeVersion: 1,
-    sceneKind:
-      page.pageType === "quiz"
-        ? "practice"
-        : page.pageType === "summary"
-          ? "recap"
-          : page.pageType === "achievement"
-            ? "reflect"
-            : ["knowledge_card", "comparison", "timeline"].includes(
-                  page.pageType,
-                )
-              ? "demo"
-              : "explain",
-    visualPrimitive:
-      page.pageType === "comparison"
-        ? "comparison"
-        : page.pageType === "timeline"
-          ? "timeline"
-          : page.pageType === "knowledge_card"
-            ? "concept-map"
-            : "none",
-    motionPlan: { intensity: "subtle", cuePoints: [] },
-    completionRule:
-      interaction.type === "choice"
-        ? { type: "correct-answer", interactionId }
-        : ["reveal", "sort", "input", "explore"].includes(interaction.type)
-          ? { type: "interaction-complete", interactionId }
-          : { type: "view" },
   };
 }
 

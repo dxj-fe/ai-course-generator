@@ -185,7 +185,7 @@ describe.runIf(spikeEnabled)("ToolLoopAgent Provider Spike", () => {
           },
         },
         instructions: [
-          "你正在做工具调用兼容性测试。",
+          "你正在做工具调用协议测试。",
           "严格按当前唯一可用工具推进。",
           "unstable_probe 第一次会返回可恢复错误，收到反馈后用 attempt=2 重试。",
           "大 HTML 只能通过 Artifact 引用交接，不能要求原文。",

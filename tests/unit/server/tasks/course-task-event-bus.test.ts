@@ -12,13 +12,12 @@ function eventMessage(
   return {
     type: "event",
     taskId,
-    courseId: "course-day-19",
-    source: "workflow",
+    courseId: "course-fixture-19",
     event: {
       id: `event-${sequence}`,
       sequence,
       type: "agent_start",
-      traceId: "trace-day-19",
+      traceId: "trace-fixture-19",
       timestamp,
       step: sequence,
       summary: `event ${sequence}`,
@@ -33,16 +32,16 @@ describe("course task event bus", () => {
     const bus = createCourseTaskEventBus();
     const firstTask: number[] = [];
     const otherTask: number[] = [];
-    bus.subscribe("task-day-19", (message) => {
+    bus.subscribe("task-fixture-19", (message) => {
       if (message.type === "event") firstTask.push(message.event.sequence);
     });
     bus.subscribe("task-other", (message) => {
       if (message.type === "event") otherTask.push(message.event.sequence);
     });
 
-    bus.publish(eventMessage("task-day-19", 1));
+    bus.publish(eventMessage("task-fixture-19", 1));
     bus.publish(eventMessage("task-other", 2));
-    bus.publish(eventMessage("task-day-19", 3));
+    bus.publish(eventMessage("task-fixture-19", 3));
 
     expect(firstTask).toEqual([1, 3]);
     expect(otherTask).toEqual([2]);
@@ -51,12 +50,12 @@ describe("course task event bus", () => {
   it("returns an idempotent unsubscribe function", () => {
     const bus = createCourseTaskEventBus();
     const subscriber = vi.fn();
-    const unsubscribe = bus.subscribe("task-day-19", subscriber);
+    const unsubscribe = bus.subscribe("task-fixture-19", subscriber);
 
-    bus.publish(eventMessage("task-day-19", 1));
+    bus.publish(eventMessage("task-fixture-19", 1));
     unsubscribe();
     unsubscribe();
-    bus.publish(eventMessage("task-day-19", 2));
+    bus.publish(eventMessage("task-fixture-19", 2));
 
     expect(subscriber).toHaveBeenCalledTimes(1);
   });
@@ -65,14 +64,14 @@ describe("course task event bus", () => {
     const bus = createCourseTaskEventBus();
     const calls: string[] = [];
     let unsubscribeFirst: () => void = () => undefined;
-    unsubscribeFirst = bus.subscribe("task-day-19", () => {
+    unsubscribeFirst = bus.subscribe("task-fixture-19", () => {
       calls.push("first");
       unsubscribeFirst();
     });
-    bus.subscribe("task-day-19", () => calls.push("second"));
+    bus.subscribe("task-fixture-19", () => calls.push("second"));
 
-    bus.publish(eventMessage("task-day-19", 1));
-    bus.publish(eventMessage("task-day-19", 2));
+    bus.publish(eventMessage("task-fixture-19", 1));
+    bus.publish(eventMessage("task-fixture-19", 2));
 
     expect(calls).toEqual(["first", "second", "second"]);
   });
@@ -81,18 +80,18 @@ describe("course task event bus", () => {
     const bus = createCourseTaskEventBus();
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const received: number[] = [];
-    bus.subscribe("task-day-19", () => {
+    bus.subscribe("task-fixture-19", () => {
       throw new Error("connection already closed");
     });
-    bus.subscribe("task-day-19", (message) => {
+    bus.subscribe("task-fixture-19", (message) => {
       if (message.type === "event") received.push(message.event.sequence);
     });
 
-    expect(() => bus.publish(eventMessage("task-day-19", 1))).not.toThrow();
+    expect(() => bus.publish(eventMessage("task-fixture-19", 1))).not.toThrow();
     expect(received).toEqual([1]);
     expect(consoleError).toHaveBeenCalledWith(
       "[course-task-event-bus] 事件订阅者处理失败",
-      expect.objectContaining({ taskId: "task-day-19" }),
+      expect.objectContaining({ taskId: "task-fixture-19" }),
     );
     consoleError.mockRestore();
   });
@@ -103,7 +102,7 @@ describe("course task event bus", () => {
     expect(() => bus.subscribe("../outside", vi.fn())).toThrow();
     expect(() =>
       bus.publish({
-        ...eventMessage("task-day-19", 1),
+        ...eventMessage("task-fixture-19", 1),
         data: { systemPrompt: "private" },
       } as unknown as CourseTaskStreamMessage),
     ).toThrow();

@@ -3,7 +3,7 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { getImageModelConfig, getModelConfig } from "@/config/env";
 import type { ModelTier } from "./model-router";
 
-export function getLanguageModel(tier?: ModelTier) {
+export function getLanguageModel(tier: ModelTier) {
   const { apiKey, baseURL, modelName, providerName } = getModelConfig(tier);
 
   const provider = createOpenAICompatible({

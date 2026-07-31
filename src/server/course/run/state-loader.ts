@@ -20,7 +20,7 @@ export type CourseRunStateLoaderInput = {
  * 只读投影指定 taskId 的当前 CourseRun，不领取 lease，也不执行 Agent。
  * pause/recovery 用它判断当前 Task 是否已有权威终态。
  */
-export function loadCourseGenerationAgentV2State(
+export function loadCourseGenerationState(
   input: CourseRunStateLoaderInput,
 ): CourseGenerationState | undefined {
   const repository = createCourseRunRepository();

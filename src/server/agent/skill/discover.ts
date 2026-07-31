@@ -9,7 +9,6 @@ export type DiscoveredProjectSkill = Readonly<{
   name: string;
   description: string;
   license?: string;
-  compatibility?: string;
   metadata: Readonly<Record<string, string>>;
   absoluteDir: string;
   logicalDir: string;

@@ -440,7 +440,7 @@ function toSummary(
     pageCount: course.pageCount,
     durationMinutes: course.durationMinutes,
     prompt: buildCoursePrompt(course),
-    previewUrl: `/api/recommendations/courses/${course.id}/preview?v=2`,
+    previewUrl: `/api/recommendations/courses/${course.id}/preview`,
     styleLabel: course.styleLabel,
   });
 }

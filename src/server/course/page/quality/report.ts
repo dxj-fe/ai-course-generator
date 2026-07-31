@@ -136,8 +136,7 @@ function screenshotGateIssues(input: {
     ];
   }
 
-  const captures = evidence.captures ?? [evidence];
-  return captures.flatMap((capture) =>
+  return evidence.captures.flatMap((capture) =>
     capture.status === "captured"
       ? []
       : [

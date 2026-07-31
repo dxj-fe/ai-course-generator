@@ -7,36 +7,36 @@ import type { ModelStepPromptId } from "./model-step-catalog";
 
 export const MODEL_STEP_PROMPT_IDS = Object.freeze({
   pedagogy: {
-    system: PromptIds.CoursePedagogySystemV2,
-    user: PromptIds.CoursePedagogyUserV2,
+    system: PromptIds.CoursePedagogySystem,
+    user: PromptIds.CoursePedagogyUser,
   },
   story: {
-    system: PromptIds.CourseStorySystemV2,
-    user: PromptIds.CourseStoryUserV2,
+    system: PromptIds.CourseStorySystem,
+    user: PromptIds.CourseStoryUser,
   },
   visual: {
-    system: PromptIds.CourseVisualSystemV2,
-    user: PromptIds.CourseVisualUserV2,
+    system: PromptIds.CourseVisualSystem,
+    user: PromptIds.CourseVisualUser,
   },
   "page-writer": {
-    system: PromptIds.CoursePageWriterSystemV3,
-    user: PromptIds.CoursePageWriterUserV3,
+    system: PromptIds.CoursePageWriterSystem,
+    user: PromptIds.CoursePageWriterUser,
   },
   "image-prompt": {
-    system: PromptIds.CourseImagePromptSystemV2,
-    user: PromptIds.CourseImagePromptUserV2,
+    system: PromptIds.CourseImagePromptSystem,
+    user: PromptIds.CourseImagePromptUser,
   },
   "html-engineer": {
-    system: PromptIds.CourseHtmlEngineerSystemV2,
-    user: PromptIds.CourseHtmlEngineerUserV2,
+    system: PromptIds.CourseHtmlEngineerSystem,
+    user: PromptIds.CourseHtmlEngineerUser,
   },
   qa: {
-    system: PromptIds.CoursePageQaSystemV2,
-    user: PromptIds.CoursePageQaUserV2,
+    system: PromptIds.CoursePageQaSystem,
+    user: PromptIds.CoursePageQaUser,
   },
   repair: {
-    system: PromptIds.CourseRepairSystemV1,
-    user: PromptIds.CourseRepairUserV1,
+    system: PromptIds.CourseRepairSystem,
+    user: PromptIds.CourseRepairUser,
   },
 } satisfies Record<
   ModelStepPromptId,

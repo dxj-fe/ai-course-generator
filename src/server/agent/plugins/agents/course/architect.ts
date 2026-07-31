@@ -10,11 +10,10 @@ import {
 
 export const courseArchitectAgent = defineAgent({
   id: AgentIds.CourseArchitect,
-  version: 2,
   description: "根据用户学习需求、课程资料和教学约束设计课程架构。",
-  input: SchemaIds.CourseArchitectInputV1,
-  output: SchemaIds.CourseArchitectureV1,
-  prompt: PromptIds.CourseArchitectSystemV1,
+  input: SchemaIds.CourseArchitectInput,
+  output: SchemaIds.CourseArchitecture,
+  prompt: PromptIds.CourseArchitectSystem,
   tools: AgentToolSets.CourseArchitect,
   contexts: [ContextIds.CourseBrief, ContextIds.CourseReferences],
   skills: [SkillIds.CourseDesign],

@@ -15,12 +15,11 @@ import {
   PagePlanSchema,
   PageTypeSchema,
   QualityReportSchema,
-  QualityScreenshotEvidenceSchema,
   ThemeSchema,
   type Course,
 } from "../../../src/shared/course-schema";
 
-describe("Day 07 course domain schemas", () => {
+describe("course domain schemas", () => {
   it("accepts every checked-in example", () => {
     expect(PagePlanSchema.safeParse(pagePlanExample).success).toBe(true);
     expect(AssetSchema.safeParse(assetExample).success).toBe(true);
@@ -74,31 +73,12 @@ describe("Day 07 course domain schemas", () => {
     expect(CoursePlanSchema.parse(longPlan).pages).toHaveLength(31);
   });
 
-  it("hydrates Day 26 dimension evidence without breaking legacy reports", () => {
+  it("parses the complete quality report example", () => {
     const report = QualityReportSchema.parse(qualityReportExample);
 
     expect(report.dimensions.contentAccuracy.issueCodes).toEqual([]);
     expect(report.dimensions.styleConsistency.issueCodes).toEqual([]);
     expect(report.screenshotEvidence).toBeUndefined();
-  });
-
-  it("keeps legacy primary screenshot evidence valid without multi-viewport fields", () => {
-    const evidence = QualityScreenshotEvidenceSchema.parse({
-      status: "captured",
-      artifactId: "legacy-screenshot",
-      viewport: { width: 1440, height: 900 },
-      metrics: {
-        documentWidth: 1440,
-        documentHeight: 900,
-        horizontalOverflowPx: 0,
-        clippedElementCount: 0,
-        zeroSizeInteractiveCount: 0,
-      },
-      capturedAt: "2026-07-16T10:00:00+08:00",
-    });
-
-    expect(evidence.captures).toBeUndefined();
-    expect(evidence.metrics?.touchTargetUnder24Count).toBeUndefined();
   });
 
   it("requires ready pages to contain HTML output", () => {

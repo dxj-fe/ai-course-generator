@@ -319,7 +319,7 @@ async function generateDirections(
     capability: "image-prompt",
     maxTokens: 2_500,
     prompt: prompts.userPrompt,
-    promptVersion: prompts.version,
+    promptFingerprint: prompts.fingerprint,
     schema: ImagePromptModelOutputSchema,
     schemaDescription:
       "One concise visual direction per HTML asset slot; no whole-page UI image.",

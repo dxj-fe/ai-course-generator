@@ -46,7 +46,7 @@ describe("Page Writer prompts", () => {
       },
     });
 
-    expect(prompts.version).toBe("3.4.0/3.0.0");
+    expect(prompts.fingerprint).toMatch(/^[a-f0-9]{64}$/);
     expect(prompts.systemPrompt).toContain(
       "首轮结果应当已经值得交付",
     );

@@ -130,7 +130,6 @@ export const CourseReviewIssueSchema = z
 
 export const CourseReviewSchema = z
   .object({
-    version: z.literal(1),
     courseId: CourseIdSchema,
     inputManifestHash: z.string().min(8).max(160),
     decision: CourseReviewDecisionSchema,

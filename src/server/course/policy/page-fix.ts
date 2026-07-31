@@ -177,7 +177,7 @@ function loadUniqueFixInputArtifact(
     artifact.courseId !== ref.courseId ||
     artifact.pageId !== ref.pageId ||
     artifact.scopeKey !== ref.scopeKey ||
-    artifact.version !== ref.version ||
+    artifact.revision !== ref.revision ||
     artifact.contentHash !== ref.contentHash
   ) {
     throw new Error(

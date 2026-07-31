@@ -24,9 +24,6 @@ export class PromptRegistry {
     if (this.#definitions.has(definition.id)) {
       throw new Error(`Prompt ID 重复注册：${definition.id}`);
     }
-    if (!Number.isInteger(definition.version) || definition.version < 1) {
-      throw new Error(`Prompt ${definition.id} 的 version 必须是正整数。`);
-    }
     if (
       path.isAbsolute(definition.templatePath) ||
       definition.templatePath

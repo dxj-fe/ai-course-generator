@@ -1,11 +1,11 @@
 import {
+  LessonRuntimeSchema,
   PageContentDSLSchema,
   type PageContentDSL,
 } from "@/shared/course-schema";
 
 const definitions = [
   {
-    version: 1,
     pageId: "example-cover",
     functionalTemplateId: "course-cover",
     title: "太阳系探险启程",
@@ -34,7 +34,6 @@ const definitions = [
     },
   },
   {
-    version: 1,
     pageId: "example-story-intro",
     functionalTemplateId: "story-intro",
     title: "来自火星的求救信号",
@@ -94,7 +93,6 @@ const definitions = [
     },
   },
   {
-    version: 1,
     pageId: "example-knowledge-card",
     functionalTemplateId: "knowledge-card-grid",
     title: "认识八颗行星",
@@ -149,7 +147,6 @@ const definitions = [
     },
   },
   {
-    version: 1,
     pageId: "example-comparison",
     functionalTemplateId: "comparison-board",
     title: "地球和火星有什么不同",
@@ -188,7 +185,6 @@ const definitions = [
     },
   },
   {
-    version: 1,
     pageId: "example-timeline",
     functionalTemplateId: "learning-timeline",
     title: "人类探索太空的里程碑",
@@ -237,7 +233,6 @@ const definitions = [
     },
   },
   {
-    version: 1,
     pageId: "example-quiz",
     functionalTemplateId: "interactive-quiz",
     title: "行星挑战赛",
@@ -310,7 +305,6 @@ const definitions = [
     },
   },
   {
-    version: 1,
     pageId: "example-achievement",
     functionalTemplateId: "achievement-task",
     title: "制作我的行星档案",
@@ -357,7 +351,6 @@ const definitions = [
     },
   },
   {
-    version: 1,
     pageId: "example-summary",
     functionalTemplateId: "recap-summary",
     title: "太阳系知识地图",
@@ -403,7 +396,40 @@ const definitions = [
 /** 八个功能模板各自拥有一份可通过共享 Schema 的 DSL example。 */
 export const functionalTemplateDslExamples = PageContentDSLSchema.array()
   .length(8)
-  .parse(definitions);
+  .parse(
+    definitions.map((definition) => ({
+      ...definition,
+      runtime: createExampleRuntime(definition),
+    })),
+  );
+
+function createExampleRuntime(definition: (typeof definitions)[number]) {
+  const interactionId = `interaction-${definition.pageId}`;
+  const interactionType = definition.interaction.type;
+  return LessonRuntimeSchema.parse({
+    sceneKind:
+      interactionType === "choice" || interactionType === "input"
+        ? "practice"
+        : definition.functionalTemplateId === "recap-summary"
+          ? "recap"
+          : "explain",
+    visualPrimitive:
+      definition.functionalTemplateId === "comparison-board"
+        ? "comparison"
+        : definition.functionalTemplateId === "learning-timeline"
+          ? "timeline"
+          : definition.functionalTemplateId === "knowledge-card-grid"
+            ? "concept-map"
+            : "none",
+    motionPlan: { intensity: "none", cuePoints: [] },
+    completionRule:
+      interactionType === "choice"
+        ? { type: "correct-answer", interactionId }
+        : ["reveal", "sort", "input", "explore"].includes(interactionType)
+          ? { type: "interaction-complete", interactionId }
+          : { type: "view" },
+  });
+}
 
 const examplesByTemplateId = new Map(
   functionalTemplateDslExamples.map((dsl) => [dsl.functionalTemplateId, dsl]),

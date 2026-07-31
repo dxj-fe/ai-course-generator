@@ -36,7 +36,6 @@ export function buildCurrentCourseManifest(input: {
     throw new Error("CourseRun 当前架构与待构造 manifest 的架构不一致");
   }
   return CourseManifestSchema.parse({
-    version: 1,
     courseId: architecture.courseId,
     architectureRef: input.run.activeArchitecture.architectureRef,
     pages: [...architecture.pageTasks]
@@ -339,7 +338,7 @@ function sameArtifactRef(
     left.courseId === right.courseId &&
     left.pageId === right.pageId &&
     left.scopeKey === right.scopeKey &&
-    left.version === right.version &&
+    left.revision === right.revision &&
     left.contentHash === right.contentHash
   );
 }

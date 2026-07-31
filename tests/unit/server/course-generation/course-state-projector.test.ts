@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ToolIds } from "../../../../src/server/agent/ids";
+import { AgentIds, ToolIds } from "../../../../src/server/agent/ids";
 import {
   CourseArtifactSchema,
   CourseRunSchema,
@@ -27,7 +27,7 @@ const COMPLETED_AT = "2026-07-29T08:05:00.000Z";
 const PAGE_ID = "page-one";
 
 describe("CourseStateProjector", () => {
-  it("只读取 current pointer，并生成可被旧 Schema 严格解析的完成态", () => {
+  it("只读取 current pointer，并生成可被当前 Schema 严格解析的完成态", () => {
     const fixture = completedFixture();
 
     const state = projectCourseState(fixture);
@@ -119,7 +119,7 @@ describe("CourseStateProjector", () => {
     expect(state.pages[0]?.repairAttemptCount).toBe(1);
   });
 
-  it("返工页不会继续暴露 stale 旧产物，并只保留当前 Fix WorkOrder 的事件和错误", () => {
+  it("返工页不会继续暴露 stale 产物，并只保留当前 Fix WorkOrder 的事件和错误", () => {
     const fixture = revisingFixture();
 
     const state = projectCourseState(fixture);
@@ -175,7 +175,7 @@ describe("CourseStateProjector", () => {
     expect(() => projectCourseState({ ...fixture, artifacts })).toThrow();
   });
 
-  it("架构阶段失败时投影课程级错误，不伪造页面或旧规划产物", () => {
+  it("架构阶段失败时投影课程级错误，不伪造页面或非当前规划产物", () => {
     const fixture = failedPlanningFixture();
 
     const state = projectCourseState(fixture);
@@ -201,7 +201,7 @@ describe("CourseStateProjector", () => {
     });
   });
 
-  it("投影旧失败记录时清洗事件与终态错误中的凭据和私有上下文", () => {
+  it("投影失败记录时清洗事件与终态错误中的凭据和私有上下文", () => {
     const fixture = failedPlanningFixture();
     const privateMessage =
       "Authorization: Bearer sk-live-SECRET MODEL_API_KEY=top-secret privatePrompt=system requestBody={raw}";
@@ -268,7 +268,7 @@ function completedFixture(): CourseStateProjectorInput {
   const reviewRef = artifactRef("course_review");
   const oldArchitectureRef = {
     ...artifactRef("course_architecture", undefined, "old"),
-    version: 1,
+    revision: 1,
   };
   const oldHtmlRef = artifactRef("page_html", PAGE_ID, "old");
 
@@ -337,7 +337,7 @@ function completedFixture(): CourseStateProjectorInput {
       {
         html: "<!doctype html><html><body>当前页面</body></html>",
         generatedAt: "2026-07-29T08:03:20.000Z",
-        version: 1,
+        revision: 1,
       },
       "2026-07-29T08:03:20.000Z",
     ),
@@ -363,13 +363,12 @@ function completedFixture(): CourseStateProjectorInput {
     artifact(
       oldHtmlRef,
       superseded.id,
-      "旧版本原始 HTML",
+      "上一修订原始 HTML",
       "2026-07-29T07:54:00.000Z",
     ),
   ];
 
   const run = CourseRunSchema.parse({
-    version: 1,
     id: "run-projector-01",
     taskId: TASK_ID,
     courseId: COURSE_ID,
@@ -460,13 +459,13 @@ function revisingFixture(): CourseStateProjectorInput {
   const architectureRef = completed.run.activeArchitecture!.architectureRef;
   const pagePointer = completed.run.currentPages[PAGE_ID]!;
   const fix = WorkOrderSchema.parse({
-    version: 1,
     lockVersion: 3,
     id: "work-page-fix-current",
     taskId: TASK_ID,
     courseId: COURSE_ID,
     causedByReviewIssueIds: ["issue-page-one"],
     dependencyWorkOrderIds: [],
+    agentId: AgentIds.CoursePageBuilder,
     kind: "fix_page",
     scope: { type: "page", pageId: PAGE_ID },
     status: "failed",
@@ -540,13 +539,13 @@ function revisingFixture(): CourseStateProjectorInput {
 
 function failedPlanningFixture(): CourseStateProjectorInput {
   const failedArchitect = WorkOrderSchema.parse({
-    version: 1,
     lockVersion: 2,
     id: "work-architect-failed",
     taskId: TASK_ID,
     courseId: COURSE_ID,
     causedByReviewIssueIds: [],
     dependencyWorkOrderIds: [],
+    agentId: AgentIds.CourseArchitect,
     kind: "architect_course",
     scope: { type: "course" },
     status: "failed",
@@ -577,7 +576,6 @@ function failedPlanningFixture(): CourseStateProjectorInput {
   });
   return {
     run: CourseRunSchema.parse({
-      version: 1,
       id: "run-projector-failed",
       taskId: TASK_ID,
       courseId: COURSE_ID,
@@ -621,10 +619,8 @@ function failedPlanningFixture(): CourseStateProjectorInput {
 
 function createArchitecture(): CourseArchitecture {
   return {
-    version: 1,
     courseId: COURSE_ID,
     coursePack: {
-      version: 1,
       courseId: COURSE_ID,
       topic: "太阳系",
       facts: [],
@@ -633,7 +629,6 @@ function createArchitecture(): CourseArchitecture {
       constraints: ["不引入复杂公式"],
     },
     blueprint: {
-      version: 1,
       courseId: COURSE_ID,
       title: "一页看懂太阳系",
       audience: {
@@ -660,7 +655,6 @@ function createArchitecture(): CourseArchitecture {
     },
     pageTasks: [
       {
-        version: 1,
         pageId: PAGE_ID,
         order: 1,
         title: "太阳系的组成",
@@ -701,10 +695,18 @@ function creationBrief(): CourseCreationBrief {
 
 function pageContent() {
   return {
-    version: 1,
     pageId: PAGE_ID,
     functionalTemplateId: "template-knowledge",
     title: "太阳系的组成",
+    runtime: {
+      sceneKind: "demo",
+      visualPrimitive: "concept-map",
+      motionPlan: { intensity: "none", cuePoints: [] },
+      completionRule: {
+        type: "interaction-complete",
+        interactionId: `interaction-${PAGE_ID}`,
+      },
+    },
     narration: ["先看太阳，再看围绕太阳运行的行星。"],
     blocks: [
       {
@@ -760,7 +762,6 @@ function passingQualityReport() {
 
 function pageSummary() {
   return {
-    version: 1,
     courseId: COURSE_ID,
     pageId: PAGE_ID,
     order: 1,
@@ -784,7 +785,6 @@ function pageSummary() {
 
 function passingReview() {
   return {
-    version: 1,
     courseId: COURSE_ID,
     inputManifestHash: "manifest-current-12345678",
     decision: "pass",
@@ -811,13 +811,18 @@ function acceptedWorkOrder(input: {
   updatedAt: string;
 }): WorkOrder {
   return WorkOrderSchema.parse({
-    version: 1,
     lockVersion: 2,
     id: input.id,
     taskId: TASK_ID,
     courseId: COURSE_ID,
     causedByReviewIssueIds: [],
     dependencyWorkOrderIds: [],
+    agentId:
+      input.kind === "architect_course"
+        ? AgentIds.CourseArchitect
+        : input.kind === "review_course"
+          ? AgentIds.CourseReviewer
+          : AgentIds.CoursePageBuilder,
     kind: input.kind,
     scope: input.scope,
     status: "accepted",
@@ -859,7 +864,7 @@ function artifactRef(
     courseId: COURSE_ID,
     pageId,
     scopeKey: pageId ? `page:${pageId}` : "course",
-    version: suffix === "old" ? 1 : 2,
+    revision: suffix === "old" ? 1 : 2,
     contentHash: `hash-${kind}-${suffix}-12345678`,
   };
 }

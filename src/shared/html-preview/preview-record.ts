@@ -11,7 +11,6 @@ import {
 export const PREVIEW_TTL_MS = 24 * 60 * 60 * 1_000;
 
 export type GeneratedHtmlPreviewRecord = {
-  version: 3;
   id: string;
   pageId: string;
   title: string;
@@ -34,7 +33,6 @@ export function createGeneratedHtmlPreviewRecord(
 ): GeneratedHtmlPreviewRecord {
   validatePreviewContent(input);
   return {
-    version: 3,
     id: crypto.randomUUID(),
     pageId: input.pageId,
     title: input.title,
@@ -75,7 +73,6 @@ function isPreviewRecord(value: unknown): value is GeneratedHtmlPreviewRecord {
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
   return (
-    record.version === 3 &&
     typeof record.id === "string" &&
     record.id.length >= 8 &&
     typeof record.pageId === "string" &&

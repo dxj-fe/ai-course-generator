@@ -156,8 +156,7 @@ export function createPageBuilderTools(
               ? {
                   fixPlan: execution.fixPlan,
                   baseline: {
-                    contentVersion: execution.baseline.content.version,
-                    htmlVersion: execution.baseline.html.version,
+                    htmlRevision: execution.baseline.html.revision,
                     qualityDecision:
                       execution.baseline.quality.decision,
                     summaryDigest:
@@ -872,7 +871,7 @@ async function repairPageArtifact(input: {
   const html = HtmlOutputSchema.parse({
     html: repaired.data.html,
     generatedAt: new Date().toISOString(),
-    version: snapshot.html.version + 1,
+    revision: snapshot.html.revision + 1,
   });
   if (
     fixTargetIsUnchanged(

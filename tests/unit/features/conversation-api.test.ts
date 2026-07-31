@@ -4,7 +4,7 @@ import {
   deleteStoredConversation,
   saveConversation,
   updateStoredConversation,
-} from "../../../src/features/course-planner/lib/conversation-api";
+} from "../../../src/features/keya/api/conversation";
 
 const record = {
   id: "conversation-client-test",

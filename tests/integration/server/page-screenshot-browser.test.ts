@@ -350,13 +350,11 @@ function choiceContent() {
 
   return PageContentDSLSchema.parse({
     ...example,
-    version: 2,
     interaction: {
       type: "choice",
       questions: [question],
     },
     runtime: {
-      runtimeVersion: 1,
       sceneKind: "practice",
       visualPrimitive: "none",
       motionPlan: {

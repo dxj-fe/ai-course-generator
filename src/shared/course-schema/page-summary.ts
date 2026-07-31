@@ -11,7 +11,6 @@ import { ReferenceUsageSchema } from "./reference";
  */
 export const PageSummarySchema = z
   .object({
-    version: z.literal(1),
     courseId: CourseIdSchema,
     pageId: z.string().min(1).max(80),
     order: z.number().int().positive(),

@@ -176,7 +176,7 @@ async function generateWithConfiguredModel(
 type ImageModelConfig = ReturnType<typeof getImageModelConfig>;
 
 /**
- * OpenAI Compatible 图片适配器只解析 b64_json，而 Seedream 默认返回临时 URL。
+ * OpenAI 协议图片适配器只解析 b64_json，而 Seedream 默认返回临时 URL。
  * 对官方方舟端点显式请求 Base64，避免图片已经生成却被 SDK 当成无效响应。
  */
 export function buildImageGenerationProviderOptions(

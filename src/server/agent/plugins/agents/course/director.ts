@@ -9,11 +9,10 @@ import {
 
 export const courseDirectorAgent = defineAgent({
   id: AgentIds.CourseDirector,
-  version: 1,
   description: "根据当前 CourseRun 事实决定下一轮 Agent 派工。",
-  input: SchemaIds.CourseDirectorInputV1,
-  output: SchemaIds.CourseDirectorDecisionV1,
-  prompt: PromptIds.CourseDirectorSystemV2,
+  input: SchemaIds.CourseDirectorInput,
+  output: SchemaIds.CourseDirectorDecision,
+  prompt: PromptIds.CourseDirectorSystem,
   tools: AgentToolSets.CourseDirector,
   contexts: [
     ContextIds.CourseRun,

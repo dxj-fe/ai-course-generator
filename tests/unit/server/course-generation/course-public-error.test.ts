@@ -34,7 +34,6 @@ describe("course public error", () => {
 
   it("投影边界清洗历史事件、页面错误和课程终态错误", () => {
     const state: CourseGenerationState = {
-      version: 1,
       courseId: "course-public-error",
       traceId: "trace-public-error",
       userPrompt: "生成一门课程",
@@ -175,7 +174,7 @@ describe("course public error", () => {
 
   it.each([
     "https://example.com/course/page?q=1",
-    "http://localhost:3000/api/v1",
+    "http://localhost:3000/api/private",
     "input/output",
     "PAGE/FAILED",
   ])("不把 URL、普通斜杠词或错误码当成本地路径：%s", (text) => {
@@ -189,7 +188,6 @@ describe("course public error", () => {
 
   it("历史 CourseState 中的 Unix 路径经过最后防线后不会进入 SSE", () => {
     const state: CourseGenerationState = {
-      version: 1,
       courseId: "course-public-path",
       traceId: "trace-public-path",
       userPrompt: "生成一门课程",
@@ -227,7 +225,6 @@ describe("course public error", () => {
       type: "terminal",
       taskId: "task-public-path",
       courseId: state.courseId,
-      source: "agent-v2",
       status: "failed",
       state: publicState,
     });

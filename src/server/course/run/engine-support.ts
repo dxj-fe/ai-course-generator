@@ -19,7 +19,7 @@ const WORK_ORDER_LEASE_MS = 10 * 60_000;
 export function normalizeConcurrency(value: number | undefined) {
   if (value === undefined) return 3;
   if (!Number.isInteger(value) || value < 1 || value > 5) {
-    throw new RangeError("agent-v2 concurrency 必须在 1 到 5 之间");
+    throw new RangeError("课程生成并发数必须在 1 到 5 之间");
   }
   return value;
 }
@@ -54,28 +54,14 @@ export function stageForOrder(workOrder: WorkOrder) {
 }
 
 export function agentForOrder(workOrder: WorkOrder): AgentId {
-  if (workOrder.agentId) {
-    if (
-      (Object.values(AgentIds) as string[]).includes(workOrder.agentId)
-    ) {
-      return workOrder.agentId as AgentId;
-    }
-    throw new Error(
-      `WorkOrder ${workOrder.id} 引用了未知 Agent：${workOrder.agentId}`,
-    );
+  if (
+    (Object.values(AgentIds) as string[]).includes(workOrder.agentId)
+  ) {
+    return workOrder.agentId as AgentId;
   }
-
-  // 只兼容迁移前已经持久化、尚未包含 agentId 的 WorkOrder。
-  if (workOrder.kind === "architect_course") {
-    return AgentIds.CourseArchitect;
-  }
-  if (workOrder.kind === "review_course") {
-    return AgentIds.CourseReviewer;
-  }
-  if (workOrder.kind === "director_round") {
-    return AgentIds.CourseDirector;
-  }
-  return AgentIds.CoursePageBuilder;
+  throw new Error(
+    `WorkOrder ${workOrder.id} 引用了未知 Agent：${workOrder.agentId}`,
+  );
 }
 
 export function isAbortError(

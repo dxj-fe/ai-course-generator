@@ -17,31 +17,24 @@ import { Button } from "@/components/ui/button";
 import {
   useSSETask,
   type CourseTaskConnectionStatus,
-} from "@/features/course-planner/hooks/use-sse-task";
-import {
-  designCourse,
-  evaluateCoursePage,
-  generateCoursePageAssets,
-  generateCoursePageHtml,
-  writeCoursePage,
-} from "@/features/course-planner/lib/course-planner-api";
+} from "@/features/keya/use-course-task-stream";
 import { projectCourseStateToKeyaRun } from "@/shared/course-view/keya-run";
 import {
   downloadCourseArchive,
-} from "@/features/course-planner/lib/course-library-api";
-import { saveGeneratedHtmlPreview } from "@/features/course-planner/lib/html-preview-api";
+} from "@/features/keya/api/course-library";
+import { saveGeneratedHtmlPreview } from "@/features/keya/api/html-preview";
 import {
   deleteStoredConversation,
   saveConversation,
   updateStoredConversation,
-} from "@/features/course-planner/lib/conversation-api";
-import { parseReferenceFile } from "@/features/course-planner/lib/reference-api";
+} from "@/features/keya/api/conversation";
+import { parseReferenceFile } from "@/features/keya/api/reference";
 import {
   cancelCourseTask,
   createCourseTask,
   pauseCourseTask,
   resumeCourseTask,
-} from "@/features/course-planner/lib/course-task-api";
+} from "@/features/keya/api/course-task";
 import {
   ChatComposer,
   type ReferenceAttachment,
@@ -227,7 +220,6 @@ function mapStreamedCourseRun(
     {
       id: task.runId,
       taskId: task.taskId,
-      source: task.source,
       prompt: task.prompt,
       startedAt: task.runStartedAt,
     },
@@ -779,7 +771,6 @@ export function ChatApp({
         [conversationId]: {
           ...task,
           traceId: response.traceId,
-          source: response.source,
           requestStartedAt: Date.now(),
         },
       }));
@@ -797,7 +788,6 @@ export function ChatApp({
               ? {
                   ...conversation.courseRun,
                   traceId: response.traceId,
-                  source: response.source,
                 }
               : conversation.courseRun,
           }),
@@ -1107,7 +1097,6 @@ export function ChatApp({
       courseId,
       prompt: taskPrompt,
       traceId,
-      source: "agent-v2",
       startedAt,
       planner: { status: "running", events: [] },
       design: { status: "idle", events: [] },
@@ -1161,7 +1150,6 @@ export function ChatApp({
                 taskId: task.taskId,
                 courseId: task.courseId,
                 traceId: task.traceId,
-                source: task.source,
               }
             : conversation.courseRun,
         })),
@@ -1186,7 +1174,6 @@ export function ChatApp({
           runStartedAt: startedAt,
           requestStartedAt: startedAt,
           mode: "create",
-          source: task.source,
         },
       }));
       setConversations((current) =>
@@ -1351,7 +1338,7 @@ export function ChatApp({
       content: "正在从服务端检查点继续生成未完成页面…",
       createdAt: new Date(startedAt).toISOString(),
     };
-    const knownPageCount = run.planner.data?.intent.courseLength;
+    const knownPageCount = run.generation?.intent?.courseLength;
     const previousTaskStatus = selectedConversation.taskStatus;
     const pageCount =
       Number.isSafeInteger(knownPageCount) && (knownPageCount ?? 0) > 0
@@ -1402,7 +1389,6 @@ export function ChatApp({
                 taskId: task.taskId,
                 courseId: task.courseId,
                 traceId: task.traceId,
-                source: task.source,
               }
             : conversation.courseRun,
         })),
@@ -1424,7 +1410,6 @@ export function ChatApp({
           runStartedAt: run.startedAt,
           requestStartedAt: startedAt,
           mode: "resume",
-          source: task.source,
         },
       }));
       setConversations((current) =>
@@ -1463,590 +1448,15 @@ export function ChatApp({
     }
   };
 
-  const handleGenerateDesign = async () => {
-    const conversationId = selectedConversation?.id;
-    const run = selectedConversation?.courseRun;
-    const planner = run?.planner.data;
-    const outline = planner?.state.outline;
-
-    if (!conversationId || !run || !planner || !outline || busy) return;
-
-    setConversationBusy(conversationId, true);
-    setConversations((current) =>
-      updateConversation(current, conversationId, (conversation) => ({
-        ...conversation,
-        courseRun: conversation.courseRun
-          ? {
-              ...conversation.courseRun,
-              design: { status: "running", events: [] },
-              pageWrites: {},
-              pageAssets: {},
-              pageHtml: {},
-              pageQa: {},
-            }
-          : conversation.courseRun,
-      })),
-    );
-    const controller = createController(conversationId);
-
-    try {
-      const result = await designCourse(
-        { intent: planner.intent, outline },
-        { signal: controller.signal, traceId: run.traceId },
-      );
-      const completed =
-        result.state.status === "completed" &&
-        result.state.briefs &&
-        result.state.pageWorkerBriefs;
-
-      if (!completed) {
-        const message =
-          result.state.error?.message ?? "专业设计工作流未生成有效结果。";
-        setConversations((current) =>
-          updateConversation(current, conversationId, (conversation) => ({
-            ...conversation,
-            courseRun: conversation.courseRun
-              ? {
-                  ...conversation.courseRun,
-                  design: {
-                    status: "failed",
-                    events: result.state.events,
-                    data: result,
-                    error: message,
-                  },
-                }
-              : conversation.courseRun,
-          })),
-        );
-        return;
-      }
-
-      setConversations((current) =>
-        updateConversation(current, conversationId, (conversation) => ({
-          ...conversation,
-          courseRun: conversation.courseRun
-            ? {
-                ...conversation.courseRun,
-                design: {
-                  status: "completed",
-                  events: result.state.events,
-                  data: result,
-                },
-              }
-            : conversation.courseRun,
-        })),
-      );
-    } catch (error) {
-      const message = getErrorMessage(error, "专业设计工作流请求失败。");
-      setConversations((current) =>
-        updateConversation(current, conversationId, (conversation) => ({
-          ...conversation,
-          courseRun: conversation.courseRun
-            ? {
-                ...conversation.courseRun,
-                design: {
-                  ...conversation.courseRun.design,
-                  status: "failed",
-                  error: message,
-                },
-              }
-            : conversation.courseRun,
-        })),
-      );
-    } finally {
-      releaseController(conversationId, controller);
-      setConversationBusy(conversationId, false);
-    }
-  };
-
-  const handleGeneratePage = async (pageId: string) => {
-    const conversationId = selectedConversation?.id;
-    const run = selectedConversation?.courseRun;
-    const planner = run?.planner.data;
-    const design = run?.design.data;
-    const page = planner?.state.outline?.pages.find(({ id }) => id === pageId);
-    const brief = design?.state.pageWorkerBriefs?.find(
-      (item) => item.pageId === pageId,
-    );
-
-    if (!conversationId || !run || !planner || !page || !brief || busy) return;
-
-    setConversationBusy(conversationId, true);
-    setConversations((current) =>
-      updateConversation(current, conversationId, (conversation) => ({
-        ...conversation,
-        courseRun: conversation.courseRun
-          ? {
-              ...conversation.courseRun,
-              pageWrites: {
-                ...conversation.courseRun.pageWrites,
-                [pageId]: { status: "running", events: [] },
-              },
-              pageAssets: {
-                ...conversation.courseRun.pageAssets,
-                [pageId]: { status: "idle", events: [] },
-              },
-              pageHtml: {
-                ...conversation.courseRun.pageHtml,
-                [pageId]: { status: "idle", events: [] },
-              },
-              pageQa: {
-                ...conversation.courseRun.pageQa,
-                [pageId]: { status: "idle", events: [] },
-              },
-            }
-          : conversation.courseRun,
-      })),
-    );
-    const controller = createController(conversationId);
-
-    try {
-      const result = await writeCoursePage(
-        {
-          intent: planner.intent,
-          page,
-          brief,
-          referencePacks: run.generation?.referencePacks ?? [],
-        },
-        { signal: controller.signal, traceId: run.traceId },
-      );
-      const completed =
-        result.state.status === "completed" && result.state.content;
-
-      if (!completed) {
-        const message =
-          result.state.error?.message ?? "Page Writer 未生成有效内容。";
-        setConversations((current) =>
-          updateConversation(current, conversationId, (conversation) => ({
-            ...conversation,
-            courseRun: conversation.courseRun
-              ? {
-                  ...conversation.courseRun,
-                  pageWrites: {
-                    ...conversation.courseRun.pageWrites,
-                    [pageId]: {
-                      status: "failed",
-                      events: result.state.events,
-                      data: result,
-                      error: message,
-                    },
-                  },
-                }
-              : conversation.courseRun,
-          })),
-        );
-        return;
-      }
-
-      setConversations((current) =>
-        updateConversation(current, conversationId, (conversation) => ({
-          ...conversation,
-          courseRun: conversation.courseRun
-            ? {
-                ...conversation.courseRun,
-                pageWrites: {
-                  ...conversation.courseRun.pageWrites,
-                  [pageId]: {
-                    status: "completed",
-                    events: result.state.events,
-                    data: result,
-                  },
-                },
-              }
-            : conversation.courseRun,
-        })),
-      );
-    } catch (error) {
-      const message = getErrorMessage(error, "Page Writer 请求失败。");
-      setConversations((current) =>
-        updateConversation(current, conversationId, (conversation) => ({
-          ...conversation,
-          courseRun: conversation.courseRun
-            ? {
-                ...conversation.courseRun,
-                pageWrites: {
-                  ...conversation.courseRun.pageWrites,
-                  [pageId]: {
-                    ...conversation.courseRun.pageWrites[pageId],
-                    status: "failed",
-                    events:
-                      conversation.courseRun.pageWrites[pageId]?.events ?? [],
-                    error: message,
-                  },
-                },
-              }
-            : conversation.courseRun,
-        })),
-      );
-    } finally {
-      releaseController(conversationId, controller);
-      setConversationBusy(conversationId, false);
-    }
-  };
-
-  const handleGenerateAssets = async (pageId: string) => {
-    const conversationId = selectedConversation?.id;
-    const run = selectedConversation?.courseRun;
-    const content = run?.pageWrites[pageId]?.data?.state.content;
-    const visualBrief = run?.design.data?.state.briefs?.visual;
-
-    if (!conversationId || !run || !content || !visualBrief || busy) return;
-
-    setConversationBusy(conversationId, true);
-    setConversations((current) =>
-      updateConversation(current, conversationId, (conversation) => ({
-        ...conversation,
-        courseRun: conversation.courseRun
-          ? {
-              ...conversation.courseRun,
-              pageAssets: {
-                ...conversation.courseRun.pageAssets,
-                [pageId]: { status: "running", events: [] },
-              },
-              pageHtml: {
-                ...conversation.courseRun.pageHtml,
-                [pageId]: { status: "idle", events: [] },
-              },
-              pageQa: {
-                ...conversation.courseRun.pageQa,
-                [pageId]: { status: "idle", events: [] },
-              },
-            }
-          : conversation.courseRun,
-      })),
-    );
-    const controller = createController(conversationId);
-
-    try {
-      const result = await generateCoursePageAssets(
-        { content, visualBrief },
-        { signal: controller.signal, traceId: run.traceId },
-      );
-      const completed =
-        result.state.status === "completed" && result.state.results;
-
-      if (!completed) {
-        const message =
-          result.state.error?.message ?? "页面图片素材没有生成有效结果。";
-        setConversations((current) =>
-          updateConversation(current, conversationId, (conversation) => ({
-            ...conversation,
-            courseRun: conversation.courseRun
-              ? {
-                  ...conversation.courseRun,
-                  pageAssets: {
-                    ...conversation.courseRun.pageAssets,
-                    [pageId]: {
-                      status: "failed",
-                      events: result.state.events,
-                      data: result,
-                      error: message,
-                    },
-                  },
-                }
-              : conversation.courseRun,
-          })),
-        );
-        return;
-      }
-
-      setConversations((current) =>
-        updateConversation(current, conversationId, (conversation) => ({
-          ...conversation,
-          courseRun: conversation.courseRun
-            ? {
-                ...conversation.courseRun,
-                pageAssets: {
-                  ...conversation.courseRun.pageAssets,
-                  [pageId]: {
-                    status: "completed",
-                    events: result.state.events,
-                    data: result,
-                  },
-                },
-              }
-            : conversation.courseRun,
-        })),
-      );
-    } catch (error) {
-      const message = getErrorMessage(error, "图片素材生成请求失败。");
-      setConversations((current) =>
-        updateConversation(current, conversationId, (conversation) => ({
-          ...conversation,
-          courseRun: conversation.courseRun
-            ? {
-                ...conversation.courseRun,
-                pageAssets: {
-                  ...conversation.courseRun.pageAssets,
-                  [pageId]: {
-                    ...conversation.courseRun.pageAssets[pageId],
-                    status: "failed",
-                    events:
-                      conversation.courseRun.pageAssets[pageId]?.events ?? [],
-                    error: message,
-                  },
-                },
-              }
-            : conversation.courseRun,
-        })),
-      );
-    } finally {
-      releaseController(conversationId, controller);
-      setConversationBusy(conversationId, false);
-    }
-  };
-
-  const handleGenerateHtml = async (pageId: string) => {
-    const conversationId = selectedConversation?.id;
-    const run = selectedConversation?.courseRun;
-    const content = run?.pageWrites[pageId]?.data?.state.content;
-    const visualBrief = run?.design.data?.state.briefs?.visual;
-    const assets = run?.pageAssets[pageId]?.data?.state.results;
-
-    if (
-      !conversationId ||
-      !run ||
-      !content ||
-      !visualBrief ||
-      (content.assetSlots.length > 0 && !assets) ||
-      busy
-    ) return;
-
-    setConversationBusy(conversationId, true);
-    setConversations((current) =>
-      updateConversation(current, conversationId, (conversation) => ({
-        ...conversation,
-        courseRun: conversation.courseRun
-          ? {
-              ...conversation.courseRun,
-              pageHtml: {
-                ...conversation.courseRun.pageHtml,
-                [pageId]: { status: "running", events: [] },
-              },
-              pageQa: {
-                ...conversation.courseRun.pageQa,
-                [pageId]: { status: "idle", events: [] },
-              },
-            }
-          : conversation.courseRun,
-      })),
-    );
-    const controller = createController(conversationId);
-
-    try {
-      const result = await generateCoursePageHtml(
-        { content, visualBrief, assets: assets ?? [] },
-        { signal: controller.signal, traceId: run.traceId },
-      );
-      const completed =
-        result.state.status === "completed" && result.state.htmlOutput;
-
-      if (!completed) {
-        const message =
-          result.state.error?.message ?? "HTML Engineer 未生成有效页面。";
-        setConversations((current) =>
-          updateConversation(current, conversationId, (conversation) => ({
-            ...conversation,
-            courseRun: conversation.courseRun
-              ? {
-                  ...conversation.courseRun,
-                  pageHtml: {
-                    ...conversation.courseRun.pageHtml,
-                    [pageId]: {
-                      status: "failed",
-                      events: result.state.events,
-                      data: result,
-                      error: message,
-                    },
-                  },
-                }
-              : conversation.courseRun,
-          })),
-        );
-        return;
-      }
-
-      setConversations((current) =>
-        updateConversation(current, conversationId, (conversation) => ({
-          ...conversation,
-          courseRun: conversation.courseRun
-            ? {
-                ...conversation.courseRun,
-                pageHtml: {
-                  ...conversation.courseRun.pageHtml,
-                  [pageId]: {
-                    status: "completed",
-                    events: result.state.events,
-                    data: result,
-                  },
-                },
-              }
-            : conversation.courseRun,
-        })),
-      );
-    } catch (error) {
-      const message = getErrorMessage(error, "HTML Engineer 请求失败。");
-      setConversations((current) =>
-        updateConversation(current, conversationId, (conversation) => ({
-          ...conversation,
-          courseRun: conversation.courseRun
-            ? {
-                ...conversation.courseRun,
-                pageHtml: {
-                  ...conversation.courseRun.pageHtml,
-                  [pageId]: {
-                    ...conversation.courseRun.pageHtml[pageId],
-                    status: "failed",
-                    events:
-                      conversation.courseRun.pageHtml[pageId]?.events ?? [],
-                    error: message,
-                  },
-                },
-              }
-            : conversation.courseRun,
-        })),
-      );
-    } finally {
-      releaseController(conversationId, controller);
-      setConversationBusy(conversationId, false);
-    }
-  };
-
-  const handleEvaluatePage = async (pageId: string) => {
-    const conversationId = selectedConversation?.id;
-    const run = selectedConversation?.courseRun;
-    const outline = run?.planner.data?.state.outline;
-    const pageIndex = outline?.pages.findIndex(({ id }) => id === pageId) ?? -1;
-    const page = pageIndex >= 0 ? outline?.pages[pageIndex] : undefined;
-    const content = run?.pageWrites[pageId]?.data?.state.content;
-    const html = run?.pageHtml[pageId]?.data?.state.htmlOutput?.html;
-    const visualBrief = run?.design.data?.state.briefs?.visual;
-    const assets = run?.pageAssets[pageId]?.data?.state.results ?? [];
-
-    if (
-      !conversationId ||
-      !run ||
-      !outline ||
-      !page ||
-      !content ||
-      !html ||
-      !visualBrief ||
-      busy
-    ) {
-      return;
-    }
-
-    setConversationBusy(conversationId, true);
-    setConversations((current) =>
-      updateConversation(current, conversationId, (conversation) => ({
-        ...conversation,
-        courseRun: conversation.courseRun
-          ? {
-              ...conversation.courseRun,
-              pageQa: {
-                ...conversation.courseRun.pageQa,
-                [pageId]: { status: "running", events: [] },
-              },
-            }
-          : conversation.courseRun,
-      })),
-    );
-    const controller = createController(conversationId);
-
-    try {
-      const result = await evaluateCoursePage(
-        {
-          page,
-          content,
-          html,
-          visualBrief,
-          assets,
-          courseContext: {
-            learningObjectives: outline.learningObjectives,
-            previousPage: outline.pages[pageIndex - 1],
-            nextPage: outline.pages[pageIndex + 1],
-          },
-        },
-        { signal: controller.signal, traceId: run.traceId },
-      );
-      const completed =
-        result.state.status === "completed" && result.state.report;
-
-      if (!completed) {
-        const message = result.state.error?.message ?? "Page QA 未生成有效质量报告。";
-        setConversations((current) =>
-          updateConversation(current, conversationId, (conversation) => ({
-            ...conversation,
-            courseRun: conversation.courseRun
-              ? {
-                  ...conversation.courseRun,
-                  pageQa: {
-                    ...conversation.courseRun.pageQa,
-                    [pageId]: {
-                      status: "failed",
-                      events: result.state.events,
-                      data: result,
-                      error: message,
-                    },
-                  },
-                }
-              : conversation.courseRun,
-          })),
-        );
-        return;
-      }
-
-      setConversations((current) =>
-        updateConversation(current, conversationId, (conversation) => ({
-          ...conversation,
-          courseRun: conversation.courseRun
-            ? {
-                ...conversation.courseRun,
-                pageQa: {
-                  ...conversation.courseRun.pageQa,
-                  [pageId]: {
-                    status: "completed",
-                    events: result.state.events,
-                    data: result,
-                  },
-                },
-              }
-            : conversation.courseRun,
-        })),
-      );
-    } catch (error) {
-      const message = getErrorMessage(error, "Page QA 请求失败。");
-      setConversations((current) =>
-        updateConversation(current, conversationId, (conversation) => ({
-          ...conversation,
-          courseRun: conversation.courseRun
-            ? {
-                ...conversation.courseRun,
-                pageQa: {
-                  ...conversation.courseRun.pageQa,
-                  [pageId]: {
-                    ...conversation.courseRun.pageQa[pageId],
-                    status: "failed",
-                    events: conversation.courseRun.pageQa[pageId]?.events ?? [],
-                    error: message,
-                  },
-                },
-              }
-            : conversation.courseRun,
-        })),
-      );
-    } finally {
-      releaseController(conversationId, controller);
-      setConversationBusy(conversationId, false);
-    }
-  };
-
   const handleOpenHtmlPreview = async (pageId: string) => {
-    const page = selectedRun?.planner.data?.state.outline?.pages.find(
+    const page = selectedRun?.generation?.outline?.pages.find(
       ({ id }) => id === pageId,
     );
-    const html = selectedRun?.pageHtml[pageId]?.data?.state.htmlOutput?.html;
-    const qualityReport = selectedRun?.pageQa[pageId]?.data?.state.report;
+    const generatedPage = selectedRun?.generation?.pages.find(
+      ({ pageId: generatedPageId }) => generatedPageId === pageId,
+    );
+    const html = generatedPage?.htmlOutput?.html;
+    const qualityReport = generatedPage?.qualityReport;
     if (!page || !html) return;
 
     try {
@@ -2300,11 +1710,6 @@ export function ChatApp({
               exportError={courseExportError}
               exporting={exportingCourseId === selectedRun?.courseId}
               onExportCourse={handleExportCourse}
-              onGenerateDesign={handleGenerateDesign}
-              onGenerateAssets={handleGenerateAssets}
-              onGenerateHtml={handleGenerateHtml}
-              onEvaluatePage={handleEvaluatePage}
-              onGeneratePage={handleGeneratePage}
               onOpenHtmlPreview={handleOpenHtmlPreview}
               onOpenCoursePlayer={handleOpenCoursePlayer}
               onResumeCourse={handleResumeCourse}
