@@ -6,6 +6,7 @@ import { ThemeDensitySchema } from "@/shared/course-schema";
 export const CoreVisualStyleSchema = z.enum([
   "sci-fi",
   "editorial-night",
+  "broadside",
   "kids-playful",
   "minimal",
   "nature",
@@ -62,6 +63,7 @@ export const StyleSurfaceSchema = z.object({
 export const DecorationPatternSchema = z.enum([
   "stars",
   "editorial-glow",
+  "broadside-grid",
   "bubbles",
   "none",
   "botanical",

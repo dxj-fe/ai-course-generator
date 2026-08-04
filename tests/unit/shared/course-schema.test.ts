@@ -73,6 +73,24 @@ describe("course domain schemas", () => {
     expect(CoursePlanSchema.parse(longPlan).pages).toHaveLength(31);
   });
 
+  it("accepts a final quiz that closes the course with feedback", () => {
+    const pages = createPlannedPages(3);
+    pages[2] = {
+      ...pages[2]!,
+      pageType: "quiz",
+      interactionType: "choice",
+      functionalTemplateId: "interactive-quiz",
+    };
+
+    const result = CoursePlanSchema.safeParse({
+      overview: "用最后一道选择题检查理解并在反馈中完成课程回扣。",
+      learningObjectives: ["学习者能够应用核心概念完成最终判断。"],
+      pages,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
   it("parses the complete quality report example", () => {
     const report = QualityReportSchema.parse(qualityReportExample);
 

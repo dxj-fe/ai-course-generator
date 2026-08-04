@@ -34,6 +34,7 @@ import { validateHtmlEngineerOutput } from "./html-engineer-contract";
 import {
   normalizeChoiceInteractionRoot,
   normalizeChoiceRuntimeMarkers,
+  normalizeMergedInteractiveBlocks,
   normalizeNativeInteractionMarker,
   normalizeReadyCssBackgroundAccessibility,
   normalizeRevealCardInteraction,
@@ -260,6 +261,7 @@ function normalizeAndValidateHtmlEngineerOutput(
   );
   normalized = normalizeChoiceInteractionRoot(normalized, input);
   normalized = normalizeChoiceRuntimeMarkers(normalized, input);
+  normalized = normalizeMergedInteractiveBlocks(normalized, input);
   normalized = normalizeTrustedDslMarkup(normalized, input);
   normalized = normalizeVisualPrimitiveMarker(normalized, input);
   normalized = normalizeUniqueReadyAssetSlotRoots(normalized, input);
@@ -410,6 +412,7 @@ export { validateHtmlEngineerOutput } from "./html-engineer-contract";
 export {
   normalizeChoiceInteractionRoot,
   normalizeChoiceRuntimeMarkers,
+  normalizeMergedInteractiveBlocks,
   normalizeNativeInteractionMarker,
   normalizeTrustedPageTitle,
   normalizeRevealCardInteraction,

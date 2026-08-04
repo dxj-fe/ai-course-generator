@@ -301,7 +301,7 @@ describe("Repair model step", () => {
     ).toHaveLength(1);
   });
 
-  it("repairs desktop vertical overflow deterministically without scrolling or hiding content", async () => {
+  it("does not disguise structural vertical overflow with deterministic font shrinking", async () => {
     const htmlWithTrustedLayoutGuard = buildValidGeneratedHtml(
       pageContentDsl,
     ).replace(
@@ -321,7 +321,15 @@ describe("Repair model step", () => {
       }),
     });
     if ("status" in request) throw new Error(request.message);
-    const generateCandidate = vi.fn();
+    const generateCandidate = vi.fn(async () => ({
+      kind: "declined",
+      pageId: pageContentDsl.pageId,
+      targetArtifact: "html",
+      issueCodes: ["BROWSER_VERTICAL_OVERFLOW"],
+      failureClass: "unlocatable_issue",
+      reasonSummary:
+        "纵向溢出需要从干净 HTML 检查点重建结构，局部 CSS patch 不足以安全修复。",
+    }));
 
     const state = await createRepairModelStep({ generateCandidate }).run(
       createRepairModelStepState(request),
@@ -329,22 +337,11 @@ describe("Repair model step", () => {
     );
 
     expect(state.status).toBe("completed");
-    expect(generateCandidate).not.toHaveBeenCalled();
-    expect(state.repairedHtml).toContain("keya-vertical-fit-baseline");
-    expect(state.repairedHtml).toContain("max-height: 520px");
-    expect(state.repairedHtml).toContain(
-      'main[data-page-id] { height: 100%; }\n/* keya-vertical-fit-baseline */',
-    );
-    expect(state.repairedHtml).not.toMatch(
-      /keya-vertical-fit-baseline[\s\S]*overflow\s*:\s*(?:auto|scroll|hidden)/,
-    );
-    expect(state.repairedHtml).not.toMatch(
-      /keya-vertical-fit-baseline[\s\S]*display\s*:\s*none/,
-    );
+    expect(generateCandidate).toHaveBeenCalledOnce();
+    expect(state.repairedHtml).toBeUndefined();
     expect(state.result).toMatchObject({
-      kind: "html_patch_candidate",
-      addressedIssueCodes: ["BROWSER_VERTICAL_OVERFLOW"],
-      patches: [{ selector: "style" }],
+      kind: "declined",
+      issueCodes: ["BROWSER_VERTICAL_OVERFLOW"],
     });
   });
 

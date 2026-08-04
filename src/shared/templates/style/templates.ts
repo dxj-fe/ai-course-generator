@@ -150,6 +150,99 @@ const definitions = [
     ],
   },
   {
+    id: "broadside",
+    name: "火焰大字报",
+    visualStyle: "broadside",
+    goal:
+      "借鉴 frontend-slides Broadside 的抗议海报编辑系统：用墨黑与火焰橙双场景、超大中文重字、目录式小字、发丝分隔线和代码原生图形，让课程页像一张有冲击力的文化海报而不是卡片面板。",
+    colorTokens: {
+      background: "#111111",
+      surface: "#1A1A18",
+      surfaceAlt: "#282826",
+      text: "#F0ECE5",
+      mutedText: "#888880",
+      primary: "#E85D26",
+      accent: "#F0ECE5",
+      border: "#30302D",
+      success: "#68C99A",
+      warning: "#E8A526",
+      danger: "#E7655F",
+    },
+    typography: {
+      headingFont:
+        '"Noto Serif SC", "Source Han Serif SC", "Songti SC", serif',
+      bodyFont:
+        '"LXGW WenKai", "Noto Serif SC", "Source Han Serif SC", serif',
+      headingWeight: 900,
+      bodyWeight: 400,
+      baseFontSize: "1rem",
+      bodyLineHeight: 1.75,
+    },
+    spacing: {
+      unit: "0.25rem",
+      sectionGap: "1.5rem",
+      cardGap: "1rem",
+      contentMaxWidth: "90rem",
+    },
+    surface: {
+      cardRadius: "0px",
+      controlRadius: "0px",
+      cardBorderWidth: "1px",
+      cardShadow: "none",
+    },
+    decoration: {
+      pattern: "broadside-grid",
+      backgroundImage:
+        "linear-gradient(rgba(240,236,229,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(240,236,229,.045) 1px, transparent 1px)",
+      intensity: "bold",
+      shapeLanguage:
+        "超大中文重字充当图形、火焰橙满版宣言面、细发丝分隔线、斜杠项目符号、目录编号、非对称两栏、图表与轨道式代码原生图示；无圆角卡片和阴影。",
+    },
+    motion: {
+      durationFast: "180ms",
+      durationNormal: "650ms",
+      easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+      intensity: "dynamic",
+      reducedMotionDuration: "0ms",
+    },
+    layoutDensity: "spacious",
+    assetGuidance: {
+      visualStyle:
+        "高对比编辑摄影或科学对象特写，墨黑背景、火焰橙单一强调色、温暖纸张颗粒、硬边裁切和海报印刷质感",
+      composition:
+        "主视觉占一侧 45%–60%，另一侧由超大标题与目录式信息构成；允许对象越出常规网格，但必须保留文字安全区",
+      background:
+        "墨黑或火焰橙满版，使用低对比网格、颗粒和单一大形体，不使用白色卡片墙",
+      avoid: [
+        "圆角卡片网格与仪表盘布局",
+        "多种霓虹强调色和紫色渐变",
+        "小标题、小插图漂浮在大片空白中",
+        "阴影、玻璃拟态和柔软胶囊控件",
+      ],
+    },
+    bestFor: [
+      "需要强烈观点的科学与文化课程",
+      "中文编辑叙事",
+      "成人学习与设计主题",
+      "海报式演讲课程",
+    ],
+    avoidFor: ["低龄柔和启蒙", "传统企业合规", "需要打印的密集表格"],
+    keywords: [
+      "broadside",
+      "frontend-slides",
+      "大字报",
+      "海报",
+      "编辑",
+      "戏剧",
+      "强烈",
+      "火焰橙",
+      "墨黑",
+      "丰富",
+      "绚丽",
+      "视觉冲击",
+    ],
+  },
+  {
     id: "kids-playful",
     name: "儿童趣味",
     visualStyle: "kids-playful",
@@ -467,5 +560,5 @@ const definitions = [
 
 /** 启动时校验全部风格，阻止无效 Token 进入 CSS 转换和 Gallery。 */
 export const styleTemplates = StyleTemplateSchema.array()
-  .length(7)
+  .length(8)
   .parse(definitions);

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { CourseOutlineSchema } from "./course";
 
 const INTRO_PAGE_TYPES = new Set(["cover", "story_intro"]);
+const CLOSING_PAGE_TYPES = new Set(["summary", "quiz", "achievement"]);
 const EXPLANATION_PAGE_TYPES = new Set([
   "knowledge_card",
   "comparison",
@@ -35,11 +36,12 @@ export const CoursePlanSchema = CourseOutlineSchema.superRefine(
     if (
       !isSinglePageCourse &&
       lastPage &&
-      lastPage.pageType !== "summary"
+      !CLOSING_PAGE_TYPES.has(lastPage.pageType)
     ) {
       context.addIssue({
         code: "custom",
-        message: "课程最后一页必须是总结页",
+        message:
+          "课程最后一页必须是总结页，或带紧凑回扣的测验/成果任务页",
         path: ["pages", outline.pages.length - 1, "pageType"],
       });
     }

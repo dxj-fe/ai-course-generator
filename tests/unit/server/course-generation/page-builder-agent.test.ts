@@ -34,6 +34,7 @@ import { createProjectSkillRegistry } from "../../../../src/server/setup/skills"
 import {
   PageContentDSLSchema,
   PageSummarySchema,
+  QualityReportSchema,
 } from "../../../../src/shared/course-schema";
 import {
   createBrief,
@@ -204,6 +205,93 @@ describe("Page Builder ToolLoopAgent", () => {
     expect(
       stored.checkpointArtifactRefs.map(({ kind }) => kind),
     ).toEqual(["page_content"]);
+  });
+
+  it("真实视口纵向溢出时从干净 HTML 检查点重建，而不是追加缩字 patch", async () => {
+    const prepared = await preparePageBuilder();
+    const baselineHtml = htmlOutput();
+    const regeneratedHtml = {
+      ...baselineHtml,
+      html: baselineHtml.html.replace(
+        "</main>",
+        '<div class="structural-regeneration"></div></main>',
+      ),
+    };
+    const baseQuality = passingQuality();
+    const quality = QualityReportSchema.parse({
+      ...baseQuality,
+      id: "quality-page-overflow",
+      overallScore: 72,
+      dimensions: {
+        ...baseQuality.dimensions,
+        layoutQuality: {
+          score: 40,
+          summary: "固定播放器产生大幅纵向溢出。",
+          issueCodes: ["BROWSER_VERTICAL_OVERFLOW"],
+          repairHints: ["从干净 HTML 检查点重建布局。"],
+        },
+      },
+      issues: [
+        {
+          code: "BROWSER_VERTICAL_OVERFLOW",
+          dimension: "layoutQuality",
+          severity: "error",
+          source: "browser",
+          message: "页面产生 561px 纵向溢出。",
+          location: {
+            pageId: PAGE_ID,
+            viewport: "922x460",
+            description: "Playwright 固定视口渲染结果",
+          },
+          repairHint: "重构为横向或网格布局。",
+        },
+      ],
+      shouldRepair: true,
+      decision: "revise",
+    });
+    const steps = modelSteps({
+      content: pageContent(),
+      html: baselineHtml,
+      quality,
+    });
+    vi.mocked(steps.generateHtml)
+      .mockResolvedValueOnce(baselineHtml)
+      .mockResolvedValueOnce(regeneratedHtml);
+    const tools = createPageBuilderTools(prepared.execution, {
+      modelSteps: steps,
+    });
+
+    await executeTool(tools, "generate_page_content", {
+      pageId: PAGE_ID,
+    });
+    await executeTool(tools, "generate_page_html", {
+      pageId: PAGE_ID,
+    });
+    await executeTool(tools, "inspect_page", {
+      pageId: PAGE_ID,
+    });
+    await executeTool(tools, "repair_page_html", {
+      pageId: PAGE_ID,
+    });
+
+    expect(steps.repairPage).not.toHaveBeenCalled();
+    expect(steps.generateHtml).toHaveBeenCalledTimes(2);
+    expect(
+      vi.mocked(steps.generateHtml).mock.calls[1]?.[0]
+        .validationFeedback,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("从干净 HTML 检查点完整重建构图"),
+        expect.stringContaining("BROWSER_VERTICAL_OVERFLOW"),
+      ]),
+    );
+    const snapshot = loadPageBuilderWorkingSnapshot(
+      prepared.execution,
+    );
+    expect(snapshot.html?.html).toContain(
+      'class="structural-regeneration"',
+    );
+    expect(snapshot.quality).toBeUndefined();
   });
 
   it("拒绝跨页调用和未授权资料 chunk", async () => {

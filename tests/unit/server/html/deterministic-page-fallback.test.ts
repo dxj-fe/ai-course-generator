@@ -4,10 +4,12 @@ import { chromium } from "playwright";
 import {
   renderDeterministicPageFallback,
 } from "../../../../src/server/course/page/deterministic-fallback";
+import { validateHtmlEngineerOutput } from "../../../../src/server/agent/plugins/model-steps/course/html-engineer-model-step";
 import { buildFittedLessonSrcDoc } from "../../../../src/shared/html-preview";
 import type {
   AssetGenerationResult,
   PageContentDSL,
+  VisualBrief,
 } from "../../../../src/shared/course-schema";
 import { getFunctionalTemplateDslExample } from "../../../../src/shared/templates/functional/dsl-examples";
 import { getStyleTemplate } from "../../../../src/shared/templates/style";
@@ -412,6 +414,46 @@ function createFiveNodeTimelineContent(): PageContentDSL {
 }
 
 describe("renderDeterministicPageFallback advanced layout", () => {
+  it("renders a contract-complete frontend-slides Broadside structural page", () => {
+    const broadside = getStyleTemplate("broadside");
+    if (!broadside) throw new Error("测试需要 broadside 样式模板");
+    const content = {
+      ...getExample("knowledge-card-grid"),
+      assetSlots: [],
+    };
+    const html = renderDeterministicPageFallback({
+      content,
+      styleTemplate: broadside,
+    });
+
+    expect(html).toContain('data-keya-renderer="broadside-structural"');
+    expect(html).toContain('class="masthead"');
+    expect(html).toContain('class="course-native-visual"');
+    expect(html).not.toContain('class="lesson-card"');
+    expect(html).not.toContain("border-radius: var(--course-radius-card)");
+    expect(() =>
+      validateHtmlEngineerOutput(html, {
+        content,
+        visualBrief: {
+          styleTemplateId: "broadside",
+        } as unknown as VisualBrief,
+      }),
+    ).not.toThrow();
+
+    const listMasqueradingAsVisual = html.replace(
+      /<svg\b[\s\S]*?<\/svg>/i,
+      "<div>普通互动列表</div>",
+    );
+    expect(() =>
+      validateHtmlEngineerOutput(listMasqueradingAsVisual, {
+        content,
+        visualBrief: {
+          styleTemplateId: "broadside",
+        } as unknown as VisualBrief,
+      }),
+    ).toThrow(/必须包含真实 SVG 或 Canvas 图形/);
+  });
+
   it("marks generated HTML as deterministic", () => {
     const html = renderDeterministicPageFallback({
       content: getExample("story-intro"),

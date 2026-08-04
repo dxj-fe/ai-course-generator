@@ -131,6 +131,21 @@ export function runArchitectureGate(input: {
     }
 
     if (
+      architecture.blueprint.courseRules.styleTemplateId === "broadside" &&
+      /代码原生(?:科学)?图形/u.test(
+        input.creationBrief.originalRequest,
+      ) &&
+      page.assetNeeds.length > 0
+    ) {
+      issues.push({
+        code: "BROADSIDE_CODE_NATIVE_ASSET_CONFLICT",
+        path: `pageTasks.${index}.assetNeeds`,
+        message:
+          "用户明确要求 Broadside 使用代码原生图形，本页 assetNeeds 必须为空；请用 HTML/CSS/内联 SVG 建立场景、科学关系和视觉焦点",
+      });
+    }
+
+    if (
       page.pageType === "summary" &&
       !page.acceptance.requiresInteraction &&
       !["none", "navigate", "input"].includes(page.interactionType)

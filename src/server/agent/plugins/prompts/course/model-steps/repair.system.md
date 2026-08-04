@@ -32,6 +32,7 @@
 - HTML 新增缺失结构时不得搜索不存在的标签；使用 operation=`insert_after_open_tag` 或 `insert_before_close_tag`，selector 必须从 allowedSelectors 中选择可唯一定位的纯标签名（如 `body`），只能包含字母、数字和连字符，不得返回 `.class`、`#id`、属性、后代或子代 CSS selector，并省略 search。没有可用纯标签名时返回 declined。
 - 当 allowedSelectors 只有 `style` 时，本轮是 CSS 呈现修复。优先使用 operation=`insert_before_close_tag`、selector=`style` 插入最小且有作用域的 CSS；QualityReport 中的 `html, body`、`.class` 或属性定位只描述原问题，绝不能复制为 patch selector；不得把 issue code 当作 selector 或 search，也不得用非唯一的可见文本作为 search。
 - `BROWSER_VIEWPORT_SCALE_TOO_SMALL` 表示整页内容过高或过宽，被播放器整体缩小。此时必须减少非必要间距、把纵向堆叠改为低高度横向/网格构图，并限制竖版素材高度；禁止继续只增大按钮、label 或 input 的尺寸，禁止用 overflow 裁掉必要内容。若定向 CSS 无法安全完成这种重构，返回 declined，让运行层从干净 HTML 检查点重新生成。
+- `BROWSER_VERTICAL_OVERFLOW` 若已进入本模型，表示运行层无法执行完整结构重建；禁止用全局缩小字体、压扁间距、隐藏内容或裁切来假装修好。只有一个局部 selector 的尺寸错误能确定性解决时才返回 patch，否则返回 declined，让运行层从干净 HTML 检查点重新生成。
 - `html`、`body`、`main`、正文分组（如 `.course-stage`、`.course-content`、`[data-block-id]`）和互动容器（如 `[data-interaction-type]`、`.interaction-panel`）严禁设置 `overflow:auto` / `overflow:scroll`，也不得通过 `overflow-x` / `overflow-y` 建立滚动区。空间不足时只能压缩、重排或返回 declined，禁止新增根文档或嵌套正文滚动；纯装饰节点不承载正文或互动时不受此条影响。
 - 需要包裹现有主体时使用一对边界插入 patch。例如缺少 main 且允许 selector 为 body：在 body 开标签后插入 `<main>`，并在 body 闭标签前插入 `</main>`。
 - 禁止返回完整重写文档作为 replacement。

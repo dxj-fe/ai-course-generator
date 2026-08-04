@@ -87,21 +87,6 @@ const TOUCH_TARGET_BASELINE_CSS = `/* keya-touch-target-baseline */
   min-width: 24px !important;
   min-height: 24px !important;
 }`;
-const VERTICAL_FIT_ISSUE_CODE = "BROWSER_VERTICAL_OVERFLOW";
-const VERTICAL_FIT_BASELINE_CSS = `/* keya-vertical-fit-baseline */
-@media (min-width: 600px) and (max-height: 520px) {
-  main[data-page-id] {
-    --course-spacing-section: 0.5rem;
-    --course-spacing-card: 0.5rem;
-    --course-spacing-unit: 0.25rem;
-    font-size: 0.875rem !important;
-    line-height: 1.35 !important;
-  }
-  main[data-page-id] > h1 {
-    font-size: 1.375rem !important;
-    line-height: 1.05 !important;
-  }
-}`;
 
 export function createRepairModelStep(
   dependencies: RepairModelStepDependencies = defaultDependencies,
@@ -113,8 +98,7 @@ export function createRepairModelStep(
       const request = RepairRequestSchema.parse(state.task);
       const deterministicCandidate =
         buildDeterministicOpaqueAssetCandidate(request) ??
-        buildDeterministicTouchTargetCandidate(request) ??
-        buildDeterministicVerticalFitCandidate(request);
+        buildDeterministicTouchTargetCandidate(request);
       const output =
         deterministicCandidate ??
         (await dependencies.generateCandidate({
@@ -290,43 +274,6 @@ function buildTouchTargetPatch(
     selector: "style",
     replacement: `\n${TOUCH_TARGET_BASELINE_CSS}\n`,
     summary: "为互动控件和关联标签补齐 24px/44px 触控尺寸基线。",
-  };
-}
-
-function buildDeterministicVerticalFitCandidate(
-  request: RepairRequest,
-): unknown {
-  if (
-    request.targetArtifact !== "html" ||
-    !request.issueCodes.includes(VERTICAL_FIT_ISSUE_CODE) ||
-    request.allowedSelectors.length !== 1 ||
-    request.allowedSelectors[0] !== "style" ||
-    (request.html.match(/<\/style\s*>/gi) ?? []).length === 0 ||
-    request.html.includes(VERTICAL_FIT_BASELINE_CSS)
-  ) {
-    return undefined;
-  }
-
-  return {
-    kind: "html_patch_candidate",
-    pageId: request.pageId,
-    targetArtifact: "html",
-    addressedIssueCodes: [VERTICAL_FIT_ISSUE_CODE],
-    unresolvedIssueCodes: request.issueCodes.filter(
-      (code) => code !== VERTICAL_FIT_ISSUE_CODE,
-    ),
-    changeSummary: [
-      "压缩低高度桌面画布的间距与排版，不引入滚动、裁切或内容隐藏。",
-    ],
-    patches: [
-      {
-        issueCode: VERTICAL_FIT_ISSUE_CODE,
-        operation: "insert_before_close_tag",
-        selector: "style",
-        replacement: `\n${VERTICAL_FIT_BASELINE_CSS}\n`,
-        summary: "为低高度桌面画布应用紧凑且可读的排版基线。",
-      },
-    ],
   };
 }
 

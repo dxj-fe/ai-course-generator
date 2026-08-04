@@ -39,6 +39,27 @@ describe("CourseArchitecture 当前投影", () => {
       ),
     ).toThrow("未使用整课样式模板 minimal");
   });
+
+  it("允许最终选择题在反馈中承担紧凑课程回扣", () => {
+    const architecture = architectureFixture();
+    architecture.pageTasks[2] = {
+      ...architecture.pageTasks[2]!,
+      pageType: "quiz",
+      interactionType: "choice",
+      functionalTemplateId: "interactive-quiz",
+    };
+
+    const projected = projectCourseArchitecture(
+      architecture,
+      creationBriefFixture(),
+    );
+
+    expect(projected.outline.pages[2]).toMatchObject({
+      pageType: "quiz",
+      interactionType: "choice",
+      functionalTemplateId: "interactive-quiz",
+    });
+  });
 });
 
 function creationBriefFixture() {

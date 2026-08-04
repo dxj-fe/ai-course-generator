@@ -589,12 +589,19 @@ function successResult<T>(
 function gateFailureResult(
   issues: Array<{ code: string; path: string; message: string }>,
 ): AgentToolResult<never, ArtifactRef> {
+  const diagnostic = issues
+    .slice(0, 3)
+    .map(({ code, path, message }) => `${code} @ ${path}: ${message}`)
+    .join("；");
   return {
     ok: false,
     committed: false,
     terminal: false,
     code: "ARCHITECTURE_GATE_FAILED",
-    message: `课程架构还有 ${issues.length} 个可修正问题。`,
+    // Keep the first deterministic diagnostics in the durable tool ledger. This
+    // contains only public schema/gate feedback (never model reasoning) and makes
+    // repeated terminal failures diagnosable after the model session has ended.
+    message: `课程架构还有 ${issues.length} 个可修正问题：${diagnostic}`,
     retryable: true,
     feedback: issues
       .slice(0, 40)

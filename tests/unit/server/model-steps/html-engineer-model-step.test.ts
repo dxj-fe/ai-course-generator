@@ -17,6 +17,7 @@ import {
   normalizeGeneratedActiveContent,
   normalizeGeneratedCanvasRoot,
   normalizeGeneratedHtmlEnvelope,
+  normalizeMergedInteractiveBlocks,
   normalizeNativeInteractionMarker,
   normalizeRevealCardInteraction,
   normalizeRevealRuntimeMarkers,
@@ -597,7 +598,7 @@ describe("HtmlEngineerModelStep", () => {
     ).toHaveLength(1);
   });
 
-  it("injects the trusted low-height player layout guard exactly once", () => {
+  it("injects a visual-neutral trusted player guard exactly once", () => {
     const generated =
       "<!doctype html><html><head><style>main{gap:3rem}</style></head><body><main data-page-id=\"page-01\"></main></body></html>";
 
@@ -610,50 +611,17 @@ describe("HtmlEngineerModelStep", () => {
       "html,body{width:100%!important;height:100%!important;margin:0!important;padding:0!important",
     );
     expect(normalized).toContain(
-      "main[data-page-id]>*{min-width:0;box-sizing:border-box}",
-    );
-    expect(normalized).not.toContain(
-      "main[data-page-id]>*{min-width:0;max-width:100%",
-    );
-    expect(normalized).toContain("@media (min-width:600px) and (max-height:520px)");
-    expect(normalized).toContain("max-height:min(30vh,12rem)!important");
-    expect(normalized).toContain(
-      "[data-interaction-item-id]{width:auto!important;min-width:0!important;max-width:100%!important",
+      "main[data-page-id]>*{min-width:0}",
     );
     expect(normalized).toContain(
-      ">details[data-block-id]:not([open]){min-height:44px!important;padding:0!important}",
+      ':where(button,[role="button"],summary,select,input:not([type="hidden"]),textarea){min-width:44px;min-height:44px}',
     );
     expect(normalized).toContain(
-      "[data-block-id]:has(>details){padding:0!important}",
+      "@media (prefers-reduced-motion:reduce)",
     );
-    expect(normalized).toContain(
-      "[data-block-id]>details:not([open]){min-height:44px!important;padding:0!important}",
-    );
-    expect(normalized).toContain(
-      '*:has(>*>[data-block-id]):has(>[data-interaction-type="sort"])',
-    );
-    expect(normalized).toContain(
-      ':has(>[data-block-id]):has(>[data-interaction-type="sort"])',
-    );
-    expect(normalized).toContain(
-      '[data-interaction-type="sort"]>*:has(>*>[data-interaction-item-id])',
-    );
-    expect(normalized).toContain(
-      'grid-template-columns:repeat(3,minmax(0,1fr))!important',
-    );
-    expect(normalized).toContain(
-      '[data-interaction-type="navigate"]{min-width:44px!important;min-height:44px!important',
-    );
-    expect(normalized).toContain('data-keya-asset-type="icon"');
-    expect(normalized).toContain("details>summary");
-    expect(normalized).toContain(
-      "[data-visual-primitive]:has([data-block-id]):has([data-interaction-type])",
-    );
-    expect(normalized).toContain("height:32%!important");
-    expect(normalized).toContain(
-      "grid-template-rows:auto repeat(6,minmax(44px,1fr))!important",
-    );
-    expect(normalized).toContain("grid-row:2/8!important");
+    expect(normalized).not.toContain("font-size:clamp(");
+    expect(normalized).not.toContain("grid-template-columns:");
+    expect(normalized).not.toContain(':has(>[data-block-id])');
     expect(String(normalized).match(/data-keya-layout-guard=/g)).toHaveLength(1);
     expect(String(normalized).indexOf('data-keya-layout-guard="current"')).toBeLessThan(
       String(normalized).indexOf("</head>"),
@@ -671,6 +639,25 @@ describe("HtmlEngineerModelStep", () => {
     expect(normalized).toContain(
       `<h1 data-keya-trusted-page-title="true">${pageContentDsl.title}</h1>`,
     );
+    expect(() => validateHtmlEngineerOutput(normalized, input)).not.toThrow();
+  });
+
+  it("promotes a unique matching display heading instead of duplicating the page title", () => {
+    const html = buildValidGeneratedHtml(pageContentDsl).replace(
+      `<h1>${pageContentDsl.title}</h1>`,
+      `<h2 class="display-title">${pageContentDsl.title}</h2>`,
+    );
+
+    const normalized = normalizeTrustedPageTitle(html, input);
+    if (typeof normalized !== "string") {
+      throw new Error("标题规范化必须返回 HTML 字符串");
+    }
+
+    expect(normalized).toContain(
+      '<h1 class="display-title" data-keya-trusted-page-title="true"',
+    );
+    expect(normalized).not.toContain("<h2 class=\"display-title\">");
+    expect(normalized.match(new RegExp(pageContentDsl.title, "g"))).toHaveLength(2);
     expect(() => validateHtmlEngineerOutput(normalized, input)).not.toThrow();
   });
 
@@ -2010,6 +1997,32 @@ describe("HtmlEngineerModelStep", () => {
     expect(normalized).not.toContain(
       'data-course-contract-restored="interaction-item"',
     );
+    expect(() =>
+      validateHtmlEngineerOutput(normalized, input),
+    ).not.toThrow();
+  });
+
+  it("merges duplicated aligned blocks and reveal items into shared native details", () => {
+    const html = buildValidGeneratedHtml(pageContentDsl);
+
+    const normalized = normalizeMergedInteractiveBlocks(html, input);
+    if (typeof normalized !== "string") {
+      throw new Error("合并式互动规范化必须返回 HTML 字符串");
+    }
+
+    for (const [index, block] of pageContentDsl.blocks.entries()) {
+      const item = pageContentDsl.interaction.type === "reveal"
+        ? pageContentDsl.interaction.items[index]
+        : undefined;
+      if (!item) throw new Error("测试 fixture 必须使用 reveal");
+      expect(normalized).toContain(
+        `data-block-id="${block.id}" data-runtime-target-id="${block.id}" data-interaction-item-id="${item.id}"`,
+      );
+      expect(
+        normalized.match(new RegExp(`data-block-id="${block.id}"`, "g")),
+      ).toHaveLength(1);
+    }
+    expect(normalized).not.toContain("<article data-block-id=");
     expect(() =>
       validateHtmlEngineerOutput(normalized, input),
     ).not.toThrow();

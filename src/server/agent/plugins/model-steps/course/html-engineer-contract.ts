@@ -77,7 +77,7 @@ export function validateHtmlEngineerOutput(
     }
   }
   validateStableMarkupStructure(html, input.content, issues);
-  validateTrustedRuntimeMarkup(html, input.content, issues);
+  validateTrustedRuntimeMarkup(html, input, issues);
 
   validateAssetReferences(html, input.content, input.assets ?? [], issues);
 
@@ -117,9 +117,10 @@ function validateSingleCoursePageCanvas(html: string, issues: string[]) {
 
 function validateTrustedRuntimeMarkup(
   html: string,
-  content: PageContentDSL,
+  input: HtmlEngineerInput,
   issues: string[],
 ) {
+  const { content } = input;
   if (
     content.runtime.visualPrimitive !== "none" &&
     !hasUniqueVisualPrimitiveInMain(
@@ -132,6 +133,15 @@ function validateTrustedRuntimeMarkup(
   ) {
     issues.push(
       `页面必须包含唯一 data-visual-primitive="${content.runtime.visualPrimitive}" 代码原生图示。`,
+    );
+  }
+  if (
+    content.runtime.visualPrimitive !== "none" &&
+    input.visualBrief.styleTemplateId === "broadside" &&
+    !hasBroadsideCodeNativeGraphic(html, content)
+  ) {
+    issues.push(
+      `Broadside 的 data-visual-primitive="${content.runtime.visualPrimitive}" 必须包含真实 SVG 或 Canvas 图形，不能把普通正文或互动列表冒充代码原生图示。`,
     );
   }
 
@@ -254,6 +264,20 @@ function validateTrustedRuntimeMarkup(
       );
     }
   }
+}
+
+function hasBroadsideCodeNativeGraphic(
+  html: string,
+  content: PageContentDSL,
+) {
+  const markers = findTagMatchesWithAttributes(html, {
+    "data-visual-primitive": content.runtime.visualPrimitive,
+  });
+  if (markers.length !== 1) return false;
+  const visualHtml = getElementHtml(html, markers[0]);
+  return Boolean(
+    visualHtml && /<(?:svg|canvas)\b/i.test(visualHtml),
+  );
 }
 
 function hasUniqueVisualPrimitiveInMain(

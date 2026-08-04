@@ -21,6 +21,8 @@ import {
 import { classifyPublicAgentError } from "@/server/course/projection/public-error";
 import {
   defaultPageBuilderModelSteps,
+  getRequiredFrontendSlidesStyleRecipe,
+  hasLoadedFrontendSlidesStyleRecipe,
   type PageBuilderModelSteps,
 } from "@/server/agent/plugins/tools/course/page-builder-model-steps";
 import {
@@ -73,6 +75,11 @@ const BlockPageInputSchema = ScopeInputSchema.extend({
 
 const MAX_PAGE_CONTENT_GENERATION_ATTEMPTS = 3;
 const MAX_PAGE_REPAIR_GENERATION_ATTEMPTS = 3;
+const STRUCTURAL_HTML_REGENERATION_CODES = new Set([
+  "BROWSER_CONTENT_CLIPPED",
+  "BROWSER_VERTICAL_OVERFLOW",
+  "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
+]);
 
 export type PageBuilderToolDependencies = {
   modelSteps?: PageBuilderModelSteps;
@@ -334,7 +341,7 @@ export function createPageBuilderTools(
 
     [ToolIds.GeneratePageHtml]: tool({
       description:
-        "把已保存的内容和素材实现为安全的单页 HTML，并立即保存 checkpoint。",
+        "把已保存的内容和素材实现为安全的单页 HTML，并立即保存 checkpoint；强视觉风格需先读取指定 frontend-slides 设计配方。",
       inputSchema: ScopeInputSchema,
       execute: (_input, options) =>
         runExclusive(async () => {
@@ -362,6 +369,26 @@ export function createPageBuilderTools(
               snapshot.workOrder,
               "page_html",
               "已复用保存的页面 HTML。",
+            );
+          }
+          const requiredDesignRecipe =
+            getRequiredFrontendSlidesStyleRecipe(
+              execution.pageTask.styleTemplateId,
+            );
+          if (
+            requiredDesignRecipe &&
+            execution.localResourceSession &&
+            !hasLoadedFrontendSlidesStyleRecipe(
+              execution,
+              requiredDesignRecipe,
+            )
+          ) {
+            return failure(
+              "FRONTEND_SLIDES_RECIPE_MISSING",
+              `当前 ${execution.pageTask.styleTemplateId} 风格尚未读取对应 frontend-slides 设计配方。`,
+              [
+                `调用 read_local_resource 读取 ${requiredDesignRecipe}，再重新调用 generate_page_html。`,
+              ],
             );
           }
           const generated = await recoverableModelStep(
@@ -811,13 +838,37 @@ async function repairPageArtifact(input: {
     );
   }
 
+  const structuralRegenerationFeedback =
+    input.requestedTarget === "html"
+      ? buildStructuralHtmlRegenerationFeedback(
+          snapshot.quality,
+        )
+      : [];
   const repaired = await recoverableModelStep(
-    () =>
-      input.modelSteps.repairPage({
+    async () => {
+      if (structuralRegenerationFeedback.length > 0) {
+        const regenerated = await input.modelSteps.generateHtml({
+          execution: input.execution,
+          content: snapshot.content!,
+          assets: snapshot.assets ?? [],
+          validationFeedback: structuralRegenerationFeedback,
+          structuralRebuild: true,
+          abortSignal: input.abortSignal,
+        });
+        return {
+          status: "applied" as const,
+          targetArtifact: "html" as const,
+          html: regenerated.html,
+          summary:
+            "根据真实视口证据从干净检查点重新构建页面结构。",
+        };
+      }
+      return input.modelSteps.repairPage({
         execution: input.execution,
         request: plan,
         abortSignal: input.abortSignal,
-      }),
+      });
+    },
     input.abortSignal,
     "PAGE_REPAIR_FAILED",
     "页面定向返工失败，可以重试。",
@@ -927,6 +978,39 @@ async function repairPageArtifact(input: {
     },
     artifactRefs: [toArtifactRef(artifact)],
   });
+}
+
+/**
+ * 大幅纵向溢出不是局部 CSS selector 能可靠修好的呈现缺陷。保留原 DSL、
+ * 素材与 frontend-slides 设计配方，从干净 HTML 检查点重建结构，再走同一
+ * checkpoint、re-QA 与修订预算，避免连续追加缩字补丁。
+ */
+function buildStructuralHtmlRegenerationFeedback(
+  quality: z.infer<typeof QualityReportSchema>,
+) {
+  const issues = quality.issues.filter(
+    ({ code, severity }) =>
+      severity === "error" &&
+      STRUCTURAL_HTML_REGENERATION_CODES.has(code),
+  );
+  if (issues.length === 0) return [];
+
+  return [
+    "从干净 HTML 检查点完整重建构图；保留 DSL、运行时标记和 frontend-slides 视觉身份，不沿用旧页面的纵向堆叠。合并同义 block/interaction 根节点，使用横向或网格布局；禁止仅缩小字号、间距、图片或追加补丁。",
+    ...issues.slice(0, 9).map((issue) =>
+      [
+        issue.code,
+        issue.location.viewport
+          ? `viewport=${issue.location.viewport}`
+          : undefined,
+        issue.message,
+        issue.repairHint,
+      ]
+        .filter(Boolean)
+        .join(" | ")
+        .slice(0, 500),
+    ),
+  ];
 }
 
 function unchangedFixFailure(target: string) {

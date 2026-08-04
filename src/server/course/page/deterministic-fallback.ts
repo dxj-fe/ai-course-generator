@@ -19,6 +19,7 @@ import {
   resolveDensity,
   resolveTemplateLabel,
 } from "./deterministic-fallback-markup";
+import { renderBroadsidePageFallback } from "./broadside-fallback";
 
 export type DeterministicPageFallbackInput = {
   content: PageContentDSL;
@@ -36,6 +37,13 @@ export function renderDeterministicPageFallback({
   content,
   styleTemplate,
 }: DeterministicPageFallbackInput) {
+  if (styleTemplate.id === "broadside") {
+    return renderBroadsidePageFallback({
+      assets,
+      content,
+      styleTemplate,
+    });
+  }
   const mergeChoiceBlocks = canMergeChoiceBlocks(content);
   const blocks = mergeChoiceBlocks
     ? ""

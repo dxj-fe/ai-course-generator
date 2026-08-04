@@ -1,11 +1,17 @@
 import type { PageBuilderExecution } from "@/server/agent/plugins/contexts/course/page-builder";
-import { runHtmlEngineerModelStep } from "@/server/agent/plugins/model-steps/course/html-engineer-model-step";
+import {
+  runHtmlEngineerModelStep,
+  validateHtmlEngineerOutput,
+} from "@/server/agent/plugins/model-steps/course/html-engineer-model-step";
 import { runPageQAModelStep } from "@/server/agent/plugins/model-steps/course/page-qa-model-step";
 import { runPageWriterModelStep } from "@/server/agent/plugins/model-steps/course/page-writer-model-step";
 import type { PageWriterCourseContext } from "@/server/agent/plugins/model-steps/course/page-writer-model-step";
 import { runRepairModelStep } from "@/server/agent/plugins/model-steps/course/repair-model-step";
 import { runImageAssetWorkflow } from "@/server/agent/plugins/tools/course/image-assets";
 import { PageBuilderModelStepError } from "@/server/agent/plugins/tools/course/page-builder-support";
+import { renderDeterministicPageFallback } from "@/server/course/page/deterministic-fallback";
+import { getStyleTemplate } from "@/shared/templates/style";
+import { HtmlOutputSchema } from "@/shared/course-schema";
 import type {
   AssetGenerationResult,
   HtmlOutput,
@@ -49,6 +55,7 @@ export type PageBuilderModelSteps = {
     content: PageContentDSL;
     assets: AssetGenerationResult[];
     validationFeedback?: string[];
+    structuralRebuild?: boolean;
     abortSignal?: AbortSignal;
   }): Promise<HtmlOutput>;
   inspectPage(input: {
@@ -120,6 +127,33 @@ export const defaultPageBuilderModelSteps: PageBuilderModelSteps = {
   },
 
   async generateHtml(input) {
+    if (
+      input.execution.projection.briefs.visual.styleTemplateId ===
+      "broadside"
+    ) {
+      const styleTemplate = getStyleTemplate("broadside");
+      if (!styleTemplate) {
+        throw new PageBuilderModelStepError(
+          "STYLE_TEMPLATE_MISSING",
+          "Broadside 样式模板不存在",
+        );
+      }
+      const html = renderDeterministicPageFallback({
+        assets: input.assets,
+        content: input.content,
+        styleTemplate,
+      });
+      validateHtmlEngineerOutput(html, {
+        assets: input.assets,
+        content: input.content,
+        visualBrief: input.execution.projection.briefs.visual,
+      });
+      return HtmlOutputSchema.parse({
+        html,
+        generatedAt: new Date().toISOString(),
+        revision: 1,
+      });
+    }
     const state = await runHtmlEngineerModelStep(
       {
         content: input.content,
@@ -294,5 +328,35 @@ export function buildPageDesignGuidance(
           "agent/skills/frontend-slides/",
         ) && !logicalPath.endsWith("/agents/openai.yaml"),
     ) ?? []
+  );
+}
+
+const FRONTEND_SLIDES_STYLE_RECIPE_PATHS = Object.freeze({
+  broadside:
+    "agent/skills/frontend-slides/bold-template-pack/templates/broadside/design.md",
+  "editorial-night":
+    "agent/skills/frontend-slides/bold-template-pack/templates/vellum/design.md",
+} as const);
+
+/**
+ * 强视觉 Style 只有在 Page Builder 真实读取对应 frontend-slides 配方后才能
+ * 进入 HTML Engineer；仅加载 SKILL.md 或 Style Token 不算使用了设计系统。
+ */
+export function getRequiredFrontendSlidesStyleRecipe(
+  styleTemplateId: string,
+) {
+  return FRONTEND_SLIDES_STYLE_RECIPE_PATHS[
+    styleTemplateId as keyof typeof FRONTEND_SLIDES_STYLE_RECIPE_PATHS
+  ];
+}
+
+export function hasLoadedFrontendSlidesStyleRecipe(
+  execution: PageBuilderExecution,
+  logicalPath: string,
+) {
+  return Boolean(
+    execution.localResourceSession?.loadedResources.some(
+      (resource) => resource.logicalPath === logicalPath,
+    ),
   );
 }

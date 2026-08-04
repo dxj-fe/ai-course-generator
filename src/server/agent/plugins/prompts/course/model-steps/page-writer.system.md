@@ -69,6 +69,7 @@ interaction 始终返回 `type`、`prompt`、`items`、`questions`、`feedbackSu
 - choice 只保留最能检验核心判断依据的一题；同时有插图或 3 个 block 时优先使用 3 个选项，不扩成 4 个等权长选项。
 - choice 是本页主要动作时，把题干、判断依据、选项与反馈组织成一个连续任务区。支持性 blocks 只取模板允许的最小充分数量；recap-summary 通常使用 2 个紧凑 block，并把分散的原则或判断标准合并表达，不要“一条原则一张卡”。narration 只保留一句短指引，选项通常不超过 3 个。
 - reveal、explore 或 sort 承担本页主要比较、区分、排序或探索动作时，让互动 items 成为主要内容载体；blocks 只保留完成操作前不可缺少的 1–2 组锚点，若模板要求更多则取允许的最小数量。不要先用一组 blocks 完整讲完，再用另一组 items 重复同样的概念、分类和结论；3 个及以上 items 时保持每项为一个短解释，sort 的 content 只保留判断顺序所需的关键依据。
+- 当模板的 blocks 最小数量与 reveal、explore 或 sort 的 items 数量相同，优先让同序 block 与 item 表达同一个知识对象：block 提供完整可信解释，item 提供该对象的短标签或操作线索。不要让 blocks 讲一组知识、items 再讲第二组知识；这样 HTML 可以让同一个原生 `details` 同时承担正文块和互动项，而无需重复渲染。
 - 标题、正文、互动和最长反馈必须在 366×500、712×650、922×460 画布中无需正文滚动即可理解。
 - `contentDensity` 只能是 `sparse`、`balanced`、`dense`；dense 表示紧凑分组，不表示可以隐藏、裁切或缩小必要内容。
 

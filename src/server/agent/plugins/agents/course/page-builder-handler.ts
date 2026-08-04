@@ -16,6 +16,8 @@ import {
   type PageBuilderExecutionInput,
 } from "@/server/agent/plugins/contexts/course/page-builder";
 import {
+  getRequiredFrontendSlidesStyleRecipe,
+  hasLoadedFrontendSlidesStyleRecipe,
   type PageBuilderModelSteps,
 } from "@/server/agent/plugins/tools/course/page-builder-model-steps";
 import {
@@ -211,9 +213,22 @@ function preparePageBuilderStep(
   const directedTools = activeTools.filter((toolName) =>
     DIRECTED_PAGE_BUILDER_TOOL_IDS.has(toolName),
   );
+  const requiredDesignRecipe =
+    getRequiredFrontendSlidesStyleRecipe(
+      execution.pageTask.styleTemplateId,
+    );
+  const mustReadDesignRecipe = Boolean(
+    directedTools.includes(ToolIds.GeneratePageHtml) &&
+      requiredDesignRecipe !== undefined &&
+      !hasLoadedFrontendSlidesStyleRecipe(
+        execution,
+        requiredDesignRecipe,
+      ),
+  );
   const canDirect =
     directedTools.length === 1 &&
-    !activeTools.includes(ToolIds.BlockPage);
+    !activeTools.includes(ToolIds.BlockPage) &&
+    !mustReadDesignRecipe;
 
   return {
     activeTools,

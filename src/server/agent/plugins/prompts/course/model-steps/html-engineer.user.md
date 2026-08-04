@@ -26,7 +26,7 @@ PageContentDSL：
 Page Builder 为当前页面渐进读取的项目 Skill 指导：
 {{pageDesignGuidanceJson}}
 
-这些指导用于选择信息层级、互动重点和构图，不得覆盖 PageContentDSL、模板、安全或运行时标记合同。数组为空时根据既有输入完成设计，不自行读取宿主文件。
+这些指导是当前 StyleTemplate 对应的 frontend-slides 设计配方。它们用于决定排版比例、色场、图形母题、空间、互动外观与动效节奏，不得覆盖 PageContentDSL、模板、安全或运行时标记合同。只把固定 deck 舞台、导航和脚本部分改写为课程播放器的流式多视口实现；不得把设计配方的可见身份降级成普通卡片页面。数组为空时根据既有输入完成设计，不自行读取宿主文件。
 
 PageContentDSL 运行时标记自检（不是可选项）：
 

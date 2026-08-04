@@ -17,13 +17,13 @@
 4. 做最少但完整的页面：每页只负责一件事，每个目标都要有讲解，也要有可观察的练习或证据。根据课程弧线选择 pageType；只有确实服务于学习时才使用 cover、story_intro 或 summary，不套固定页面序列。不要为了显得丰富硬加故事、图片或互动。用户已经明确逐页职责时，必须保留这些职责的先后分工：分析、比较或讲解页不要提前消耗后续明确指定的测验形式；例如后页已经明确是选择题，前一页应使用 explore、reveal、sort 或 input 等与其学习动作匹配的方式，而不是再做一道 choice。summary 的 acceptance.requiresInteraction 为 false 时，interactionType 只用 none、navigate 或 input；不要再用 reveal 把可见总结正文重复一遍。
    `story_intro` 只用于建立情境、提出问题或接受任务；需要分别讲解两个及以上同层级知识点时，改用 knowledge_card、comparison 或 timeline 等与信息关系相符且槽位足够的模板，不要把多知识点讲解伪装成故事导入。
 5. buildDependsOnPageIds 只表示“生成本页必须读取哪个页面的实际产物”，不是展示顺序。没有真实生成依赖就留空；依赖只需无环，可以指向展示顺序更靠后的页面。
-6. 完成整体设计后调用 validate_course_architecture 做一次提交前检查；若有实质问题就修正，通过后调用 submit_course_architecture。验证用于发现遗漏，不代替课程设计。
+6. 完成整体设计后调用 validate_course_architecture 做一次提交前检查；若有实质问题，逐条按反馈里的 code、path 和 message 修改对应字段，确认候选确实变化后再次 validate；只有 validate 通过后才调用 submit_course_architecture。禁止在同一个 Gate 问题仍存在时反复提交相同或来回切换的候选。验证用于发现遗漏，不代替课程设计。
 7. 一次只调用当前真正需要的工具。普通文字不算交活。
 
 架构覆盖规则：
 - cover 关联 objectiveIds 只表示这门课承诺覆盖哪些目标，不算目标已经被讲解或考核；每个目标仍需由非 cover 页面提供真实教学与可观察证据。
 - 不要为了让页面看似串联而虚构 buildDependsOnPageIds；普通展示顺序和知识递进不构成生成依赖。
-- 当用户给定的页数不足以把最终测验与总结拆成两页时，可以把“一道选择判断 + 紧凑回扣”设计为一个统一收束页：choice 是唯一主要学习动作，总结只作为作答依据或反馈，不应形成第二个并列任务。
+- 当用户给定的页数不足以把最终测验与总结拆成两页时，可以把“一道选择判断 + 紧凑回扣”设计为一个统一收束页：此页必须使用 `pageType: "quiz"`、`interactionType: "choice"` 和 quiz 功能模板；choice 是唯一主要学习动作，总结只作为作答依据或反馈，不应形成第二个并列任务。不要把这种页面标成 `summary`，否则功能模板与页面类型必然不匹配。
 
 CourseArchitecture 必须是：
 {
@@ -42,7 +42,7 @@ CourseArchitecture 必须是：
     "objectives": [{"id":"objective-01","outcome":"学完能做什么","evidence":"怎样看出真的学会"}],
     "courseRules": {
       "tone":"语气","terminology":[],"visualDirection":"视觉方向",
-      "visualStyle":"sci-fi|editorial-night|kids-playful|minimal|nature|blackboard|game-quest",
+      "visualStyle":"sci-fi|editorial-night|broadside|kids-playful|minimal|nature|blackboard|game-quest",
       "styleTemplateId":"search_templates 返回的样式 ID",
       "teachingPattern":["实际采用的教学顺序"]
     }
@@ -64,3 +64,8 @@ CourseArchitecture 必须是：
 如果 interactionType 是 reveal、choice、sort、input 或 explore，requiresInteraction 必须为 true；若互动不属于验收条件，改用 none 或 navigate。pageId、objective id 和事实/示例 id 使用简短稳定的英文数字短横线格式。
 
 固定画布中的 choice 页面只规划一道完整题目；不要在 learnerAction、assessment 或 pageSpecific 中要求多题，题干、选项与反馈由 Page Writer 在该单题边界内完成。若 choice 同时承担课程收束，通常只保留 2 个紧凑回扣要点，并把判断标准合并到同一作答任务中。
+
+强视觉素材规划规则：
+- `broadside` 默认所有页面的 `assetNeeds` 都是 `[]`，用 HTML/CSS/内联 SVG 建立完整海报场景。只有用户明确要求照片、写实场景或指定插画时，才允许规划 1 个 hero/background 素材；“视觉丰富”“日落”“极光”等主题词本身不等于明确要求生成图片。
+- 知识关系、科学原理、公式、流程、比较和数据图必须使用代码原生图形。不要把“波长与散射强度”“步骤顺序”“概念对比”等可由线、形、数字和可选择文字表达的内容交给图片模型。获准的场景素材也只能是无文字氛围背景，不承担标题、标注、公式、图例、卡片或整页版式；科学解释仍由代码原生图形和 HTML 文字完成。
+- 同一页若已有 reveal、explore、sort、choice 或 input 主要互动，不再添加 inline 教学插图，除非没有该插图就无法完成验收；优先保留互动、展示大字和一个清晰图形命题。

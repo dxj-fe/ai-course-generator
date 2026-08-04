@@ -108,4 +108,43 @@ describe("Architecture Gate", () => {
       ]),
     });
   });
+
+  it("用户明确要求代码原生 Broadside 时拒绝重新规划 AI 图片", () => {
+    const architecture = createArchitecture();
+    architecture.blueprint.courseRules.visualStyle = "broadside";
+    architecture.blueprint.courseRules.styleTemplateId = "broadside";
+    architecture.pageTasks.forEach((page) => {
+      page.styleTemplateId = "broadside";
+    });
+    architecture.pageTasks[0]!.assetNeeds = [
+      {
+        type: "image",
+        role: "hero",
+        purpose: "展示天空场景",
+        required: false,
+      },
+    ];
+    const creationBrief = {
+      ...createBrief(),
+      originalRequest:
+        "使用 frontend-slides Broadside，采用代码原生科学图形，不要小插图。",
+    };
+
+    const result = runArchitectureGate({
+      candidate: architecture,
+      creationBrief,
+      referencePacks: [createReferencePack()],
+      expectedCourseId: COURSE_ID,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      issues: expect.arrayContaining([
+        expect.objectContaining({
+          code: "BROADSIDE_CODE_NATIVE_ASSET_CONFLICT",
+          path: "pageTasks.0.assetNeeds",
+        }),
+      ]),
+    });
+  });
 });
