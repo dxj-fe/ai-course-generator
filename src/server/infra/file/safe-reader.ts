@@ -14,8 +14,12 @@ import { isPathInside } from "@/server/agent/skill/path";
 
 const MEDIA_TYPES: Readonly<Record<string, string>> = Object.freeze({
   ".csv": "text/csv",
+  ".css": "text/css",
   ".json": "application/json",
+  ".js": "text/javascript",
   ".md": "text/markdown",
+  ".py": "text/x-python",
+  ".sh": "text/x-shellscript",
   ".txt": "text/plain",
   ".yaml": "application/yaml",
   ".yml": "application/yaml",

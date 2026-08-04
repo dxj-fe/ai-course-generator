@@ -291,7 +291,7 @@ export function buildPageDesignGuidance(
     execution.localResourceSession?.loadedResources.filter(
       ({ logicalPath }) =>
         logicalPath.startsWith(
-          "agent/skills/course-page-design/",
+          "agent/skills/frontend-slides/",
         ) && !logicalPath.endsWith("/agents/openai.yaml"),
     ) ?? []
   );

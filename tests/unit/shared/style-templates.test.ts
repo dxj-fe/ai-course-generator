@@ -16,11 +16,11 @@ import {
 } from "../../../src/shared/templates/style";
 
 describe("Style Template Registry", () => {
-  it("registers six valid and unique core styles", () => {
+  it("registers seven valid and unique core styles", () => {
     const templates = listStyleTemplates();
 
-    expect(templates).toHaveLength(6);
-    expect(new Set(templates.map(({ id }) => id)).size).toBe(6);
+    expect(templates).toHaveLength(7);
+    expect(new Set(templates.map(({ id }) => id)).size).toBe(7);
     expect(templates.map(({ visualStyle }) => visualStyle).sort()).toEqual(
       [...CoreVisualStyleSchema.options].sort(),
     );
@@ -60,6 +60,7 @@ describe("Style Template Registry", () => {
     [{ visualStyle: "sci-fi" as const }, "sci-fi"],
     [{ query: "适合孩子的明亮童趣风格" }, "kids-playful"],
     [{ query: "黑板粉笔数学课堂" }, "blackboard"],
+    [{ query: "深夜编辑杂志风格的夜空与极光" }, "editorial-night"],
   ])("matches %o to %s", (input, expectedId) => {
     const [match] = searchStyleTemplates({ ...input, limit: 1 });
 
@@ -83,7 +84,7 @@ describe("Style Template Registry", () => {
       }
     }
 
-    expect(combinationCount).toBe(48);
+    expect(combinationCount).toBe(56);
   });
 
   it("keeps concrete course content outside the style protocol", () => {

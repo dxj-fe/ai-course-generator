@@ -115,6 +115,7 @@ describe.runIf(process.env.KEYA_BROWSER_INTEGRATION === "true")(
         for (const capture of result.evidence.captures ?? []) {
           expect(capture.status).toBe("captured");
           expect(capture.metrics?.horizontalOverflowPx).toBe(0);
+          expect(capture.metrics?.touchTargetUnder44Count).toBe(0);
           expect(capture.metrics?.mainViewportCoverageRatio).toBe(1);
         }
       },
@@ -321,6 +322,86 @@ describe.runIf(process.env.KEYA_BROWSER_INTEGRATION === "true")(
             pageId: "page-direct-sort",
             html,
             traceId: "trace-browser-direct-sort",
+          },
+          {
+            enabled: true,
+            rootDir,
+            timeoutMs: 12_000,
+          },
+        );
+
+        for (const capture of result.evidence.captures ?? []) {
+          expect(capture.status).toBe("captured");
+          expect(capture.metrics?.horizontalOverflowPx).toBe(0);
+          expect(capture.metrics?.verticalOverflowPx).toBe(0);
+        }
+      },
+      30_000,
+    );
+
+    it(
+      "课程对比页使用两个类别和六个长文本排序项时在全部固定画布无溢出",
+      async () => {
+        const blocks = ["颜色来源差异", "物理过程差异", "观测条件差异"]
+          .map(
+            (title, index) =>
+              `<div class="block" data-block-id="block-0${index + 1}"><details><summary>${title}</summary><p>按需展开的完整对比说明。</p></details></div>`,
+          )
+          .join("");
+        const columns = ["日落", "极光"]
+          .map((title, columnIndex) => {
+            const items = Array.from(
+              { length: 3 },
+              (_, itemIndex) =>
+                `<div class="sort-item" data-interaction-item-id="item-${columnIndex}-${itemIndex}"><strong>${title}的关键机制</strong><p>包含足够长度并且必须完整显示的机制说明文字</p></div>`,
+            ).join("");
+            return `<div class="sort-column"><h3>${title}</h3>${items}</div>`;
+          })
+          .join("");
+        const html = normalizeTrustedPlayerLayout(
+          `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>日落与极光</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: sans-serif; }
+    main { max-width: 76rem; margin: 0 auto; padding: 2rem; }
+    h1 { margin-bottom: 1rem; font-size: 1.8rem; }
+    .narration, .block { margin-bottom: 2rem; }
+    .block, .interaction, .sort-column { padding: 1rem; }
+    .sort-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+    .sort-item { padding: .75rem; margin: .5rem 0; }
+    button { margin-top: 1rem; padding: .75rem 1.5rem; }
+  </style>
+</head>
+<body>
+  <main data-page-id="page-sunset-aurora">
+    <h1>对比：日落与极光的颜色机制</h1>
+    <div class="narration">完成排序任务，找出两者的关键不同点。</div>
+    ${blocks}
+    <section class="interaction" data-interaction-type="sort" data-interaction-id="interaction-page-sunset-aurora">
+      <p>将以下描述归类到日落或极光。</p>
+      <div class="sort-container">${columns}</div>
+      <button data-runtime-submit="true">提交答案</button>
+      <p data-feedback-kind="success" hidden>回答正确。</p>
+      <p data-feedback-kind="retry" hidden>请重新检查。</p>
+    </section>
+  </main>
+</body>
+</html>`,
+        );
+        if (typeof html !== "string") {
+          throw new Error("布局护栏必须返回 HTML 字符串。");
+        }
+
+        const result = await capturePageScreenshot(
+          {
+            pageId: "page-sunset-aurora",
+            html,
+            traceId: "trace-browser-sunset-aurora-sort",
           },
           {
             enabled: true,

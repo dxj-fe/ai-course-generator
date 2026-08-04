@@ -42,7 +42,7 @@ describe("Agent Registry", () => {
       ToolIds.ReadLocalResource,
     );
     expect(coursePageBuilderAgent.skills).toEqual([
-      SkillIds.CoursePageDesign,
+      SkillIds.FrontendSlides,
     ]);
     expect(coursePageBuilderAgent.tools).toContain(
       ToolIds.ReadLocalResource,

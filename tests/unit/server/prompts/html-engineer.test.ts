@@ -28,9 +28,9 @@ describe("HTML Engineer prompts", () => {
       pageDesignGuidance: [
         {
           logicalPath:
-            "agent/skills/course-page-design/SKILL.md",
+            "agent/skills/frontend-slides/SKILL.md",
           digest: "a".repeat(64),
-          content: "围绕一个主要认知动作建立视觉焦点。",
+          content: "Commit to a cohesive aesthetic and a clear visual thesis.",
         },
       ],
     });
@@ -83,7 +83,7 @@ describe("HTML Engineer prompts", () => {
     );
     expect(prompts.userPrompt).toContain("data-question-id");
     expect(prompts.userPrompt).toContain(
-      "围绕一个主要认知动作建立视觉焦点",
+      "Commit to a cohesive aesthetic and a clear visual thesis",
     );
     expect(prompts.userPrompt).toContain("null");
   });

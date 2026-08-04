@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -181,6 +182,71 @@ describe("课程 Agent 运行时数据库", () => {
     );
   });
 
+  it("将历史 Artifact version 列迁移为 revision 并保留数据", async () => {
+    const rootDir = await temporaryRoot();
+    const legacyDatabase = new DatabaseSync(path.join(rootDir, "keya.sqlite"));
+    legacyDatabase.exec(`
+      CREATE TABLE course_artifacts (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        course_id TEXT NOT NULL,
+        page_id TEXT,
+        scope_key TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        content_hash TEXT NOT NULL,
+        created_by_work_order_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(task_id, course_id, scope_key, kind, version),
+        UNIQUE(
+          task_id, course_id, scope_key, kind, content_hash,
+          created_by_work_order_id
+        )
+      );
+
+      CREATE INDEX course_artifacts_course_kind_idx
+        ON course_artifacts(course_id, kind, scope_key, version DESC);
+    `);
+    legacyDatabase
+      .prepare(`
+        INSERT INTO course_artifacts (
+          id, task_id, course_id, page_id, scope_key, kind, version,
+          content_hash, created_by_work_order_id, payload, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .run(
+        "artifact-legacy-01",
+        "task-runtime-01",
+        "course-runtime-01",
+        null,
+        "course",
+        "course_architecture",
+        2,
+        "hash-legacy-01",
+        "work-order-legacy-01",
+        JSON.stringify({ title: "历史架构" }),
+        NOW,
+      );
+    legacyDatabase.close();
+
+    const database = resolveAppDatabase({ rootDir });
+    const columns = database
+      .prepare("PRAGMA table_info('course_artifacts')")
+      .all() as Array<{ name: string }>;
+    const artifact = createCourseArtifactStore({ database }).load(
+      "artifact-legacy-01",
+    );
+
+    expect(columns.map(({ name }) => name)).toContain("revision");
+    expect(columns.map(({ name }) => name)).not.toContain("version");
+    expect(artifact).toMatchObject({
+      id: "artifact-legacy-01",
+      revision: 2,
+      payload: { title: "历史架构" },
+    });
+  });
 });
 
 describe("CourseRun 与 WorkOrder lease", () => {

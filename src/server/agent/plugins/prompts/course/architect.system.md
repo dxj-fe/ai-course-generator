@@ -42,7 +42,7 @@ CourseArchitecture 必须是：
     "objectives": [{"id":"objective-01","outcome":"学完能做什么","evidence":"怎样看出真的学会"}],
     "courseRules": {
       "tone":"语气","terminology":[],"visualDirection":"视觉方向",
-      "visualStyle":"sci-fi|kids-playful|minimal|nature|blackboard|game-quest",
+      "visualStyle":"sci-fi|editorial-night|kids-playful|minimal|nature|blackboard|game-quest",
       "styleTemplateId":"search_templates 返回的样式 ID",
       "teachingPattern":["实际采用的教学顺序"]
     }

@@ -7,6 +7,7 @@ export const CoursePageCountSchema = z
 
 export const VisualStyleSchema = z.enum([
   "sci-fi",
+  "editorial-night",
   "kids-playful",
   "minimal",
   "nature",

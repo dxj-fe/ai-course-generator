@@ -38,40 +38,47 @@ export function createConversationHistoryService(input: {
 
   return {
     async list() {
-      const [conversationResult, taskResult] = await Promise.all([
+      const [conversationResult, courseResult, taskResult] = await Promise.all([
         conversations.list(),
+        courses.list(),
         tasks.list(),
       ]);
+      const courseById = new Map(
+        courseResult.items.map((course) => [course.courseId, course]),
+      );
       const taskById = new Map(
         taskResult.items.map((task) => [task.taskId, task]),
       );
-      const items = await Promise.all(
-        conversationResult.items.map(async (conversation) =>
-          projectConversation(
-            conversation,
-            conversation.courseId
-              ? await courses.load(conversation.courseId)
-              : undefined,
-            conversation.taskId
-              ? taskById.get(conversation.taskId)
-              : undefined,
-          ),
+      const items = conversationResult.items.map((conversation) =>
+        projectConversation(
+          conversation,
+          conversation.courseId
+            ? courseById.get(conversation.courseId)
+            : undefined,
+          conversation.taskId
+            ? taskById.get(conversation.taskId)
+            : undefined,
         ),
       );
 
       return {
         items,
         unavailableCount:
-          conversationResult.unavailableCount + taskResult.unavailableCount,
+          conversationResult.unavailableCount +
+          courseResult.unavailableCount +
+          taskResult.unavailableCount,
       };
     },
 
     async viewForCourse(courseId) {
-      const [conversationResult, course, taskResult] = await Promise.all([
+      const [conversationResult, courseResult, taskResult] = await Promise.all([
         conversations.list(),
-        courses.load(courseId),
+        courses.list(),
         tasks.list(),
       ]);
+      const course = courseResult.items.find(
+        (candidate) => candidate.courseId === courseId,
+      );
       if (!course) return undefined;
       const existing = conversationResult.items.find(
         (conversation) => conversation.courseId === courseId,

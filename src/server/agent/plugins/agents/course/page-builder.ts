@@ -20,7 +20,7 @@ export const coursePageBuilderAgent = defineAgent({
     ContextIds.CourseCurrentPages,
     ContextIds.CourseReferences,
   ],
-  skills: [SkillIds.CoursePageDesign],
+  skills: [SkillIds.FrontendSlides],
   modelCapability: "general",
   runtime: {
     maxSteps: 24,

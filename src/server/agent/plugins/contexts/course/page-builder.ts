@@ -84,6 +84,7 @@ export type PageBuilderExecution = {
   progress: {
     contentGenerationFailures: number;
     contextRead: boolean;
+    repairGenerationFailures: number;
     repairDeclinedTools: Set<string>;
   };
 };
@@ -342,12 +343,12 @@ export function assertPageBuilderToolCall(
     execution.localResourceSession &&
     PAGE_CREATION_TOOL_IDS.has(input.toolName) &&
     !execution.localResourceSession.activatedSkillIds.includes(
-      SkillIds.CoursePageDesign,
+      SkillIds.FrontendSlides,
     )
   ) {
     throw forbidden(
       input.toolName,
-      "首次生成页面前必须先加载 Agent 配置的 course-page-design Skill",
+      "首次生成页面前必须先加载 Agent 配置的 frontend-slides Skill",
     );
   }
   return true;
@@ -532,6 +533,7 @@ function loadPageBuilderProgress(
   const repairDeclinedTools = new Set<string>();
   let contentGenerationFailures = 0;
   let contextRead = false;
+  let repairGenerationFailures = 0;
   const operations = repository.toolOperations
     .listByWorkOrder(workOrder.id)
     .sort(
@@ -557,6 +559,16 @@ function loadPageBuilderProgress(
     ) {
       contentGenerationFailures += 1;
     }
+    if (
+      isRepairToolName(operation.toolName) &&
+      operation.status === "completed"
+    ) {
+      repairGenerationFailures = operation.safeSummary?.startsWith(
+        "PAGE_REPAIR_FAILED:",
+      )
+        ? repairGenerationFailures + 1
+        : 0;
+    }
   });
 
   loadRepairProgressFacts(repository, workOrder).forEach((fact) => {
@@ -570,6 +582,7 @@ function loadPageBuilderProgress(
   return {
     contentGenerationFailures,
     contextRead,
+    repairGenerationFailures,
     repairDeclinedTools,
   };
 }

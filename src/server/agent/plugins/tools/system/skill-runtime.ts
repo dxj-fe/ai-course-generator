@@ -15,6 +15,10 @@ const DEFAULT_SKILL_GRANT = Object.freeze({
   allowedMediaTypes: Object.freeze([
     "text/markdown",
     "text/plain",
+    "text/css",
+    "text/javascript",
+    "text/x-python",
+    "text/x-shellscript",
     "application/json",
     "application/yaml",
     "text/csv",

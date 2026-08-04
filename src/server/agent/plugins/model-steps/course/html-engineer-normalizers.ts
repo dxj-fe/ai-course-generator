@@ -43,6 +43,7 @@ main[data-page-id]>*{min-width:0;box-sizing:border-box}
   main[data-page-id] *:has(>[data-block-id]){width:100%!important;min-height:0!important;max-height:none!important;overflow:visible!important;margin-block:clamp(.375rem,1vh,.625rem)!important}
   main[data-page-id] [data-interaction-type]{margin:0!important;padding:clamp(.5rem,1.5vh,.875rem)!important}
   main[data-page-id] [data-interaction-type]>p{margin-block:.25rem!important}
+  main[data-page-id] [data-interaction-type="navigate"],main[data-page-id] [data-interaction-type="navigate"] button,main[data-page-id] button[data-interaction-type="navigate"]{min-width:44px!important;min-height:44px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important}
   main[data-page-id] *:has(>[data-interaction-item-id]){display:grid!important;grid-template-columns:repeat(auto-fit,minmax(min(7rem,45%),1fr))!important;gap:clamp(.375rem,1vh,.625rem)!important}
   main[data-page-id] *:has(>[data-interaction-item-id])>:not([data-interaction-item-id]){grid-column:1/-1}
   main[data-page-id] [data-interaction-item-id]{width:auto!important;min-width:0!important;max-width:100%!important;min-height:44px;margin:0!important;padding:clamp(.375rem,1vh,.625rem)!important}
@@ -70,7 +71,11 @@ main[data-page-id]>*{min-width:0;box-sizing:border-box}
   main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="sort"])>[data-interaction-type="sort"]{grid-column:2!important;grid-row:3/9!important;margin:0!important;align-self:start!important}
   main[data-page-id] [data-interaction-type="sort"]{display:grid!important;align-content:start!important;gap:.25rem!important}
   main[data-page-id] [data-interaction-type="sort"]>*{margin-block:0!important}
+  main[data-page-id] [data-interaction-type="sort"],main[data-page-id] [data-interaction-type="sort"] *{min-width:0;max-width:100%;box-sizing:border-box;overflow-wrap:anywhere}
+  main[data-page-id] [data-interaction-type="sort"]>*:has(>*>[data-interaction-item-id]){display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:.375rem!important}
   main[data-page-id] [data-interaction-type="sort"]>*:has(>[data-interaction-item-id]){margin:0!important}
+  main[data-page-id] [data-interaction-type="sort"] *:has(>[data-interaction-item-id]){display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;align-content:start!important;gap:.25rem!important;padding:.375rem!important}
+  main[data-page-id] [data-interaction-type="sort"] *:has(>[data-interaction-item-id])>:not([data-interaction-item-id]){grid-column:1/-1!important;margin:0!important}
   main[data-page-id] [data-interaction-type="sort"] button[data-runtime-submit="true"]{min-height:44px!important;margin:0!important;padding:.375rem .75rem!important}
   main[data-page-id] *:has(>[data-block-id]):has(>[data-interaction-type="choice"]){display:grid!important;grid-template-columns:minmax(10rem,.65fr) minmax(0,1.35fr)!important;grid-template-rows:minmax(0,1fr)!important;align-items:start!important;gap:.5rem!important}
   main[data-page-id] *:has(>[data-block-id]):has(>[data-interaction-type="choice"])>:not([data-block-id]):not([data-interaction-type="choice"]){display:none!important}
@@ -113,6 +118,24 @@ main[data-page-id]>*{min-width:0;box-sizing:border-box}
   main[data-page-id] *:has(>[data-interaction-item-id]){grid-template-columns:repeat(auto-fit,minmax(min(4.5rem,22%),1fr))!important}
   main[data-page-id] [data-interaction-type]{padding:.375rem!important}
   main[data-page-id] [data-interaction-item-id]{padding:0!important}
+  main[data-page-id] *:has(>*>[data-block-id]):has(>[data-interaction-type="sort"]),
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="sort"]){display:grid!important;grid-template-columns:minmax(0,1fr)!important;grid-template-rows:auto!important}
+  main[data-page-id] *:has(>*>[data-block-id]):has(>[data-interaction-type="sort"])>*:has(>[data-block-id]),
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="sort"])>[data-block-id]{display:none!important}
+  main[data-page-id] *:has(>*>[data-block-id]):has(>[data-interaction-type="sort"])>h1,
+  main[data-page-id] *:has(>*>[data-block-id]):has(>[data-interaction-type="sort"])>.narration,
+  main[data-page-id] *:has(>*>[data-block-id]):has(>[data-interaction-type="sort"])>[data-interaction-type="sort"],
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="sort"])>h1,
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="sort"])>.narration,
+  main[data-page-id]:has(>[data-block-id]):has(>[data-interaction-type="sort"])>[data-interaction-type="sort"]{grid-column:1!important;grid-row:auto!important}
+  main[data-page-id] [data-interaction-type="sort"]{width:100%!important;padding:.25rem!important;gap:.25rem!important}
+  main[data-page-id] [data-interaction-type="sort"]>p{font-size:.6875rem!important;line-height:1.1!important;margin:0!important}
+  main[data-page-id] [data-interaction-type="sort"]>*:has(>*>[data-interaction-item-id]){grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:.25rem!important}
+  main[data-page-id] [data-interaction-type="sort"] *:has(>[data-interaction-item-id]){grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:.125rem!important;padding:.25rem!important}
+  main[data-page-id] [data-interaction-type="sort"] [data-interaction-item-id]{min-height:44px!important;padding:.1875rem!important;font-size:.625rem!important;line-height:1.08!important}
+  main[data-page-id] [data-interaction-type="sort"] [data-interaction-item-id] strong,
+  main[data-page-id] [data-interaction-type="sort"] [data-interaction-item-id] p{font-size:.625rem!important;line-height:1.08!important;margin:.0625rem 0!important}
+  main[data-page-id] [data-interaction-type="sort"] button[data-runtime-submit="true"]{width:100%!important;min-height:44px!important;padding:.25rem .5rem!important}
   main[data-page-id] *:has(>[data-block-id]):has(>[data-interaction-type="choice"]){grid-template-columns:minmax(0,1fr)!important}
   main[data-page-id] *:has(>[data-block-id]):has(>[data-interaction-type="choice"])>[data-block-id]{display:none!important}
   main[data-page-id] *:has(>[data-block-id]):has(>[data-interaction-type="choice"])>[data-interaction-type="choice"]{grid-column:1!important}

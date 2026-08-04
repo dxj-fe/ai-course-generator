@@ -132,6 +132,33 @@ description: 为测试设计课程。设计新课程或修订课程架构时使�
       code: "SKILL_SYMLINK_DENIED",
     } satisfies Partial<AgentResourceError>);
   });
+
+  it("可按文本资源读取 frontend-slides 的 CSS 画布基线", async () => {
+    const registry = await createProjectSkillRegistry();
+    const session = new LocalResourceSession({
+      agentId: AgentIds.CoursePageBuilder,
+      workOrderId: "work-order-frontend-slides-css",
+      skillIds: [SkillIds.FrontendSlides],
+      maxFileBytes: 128 * 1024,
+      maxSessionBytes: 512 * 1024,
+      maxReadCount: 10,
+      allowedMediaTypes: ["text/markdown", "text/css"],
+    });
+
+    await readLocalAgentResource({
+      path: "agent/skills/frontend-slides/SKILL.md",
+      registry,
+      session,
+    });
+    const stylesheet = await readLocalAgentResource({
+      path: "agent/skills/frontend-slides/viewport-base.css",
+      registry,
+      session,
+    });
+
+    expect(stylesheet.mediaType).toBe("text/css");
+    expect(stylesheet.content).toContain(".deck-stage");
+  });
 });
 
 function createSession() {

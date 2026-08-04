@@ -635,6 +635,15 @@ describe("HtmlEngineerModelStep", () => {
     expect(normalized).toContain(
       ':has(>[data-block-id]):has(>[data-interaction-type="sort"])',
     );
+    expect(normalized).toContain(
+      '[data-interaction-type="sort"]>*:has(>*>[data-interaction-item-id])',
+    );
+    expect(normalized).toContain(
+      'grid-template-columns:repeat(3,minmax(0,1fr))!important',
+    );
+    expect(normalized).toContain(
+      '[data-interaction-type="navigate"]{min-width:44px!important;min-height:44px!important',
+    );
     expect(normalized).toContain('data-keya-asset-type="icon"');
     expect(normalized).toContain("details>summary");
     expect(normalized).toContain(
@@ -1537,6 +1546,22 @@ describe("HtmlEngineerModelStep", () => {
 
     expect(() => validateHtmlEngineerOutput(html, input)).toThrow(
       "页面必须包含且只能包含一个 main 主内容区域",
+    );
+  });
+
+  it("rejects frontend-slides fixed deck scaffolding before browser QA", () => {
+    const html = buildValidGeneratedHtml(pageContentDsl)
+      .replace(
+        "<body>",
+        '<body><div class="deck-viewport"><div class="deck-stage">',
+      )
+      .replace(
+        "</body>",
+        "</div></div><style>.deck-stage{width:1920px;height:1080px}</style></body>",
+      );
+
+    expect(() => validateHtmlEngineerOutput(html, input)).toThrow(
+      "不得复制 frontend-slides 的 deck 脚手架",
     );
   });
 

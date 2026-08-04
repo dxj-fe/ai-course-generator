@@ -65,6 +65,91 @@ const definitions = [
     keywords: ["科幻", "太空", "未来", "科技", "宇宙", "探索", "数据"],
   },
   {
+    id: "editorial-night",
+    name: "深夜编辑杂志",
+    visualStyle: "editorial-night",
+    goal:
+      "用深靛蓝色场、暖金衬线标题、薄分隔线和非对称编辑网格建立有辨识度的夜间杂志阅读体验，避免通用白卡和 SaaS 面板感。",
+    colorTokens: {
+      background: "#0B1020",
+      surface: "#151C30",
+      surfaceAlt: "#202A42",
+      text: "#F5F1E8",
+      mutedText: "#AAB4CA",
+      primary: "#F2C66D",
+      accent: "#74E1CF",
+      border: "#35415E",
+      success: "#77D5A5",
+      warning: "#E8B75F",
+      danger: "#F17C88",
+    },
+    typography: {
+      headingFont:
+        '"Noto Serif SC", "Source Han Serif SC", Georgia, serif',
+      bodyFont: '"IBM Plex Sans", "Noto Sans SC", Arial, sans-serif',
+      headingWeight: 700,
+      bodyWeight: 400,
+      baseFontSize: "1rem",
+      bodyLineHeight: 1.6,
+    },
+    spacing: {
+      unit: "0.25rem",
+      sectionGap: "1.75rem",
+      cardGap: "0.875rem",
+      contentMaxWidth: "74rem",
+    },
+    surface: {
+      cardRadius: "0.25rem",
+      controlRadius: "0.25rem",
+      cardBorderWidth: "1px",
+      cardShadow: "0 18px 48px rgba(0, 0, 0, 0.3)",
+    },
+    decoration: {
+      pattern: "editorial-glow",
+      backgroundImage:
+        "radial-gradient(circle at 82% 18%, rgba(116,225,207,.18), transparent 28%), radial-gradient(circle at 12% 88%, rgba(242,198,109,.12), transparent 24%)",
+      intensity: "moderate",
+      shapeLanguage:
+        "细金色规则线、超大章节数字、窄栏旁注、深色满版和少量柔焦光晕；优先排版构图，避免重复圆角卡片",
+    },
+    motion: {
+      durationFast: "140ms",
+      durationNormal: "260ms",
+      easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+      intensity: "subtle",
+      reducedMotionDuration: "0ms",
+    },
+    layoutDensity: "compact",
+    assetGuidance: {
+      visualStyle:
+        "深夜编辑摄影或低照度科学插画，深靛蓝底色、暖金与极光薄荷色点缀，克制颗粒质感",
+      composition:
+        "使用杂志跨页式非对称构图，让单一主视觉占据一侧并为标题、旁注和互动留下明确安全区",
+      background:
+        "深色满版夜空、抽象柔焦光晕或低细节天文环境，不使用白色卡片墙",
+      avoid: [
+        "通用白色卡片网格",
+        "SaaS 仪表盘式蓝色按钮堆叠",
+        "霓虹赛博朋克过度发光",
+        "与教学目标无关的星星装饰",
+      ],
+    },
+    bestFor: ["天文与夜空", "文化与艺术", "高端成人学习", "叙事型科学课程"],
+    avoidFor: ["低龄儿童贴纸课程", "明亮运动游戏", "需要浅色打印的表格密集参考"],
+    keywords: [
+      "深夜",
+      "夜间",
+      "夜空",
+      "编辑",
+      "杂志",
+      "editorial",
+      "天文",
+      "极光",
+      "暗色",
+      "高级",
+    ],
+  },
+  {
     id: "kids-playful",
     name: "儿童趣味",
     visualStyle: "kids-playful",
@@ -380,7 +465,7 @@ const definitions = [
   },
 ] as const;
 
-/** 启动时校验六套风格，阻止无效 Token 进入 CSS 转换和 Gallery。 */
+/** 启动时校验全部风格，阻止无效 Token 进入 CSS 转换和 Gallery。 */
 export const styleTemplates = StyleTemplateSchema.array()
-  .length(6)
+  .length(7)
   .parse(definitions);

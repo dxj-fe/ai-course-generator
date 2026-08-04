@@ -1,6 +1,7 @@
 export const SkillIds = {
   CourseDesign: "course-design",
   CoursePageDesign: "course-page-design",
+  FrontendSlides: "frontend-slides",
 } as const;
 
 export type SkillId = (typeof SkillIds)[keyof typeof SkillIds];

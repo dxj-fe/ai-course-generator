@@ -66,6 +66,11 @@ function openDatabase(databasePath: string) {
     PRAGMA busy_timeout = 5000;
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
+  `);
+
+  migrateCourseArtifactRevision(database);
+
+  database.exec(`
 
     CREATE TABLE IF NOT EXISTS courses (
       id TEXT PRIMARY KEY,
@@ -279,6 +284,19 @@ function openDatabase(databasePath: string) {
   reconcileCourseExecutionClaims(database);
   reconcileCourseTaskControlIntents(database);
   return database;
+}
+
+/** 兼容 revision 字段更名前已经创建的 Artifact 表。 */
+function migrateCourseArtifactRevision(database: DatabaseSync) {
+  const columns = database
+    .prepare("PRAGMA table_info('course_artifacts')")
+    .all() as Array<{ name: string }>;
+  const columnNames = new Set(columns.map(({ name }) => name));
+  if (!columnNames.has("version") || columnNames.has("revision")) return;
+
+  database.exec(
+    "ALTER TABLE course_artifacts RENAME COLUMN version TO revision",
+  );
 }
 
 /** 启动时校正活动任务的课程执行权，避免并发任务写入同一门课程。 */

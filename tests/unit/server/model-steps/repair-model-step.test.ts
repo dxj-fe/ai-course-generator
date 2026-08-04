@@ -301,6 +301,53 @@ describe("Repair model step", () => {
     ).toHaveLength(1);
   });
 
+  it("repairs desktop vertical overflow deterministically without scrolling or hiding content", async () => {
+    const htmlWithTrustedLayoutGuard = buildValidGeneratedHtml(
+      pageContentDsl,
+    ).replace(
+      "</head>",
+      '<style data-keya-layout-guard="current">main[data-page-id] { height: 100%; }</style></head>',
+    );
+    const request = planRepairRound({
+      pageId: pageContentDsl.pageId,
+      content: pageContentDsl,
+      html: htmlWithTrustedLayoutGuard,
+      visualBrief,
+      assets: [],
+      attemptCount: 0,
+      report: qualityReportWithIssue({
+        code: "BROWSER_VERTICAL_OVERFLOW",
+        dimension: "layoutQuality",
+      }),
+    });
+    if ("status" in request) throw new Error(request.message);
+    const generateCandidate = vi.fn();
+
+    const state = await createRepairModelStep({ generateCandidate }).run(
+      createRepairModelStepState(request),
+      { traceId: "trace-repair-vertical-fit" },
+    );
+
+    expect(state.status).toBe("completed");
+    expect(generateCandidate).not.toHaveBeenCalled();
+    expect(state.repairedHtml).toContain("keya-vertical-fit-baseline");
+    expect(state.repairedHtml).toContain("max-height: 520px");
+    expect(state.repairedHtml).toContain(
+      'main[data-page-id] { height: 100%; }\n/* keya-vertical-fit-baseline */',
+    );
+    expect(state.repairedHtml).not.toMatch(
+      /keya-vertical-fit-baseline[\s\S]*overflow\s*:\s*(?:auto|scroll|hidden)/,
+    );
+    expect(state.repairedHtml).not.toMatch(
+      /keya-vertical-fit-baseline[\s\S]*display\s*:\s*none/,
+    );
+    expect(state.result).toMatchObject({
+      kind: "html_patch_candidate",
+      addressedIssueCodes: ["BROWSER_VERTICAL_OVERFLOW"],
+      patches: [{ selector: "style" }],
+    });
+  });
+
   it("contains an opaque provider fallback deterministically", async () => {
     const asset = {
       request: {

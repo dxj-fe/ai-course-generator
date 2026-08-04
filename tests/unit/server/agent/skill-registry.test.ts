@@ -40,6 +40,19 @@ describe("项目 Agent Skill Registry", () => {
     expect(pageDesign.resourcePaths).toContain(
       "agent/skills/course-page-design/references/learning-interactions.md",
     );
+    const frontendSlides = registry.get(SkillIds.FrontendSlides);
+    expect(frontendSlides.description).toContain(
+      "animation-rich HTML presentations",
+    );
+    expect(frontendSlides.resourcePaths).toContain(
+      "agent/skills/frontend-slides/STYLE_PRESETS.md",
+    );
+    expect(frontendSlides.resourcePaths).toContain(
+      "agent/skills/frontend-slides/bold-template-pack/selection-index.json",
+    );
+    expect(frontendSlides.resourcePaths).toContain(
+      "agent/skills/frontend-slides/scripts/export-pdf.sh",
+    );
     expect(JSON.stringify({ skill, catalog })).not.toContain(
       process.cwd(),
     );

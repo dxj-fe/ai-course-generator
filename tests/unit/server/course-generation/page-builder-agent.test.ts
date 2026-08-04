@@ -72,7 +72,7 @@ describe("Page Builder ToolLoopAgent", () => {
     const session = new LocalResourceSession({
       agentId: AgentIds.CoursePageBuilder,
       workOrderId: prepared.workOrder.id,
-      skillIds: [SkillIds.CoursePageDesign],
+      skillIds: [SkillIds.FrontendSlides],
       maxFileBytes: 128 * 1024,
       maxSessionBytes: 512 * 1024,
       maxReadCount: 8,
@@ -103,7 +103,7 @@ describe("Page Builder ToolLoopAgent", () => {
       pageId: PAGE_ID,
     });
     await executeTool(tools, "read_local_resource", {
-      path: "agent/skills/course-page-design/SKILL.md",
+      path: "agent/skills/frontend-slides/SKILL.md",
     });
 
     expect(resolvePageBuilderActiveTools(prepared.execution)).toContain(
@@ -111,8 +111,8 @@ describe("Page Builder ToolLoopAgent", () => {
     );
     expect(buildPageDesignGuidance(prepared.execution)).toEqual([
       expect.objectContaining({
-        logicalPath: "agent/skills/course-page-design/SKILL.md",
-        content: expect.stringContaining("一次做成可学习"),
+        logicalPath: "agent/skills/frontend-slides/SKILL.md",
+        content: expect.stringContaining("Fixed 16:9 Stage"),
       }),
     ]);
     expect(
@@ -443,6 +443,51 @@ describe("Page Builder ToolLoopAgent", () => {
       name: "FatalAgentRuntimeError",
     } satisfies Partial<FatalAgentRuntimeError>);
     expect(steps.generateContent).toHaveBeenCalledTimes(3);
+  });
+
+  it("页面定向返工连续三次生成失败后立即终止，不再耗尽工具预算", async () => {
+    const prepared = await preparePageBuilder();
+    const steps = modelSteps({
+      content: pageContent(),
+      quality: failingContentQuality(),
+    });
+    steps.repairPage = vi.fn(async () => {
+      throw Object.assign(new Error("repair provider unavailable"), {
+        status: 503,
+      });
+    });
+    const tools = createPageBuilderTools(prepared.execution, {
+      modelSteps: steps,
+    });
+    await executeTool(tools, "generate_page_content", {
+      pageId: PAGE_ID,
+    });
+    await executeTool(tools, "generate_page_html", {
+      pageId: PAGE_ID,
+    });
+    await executeTool(tools, "inspect_page", {
+      pageId: PAGE_ID,
+    });
+
+    await expect(
+      executeTool(tools, "repair_page_content", {
+        pageId: PAGE_ID,
+      }),
+    ).resolves.toMatchObject({ ok: false, retryable: true });
+    await expect(
+      executeTool(tools, "repair_page_content", {
+        pageId: PAGE_ID,
+      }),
+    ).resolves.toMatchObject({ ok: false, retryable: true });
+    await expect(
+      executeTool(tools, "repair_page_content", {
+        pageId: PAGE_ID,
+      }),
+    ).rejects.toMatchObject({
+      code: "REPAIR_EXECUTION_RETRY_EXHAUSTED",
+      name: "FatalAgentRuntimeError",
+    } satisfies Partial<FatalAgentRuntimeError>);
+    expect(steps.repairPage).toHaveBeenCalledTimes(3);
   });
 
   it("读取上下文且失败质量的定向 repair 明确 declined 后允许合法 block", async () => {

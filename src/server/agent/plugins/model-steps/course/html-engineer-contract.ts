@@ -48,6 +48,7 @@ export function validateHtmlEngineerOutput(
   if (mainOpenTags.length !== 1 || mainCloseTags.length !== 1) {
     issues.push("页面必须包含且只能包含一个 main 主内容区域。");
   }
+  validateSingleCoursePageCanvas(html, issues);
   if (
     input.content.interaction.type === "choice" &&
     hasDisabledChoiceControl(html)
@@ -96,6 +97,22 @@ export function validateHtmlEngineerOutput(
   }
 
   return { html, validation: { contract, safety } };
+}
+
+/** frontend-slides 的设计语言可以复用，但固定 1920×1080 deck 运行时与课程播放器冲突。 */
+function validateSingleCoursePageCanvas(html: string, issues: string[]) {
+  const hasDeckScaffold =
+    /(?:class\s*=\s*["'][^"']*\bdeck-(?:viewport|stage|controls)\b|<deck-stage\b)/i.test(
+      html,
+    );
+  const hasFixedSlideCanvas =
+    /(?:width\s*:\s*1920px|height\s*:\s*1080px)/i.test(html);
+
+  if (hasDeckScaffold || hasFixedSlideCanvas) {
+    issues.push(
+      "当前交付物是单个流式课程页面，不得复制 frontend-slides 的 deck 脚手架、1920×1080 固定舞台或缩放运行时。",
+    );
+  }
 }
 
 function validateTrustedRuntimeMarkup(

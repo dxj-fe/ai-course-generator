@@ -72,6 +72,7 @@ const BlockPageInputSchema = ScopeInputSchema.extend({
 }).strict();
 
 const MAX_PAGE_CONTENT_GENERATION_ATTEMPTS = 3;
+const MAX_PAGE_REPAIR_GENERATION_ATTEMPTS = 3;
 
 export type PageBuilderToolDependencies = {
   modelSteps?: PageBuilderModelSteps;
@@ -660,7 +661,7 @@ export function resolvePageBuilderActiveTools(
   if (
     requiresPageDesignSkill &&
     !execution.localResourceSession?.activatedSkillIds.includes(
-      SkillIds.CoursePageDesign,
+      SkillIds.FrontendSlides,
     )
   ) {
     return base.filter((name) => available.has(name));
@@ -826,8 +827,20 @@ async function repairPageArtifact(input: {
       ? ToolIds.RepairPageContent
       : ToolIds.RepairPageHtml;
   if (!repaired.ok) {
+    input.execution.progress.repairGenerationFailures += 1;
+    if (
+      input.execution.progress.repairGenerationFailures >=
+      MAX_PAGE_REPAIR_GENERATION_ATTEMPTS
+    ) {
+      throw new FatalAgentRuntimeError(
+        "REPAIR_EXECUTION_RETRY_EXHAUSTED",
+        `页面定向返工连续 ${MAX_PAGE_REPAIR_GENERATION_ATTEMPTS} 次生成失败，已停止重复调用。`,
+        repaired,
+      );
+    }
     return repaired;
   }
+  input.execution.progress.repairGenerationFailures = 0;
   if (repaired.data.status === "declined") {
     input.execution.repository.recordPageRepairDeclined({
       workOrderId: input.execution.initialWorkOrder.id,

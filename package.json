@@ -36,6 +36,9 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@ai-sdk/provider": "4.0.4",
+    "@ai-sdk/provider-utils": "5.0.14",
+    "@next/env": "16.2.10",
     "@tailwindcss/postcss": "^4",
     "@types/archiver": "^8.0.0",
     "@types/node": "^20",

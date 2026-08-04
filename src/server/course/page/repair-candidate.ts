@@ -404,12 +404,43 @@ function findUniqueTagBoundary(
       ? new RegExp(`<${escapedSelector}\\b[^>]*>`, "gi")
       : new RegExp(`<\\/${escapedSelector}\\s*>`, "gi");
   const matches = [...html.matchAll(pattern)];
+  if (selector.toLowerCase() === "style" && matches.length > 1) {
+    const trustedBoundary = findTrustedLayoutGuardBoundary(
+      html,
+      boundary,
+    );
+    if (trustedBoundary) return trustedBoundary;
+  }
   if (matches.length !== 1 || matches[0]!.index === undefined) {
     throw new AiSchemaValidationError(
       `HTML patch 的 selector 必须在当前文档中唯一定位标签边界：${issueCode}。`,
     );
   }
   return { index: matches[0]!.index, length: matches[0]![0].length };
+}
+
+function findTrustedLayoutGuardBoundary(
+  html: string,
+  boundary: "open" | "close",
+) {
+  const guards = [
+    ...html.matchAll(
+      /<style\b(?=[^>]*\bdata-keya-layout-guard\s*=\s*["']current["'])[^>]*>[\s\S]*?<\/style\s*>/gi,
+    ),
+  ];
+  if (guards.length !== 1 || guards[0]!.index === undefined) {
+    return undefined;
+  }
+  const guard = guards[0]!;
+  const tag =
+    boundary === "open"
+      ? guard[0].match(/^<style\b[^>]*>/i)
+      : guard[0].match(/<\/style\s*>$/i);
+  if (!tag || tag.index === undefined) return undefined;
+  return {
+    index: guard.index + tag.index,
+    length: tag[0].length,
+  };
 }
 
 function isAllowedHtmlScope(

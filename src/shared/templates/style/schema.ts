@@ -2,9 +2,10 @@ import { z } from "zod";
 
 import { ThemeDensitySchema } from "@/shared/course-schema";
 
-/** 当前支持的六个核心视觉方向。 */
+/** 当前支持的核心视觉方向。 */
 export const CoreVisualStyleSchema = z.enum([
   "sci-fi",
+  "editorial-night",
   "kids-playful",
   "minimal",
   "nature",
@@ -60,6 +61,7 @@ export const StyleSurfaceSchema = z.object({
 
 export const DecorationPatternSchema = z.enum([
   "stars",
+  "editorial-glow",
   "bubbles",
   "none",
   "botanical",
