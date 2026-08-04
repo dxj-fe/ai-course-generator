@@ -99,6 +99,7 @@ function createTaskEventStream(
       let durablePoll: ReturnType<typeof setInterval> | undefined;
       let durablePollInFlight = false;
       let lastSnapshotKey: string | undefined;
+      let knownPageIds = new Set<string>();
       const buffered: CourseTaskStreamMessage[] = [];
 
       const close = () => {
@@ -159,6 +160,11 @@ function createTaskEventStream(
             encodeCourseTaskSseMessage(message, cursorOverride),
           ),
         );
+        if (message.type !== "event") {
+          knownPageIds = new Set(
+            message.state.pages.map(({ pageId }) => pageId),
+          );
+        }
         if (nextCursor !== undefined) {
           deliveredSequence = Math.max(
             deliveredSequence,
@@ -215,10 +221,38 @@ function createTaskEventStream(
             afterSequence: durableReadSequence,
           });
           if (batch.traceId && batch.traceId !== activeTraceId) return;
+          const durablePageIds = new Set(
+            publicState.pages.map(({ pageId }) => pageId),
+          );
+          if (
+            batch.events.some(
+              ({ pageId }) => pageId && !durablePageIds.has(pageId),
+            )
+          ) {
+            // state 与 event 分两次读取，可能刚好跨过一次 checkpoint 提交。
+            // 保留 durable cursor，下一轮读取到同一版本后再发送，不能用旧
+            // snapshot 为新页面事件背书。
+            return;
+          }
           durableReadSequence = Math.max(
             durableReadSequence,
             batch.scannedThroughSequence,
           );
+          // 跨进程 worker 可能在本进程没有收到 EventBus 快照时直接写入
+          // 新页面事件。先补当前结构快照，避免浏览器把合法页面判成未知引用。
+          if (
+            batch.events.some(
+              ({ pageId }) => pageId && !knownPageIds.has(pageId),
+            )
+          ) {
+            send({
+              type: "snapshot",
+              taskId: task.taskId,
+              courseId: task.courseId,
+              taskStatus: currentTask.status,
+              state: publicState,
+            });
+          }
           for (const event of batch.events) {
             send({
               type: "event",
@@ -279,7 +313,7 @@ function createTaskEventStream(
         }
       };
 
-      const unsubscribe = courseEvents.subscribe(task.taskId, (message) => {
+      const handleLiveMessage = (message: CourseTaskStreamMessage) => {
         if (!ready) {
           buffered.push(message);
           return;
@@ -288,8 +322,22 @@ function createTaskEventStream(
         // 不能让同进程 EventBus 抢在基线 snapshot 前发送增量。事件已经
         // 持久化，下一次 durable poll 会在 snapshot 后完整重放。
         if (needsTraceSnapshot && message.type === "event") return;
+        if (
+          message.type === "event" &&
+          message.event.pageId &&
+          !knownPageIds.has(message.event.pageId)
+        ) {
+          // checkpoint 已在 EventBus publish 前持久化；立即走 durable sync
+          // 取得页面结构。当前事件会由持久化游标重放，不在这里冒险直发。
+          void syncDurableState();
+          return;
+        }
         send(message);
-      });
+      };
+      const unsubscribe = courseEvents.subscribe(
+        task.taskId,
+        handleLiveMessage,
+      );
       cleanup = close;
       request.signal.addEventListener("abort", close, { once: true });
       if (request.signal.aborted) {
@@ -302,7 +350,9 @@ function createTaskEventStream(
         if (closed) return;
 
         ready = true;
-        for (const message of buffered.splice(0)) send(message);
+        for (const message of buffered.splice(0)) {
+          handleLiveMessage(message);
+        }
 
         if (!closed) {
           durablePoll = setInterval(() => {

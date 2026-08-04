@@ -224,6 +224,30 @@ describe("AI client", () => {
     expect(result).toEqual({ interactionType: "choice" });
   });
 
+  it("可把服务端 JSON Schema 注入结构化调用指令", async () => {
+    generateTextMock.mockResolvedValue({
+      output: { value: "ok" },
+    });
+
+    await generateStructuredObjectSafe({
+      includeSchemaInPrompt: true,
+      model: {} as never,
+      prompt: "Generate a typed value",
+      schema: z.object({ value: z.string() }).strict(),
+      schemaName: "typed_value",
+      systemPrompt: "只返回结果。",
+      traceId: "structured-schema-prompt-test",
+    });
+
+    expect(generateTextMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instructions: expect.stringMatching(
+          /只返回结果。[\s\S]*输出 JSON Schema[\s\S]*"value"/,
+        ),
+      }),
+    );
+  });
+
   it("allows a long raw HTML generation to request a 60 second timeout", async () => {
     generateTextMock.mockResolvedValue({ text: "<!doctype html>" });
 

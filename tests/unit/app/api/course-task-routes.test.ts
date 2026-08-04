@@ -473,6 +473,90 @@ describe("course task Route Handlers", () => {
     }
   });
 
+  it("GET 收到未知页面的实时事件时先从 durable state 补发页面结构快照", async () => {
+    const task = currentTaskRecord();
+    const firstEvent = publicEvent(1);
+    const pageEvent: CourseGenerationPublicEvent = {
+      ...publicEvent(8),
+      id: "event-page-8",
+      sequence: 8,
+      step: 8,
+      stage: "page_writer",
+      pageId: "page-01",
+      agent: "page-builder",
+    };
+    const initialState = runningState({ events: [firstEvent] });
+    let durableState = initialState;
+    let durableEvents = initialState.events;
+    mocks.loadTask.mockResolvedValue(task);
+    mocks.loadCourse.mockImplementation(async () => durableState);
+    mocks.listPublicEvents.mockImplementation(
+      ({ afterSequence }: { afterSequence: number }) => {
+        const events = durableEvents.filter(
+          ({ sequence }) => sequence > afterSequence,
+        );
+        return {
+          traceId,
+          scannedThroughSequence:
+            events.at(-1)?.sequence ?? afterSequence,
+          events,
+        };
+      },
+    );
+
+    const response = await GET(
+      new Request(`http://localhost/api/courses/tasks/${taskId}/events`),
+      routeContext(taskId),
+    );
+    const reader = response.body?.getReader();
+    expect(reader).toBeDefined();
+    expect(await readSseChunk(reader!)).toContain("event: snapshot");
+
+    const stateWithPage = runningState({
+      currentStage: "page_writer",
+      currentPageId: "page-01",
+      pages: [
+        {
+          pageId: "page-01",
+          order: 1,
+          status: "running",
+          currentStage: "page_writer",
+          assets: [],
+        },
+      ],
+      events: [firstEvent, pageEvent],
+      updatedAt: "2026-07-15T06:00:08.000Z",
+    });
+    durableEvents = stateWithPage.events;
+    publish({
+      type: "event",
+      taskId,
+      courseId,
+      event: pageEvent,
+    });
+    await vi.waitFor(() => {
+      expect(mocks.loadCourse).toHaveBeenCalledTimes(2);
+    });
+
+    // 第一次 durable sync 故意读到旧 state 和新 event，不能把二者拼接
+    // 发送；下一次读取到一致 checkpoint 后才补发结构快照。
+    durableState = stateWithPage;
+    publish({
+      type: "event",
+      taskId,
+      courseId,
+      event: pageEvent,
+    });
+
+    const structuralSnapshot = await readSseChunk(reader!);
+    expect(structuralSnapshot).toContain(
+      `id: ${traceId}:8\nevent: snapshot\n`,
+    );
+    expect(structuralSnapshot).toContain('"pageId":"page-01"');
+    expect(structuralSnapshot).not.toContain("\nevent: event\n");
+    await reader?.cancel();
+  });
+
   it("GET 在 durable event 已领先旧 terminal checkpoint 时仍发送终态并关闭", async () => {
     vi.useFakeTimers();
     let durableTask = currentTaskRecord();

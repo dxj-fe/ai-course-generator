@@ -26,7 +26,10 @@ import {
 import { createReadLocalResourceTool } from "../../../../src/server/agent/plugins/tools/system";
 import { runPageBuilderAgent } from "../../../../src/server/agent/plugins/agents/course/page-builder-handler";
 import { assertFixSubmissionUsesCurrentCheckpoints } from "../../../../src/server/course/policy/page-fix";
-import { AgentTerminalNotCommittedError } from "../../../../src/server/agent/runtime";
+import {
+  AgentTerminalNotCommittedError,
+  FatalAgentRuntimeError,
+} from "../../../../src/server/agent/runtime";
 import { createProjectSkillRegistry } from "../../../../src/server/setup/skills";
 import {
   PageContentDSLSchema,
@@ -404,6 +407,42 @@ describe("Page Builder ToolLoopAgent", () => {
       prepared.repository.workOrders.load(prepared.workOrder.id)
         ?.status,
     ).toBe("running");
+  });
+
+  it("页面内容连续三次生成失败后立即终止，不再循环到工具预算耗尽", async () => {
+    const prepared = await preparePageBuilder();
+    const steps = modelSteps({
+      content: pageContent(),
+      quality: passingQuality(),
+    });
+    steps.generateContent = vi.fn(async () => {
+      throw Object.assign(new Error("provider unavailable"), {
+        status: 503,
+      });
+    });
+    const tools = createPageBuilderTools(prepared.execution, {
+      modelSteps: steps,
+    });
+
+    await expect(
+      executeTool(tools, "generate_page_content", {
+        pageId: PAGE_ID,
+      }),
+    ).resolves.toMatchObject({ ok: false, retryable: true });
+    await expect(
+      executeTool(tools, "generate_page_content", {
+        pageId: PAGE_ID,
+      }),
+    ).resolves.toMatchObject({ ok: false, retryable: true });
+    await expect(
+      executeTool(tools, "generate_page_content", {
+        pageId: PAGE_ID,
+      }),
+    ).rejects.toMatchObject({
+      code: "PAGE_CONTENT_RETRY_EXHAUSTED",
+      name: "FatalAgentRuntimeError",
+    } satisfies Partial<FatalAgentRuntimeError>);
+    expect(steps.generateContent).toHaveBeenCalledTimes(3);
   });
 
   it("读取上下文且失败质量的定向 repair 明确 declined 后允许合法 block", async () => {

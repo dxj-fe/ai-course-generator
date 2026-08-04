@@ -552,6 +552,7 @@ async function executeTask(
         ? (existingState.events.at(-1)?.sequence ?? 0)
         : 0;
     let sentSnapshot = false;
+    let publishedPageStructure = "";
     const persistCheckpoint = async (checkpoint: CourseGenerationState) => {
       const [currentTask, currentCourseState] = await Promise.all([
         dependencies.taskStore.load(running.taskId),
@@ -623,8 +624,10 @@ async function executeTask(
           event.sequence > lastPublishedSequence &&
           event.traceId === running.traceId,
       );
-
-      if (!sentSnapshot) {
+      const nextPageStructure = checkpoint.pages
+        .map(({ pageId, order }) => `${order}:${pageId}`)
+        .join("|");
+      const publishSnapshot = () => {
         dependencies.eventBus.publish({
           type: "snapshot",
           taskId: running.taskId,
@@ -632,6 +635,16 @@ async function executeTask(
           state: checkpoint,
         });
         sentSnapshot = true;
+        publishedPageStructure = nextPageStructure;
+      };
+
+      // Architecture 被接受时页面集合会从空变为完整计划。必须先发送包含
+      // 新页面结构的快照，否则紧随其后的页面事件无法合并到旧客户端状态。
+      if (
+        !sentSnapshot ||
+        nextPageStructure !== publishedPageStructure
+      ) {
+        publishSnapshot();
       } else {
         for (const event of newEvents) {
           dependencies.eventBus.publish({
@@ -643,12 +656,7 @@ async function executeTask(
         }
 
         if (shouldPublishSnapshot(newEvents)) {
-          dependencies.eventBus.publish({
-            type: "snapshot",
-            taskId: running.taskId,
-            courseId: running.courseId,
-            state: checkpoint,
-          });
+          publishSnapshot();
         }
       }
 

@@ -82,6 +82,7 @@ export type PageBuilderExecution = {
   localResourceSession?: LocalResourceSession;
   currentLockVersion: number;
   progress: {
+    contentGenerationFailures: number;
     contextRead: boolean;
     repairDeclinedTools: Set<string>;
   };
@@ -529,6 +530,7 @@ function loadPageBuilderProgress(
   workOrder: WorkOrder,
 ): PageBuilderExecution["progress"] {
   const repairDeclinedTools = new Set<string>();
+  let contentGenerationFailures = 0;
   let contextRead = false;
   const operations = repository.toolOperations
     .listByWorkOrder(workOrder.id)
@@ -546,6 +548,15 @@ function loadPageBuilderProgress(
     ) {
       contextRead = true;
     }
+    if (
+      operation.toolName === ToolIds.GeneratePageContent &&
+      operation.status === "completed" &&
+      operation.safeSummary?.startsWith(
+        "PAGE_CONTENT_GENERATION_FAILED:",
+      )
+    ) {
+      contentGenerationFailures += 1;
+    }
   });
 
   loadRepairProgressFacts(repository, workOrder).forEach((fact) => {
@@ -556,7 +567,11 @@ function loadPageBuilderProgress(
     }
   });
 
-  return { contextRead, repairDeclinedTools };
+  return {
+    contentGenerationFailures,
+    contextRead,
+    repairDeclinedTools,
+  };
 }
 
 type RepairProgressFact = {

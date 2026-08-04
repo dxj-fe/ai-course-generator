@@ -32,6 +32,7 @@ import {
   PageWriterInteractionDraftSchema,
   PageWriterInteractionItemDraftSchema,
   PageWriterModelOutputSchema,
+  normalizePageWriterModelOutput,
 } from "./page-writer-schema";
 import {
   buildLessonRuntime,
@@ -314,6 +315,7 @@ async function generateContent(
   const draft = await generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
     capability: "page-writer",
+    includeSchemaInPrompt: true,
     maxTokens: 4_000,
     prompt: prompts.userPrompt,
     promptFingerprint: prompts.fingerprint,
@@ -321,6 +323,7 @@ async function generateContent(
     schemaDescription:
       "One page of semantic learning content without HTML or component details.",
     schemaName: "page_content_dsl_content",
+    normalizeOutput: normalizePageWriterModelOutput,
     systemPrompt: prompts.systemPrompt,
     temperature: 0.2,
     traceId: input.traceId,

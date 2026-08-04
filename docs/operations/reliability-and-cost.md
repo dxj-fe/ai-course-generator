@@ -7,11 +7,13 @@
 - 结构复杂或高风险步骤优先使用较强档位。
 - 长工具回合和完整 HTML 使用稳定档位，供应商瞬时失败时只尝试一次备用档位。
 - 取消、业务校验和 Schema 错误不重试。
+- Page Writer 的结构化调用把服务端 Zod Schema 转成 JSON Schema 注入模型指令，响应仍要经过有限的无损归一化和严格本地校验。
 
 ## 执行边界
 
 - CourseRun 与 WorkOrder 使用租约和 CAS。
 - 工具调用有幂等键、账本、步骤数、调用数、超时和输出大小限制。
+- Page Builder 的内容生成最多连续尝试三次；失败计数从工具账本恢复，达到上限后以 `PAGE_CONTENT_RETRY_EXHAUSTED` 终止当前页面，不能消耗完整 Agent 工具预算。
 - 完整产物先写 Artifact，返回给模型的只是受控摘要。
 - Page Builder 只生成架构声明需要的素材。
 - 返工复用未失效的上游产物。

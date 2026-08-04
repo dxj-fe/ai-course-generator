@@ -6,6 +6,8 @@
 
 浏览器通过 `/api/courses/tasks/[taskId]/events` 订阅 SSE。游标格式为编码后的 `traceId` 加递增 `sequence`；断线后只重放当前 trace 的公开事件。
 
+SSE 必须先建立可合并的结构基线：当课程架构让页面集合发生变化时，运行器先发布包含新页面集合的 snapshot，再发布引用这些页面的增量事件。Route 在 EventBus 与持久化轮询竞态中发现未知 `pageId` 时，必须等状态与事件读取到同一 checkpoint，再补发结构 snapshot，并由 durable cursor 重放事件。
+
 ## 课程架构
 
 Curriculum Architect 读取用户 brief、最多三份引用资料和模板目录，提交：

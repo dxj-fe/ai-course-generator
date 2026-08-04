@@ -232,6 +232,88 @@ describe("course generation task service", () => {
     expect(fixture.runCourse).not.toHaveBeenCalled();
   });
 
+  it("页面集合首次出现时先发布结构快照，不让页面事件引用旧的空页面状态", async () => {
+    const initial = courseState("running", 1);
+    const pageEvent = {
+      id: "event-fixture-page-2",
+      sequence: 2,
+      type: "agent_start" as const,
+      traceId,
+      timestamp,
+      step: 2,
+      summary: "Page Builder 已领取页面任务。",
+      stage: "page_writer" as const,
+      pageId: "page-01",
+      agent: "page-builder",
+    };
+    const withPage: CourseGenerationState = {
+      ...initial,
+      currentStage: "page_writer",
+      currentPageId: "page-01",
+      pages: [
+        {
+          pageId: "page-01",
+          order: 1,
+          status: "running",
+          currentStage: "page_writer",
+          assets: [],
+        },
+      ],
+      events: [...initial.events, pageEvent],
+    };
+    const failed: CourseGenerationState = {
+      ...withPage,
+      status: "failed",
+      pages: [
+        {
+          ...withPage.pages[0]!,
+          status: "failed",
+          error: {
+            code: "PAGE_CONTENT_GENERATION_FAILED",
+            message: "页面内容生成失败。",
+          },
+        },
+      ],
+      errors: [
+        {
+          stage: "page_writer",
+          pageId: "page-01",
+          code: "PAGE_CONTENT_GENERATION_FAILED",
+          message: "页面内容生成失败。",
+        },
+      ],
+      completedAt: timestamp,
+      durationMs: 0,
+    };
+    const runCourse = vi.fn(async (_input, _context, hooks) => {
+      await hooks.checkpoint?.(initial);
+      await hooks.checkpoint?.(withPage);
+      return failed;
+    }) as typeof runCourseGeneration;
+    const fixture = createFixture({ runCourse });
+    const messages: CourseTaskStreamMessage[] = [];
+    fixture.eventBus.subscribe(taskId, (message) => messages.push(message));
+    await fixture.service.create({
+      ...agentTaskInput,
+      userPrompt: "生成五页太阳系互动课程",
+    });
+
+    await fixture.service.run(taskId);
+
+    expect(messages.map(({ type }) => type)).toEqual([
+      "snapshot",
+      "snapshot",
+      "terminal",
+    ]);
+    expect(messages[1]).toMatchObject({
+      type: "snapshot",
+      state: {
+        pages: [expect.objectContaining({ pageId: "page-01" })],
+        events: [expect.anything(), expect.objectContaining({ pageId: "page-01" })],
+      },
+    });
+  });
+
   it("取消复用 courseId 的新任务时不会继承上一 attempt 的终态和 trace", async () => {
     const fixture = createFixture();
     await fixture.service.create({

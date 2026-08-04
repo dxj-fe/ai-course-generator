@@ -142,6 +142,9 @@ describe("course public error", () => {
     expect(sanitizePublicErrorCode("PAGE_FIX_FAILED")).toBe(
       "PAGE_FIX_FAILED",
     );
+    expect(sanitizePublicErrorCode("PAGE_CONTENT_RETRY_EXHAUSTED")).toBe(
+      "PAGE_CONTENT_RETRY_EXHAUSTED",
+    );
   });
 
   it.each([

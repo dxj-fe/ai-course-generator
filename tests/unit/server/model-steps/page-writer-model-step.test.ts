@@ -26,7 +26,10 @@ import type {
   ReferencePack,
 } from "../../../../src/shared/course-schema";
 import { getFunctionalTemplateDslExample } from "../../../../src/shared/templates/functional/dsl-examples";
-import { PageWriterModelOutputSchema } from "../../../../src/server/agent/plugins/model-steps/course/page-writer-schema";
+import {
+  PageWriterModelOutputSchema,
+  normalizePageWriterModelOutput,
+} from "../../../../src/server/agent/plugins/model-steps/course/page-writer-schema";
 
 const page = courseDesignOutline.pages[1];
 const brief: PageWorkerBrief = {
@@ -109,6 +112,43 @@ describe("PageWriterModelStep", () => {
     ).toBe("会自己发光发热；太阳是恒星；行星围绕太阳运行");
     expect(normalizeMultilineBulletBody("第一段\n第二段")).toBe(
       "第一段\n第二段",
+    );
+  });
+
+  it("在严格校验前无损归一化模型常见的数组和占位 destination 偏差", () => {
+    const normalized = normalizePageWriterModelOutput({
+      narration: "先观察两个天体是否会自己发光。",
+      blocks: [],
+      interaction: {
+        type: "reveal",
+        prompt: "逐项查看特征。",
+        items: [],
+        questions: [],
+        feedbackSuccess: "已找到关键特征。",
+        feedbackRetry: "请重新观察发光方式。",
+        maxAttempts: 1,
+        placeholder: "未使用",
+        evaluationCriteria: "能说明是否自行发光。",
+        actionLabel: "未使用",
+        destination: "未使用",
+      },
+      contentDensity: "balanced",
+      visualPriority: "突出发光方式的差异。",
+      groupingStrategy: "按观察顺序组织内容。",
+      usedReferences: [],
+    });
+
+    expect(normalized).toMatchObject({
+      narration: ["先观察两个天体是否会自己发光。"],
+      interaction: {
+        feedbackSuccess: ["已找到关键特征。"],
+        feedbackRetry: ["请重新观察发光方式。"],
+        evaluationCriteria: ["能说明是否自行发光。"],
+        destination: "next",
+      },
+    });
+    expect(PageWriterModelOutputSchema.safeParse(normalized).success).toBe(
+      true,
     );
   });
 

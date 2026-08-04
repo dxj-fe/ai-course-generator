@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 
 import { SkillIds, ToolIds } from "@/server/agent/ids";
+import { FatalAgentRuntimeError } from "@/server/agent/runtime";
 import {
   clearPageBuilderRepairDeclined,
   countPageBuilderRepairs,
@@ -69,6 +70,8 @@ const BlockPageInputSchema = ScopeInputSchema.extend({
   code: z.string().trim().min(1).max(100),
   message: z.string().trim().min(2).max(500),
 }).strict();
+
+const MAX_PAGE_CONTENT_GENERATION_ATTEMPTS = 3;
 
 export type PageBuilderToolDependencies = {
   modelSteps?: PageBuilderModelSteps;
@@ -221,7 +224,20 @@ export function createPageBuilderTools(
             "PAGE_CONTENT_GENERATION_FAILED",
             "页面内容生成失败，可以根据反馈重试。",
           );
-          if (!generated.ok) return generated;
+          if (!generated.ok) {
+            execution.progress.contentGenerationFailures += 1;
+            if (
+              execution.progress.contentGenerationFailures >=
+              MAX_PAGE_CONTENT_GENERATION_ATTEMPTS
+            ) {
+              throw new FatalAgentRuntimeError(
+                "PAGE_CONTENT_RETRY_EXHAUSTED",
+                `页面内容连续 ${MAX_PAGE_CONTENT_GENERATION_ATTEMPTS} 次生成失败，已停止重复调用。`,
+                generated,
+              );
+            }
+            return generated;
+          }
 
           const content = PageContentDSLSchema.parse(generated.data);
           if (

@@ -64,3 +64,48 @@ export const PageWriterModelOutputSchema = z
     usedReferences: z.array(ReferenceUsageSchema).max(12).default([]),
   })
   .strict();
+
+/**
+ * 只修正常见且无信息损失的 JSON 模式偏差，之后仍由严格 Schema 完整校验。
+ * 非 navigate 互动的 destination 只是占位字段，不应因模型写了“未使用”拖垮整页。
+ */
+export function normalizePageWriterModelOutput(output: unknown): unknown {
+  if (!isRecord(output) || !isRecord(output.interaction)) {
+    return output;
+  }
+
+  const interaction = output.interaction;
+  const destination =
+    interaction.type !== "navigate" &&
+    !["next", "previous", "course-home"].includes(
+      String(interaction.destination),
+    )
+      ? "next"
+      : interaction.destination;
+
+  return {
+    ...output,
+    narration: normalizeStringArray(output.narration),
+    interaction: {
+      ...interaction,
+      feedbackSuccess: normalizeStringArray(
+        interaction.feedbackSuccess,
+      ),
+      feedbackRetry: normalizeStringArray(
+        interaction.feedbackRetry,
+      ),
+      evaluationCriteria: normalizeStringArray(
+        interaction.evaluationCriteria,
+      ),
+      destination,
+    },
+  };
+}
+
+function normalizeStringArray(value: unknown) {
+  return typeof value === "string" ? [value] : value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}

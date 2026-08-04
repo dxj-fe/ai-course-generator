@@ -6,7 +6,7 @@ import {
   type LanguageModel,
   type UIMessage,
 } from "ai";
-import type { z } from "zod";
+import { z } from "zod";
 
 import {
   AiSchemaValidationError,
@@ -56,6 +56,7 @@ export type StructuredAiClientRequest<T> = {
   cache?: AiCacheRequest;
   capability?: AiCapability;
   fallbackTimeoutMs?: number;
+  includeSchemaInPrompt?: boolean;
   maxTokens?: number;
   model?: LanguageModel;
   normalizeOutput?: (output: unknown) => unknown;
@@ -176,7 +177,7 @@ export async function generateStructuredObjectSafe<T>(
       async (model, candidateIndex) => {
         const generated = await generateText({
           model,
-          instructions: request.systemPrompt,
+          instructions: structuredOutputInstructions(request),
           prompt: request.prompt,
           output: Output.json({
             name: request.schemaName,
@@ -230,6 +231,22 @@ export async function generateStructuredObjectSafe<T>(
     });
     throw error;
   }
+}
+
+function structuredOutputInstructions<T>(
+  request: StructuredAiClientRequest<T>,
+) {
+  if (!request.includeSchemaInPrompt) return request.systemPrompt;
+
+  const schemaInstruction = [
+    "# 输出 JSON Schema",
+    "返回值必须严格满足下面由服务端生成的 JSON Schema；不要把 Schema 本身返回。",
+    JSON.stringify(z.toJSONSchema(request.schema)),
+  ].join("\n\n");
+
+  return request.systemPrompt
+    ? `${request.systemPrompt}\n\n${schemaInstruction}`
+    : schemaInstruction;
 }
 
 async function executeWithFallback<T>(
