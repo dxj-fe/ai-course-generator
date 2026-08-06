@@ -131,6 +131,15 @@ export const PageTaskAcceptanceSchema = z
   })
   .strict();
 
+/** 当前问题独有的视觉命题；整课样式一致不代表逐页复用同一构图。 */
+export const PageVisualDesignSchema = z
+  .object({
+    theme: z.string().trim().min(2).max(240),
+    layout: z.string().trim().min(2).max(300),
+    graphicMotif: z.string().trim().min(2).max(300),
+  })
+  .strict();
+
 export const PageTaskSchema = z
   .object({
     pageId: DomainIdSchema,
@@ -148,6 +157,7 @@ export const PageTaskSchema = z
     styleTemplateId: z.string().min(1).max(80),
     interactionType: PageInteractionTypeSchema,
     assetNeeds: z.array(PageAssetNeedSchema).max(12),
+    visualDesign: PageVisualDesignSchema.optional(),
     acceptance: PageTaskAcceptanceSchema,
   })
   .strict()

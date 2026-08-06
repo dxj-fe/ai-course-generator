@@ -194,6 +194,9 @@ function normalizeText(value: string) {
 function extractTopic(request: string) {
   if (!request) return "待确认的课程";
 
+  const labelledTopic = extractLabelledTopic(request);
+  if (labelledTopic) return labelledTopic;
+
   let candidate = request.split(/[，,。；;\n]/, 1)[0]?.trim() ?? request;
   const generatedContent = candidate.match(/(?:生成|创建|制作)(.+)$/)?.[1];
   if (generatedContent) candidate = generatedContent.trim();
@@ -202,30 +205,54 @@ function extractTopic(request: string) {
     .replace(/^(?:请|帮我|请帮我|我想|我要|想要|给我)\s*/u, "")
     .replace(/^\d+\s*分钟\s*/u, "")
     .replace(/^(?:学习|学|了解|读懂|掌握|练习|练一段|练)\s*/u, "")
+    .replace(/^(?:一门|一个|一套|一段)\s*/u, "")
     .replace(
-      /^(?:(?:\d+|[零一二三四五六七八九十百千万]+)\s*(?:节|课|章节|页)\s*)+/u,
+      /^(?:(?:\d+|[零一二三四五六七八九十百千万]+)\s*(?:节|课|章节|页)(?:的\s*)?)+/u,
       "",
     )
-    .replace(/^(?:一门|一个|一套|一段)\s*/u, "")
-    .replace(/(?:互动\s*HTML\s*)?(?:课程|课)$/iu, "")
+    .replace(/(?:互动\s*(?:HTML\s*)?)?(?:微课|课程|课)$/iu, "")
     .trim();
 
   return candidate || request.slice(0, 60) || "待确认的课程";
 }
 
 function extractTopicUpdate(answer: string) {
-  const matched = answer.match(
-    /(?:课程)?主题(?:改成|改为|调整为|是)\s*([^，,。；;]+)/u,
+  return extractLabelledTopic(answer);
+}
+
+function extractLabelledTopic(value: string) {
+  const quoted = value.match(
+    /(?:课程)?主题(?:更正为|改成|改为|调整为|是|为|：|:)\s*[“"「『]([^”"」』]+)[”"」』]/u,
   )?.[1];
-  if (!matched) return undefined;
-  return matched.replace(/(?:课程|课)$/u, "").trim() || undefined;
+  if (quoted?.trim()) return quoted.trim();
+
+  const plain = value.match(
+    /(?:课程)?主题(?:更正为|改成|改为|调整为|是|为|：|:)\s*([^，,。；;]+)/u,
+  )?.[1];
+  if (!plain) return undefined;
+  return (
+    plain
+      .replace(/^[“"「『]|[”"」』]$/gu, "")
+      .replace(/(?:互动\s*(?:HTML\s*)?)?(?:微课|课程|课)$/iu, "")
+      .trim() || undefined
+  );
 }
 
 function extractAudience(value: string) {
+  const age = value.match(/(\d{1,2})\s*岁/u)?.[1];
+  if (age) return `${age} 岁儿童`;
   if (/零基础|完全不了解|从零开始|新手/u.test(value)) return "零基础";
   if (/进阶|高级学习者/u.test(value)) return "进阶学习者";
   if (/有(?:一定)?基础|学过但不熟/u.test(value)) return "有一定基础";
   if (/初学者|入门学习者|小白/u.test(value)) return "初学者";
+
+  if (/幼儿|学龄前|幼儿园/u.test(value)) return "幼儿";
+  if (/儿童|孩子|小学生|小学/u.test(value)) return "儿童";
+  if (/初中生|初中|中学生/u.test(value)) return "初中生";
+  if (/高中生|高中/u.test(value)) return "高中生";
+  if (/大学生|本科生|研究生|高校/u.test(value)) return "大学生";
+  if (/管理层|高管|董事会/u.test(value)) return "管理者";
+  if (/职场|员工|专业人士/u.test(value)) return "职场学习者";
   return undefined;
 }
 
@@ -324,6 +351,11 @@ function extractLanguage(value: string): CourseLanguage | undefined {
 }
 
 function extractExplicitGoal(value: string) {
+  const completionOutcome = value.match(
+    /(?:学完后|学习后|完成(?:这门)?课后)[，,\s]*(?:学习者|学生|你)?(?:应当|应该|应|将|可以|能够|能)?\s*([^。；;]+)/u,
+  )?.[1];
+  if (completionOutcome) return completionOutcome.trim();
+
   const labelledGoal = value.match(
     /(?:学习目标|课程目标|目标)(?:是|为|：|:)?\s*([^，,。；;]+)/u,
   )?.[1];

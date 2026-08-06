@@ -1,10 +1,28 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 
-import { getImageModelConfig, getModelConfig } from "@/config/env";
+import {
+  getHtmlModelConfig,
+  getImageModelConfig,
+  getModelConfig,
+} from "@/config/env";
 import type { ModelTier } from "./model-router";
 
 export function getLanguageModel(tier: ModelTier) {
-  const { apiKey, baseURL, modelName, providerName } = getModelConfig(tier);
+  return createLanguageModel(getModelConfig(tier));
+}
+
+export function getHtmlLanguageModel() {
+  const config = getHtmlModelConfig();
+  return config ? createLanguageModel(config) : undefined;
+}
+
+export function getHtmlLanguageModelIdentity() {
+  const config = getHtmlModelConfig();
+  return config ? getModelIdentity(config) : undefined;
+}
+
+function createLanguageModel(config: ReturnType<typeof getModelConfig>) {
+  const { apiKey, baseURL, modelName, providerName } = config;
 
   const provider = createOpenAICompatible({
     name: providerName,
@@ -17,7 +35,13 @@ export function getLanguageModel(tier: ModelTier) {
 }
 
 export function getLanguageModelIdentity(tier: ModelTier) {
-  const { modelName, providerName } = getModelConfig(tier);
+  return getModelIdentity(getModelConfig(tier));
+}
+
+function getModelIdentity(
+  config: Pick<ReturnType<typeof getModelConfig>, "modelName" | "providerName">,
+) {
+  const { modelName, providerName } = config;
   return `${providerName}/${modelName}`;
 }
 

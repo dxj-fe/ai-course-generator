@@ -225,11 +225,15 @@ function isInteractionRepairIssue(
   }
 
   const selector = issue.location.selector ?? "";
-  if (!/(?:interaction|quiz|choice|question|exercise|answer)/i.test(selector)) {
+  if (
+    !/(?:interaction|quiz|choice|question|exercise|answer|option)/i.test(
+      selector,
+    )
+  ) {
     return false;
   }
 
-  return /(?:OBJECTIVE|CHECK|QUESTION|ANSWER|FEEDBACK|DISTRACTOR|ASSESSMENT)/i.test(
+  return /(?:OBJECTIVE|CHECK|QUESTION|ANSWER|FEEDBACK|DISTRACTOR|ASSESSMENT|CONTENT|SKILL)/i.test(
     issue.code,
   );
 }

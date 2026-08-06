@@ -67,13 +67,13 @@ afterEach(async () => {
 });
 
 describe("Page Builder ToolLoopAgent", () => {
-  it("先渐进读取页面设计 Skill，并把已读指导注入内容和 HTML Model Step", async () => {
+  it("只把按需读取的页面设计 reference 注入内容和 HTML Model Step", async () => {
     const prepared = await preparePageBuilder();
     const registry = await createProjectSkillRegistry();
     const session = new LocalResourceSession({
       agentId: AgentIds.CoursePageBuilder,
       workOrderId: prepared.workOrder.id,
-      skillIds: [SkillIds.FrontendSlides],
+      skillIds: [SkillIds.CoursePageDesign],
       maxFileBytes: 128 * 1024,
       maxSessionBytes: 512 * 1024,
       maxReadCount: 8,
@@ -97,14 +97,14 @@ describe("Page Builder ToolLoopAgent", () => {
         "read_page_context",
       ]),
     );
-    expect(resolvePageBuilderActiveTools(prepared.execution)).not.toContain(
-      "generate_page_content",
-    );
     await executeTool(tools, "read_page_context", {
       pageId: PAGE_ID,
     });
     await executeTool(tools, "read_local_resource", {
-      path: "agent/skills/frontend-slides/SKILL.md",
+      path: "agent/skills/course-page-design/SKILL.md",
+    });
+    await executeTool(tools, "read_local_resource", {
+      path: "agent/skills/course-page-design/references/fixed-canvas-composition.md",
     });
 
     expect(resolvePageBuilderActiveTools(prepared.execution)).toContain(
@@ -112,8 +112,9 @@ describe("Page Builder ToolLoopAgent", () => {
     );
     expect(buildPageDesignGuidance(prepared.execution)).toEqual([
       expect.objectContaining({
-        logicalPath: "agent/skills/frontend-slides/SKILL.md",
-        content: expect.stringContaining("Fixed 16:9 Stage"),
+        logicalPath:
+          "agent/skills/course-page-design/references/fixed-canvas-composition.md",
+        content: expect.stringContaining("先选信息关系"),
       }),
     ]);
     expect(
@@ -207,7 +208,8 @@ describe("Page Builder ToolLoopAgent", () => {
     ).toEqual(["page_content"]);
   });
 
-  it("真实视口纵向溢出时从干净 HTML 检查点重建，而不是追加缩字 patch", async () => {
+  it("真实视口结构问题 BROWSER_VERTICAL_OVERFLOW 从干净 HTML 检查点重建，而不是追加局部 patch", async () => {
+    const issueCode = "BROWSER_VERTICAL_OVERFLOW";
     const prepared = await preparePageBuilder();
     const baselineHtml = htmlOutput();
     const regeneratedHtml = {
@@ -227,13 +229,13 @@ describe("Page Builder ToolLoopAgent", () => {
         layoutQuality: {
           score: 40,
           summary: "固定播放器产生大幅纵向溢出。",
-          issueCodes: ["BROWSER_VERTICAL_OVERFLOW"],
+          issueCodes: [issueCode],
           repairHints: ["从干净 HTML 检查点重建布局。"],
         },
       },
       issues: [
         {
-          code: "BROWSER_VERTICAL_OVERFLOW",
+          code: issueCode,
           dimension: "layoutQuality",
           severity: "error",
           source: "browser",
@@ -246,6 +248,56 @@ describe("Page Builder ToolLoopAgent", () => {
           repairHint: "重构为横向或网格布局。",
         },
       ],
+      screenshotEvidence: {
+        captures: [
+          {
+            status: "captured",
+            artifactId: "overflow-desktop",
+            viewport: { width: 922, height: 460 },
+            metrics: {
+              documentWidth: 922,
+              documentHeight: 1021,
+              horizontalOverflowPx: 0,
+              verticalOverflowPx: 561,
+              clippedElementCount: 0,
+              zeroSizeInteractiveCount: 0,
+              largestVisualAreaRatio: 1,
+              largestVisualSelector:
+                '[data-asset-slot-id="asset-slot-01"]',
+            },
+            capturedAt: "2026-08-05T12:00:00.000Z",
+          },
+          {
+            status: "captured",
+            artifactId: "overflow-tablet",
+            viewport: { width: 712, height: 650 },
+            metrics: {
+              documentWidth: 712,
+              documentHeight: 910,
+              horizontalOverflowPx: 0,
+              verticalOverflowPx: 260,
+              clippedElementCount: 0,
+              zeroSizeInteractiveCount: 0,
+              largestVisualAreaRatio: 0.55,
+            },
+            capturedAt: "2026-08-05T12:00:00.000Z",
+          },
+          {
+            status: "captured",
+            artifactId: "overflow-mobile",
+            viewport: { width: 366, height: 500 },
+            metrics: {
+              documentWidth: 366,
+              documentHeight: 980,
+              horizontalOverflowPx: 0,
+              verticalOverflowPx: 480,
+              clippedElementCount: 0,
+              zeroSizeInteractiveCount: 0,
+            },
+            capturedAt: "2026-08-05T12:00:00.000Z",
+          },
+        ],
+      },
       shouldRepair: true,
       decision: "revise",
     });
@@ -261,6 +313,9 @@ describe("Page Builder ToolLoopAgent", () => {
       modelSteps: steps,
     });
 
+    await executeTool(tools, "read_page_context", {
+      pageId: PAGE_ID,
+    });
     await executeTool(tools, "generate_page_content", {
       pageId: PAGE_ID,
     });
@@ -282,7 +337,12 @@ describe("Page Builder ToolLoopAgent", () => {
     ).toEqual(
       expect.arrayContaining([
         expect.stringContaining("从干净 HTML 检查点完整重建构图"),
-        expect.stringContaining("BROWSER_VERTICAL_OVERFLOW"),
+        expect.stringContaining("documentHeight=1021"),
+        expect.stringContaining("largestVisualAreaRatio=1.00"),
+        expect.stringContaining(
+          'largestVisualSelector=[data-asset-slot-id="asset-slot-01"]',
+        ),
+        expect.stringContaining(issueCode),
       ]),
     );
     const snapshot = loadPageBuilderWorkingSnapshot(
@@ -292,6 +352,63 @@ describe("Page Builder ToolLoopAgent", () => {
       'class="structural-regeneration"',
     );
     expect(snapshot.quality).toBeUndefined();
+
+    await executeTool(tools, "inspect_page", {
+      pageId: PAGE_ID,
+    });
+    expect(
+      resolvePageBuilderActiveTools(prepared.execution),
+    ).not.toContain("repair_page_html");
+    expect(
+      resolvePageBuilderActiveTools(prepared.execution),
+    ).toContain("block_page");
+
+    await expect(
+      executeTool(tools, "repair_page_html", {
+        pageId: PAGE_ID,
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      code: "PAGE_REPAIR_BUDGET_EXHAUSTED",
+      retryable: false,
+    });
+    expect(steps.generateHtml).toHaveBeenCalledTimes(2);
+    expect(
+      vi.mocked(steps.generateHtml).mock.calls[1]?.[0],
+    ).not.toHaveProperty("deterministicFallback");
+
+    const blocked = await executeTool(tools, "block_page", {
+      pageId: PAGE_ID,
+      code: "PAGE_REPAIR_BUDGET_EXHAUSTED",
+      message: "模型重构后仍未通过真实视口检查。",
+    });
+    expect(blocked).toMatchObject({
+      ok: true,
+      terminal: true,
+    });
+    expect(
+      prepared.repository.workOrders.load(prepared.workOrder.id),
+    ).toMatchObject({
+      status: "blocked",
+      error: {
+        code: "PAGE_REPAIR_BUDGET_EXHAUSTED",
+        message: "模型重构后仍未通过真实视口检查。",
+        retryable: false,
+      },
+      submission: {
+        status: "blocked",
+        evidence: [expect.stringContaining("已完成 1 轮")],
+        issues: [
+          "PAGE_REPAIR_BUDGET_EXHAUSTED: 模型重构后仍未通过真实视口检查。",
+        ],
+      },
+    });
+    expect(
+      loadPageBuilderWorkingSnapshot(prepared.execution).html?.html,
+    ).toContain('class="structural-regeneration"');
+    expect(
+      loadPageBuilderWorkingSnapshot(prepared.execution).html?.html,
+    ).not.toContain('data-keya-renderer="deterministic"');
   });
 
   it("拒绝跨页调用和未授权资料 chunk", async () => {
@@ -604,6 +721,9 @@ describe("Page Builder ToolLoopAgent", () => {
             });
             await executeTool(settings.tools, "generate_page_content", {
               pageId: PAGE_ID,
+            });
+            await executeTool(settings.tools, "read_local_resource", {
+              path: "agent/skills/course-page-design/references/fixed-canvas-composition.md",
             });
             await executeTool(settings.tools, "generate_page_html", {
               pageId: PAGE_ID,
@@ -948,7 +1068,7 @@ describe("Page Builder ToolLoopAgent", () => {
 
     const appliedSteps = modelSteps({
       content: pageContent(),
-      quality: failingContentQuality(),
+      quality: passingQuality(),
       repairedContent: PageContentDSLSchema.parse({
         ...pageContent(),
         narration: ["已完成一次有实际 checkpoint 的定向修订。"],

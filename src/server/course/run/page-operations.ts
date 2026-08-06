@@ -6,7 +6,10 @@ import {
   pageDependenciesAreReady,
 } from "@/server/course/policy/run";
 import { assertFixSubmissionUsesCurrentCheckpoints } from "@/server/course/policy/page-fix";
-import { classifyPublicAgentError } from "@/server/course/projection/public-error";
+import {
+  classifyPublicAgentError,
+  sanitizePublicDiagnosticText,
+} from "@/server/course/projection/public-error";
 import {
   requiredArtifact,
   requiredRef,
@@ -549,6 +552,10 @@ export function createCourseRunPageOperations(input: {
           code: command.code,
           fallbackCode: "PAGE_WORK_ORDER_BLOCKED",
         });
+        const publicMessage = sanitizePublicDiagnosticText(command.message, {
+          fallback: publicError.message,
+          maxLength: 1_000,
+        });
         const next = WorkOrderSchema.parse({
           ...workOrder,
           lockVersion: workOrder.lockVersion + 1,
@@ -562,8 +569,15 @@ export function createCourseRunPageOperations(input: {
               workOrder.checkpointArtifactRefs,
             evidence: command.evidence ?? [],
             issues: [
-              `${publicError.code}: ${publicError.message}`,
+              `${publicError.code}: ${publicMessage}`,
             ],
+          },
+          error: {
+            code: publicError.code,
+            causeCode: publicError.causeCode,
+            message: publicMessage,
+            retryable: false,
+            occurredAt: now,
           },
           updatedAt: now,
         });
@@ -585,7 +599,7 @@ export function createCourseRunPageOperations(input: {
           stage: "building",
           pageId: workOrder.scope.pageId,
           agent: AgentIds.CoursePageBuilder,
-          safeSummary: `页面任务已阻塞：${publicError.message}`,
+          safeSummary: `页面任务已阻塞：${publicMessage}`,
           payload: {
             workOrderId: workOrder.id,
             code: publicError.code,

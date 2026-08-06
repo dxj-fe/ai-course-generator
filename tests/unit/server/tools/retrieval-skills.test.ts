@@ -40,8 +40,157 @@ describe("course architecture retrieval", () => {
     expect(result.functional[0]?.card.id).toBe("interactive-quiz");
     expect(result.style).toHaveLength(1);
     expect(result.style[0]?.card.visualStyle).toBe("kids-playful");
+    expect(result.style[0]).toMatchObject({
+      candidateRole: "best-match",
+      score: expect.any(Number),
+      confidence: expect.any(Number),
+      scoreBreakdown: expect.any(Array),
+    });
     expect(result.functional[0]?.card).not.toHaveProperty("slots");
     expect(result.style[0]?.card).not.toHaveProperty("colorTokens");
+  });
+
+  it("keeps alternatives when the best match is only narrowly ahead", () => {
+    const result = retrieveTemplateCards(
+      {
+        pageNeeds: [
+          {
+            goal: "用可观察的光路和波长关系解释瑞利散射，帮助学习者理解天空呈蓝色的原因",
+            pageType: "knowledge_card",
+          },
+          {
+            goal: "通过一道选择题检验学习者对太阳高度与光程关系的理解，应用瑞利散射原理解释日落呈红色的原因",
+            pageType: "quiz",
+          },
+        ],
+        audience: "初中生",
+        limit: 3,
+      },
+      {
+        originalRequest:
+          "为初中生生成2页互动微课，主题是“天空为什么是蓝的，日落为什么是红的”。第1页用可观察的光路和波长关系解释瑞利散射；第2页用一道选择题检验太阳高度与光程的关系。不要使用与知识关系无关的装饰，精确关系用 HTML/CSS/SVG 表达。",
+        topic: "天空为什么是蓝的，日落为什么是红的",
+        learningMode: "practice",
+      },
+    );
+
+    expect(result.style).toHaveLength(3);
+    expect(result.style[0]).toMatchObject({
+      card: { id: "minimal" },
+      candidateRole: "best-match",
+      confidence: expect.any(Number),
+    });
+    expect(result.style[0]?.confidence).toBeLessThan(0.6);
+    expect(
+      result.style
+        .find(({ card }) => card.id === "nature")
+        ?.scoreBreakdown?.some(
+          ({ key, label }) =>
+            (key === "keyword" || key === "tone") &&
+            label.includes("观察"),
+        ) ?? false,
+    ).toBe(false);
+    expect(
+      result.style.find(({ card }) => card.id === "nature")?.card
+        .limitations,
+    ).toContain("精密物理光路与几何推导");
+  });
+
+  it("不把 Architect 自行填写的视觉风格当成用户显式指定", () => {
+    const originalRequest =
+      "为初中生生成2页互动微课，主题是“天空为什么是蓝的，日落为什么是红的”。第1页用可观察的光路和波长关系解释瑞利散射；第2页用一道选择题检验太阳高度与光程的关系。不要使用与知识关系无关的装饰，精确关系用 HTML/CSS/SVG 表达。";
+    const result = retrieveTemplateCards(
+      {
+        pageNeeds: [
+          {
+            goal: "用可观察的光路和波长关系解释瑞利散射",
+            pageType: "knowledge_card",
+          },
+          {
+            goal: "用选择题检验太阳高度与大气路径的关系",
+            pageType: "quiz",
+          },
+        ],
+        audience: "初中生",
+        visualStyle: "nature",
+        limit: 3,
+      },
+      {
+        originalRequest,
+        topic: "天空为什么是蓝的，日落为什么是红的",
+        learningMode: "practice",
+      },
+    );
+
+    expect(result.style[0]?.card.id).toBe("minimal");
+    expect(result.style).toHaveLength(3);
+    expect(result.style.map(({ card }) => card.id)).toContain("nature");
+  });
+
+  it("保留用户真正点名的自然观察风格", () => {
+    const result = retrieveTemplateCards(
+      {
+        pageGoal: "解释植物生长",
+        audience: "初中生",
+        visualStyle: "nature",
+        limit: 3,
+      },
+      {
+        originalRequest: "请用自然观察风格解释植物如何生长。",
+        topic: "植物生长",
+        learningMode: "guided",
+      },
+    );
+
+    expect(result.style).toHaveLength(1);
+    expect(result.style[0]?.card.id).toBe("nature");
+  });
+
+  it("only exposes an explicit high-confidence standard best match", () => {
+    const result = retrieveTemplateCards({
+      pageGoal: "用观察与练习解释植物如何生长",
+      audience: "初中生",
+      visualStyle: "nature",
+      limit: 3,
+    });
+
+    expect(result.style).toHaveLength(1);
+    expect(result.style[0]).toMatchObject({
+      card: { id: "nature" },
+      candidateRole: "best-match",
+      confidence: 1,
+    });
+  });
+
+  it("keeps alternatives for a low-confidence style match", () => {
+    const result = retrieveTemplateCards({
+      pageGoal: "面向成人讲解一个尚未收录关键词的主题",
+      audience: "成人",
+      limit: 3,
+    });
+
+    expect(result.style[0]?.confidence).toBeLessThan(0.6);
+    expect(result.style.map(({ candidateRole }) => candidateRole)).toEqual([
+      "best-match",
+      "safe",
+      "explore",
+    ]);
+  });
+
+  it("keeps risk-compatible alternatives in a care context", () => {
+    const result = retrieveTemplateCards({
+      pageGoal: "讲解患者健康与营养，并安排观察练习",
+      audience: "护理人员",
+      visualStyle: "minimal",
+      limit: 3,
+    });
+
+    expect(result.style[0]?.confidence).toBeGreaterThanOrEqual(0.6);
+    expect(result.style.map(({ candidateRole }) => candidateRole)).toEqual([
+      "best-match",
+      "safe",
+      "explore",
+    ]);
   });
 
   it("一次覆盖整课不同页面职责，不要求 Architect 为每页重复调用工具", () => {

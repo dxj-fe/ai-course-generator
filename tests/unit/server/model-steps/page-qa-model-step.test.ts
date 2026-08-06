@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildPageQAModelMessages,
   createPageQAModelStep,
   createPageQAModelStepState,
   validatePageQAInput,
@@ -71,6 +72,80 @@ function createInput() {
 }
 
 describe("PageQAModelStep", () => {
+  it("passes ephemeral viewport PNGs to semantic evaluation without persisting them", async () => {
+    const evaluate = vi.fn().mockResolvedValue(modelOutput);
+    const modelImages = [
+      {
+        viewport: { width: 922, height: 460 },
+        png: new Uint8Array([137, 80, 78, 71]),
+      },
+      {
+        viewport: { width: 366, height: 500 },
+        png: new Uint8Array([1, 2, 3]),
+      },
+    ];
+    const state = await createTestPageQAModelStep({
+      evaluate,
+      captureScreenshot: vi.fn().mockResolvedValue({
+        evidence: capturedEvidence,
+        issues: [],
+        modelImages,
+      }),
+    }).run(createPageQAModelStepState(createInput()), {
+      traceId: "trace-page-qa-images",
+    });
+
+    expect(evaluate).toHaveBeenCalledWith(
+      expect.objectContaining({ screenshotImages: modelImages }),
+    );
+    expect(state.report?.screenshotEvidence).toEqual(capturedEvidence);
+    expect(JSON.stringify(state.report)).not.toContain("137,80,78,71");
+    expect(state.report).not.toHaveProperty("modelImages");
+  });
+
+  it("builds actual PNG file parts for each captured viewport", () => {
+    const messages = buildPageQAModelMessages("评估页面", [
+      {
+        viewport: { width: 922, height: 460 },
+        png: new Uint8Array([137, 80, 78, 71]),
+      },
+      {
+        viewport: { width: 366, height: 500 },
+        png: new Uint8Array([1, 2, 3]),
+      },
+    ]);
+
+    expect(messages).toEqual([
+      {
+        id: "page-qa-request",
+        role: "user",
+        parts: [
+          { type: "text", text: "评估页面" },
+          {
+            type: "text",
+            text: "\nPlaywright 首屏截图（视口 922x460）：",
+          },
+          {
+            type: "file",
+            mediaType: "image/png",
+            filename: "page-qa-922x460.png",
+            url: "data:image/png;base64,iVBORw==",
+          },
+          {
+            type: "text",
+            text: "\nPlaywright 首屏截图（视口 366x500）：",
+          },
+          {
+            type: "file",
+            mediaType: "image/png",
+            filename: "page-qa-366x500.png",
+            url: "data:image/png;base64,AQID",
+          },
+        ],
+      },
+    ]);
+  });
+
   it("merges deterministic checks with semantic evaluation without changing HTML", async () => {
     const evaluate = vi.fn().mockResolvedValue(modelOutput);
     const input = createInput();
@@ -399,7 +474,7 @@ describe("PageQAModelStep", () => {
     expect(differentBlock.report?.decision).toBe("revise");
   });
 
-  it("keeps below-fold failures on a balanced lesson", async () => {
+  it("keeps model-only below-fold claims as non-blocking observations", async () => {
     const state = await createTestPageQAModelStep({
       evaluate: vi.fn().mockResolvedValue({
         ...modelOutput,
@@ -431,12 +506,12 @@ describe("PageQAModelStep", () => {
     expect(state.report?.issues).toMatchObject([
       {
         code: "PRIMARY_ACTION_BELOW_FOLD",
-        severity: "error",
+        severity: "warning",
         source: "model",
       },
     ]);
     expect(state.report?.dimensions.layoutQuality.score).toBe(69);
-    expect(state.report?.decision).toBe("revise");
+    expect(state.report?.decision).toBe("pass");
   });
 
   it("treats a safely contained opaque fallback as provider metadata instead of a repair failure", async () => {
@@ -565,7 +640,7 @@ describe("PageQAModelStep", () => {
     expect(state.report?.decision).toBe("pass");
   });
 
-  it("keeps browser evidence and sends capture failures through repair", async () => {
+  it("keeps browser capture failures as non-blocking infrastructure evidence", async () => {
     const failedEvidence = {
       captures: [
         { width: 922, height: 460 },
@@ -589,7 +664,7 @@ describe("PageQAModelStep", () => {
 
     expect(state.status).toBe("completed");
     expect(state.report?.screenshotEvidence).toEqual(failedEvidence);
-    expect(state.report?.decision).toBe("revise");
+    expect(state.report?.decision).toBe("pass");
     expect(state.report?.issues[0]?.code).toBe("SCREENSHOT_CAPTURE_FAILED");
   });
 

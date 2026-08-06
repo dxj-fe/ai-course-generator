@@ -146,23 +146,35 @@ export function projectCourseArchitecture(
     ]),
   );
   const visualByPage = new Map<string, VisualPageGuidance>(
-    pageTasks.map((page) => [
-      page.pageId,
-      {
-        pageId: page.pageId,
-        focalPoint: ensureMinimumText(page.purpose, 2),
-        composition: ensureMinimumText(
-          `突出${page.title}的核心信息与学习动作`,
-          2,
-        ),
-        assetPurpose: ensureMinimumText(
-          page.assetNeeds.length > 0
-            ? page.assetNeeds.map(({ purpose }) => purpose).join("；")
-            : "无需额外图片，使用清晰排版支持理解",
-          2,
-        ),
-      },
-    ]),
+    pageTasks.map((page) => {
+      const visualDesign = page.visualDesign ?? {
+        theme: `${page.title}的内容隐喻`,
+        layout: `${page.pageType}页面围绕“${page.title}”建立主视觉，并让解释与“${page.learnerAction}”形成清晰阅读路径`,
+        graphicMotif: `把“${page.teachingPoints.join("、")}”的知识关系转化为 HTML/CSS/内联 SVG 图形`,
+      };
+      return [
+        page.pageId,
+        {
+          pageId: page.pageId,
+          theme: ensureMinimumText(visualDesign.theme, 2),
+          focalPoint: ensureMinimumText(
+            `${visualDesign.theme}：${page.purpose}`,
+            2,
+          ),
+          composition: ensureMinimumText(visualDesign.layout, 2),
+          graphicMotif: ensureMinimumText(
+            visualDesign.graphicMotif,
+            2,
+          ),
+          assetPurpose: ensureMinimumText(
+            page.assetNeeds.length > 0
+              ? page.assetNeeds.map(({ purpose }) => purpose).join("；")
+              : "本页以 graphicMotif 指定的代码原生知识图形作为主视觉",
+            2,
+          ),
+        },
+      ];
+    }),
   );
 
   const briefs = CourseDesignBriefsSchema.parse({

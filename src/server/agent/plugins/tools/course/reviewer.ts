@@ -203,7 +203,7 @@ export function createCourseReviewerTools(
         );
         return success(`已读取 ${selected.pageIds.length} 份页面质量报告。`, {
           items: selected.pageIds.map((pageId) =>
-            compactQuality(
+            compactCourseReviewerQuality(
               pageId,
               requiredMapValue(snapshot.pageQualities, pageId),
               false,
@@ -263,7 +263,7 @@ export function createCourseReviewerTools(
             assessment: summary.assessment,
             interactionType: summary.interactionType,
             usedReferences: summary.usedReferences,
-            quality: compactQuality(pageId, quality, true),
+            quality: compactCourseReviewerQuality(pageId, quality, true),
           },
           evidenceArtifactRefs: [
             manifestPage.summaryRef,
@@ -702,7 +702,7 @@ export function collectDeterministicReviewerFindings(
   return findings;
 }
 
-function compactQuality(
+export function compactCourseReviewerQuality(
   pageId: string,
   quality: QualityReport,
   focused: boolean,
@@ -740,6 +740,10 @@ function compactQuality(
             overflow: capture.metrics?.horizontalOverflowPx,
             clipped: capture.metrics?.clippedElementCount,
             zeroSizeInteractive: capture.metrics?.zeroSizeInteractiveCount,
+            interactionSubmitTested:
+              capture.metrics?.interactionSubmitTested,
+            interactionFeedbackVisible:
+              capture.metrics?.interactionFeedbackVisible,
             ...(capture.status === "failed"
               ? { reason: capture.reason }
               : {}),

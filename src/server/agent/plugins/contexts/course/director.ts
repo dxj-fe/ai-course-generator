@@ -1,10 +1,12 @@
 import {
   CourseArchitectureSchema,
+  CourseCreationBriefSchema,
   CourseReviewSchema,
   RunSummarySchema,
   WorkOrderSchema,
   type ArtifactRef,
   type CourseArchitecture,
+  type CourseCreationBrief,
   type CourseReview,
   type CourseRun,
   type RunSummary,
@@ -40,6 +42,7 @@ export type DirectorRoundKind =
   | "decide_course_review";
 
 export type CourseDirectorExecutionInput = {
+  creationBrief: CourseCreationBrief;
   repository: CourseRunRepository;
   workOrder: WorkOrder;
   workOrderLeaseOwner: string;
@@ -50,6 +53,7 @@ export type CourseDirectorExecutionInput = {
 };
 
 export type CourseDirectorExecution = {
+  creationBrief: CourseCreationBrief;
   repository: CourseRunRepository;
   initialWorkOrder: WorkOrder;
   initialRun: CourseRun;
@@ -78,6 +82,9 @@ export type CourseDirectorExecution = {
 export function createCourseDirectorExecution(
   input: CourseDirectorExecutionInput,
 ): CourseDirectorExecution {
+  const creationBrief = CourseCreationBriefSchema.parse(
+    input.creationBrief,
+  );
   const workOrder = WorkOrderSchema.parse(input.workOrder);
   if (
     workOrder.kind !== "director_round" ||
@@ -210,6 +217,7 @@ export function createCourseDirectorExecution(
   }
 
   return {
+    creationBrief,
     repository: input.repository,
     initialWorkOrder: workOrder,
     initialRun: run,
@@ -541,12 +549,31 @@ export function inspectCourseArchitecture(
   const { blueprint, coursePack, pageTasks } = execution.architecture;
   return {
     architectureRef: execution.architectureRef,
+    immutableBrief: {
+      originalRequest: execution.creationBrief.originalRequest,
+      topic: execution.creationBrief.topic,
+      audience: execution.creationBrief.audience,
+      goal: execution.creationBrief.goal,
+      sectionCount: execution.creationBrief.sectionCount,
+      learningMode: execution.creationBrief.learningMode,
+      language: execution.creationBrief.language,
+    },
     title: blueprint.title,
     topic: coursePack.topic,
     audience: blueprint.audience,
     language: blueprint.language,
     courseRules: blueprint.courseRules,
     constraints: coursePack.constraints,
+    facts: coursePack.facts.map(({ id, text, sourceUsages }) => ({
+      id,
+      text,
+      sourceUsages,
+    })),
+    terms: coursePack.terms.map(({ term, definition, sourceUsages }) => ({
+      term,
+      definition,
+      sourceUsages,
+    })),
     objectives: blueprint.objectives.map((objective) => ({
       ...objective,
       teachingPageIds: pageTasks
@@ -582,6 +609,8 @@ export function inspectCourseArchitecture(
           interactionType,
           functionalTemplateId,
           styleTemplateId,
+          visualDesign,
+          acceptance,
         }) => ({
           pageId,
           order,
@@ -596,6 +625,8 @@ export function inspectCourseArchitecture(
           interactionType,
           functionalTemplateId,
           styleTemplateId,
+          visualDesign,
+          acceptance,
         }),
       ),
   };

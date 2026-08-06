@@ -25,6 +25,7 @@ import {
 import {
   COURSE_ID,
   createArchitecture,
+  createBrief,
 } from "../../../fixtures/course-architecture";
 import { seedRunningCourseTask } from "../../../fixtures/running-course-task";
 
@@ -433,6 +434,7 @@ export function runPreparedAgent(
 ) {
   return runCourseDirectorAgent(
     {
+      creationBrief: createBrief(),
       repository: prepared.repository,
       workOrder: prepared.director,
       workOrderLeaseOwner: DIRECTOR_OWNER,
@@ -449,13 +451,13 @@ export function runPreparedAgent(
 
 export function createFakeFactory(
   generate: (
-    settings: Parameters<
-      RuntimeAgentFactory<CourseDirectorTools>
-    >[0],
+    settings: Parameters<RuntimeAgentFactory<CourseDirectorTools>>[0] & {
+      prompt: string;
+    },
   ) => PromiseLike<unknown>,
 ): RuntimeAgentFactory<CourseDirectorTools> {
   return (settings) => ({
-    generate: () => generate(settings),
+    generate: ({ prompt }) => generate({ ...settings, prompt }),
   });
 }
 

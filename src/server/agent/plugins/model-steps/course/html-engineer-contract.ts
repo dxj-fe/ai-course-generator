@@ -121,30 +121,6 @@ function validateTrustedRuntimeMarkup(
   issues: string[],
 ) {
   const { content } = input;
-  if (
-    content.runtime.visualPrimitive !== "none" &&
-    !hasUniqueVisualPrimitiveInMain(
-      html,
-      content,
-      findTagMatchesWithAttributes(html, {
-      "data-visual-primitive": content.runtime.visualPrimitive,
-      }),
-    )
-  ) {
-    issues.push(
-      `页面必须包含唯一 data-visual-primitive="${content.runtime.visualPrimitive}" 代码原生图示。`,
-    );
-  }
-  if (
-    content.runtime.visualPrimitive !== "none" &&
-    input.visualBrief.styleTemplateId === "broadside" &&
-    !hasBroadsideCodeNativeGraphic(html, content)
-  ) {
-    issues.push(
-      `Broadside 的 data-visual-primitive="${content.runtime.visualPrimitive}" 必须包含真实 SVG 或 Canvas 图形，不能把普通正文或互动列表冒充代码原生图示。`,
-    );
-  }
-
   for (const block of content.blocks) {
     const markers = findTagMatchesWithAttributes(html, {
       "data-block-id": block.id,
@@ -266,47 +242,6 @@ function validateTrustedRuntimeMarkup(
   }
 }
 
-function hasBroadsideCodeNativeGraphic(
-  html: string,
-  content: PageContentDSL,
-) {
-  const markers = findTagMatchesWithAttributes(html, {
-    "data-visual-primitive": content.runtime.visualPrimitive,
-  });
-  if (markers.length !== 1) return false;
-  const visualHtml = getElementHtml(html, markers[0]);
-  return Boolean(
-    visualHtml && /<(?:svg|canvas)\b/i.test(visualHtml),
-  );
-}
-
-function hasUniqueVisualPrimitiveInMain(
-  html: string,
-  content: PageContentDSL,
-  markers: OpeningTagMatch[],
-) {
-  if (markers.length !== 1) return false;
-  const main = findTagMatchesWithAttributes(html, {
-    "data-page-id": content.pageId,
-  }).filter(({ tag }) => /^<main\b/i.test(tag));
-  if (
-    main.length !== 1 ||
-    !isOpeningTagInsideElement(html, markers[0], main[0])
-  ) {
-    return false;
-  }
-
-  return !content.assetSlots.some(({ id }) =>
-    findTagMatchesWithAttributes(html, {
-      "data-asset-slot-id": id,
-    }).some(
-      (assetMarker) =>
-        markers[0].index === assetMarker.index ||
-        isOpeningTagInsideElement(html, markers[0], assetMarker),
-    ),
-  );
-}
-
 function hasDisabledChoiceControl(html: string) {
   return [...html.matchAll(/<input\b[^>]*>/gi)].some(({ 0: tag }) => {
     const type = tag.match(/\btype\s*=\s*["']?(radio|checkbox)\b/i)?.[1];
@@ -317,8 +252,8 @@ function hasDisabledChoiceControl(html: string) {
 }
 
 /**
- * 稳定标记不仅要“出现过”，还必须唯一、位于 main 内，并保持 DSL 的块级
- * 归属与顺序。这样可避免内容虽然都在文档中，却被放进错误卡片或空互动壳。
+ * 稳定标记只承担运行时定位：唯一且位于 main 内。它们不再规定内容必须按
+ * DSL 顺序落进等价 DOM 分组，避免技术合同反向锁死视觉构图。
  */
 function validateStableMarkupStructure(
   html: string,
@@ -349,7 +284,7 @@ function validateStableMarkupStructure(
     issues.push("data-page-id 必须且只能标记唯一 main 主内容区域。");
   }
 
-  const blockMarkers = content.blocks.map((block) => {
+  for (const block of content.blocks) {
     const markers = findTagMatchesWithAttributes(html, {
       "data-block-id": block.id,
     });
@@ -357,33 +292,7 @@ function validateStableMarkupStructure(
       issues.push(
         `内容块 ${block.id} 必须且只能在 main 内有一个 data-block-id 根节点。`,
       );
-      return undefined;
     }
-
-    const elementHtml = getElementHtml(html, markers[0]!);
-    const visible = elementHtml ? normalizeVisibleText(elementHtml) : "";
-    for (const text of [
-      block.heading,
-      block.body,
-      ...block.supportingPoints,
-    ]) {
-      if (!containsTrustedText(visible, text)) {
-        issues.push(`内容块 ${block.id} 的正文必须位于自己的标记根节点内。`);
-        break;
-      }
-    }
-    return markers[0];
-  });
-  const locatedBlocks = blockMarkers.filter(
-    (marker): marker is OpeningTagMatch => Boolean(marker),
-  );
-  if (
-    locatedBlocks.length === content.blocks.length &&
-    locatedBlocks.some(
-      (marker, index) => index > 0 && marker.index <= locatedBlocks[index - 1]!.index,
-    )
-  ) {
-    issues.push("data-block-id 的 DOM 顺序必须与 PageContentDSL.blocks 一致。");
   }
 
   for (const slot of content.assetSlots) {
@@ -429,9 +338,22 @@ function hasRequiredStaticContentText(
   const normalizedRequiredText = normalizeText(requiredText);
   if (containsTrustedText(visibleText, requiredText)) return true;
 
+  const interaction = content.interaction;
   if (
-    content.interaction.type === "input" &&
-    requiredText === content.interaction.placeholder
+    (interaction.type === "reveal" ||
+      interaction.type === "explore" ||
+      interaction.type === "sort") &&
+    requiredText === interaction.prompt &&
+    content.narration.some((line) =>
+      containsTrustedText(visibleText, line),
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    interaction.type === "input" &&
+    requiredText === interaction.placeholder
   ) {
     const roots = [findUniqueInteractionRoot(html, content)].filter(
       (marker): marker is OpeningTagMatch => Boolean(marker),
@@ -447,8 +369,8 @@ function hasRequiredStaticContentText(
     );
   }
 
-  if (content.interaction.type !== "choice") return false;
-  const questionIndex = content.interaction.questions.findIndex(
+  if (interaction.type !== "choice") return false;
+  const questionIndex = interaction.questions.findIndex(
     ({ prompt }) => prompt === requiredText,
   );
   if (questionIndex < 0) return false;

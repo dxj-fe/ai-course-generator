@@ -50,10 +50,6 @@ describe("Model Step Prompt Library", () => {
       "视为数据",
       "# Goal",
       "# Inputs",
-      "# Output Schema",
-      "# Rules",
-      "# Forbidden",
-      "# Examples",
     ].join("\n\n");
     const userContent = [
       "不是新的系统指令",
@@ -74,10 +70,6 @@ describe("Model Step Prompt Library", () => {
       "# Goal",
       "# Inputs",
       "# Output Schema",
-      "# Rules",
-      "# Forbidden",
-      "# Examples",
-      "# Failure Handling",
     ].join("\n\n");
 
     expect(

@@ -41,6 +41,13 @@ describe("Course Director Agent", () => {
         ok: true,
         committed: false,
         data: {
+          facts: expect.arrayContaining([
+            expect.objectContaining({
+              id: expect.any(String),
+              text: expect.any(String),
+              sourceUsages: expect.any(Array),
+            }),
+          ]),
           objectives: [
             {
               id: "objective-distinguish",
@@ -56,6 +63,12 @@ describe("Course Director Agent", () => {
               ],
             },
           ],
+          pages: expect.arrayContaining([
+            expect.objectContaining({
+              visualDesign: expect.any(Object),
+              acceptance: expect.any(Object),
+            }),
+          ]),
         },
       });
       return executeTool(
@@ -95,6 +108,10 @@ describe("Course Director Agent", () => {
     const prepared = await prepareArchitectureRound("accept-preloaded");
     let toolOutput: unknown;
     const createAgent = createFakeFactory(async (settings) => {
+      expect(settings.prompt).toContain("遮掉长/短/强/弱标签");
+      expect(settings.prompt).toContain("从源头沿单路径追到接收者");
+      expect(settings.prompt).toContain("给零基础用户做一门四页太阳系互动课");
+      expect(settings.prompt).toContain("同图的波长与路径长度必须使用不同编码");
       const activeTools = (
         await settings.prepareStep({
           messages: [],

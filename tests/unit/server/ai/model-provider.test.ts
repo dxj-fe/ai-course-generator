@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   enforceSequentialToolCalls,
+  getHtmlLanguageModelIdentity,
   getLanguageModelIdentity,
 } from "../../../../src/server/infra/ai/model-provider";
 
@@ -43,6 +44,15 @@ describe("model provider", () => {
     );
     expect(getLanguageModelIdentity("strong")).not.toBe(
       getLanguageModelIdentity("balanced"),
+    );
+  });
+
+  it("preserves the concrete identity of the dedicated HTML model", () => {
+    vi.stubEnv("ARK_HTML_MODEL_ID", "doubao-code-preview");
+    vi.stubEnv("ARK_API_KEY", "ark-test-key");
+
+    expect(getHtmlLanguageModelIdentity()).toBe(
+      "volcengine-ark/doubao-code-preview",
     );
   });
 });

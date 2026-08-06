@@ -238,7 +238,32 @@ export function renderVisualPrimitive(content: PageContentDSL) {
   const primitive = content.runtime.visualPrimitive;
   if (primitive === "none") return "";
 
-  return `<div class="course-native-visual" data-visual-primitive="${escapeHtmlAttribute(primitive)}" aria-hidden="true"></div>`;
+  return `<div class="course-native-visual" data-visual-primitive="${escapeHtmlAttribute(primitive)}" aria-label="${escapeHtmlAttribute(content.title)}的代码原生图示">
+    ${renderPrimitiveSvg(primitive)}
+  </div>`;
+}
+
+function renderPrimitiveSvg(
+  primitive: PageContentDSL["runtime"]["visualPrimitive"],
+) {
+  const common = 'viewBox="0 0 620 360" preserveAspectRatio="xMidYMid meet" aria-hidden="true"';
+
+  if (primitive === "function-graph") {
+    return `<svg ${common}><path class="native-grid" d="M70 48V310M70 310H570M70 244H570M70 178H570M70 112H570"/><path class="native-accent" d="M70 278C150 278 166 84 252 84s105 194 190 194 74-130 128-168"/><circle class="native-node" cx="252" cy="84" r="13"/><circle class="native-node" cx="442" cy="278" r="13"/></svg>`;
+  }
+  if (primitive === "venn") {
+    return `<svg ${common}><circle class="native-primary native-fill-soft" cx="252" cy="180" r="118"/><circle class="native-accent native-fill-soft" cx="368" cy="180" r="118"/><circle class="native-node" cx="310" cy="180" r="18"/><path class="native-grid" d="M82 180H538"/></svg>`;
+  }
+  if (primitive === "process" || primitive === "timeline") {
+    return `<svg ${common}><path class="native-grid" d="M72 180H548"/><path class="native-primary native-progress" d="M72 180H420"/><g class="native-node-group"><circle cx="92" cy="180" r="34"/><circle cx="242" cy="180" r="34"/><circle cx="392" cy="180" r="34"/><circle cx="528" cy="180" r="34"/></g><g class="native-dot-group"><circle cx="92" cy="180" r="9"/><circle cx="242" cy="180" r="9"/><circle cx="392" cy="180" r="9"/></g><path class="native-accent" d="M502 148L544 180 502 212"/></svg>`;
+  }
+  if (primitive === "comparison") {
+    return `<svg ${common}><path class="native-grid" d="M78 302H550M78 302V54"/><rect class="native-primary native-fill" x="126" y="94" width="88" height="208" rx="18"/><rect class="native-accent native-fill" x="270" y="154" width="88" height="148" rx="18"/><rect class="native-primary native-fill-soft" x="414" y="218" width="88" height="84" rx="18"/><path class="native-accent" d="M126 94C250 116 364 198 502 218"/></svg>`;
+  }
+  if (primitive === "concept-map") {
+    return `<svg ${common}><g class="native-grid"><path d="M310 180L108 78M310 180L108 282M310 180L512 78M310 180L512 282"/></g><circle class="native-primary native-fill-soft" cx="310" cy="180" r="72"/><g class="native-node-group"><circle cx="108" cy="78" r="32"/><circle cx="108" cy="282" r="32"/><circle cx="512" cy="78" r="32"/><circle cx="512" cy="282" r="32"/></g><circle class="native-dot" cx="310" cy="180" r="18"/></svg>`;
+  }
+  return "";
 }
 
 export function canMergeChoiceBlocks(content: PageContentDSL) {

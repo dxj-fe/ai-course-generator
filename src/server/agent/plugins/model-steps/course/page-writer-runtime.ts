@@ -13,16 +13,6 @@ export function buildLessonRuntime(input: {
   blocks: PageContentBlock[];
   interaction: PageContentInteraction;
 }): LessonRuntime {
-  const searchable = [
-    input.page.title,
-    input.page.learningObjective,
-    input.page.contentSummary,
-    ...input.blocks.flatMap(({ heading, body, supportingPoints }) => [
-      heading,
-      body,
-      ...supportingPoints,
-    ]),
-  ].join(" ");
   const interactionId = `interaction-${input.page.id}`;
   const targetIds = [
     ...input.blocks.map(({ id }) => id),
@@ -50,7 +40,8 @@ export function buildLessonRuntime(input: {
 
   return {
     sceneKind: sceneKindForPage(input.page),
-    visualPrimitive: visualPrimitiveForPage(input.page, searchable),
+    // 视觉形式属于 Page Designer，不再由关键词正则替模型选择通用图形。
+    visualPrimitive: "none",
     motionPlan: {
       intensity:
         cuePoints.length === 0
@@ -88,30 +79,6 @@ function sceneKindForPage(
     default:
       return "explain";
   }
-}
-
-function visualPrimitiveForPage(
-  page: PagePlan,
-  searchable: string,
-): LessonRuntime["visualPrimitive"] {
-  const programmingContext =
-    /python|javascript|typescript|java|编程|代码|程序|def\s|return\b|调用|参数|循环|变量|数据类型/i.test(
-      searchable,
-    );
-  const mathematicalFunctionContext =
-    /函数(?:图像|图象|曲线)|function\s+graph|equation\s+plot|定义域|值域|自变量|因变量|坐标(?:系|轴)|抛物线|斜率|(?:^|\s)y\s*=|f\s*\(/i.test(
-      searchable,
-    );
-  if (mathematicalFunctionContext && !programmingContext) {
-    return "function-graph";
-  }
-  if (/集合|子集|并集|交集|补集|venn/i.test(searchable)) return "venn";
-  if (page.pageType === "timeline") return "timeline";
-  if (page.pageType === "comparison") return "comparison";
-  if (/步骤|流程|过程|阶段|控制|循环|遍历|条件/.test(searchable)) {
-    return "process";
-  }
-  return "none";
 }
 
 function interactionTargetIds(interaction: PageContentInteraction) {

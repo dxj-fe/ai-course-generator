@@ -7,7 +7,11 @@ import {
 } from "@/server/agent/plugins/contexts/course/page-builder";
 import { planRepairRound } from "@/server/course/page/repair-plan";
 
-export const MAX_PAGE_QUALITY_REVISIONS = 2;
+/**
+ * 首次呈现后只允许一次基于证据的定向修订。修订结果仍未通过时保留模型产物
+ * 作为失败证据并阻塞 WorkOrder，不再进入下一轮修复或固定模板回退。
+ */
+export const MAX_PAGE_QUALITY_REVISIONS = 1;
 
 export type PageBlockEligibility =
   | {

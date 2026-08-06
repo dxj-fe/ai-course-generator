@@ -5,6 +5,7 @@ import { CourseTaskIdSchema } from "./course-task-event";
 
 export const ArtifactKindSchema = z.enum([
   "course_architecture",
+  "course_architecture_candidate",
   "page_content",
   "page_assets",
   "page_html",

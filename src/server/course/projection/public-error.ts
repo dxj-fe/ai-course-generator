@@ -33,23 +33,35 @@ export function classifyPublicAgentError(input: {
   code?: unknown;
   fallbackCode?: string;
 }): PublicAgentError {
+  const requestedCode = input.code ?? readErrorCode(input.error);
   const classifiedCode = input.error
     ? toAiErrorPayload(input.error, "public-error").code
     : undefined;
+  const prefersStableBusinessCode =
+    typeof requestedCode === "string" &&
+    PUBLIC_COURSE_ERROR_CODES.has(requestedCode.trim()) &&
+    requestedCode.trim() !== classifiedCode;
   const code = sanitizePublicErrorCode(
-    input.code ?? readErrorCode(input.error),
+    requestedCode,
     classifiedCode ??
       input.fallbackCode ??
       "AGENT_EXECUTION_FAILED",
   );
   const causeCode =
     toCourseGenerationCauseCode(code) ??
-    toCourseGenerationCauseCode(classifiedCode);
+    (prefersStableBusinessCode
+      ? undefined
+      : toCourseGenerationCauseCode(classifiedCode));
 
   return {
     code,
     causeCode,
-    message: publicMessageFor(classifiedCode ?? causeCode, code),
+    message: publicMessageFor(
+      prefersStableBusinessCode
+        ? causeCode
+        : classifiedCode ?? causeCode,
+      code,
+    ),
   };
 }
 

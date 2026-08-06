@@ -10,11 +10,17 @@ import {
   VisualStyleSchema,
   type ReferencePack,
   type ReferenceSearchResult,
+  type CourseCreationBrief,
   type TemplateCard,
   type TemplateCardSearchResult,
 } from "@/shared/course-schema";
 import { searchFunctionalTemplates } from "@/shared/templates/functional";
-import { searchStyleTemplates } from "@/shared/templates/style";
+import {
+  getStyleTemplate,
+  inferStyleIntent,
+  searchStyleTemplates,
+  type StyleTemplateSearchInput,
+} from "@/shared/templates/style";
 import {
   aiResultCache,
   createAiResultCacheKey,
@@ -72,16 +78,22 @@ type RetrieveTemplateCardsInput = z.input<
 >;
 type RetrieveReferenceInput = z.input<typeof RetrieveReferenceInputSchema>;
 
+const STYLE_DEFAULT_CONFIDENCE_THRESHOLD = 0.6;
+
 export function retrieveTemplateCards(
   input: RetrieveTemplateCardsInput,
+  courseContext?: Pick<
+    CourseCreationBrief,
+    "originalRequest" | "topic" | "learningMode"
+  >,
 ): TemplateCardSearchResult {
   const parsedInput = RetrieveTemplateCardsInputSchema.parse(input);
   const cacheKey = createAiResultCacheKey({
     namespace: "template-card-search",
-    promptFingerprint: "template-registry",
+    promptFingerprint: "template-registry-v3",
     model: "deterministic-registry",
     schemaFingerprint: "template-card-search-result",
-    input: parsedInput,
+    input: { query: parsedInput, courseContext },
   });
   const cached = aiResultCache.lookup(cacheKey, TemplateCardSearchResultSchema);
   if (cached.status === "hit") return cached.value;
@@ -149,34 +161,90 @@ export function retrieveTemplateCards(
     } satisfies TemplateCard,
     reason: formatTemplateReason(matchedNeeds, reason),
   }));
-  const style = searchStyleTemplates({
-    query: pageNeeds.map(({ goal }) => goal).join("；"),
-    visualStyle: parsedInput.visualStyle,
+  const styleSearchInput: StyleTemplateSearchInput = {
+    query: [
+      courseContext?.originalRequest,
+      courseContext?.topic,
+      ...pageNeeds.map(({ goal }) => goal),
+    ]
+      .filter(Boolean)
+      .join("；"),
+    visualStyle: resolveUserRequestedVisualStyle(
+      parsedInput.visualStyle,
+      courseContext?.originalRequest,
+    ),
     audience: parsedInput.audience,
+    learningActivities:
+      courseContext?.learningMode === "guided"
+        ? ["explain"]
+        : courseContext?.learningMode === "practice"
+          ? ["practice", "assess"]
+          : courseContext?.learningMode === "mixed"
+            ? ["explain", "practice"]
+            : undefined,
     limit: parsedInput.limit,
-  }).map(({ template, reason }) => ({
-    card: {
-      kind: "style-template" as const,
-      id: template.id,
-      name: template.name,
-      description: template.goal,
-      whenToUse: template.bestFor.slice(0, 4),
-      inputSchemaSummary: "视觉目标、学习者受众和 CourseIntent.visualStyle。",
-      outputSummary: `visualStyle=${template.visualStyle} 的 Design Tokens 与素材指导。`,
-      limitations: template.avoidFor.slice(0, 4),
-      tags: [
-        template.visualStyle,
-        template.layoutDensity,
-        ...template.keywords.slice(0, 8),
-      ],
-      visualStyle: template.visualStyle,
-    } satisfies TemplateCard,
-    reason,
-  }));
+  };
+  const rankedStyleMatches = searchStyleTemplates(styleSearchInput);
+  const bestStyleMatch = rankedStyleMatches.find(
+    ({ candidateRole }) => candidateRole === "best-match",
+  );
+  const styleMatches =
+    inferStyleIntent(styleSearchInput).riskContext === "standard" &&
+    bestStyleMatch &&
+    bestStyleMatch.confidence >= STYLE_DEFAULT_CONFIDENCE_THRESHOLD
+      ? [bestStyleMatch]
+      : rankedStyleMatches;
+  const style = styleMatches.map(
+    ({ template, reason, score, candidateRole, confidence, factors }) => ({
+      card: {
+        kind: "style-template" as const,
+        id: template.id,
+        name: template.name,
+        description: template.goal,
+        whenToUse: template.bestFor.slice(0, 4),
+        inputSchemaSummary: "视觉目标、学习者受众和 CourseIntent.visualStyle。",
+        outputSummary: `visualStyle=${template.visualStyle} 的 Design Tokens 与素材指导。`,
+        limitations: template.avoidFor.slice(0, 4),
+        tags: [
+          template.visualStyle,
+          template.profile.family,
+          template.profile.formality,
+          template.layoutDensity,
+          ...template.profile.learningActivities.slice(0, 4),
+          ...template.keywords.slice(0, 5),
+        ],
+        visualStyle: template.visualStyle,
+      } satisfies TemplateCard,
+      reason,
+      score,
+      candidateRole,
+      confidence,
+      scoreBreakdown: factors,
+    }),
+  );
 
   const result = TemplateCardSearchResultSchema.parse({ functional, style });
   aiResultCache.store(cacheKey, result, TemplateCardSearchResultSchema);
   return result;
+}
+
+function resolveUserRequestedVisualStyle(
+  requested: z.infer<typeof VisualStyleSchema> | undefined,
+  originalRequest: string | undefined,
+) {
+  if (!requested || !originalRequest) return requested;
+  const template = getStyleTemplate(requested);
+  if (!template) return undefined;
+  const normalizedRequest = originalRequest.toLocaleLowerCase();
+  const explicitTerms = [
+    template.id,
+    template.name,
+    template.visualStyle,
+    ...template.keywords.slice(0, 2),
+  ].map((term) => term.toLocaleLowerCase());
+  return explicitTerms.some((term) => normalizedRequest.includes(term))
+    ? requested
+    : undefined;
 }
 
 export function retrieveReferenceHits(

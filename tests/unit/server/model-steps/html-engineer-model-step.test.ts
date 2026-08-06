@@ -6,29 +6,21 @@ import {
 } from "../../../fixtures/course-design";
 import { buildValidGeneratedHtml } from "../../../fixtures/generated-html";
 import { generateTextSafe } from "../../../../src/server/infra/ai/client";
-import { renderDeterministicPageFallback } from "../../../../src/server/course/page/deterministic-fallback";
 import {
   createHtmlEngineerModelStep,
   createHtmlEngineerModelStepState,
   normalizeChoiceInteractionRoot,
   normalizeChoiceRuntimeMarkers,
   normalizeConditionalFeedbackVisibility,
-  normalizeExploreCardInteraction,
   normalizeGeneratedActiveContent,
   normalizeGeneratedCanvasRoot,
   normalizeGeneratedHtmlEnvelope,
-  normalizeMergedInteractiveBlocks,
   normalizeNativeInteractionMarker,
-  normalizeRevealCardInteraction,
   normalizeRevealRuntimeMarkers,
-  normalizeSortCardInteraction,
   normalizeSubmissionRuntimeMarker,
-  normalizeTrustedDslMarkup,
-  normalizeTrustedPageTitle,
   normalizeTrustedPlayerLayout,
+  normalizeWideSingleColumnBreakpoints,
   normalizeUniqueReadyAssetSlotRoots,
-  normalizeVisualPrimitiveMarker,
-  removeRedundantRestoredDslMarkup,
   resolveHtmlEngineerInput,
   validateHtmlEngineerOutput,
 } from "../../../../src/server/agent/plugins/model-steps/course/html-engineer-model-step";
@@ -210,12 +202,6 @@ function withTrustedRuntime(
   };
 }
 
-function countBodyText(html: string, text: string) {
-  const body = html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1] ?? "";
-  const escaped = text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return body.match(new RegExp(escaped, "g"))?.length ?? 0;
-}
-
 describe("HtmlEngineerModelStep", () => {
   it("uses the bounded HTML-specific timeout for the default model call", async () => {
     vi.stubEnv("AI_HTML_TIMEOUT_MS", "180000");
@@ -232,9 +218,49 @@ describe("HtmlEngineerModelStep", () => {
     expect(generateTextSafe).toHaveBeenCalledWith(
       expect.objectContaining({
         capability: "html",
+        fallbackTimeoutMs: 150_000,
         timeoutMs: 180_000,
       }),
     );
+  });
+
+  it("merges the selected style recipe description with explicit page guidance in the production prompt", async () => {
+    vi.mocked(generateTextSafe).mockResolvedValueOnce({
+      text: buildValidGeneratedHtml(pageContentDsl),
+    } as Awaited<ReturnType<typeof generateTextSafe>>);
+
+    const result = await createHtmlEngineerModelStep().run(
+      createHtmlEngineerModelStepState({
+        ...input,
+        pageDesignGuidance: [
+          {
+            logicalPath:
+              "agent/skills/course-page-design/references/fixed-canvas-composition.md",
+            digest: "b".repeat(64),
+            content: "Keep the learning action inside the main composition.",
+          },
+        ],
+      }),
+      { traceId: "html-engineer-style-recipe-test" },
+    );
+
+    expect(result.status).toBe("completed");
+    const request = vi.mocked(generateTextSafe).mock.calls[0]?.[0];
+    const promptText = request?.messages
+      .flatMap(({ parts }) => parts)
+      .flatMap((part) => (part.type === "text" ? [part.text] : []))
+      .join("\n");
+
+    expect(promptText).toContain(
+      "A retro-futuristic pixel-art presentation system",
+    );
+    expect(promptText).toContain(
+      "Keep the learning action inside the main composition",
+    );
+    expect(promptText).not.toContain("pixel-stack-cyan-yellow");
+    expect(promptText).not.toMatch(/1920\s*(?:×|x)\s*1080/i);
+    expect(promptText).not.toMatch(/deck[-_\s]?(?:runtime|viewport|stage)/i);
+    expect(promptText).not.toContain("viewport-base.css");
   });
 
   it("generates and validates one HTML document in one bounded step", async () => {
@@ -261,12 +287,12 @@ describe("HtmlEngineerModelStep", () => {
     expect(generateHtml).toHaveBeenCalledWith(
       expect.objectContaining({
         content: pageContentDsl,
-        functionalTemplate: expect.objectContaining({
-          id: pageContentDsl.functionalTemplateId,
-        }),
         pageGuidance: expect.objectContaining({ pageId: pageContentDsl.pageId }),
         styleTemplate: expect.objectContaining({ id: visualBrief.styleTemplateId }),
       }),
+    );
+    expect(generateHtml.mock.calls[0]?.[0]).not.toHaveProperty(
+      "functionalTemplate",
     );
     expect(generateHtml.mock.calls[0]?.[0]).not.toHaveProperty("userPrompt");
   });
@@ -291,11 +317,13 @@ describe("HtmlEngineerModelStep", () => {
       result.events.find(({ type }) => type === "validation")?.data,
     ).toMatchObject({
       contractRetryApplied: false,
-      fallbackApplied: false,
     });
+    expect(
+      result.events.find(({ type }) => type === "validation")?.data,
+    ).not.toHaveProperty("fallbackApplied");
   });
 
-  it("retries one deterministic HTML contract failure before using fallback", async () => {
+  it("retries one HTML contract failure and returns the revised model document", async () => {
     const generateHtml = vi
       .fn()
       .mockResolvedValueOnce("模型没有返回 HTML 文档")
@@ -320,100 +348,13 @@ describe("HtmlEngineerModelStep", () => {
       result.events.find(({ type }) => type === "validation")?.data,
     ).toMatchObject({
       contractRetryApplied: true,
-      fallbackApplied: false,
     });
+    expect(
+      result.events.find(({ type }) => type === "validation")?.data,
+    ).not.toHaveProperty("fallbackApplied");
   });
 
-  it("renders a strictly valid fallback for every interaction type", () => {
-    const interactions: PageContentDSL["interaction"][] = [
-      { type: "none" },
-      {
-        type: "navigate",
-        actionLabel: "继续学习",
-        destination: "next",
-      },
-      pageContentDsl.interaction,
-      {
-        type: "explore",
-        prompt: "探索两类天体的特点。",
-        items: [
-          { id: "item-star", label: "恒星线索", content: "观察它是否自行发光。" },
-          { id: "item-planet", label: "行星线索", content: "观察它如何围绕恒星运行。" },
-        ],
-      },
-      {
-        type: "choice",
-        questions: [
-          {
-            id: "question-01",
-            prompt: "哪一种天体会自己发光？",
-            options: [
-              { id: "option-star", label: "恒星" },
-              { id: "option-planet", label: "行星" },
-            ],
-            correctOptionId: "option-star",
-            feedback: {
-              success: "正确，恒星能够自行发光。",
-              retry: "再比较恒星和行星的发光方式。",
-            },
-            maxAttempts: 2,
-          },
-        ],
-      },
-      {
-        type: "sort",
-        prompt: "按学习顺序排列观察步骤。",
-        items: [
-          { id: "item-observe", label: "先观察", content: "查看天体是否发光。" },
-          { id: "item-compare", label: "再比较", content: "比较两类天体的差异。" },
-        ],
-        correctOrderIds: ["item-observe", "item-compare"],
-        feedback: {
-          success: "顺序正确，先观察再比较。",
-          retry: "先寻找线索，再进行比较。",
-        },
-      },
-      {
-        type: "input",
-        prompt: "写下恒星与行星的一项差异。",
-        placeholder: "例如：是否会自己发光",
-        evaluationCriteria: ["指出恒星特点", "指出行星特点"],
-        feedback: {
-          success: "回答已提交，比较结果清楚。",
-          retry: "请同时说明两类天体的特点。",
-        },
-      },
-    ];
-    const styleTemplate = resolveHtmlEngineerInput(input).styleTemplate;
-
-    for (const interaction of interactions) {
-      const content = withTrustedRuntime(interaction);
-      const html = renderDeterministicPageFallback({
-        content,
-        styleTemplate,
-      });
-
-      expect(() =>
-        validateHtmlEngineerOutput(html, {
-          content,
-          visualBrief,
-        }),
-      ).not.toThrow();
-      expect(html).toContain('data-visual-primitive="comparison"');
-      for (const block of content.blocks) {
-        expect(html).toContain(
-          `data-block-id="${block.id}" data-runtime-target-id="${block.id}"`,
-        );
-      }
-      if (interaction.type !== "none") {
-        expect(html).toContain(
-          `data-interaction-id="interaction-${content.pageId}"`,
-        );
-      }
-    }
-  });
-
-  it("falls back from an incomplete achievement input page without duplicating trusted body copy", async () => {
+  it("fails explicitly when the one contract retry is still invalid", async () => {
     const example = getFunctionalTemplateDslExample("achievement-task");
     if (!example || example.interaction.type !== "input") {
       throw new Error("achievement-task 测试夹具必须使用 input interaction");
@@ -438,78 +379,28 @@ describe("HtmlEngineerModelStep", () => {
       interaction,
     };
     const content = withTrustedRuntime(interaction, achievementBase);
-    const result = await createHtmlEngineerModelStep({
-      generateHtml: vi.fn().mockResolvedValue(
-        `<!doctype html><html><head><meta name="viewport" content="width=device-width"><style>body{margin:0}</style></head><body><main data-page-id="${content.pageId}"><p>模型遗漏了任务标题与评价标准</p></main></body></html>`,
-      ),
-    }).run(
+    const incompleteHtml = `<!doctype html><html><head><meta name="viewport" content="width=device-width"><style>body{margin:0}</style></head><body><main data-page-id="${content.pageId}"><p>模型遗漏了任务标题与评价标准</p></main></body></html>`;
+    const generateHtml = vi.fn().mockResolvedValue(incompleteHtml);
+    const result = await createHtmlEngineerModelStep({ generateHtml }).run(
       createHtmlEngineerModelStepState({
         content,
         visualBrief,
       }),
-      { traceId: "achievement-input-fallback-test" },
+      { traceId: "achievement-input-contract-failure-test" },
     );
 
-    expect(result.status).toBe("completed");
-    expect(result.htmlOutput?.html).toBeDefined();
-    expect(() =>
-      validateHtmlEngineerOutput(result.htmlOutput?.html, {
-        content,
-        visualBrief,
-      }),
-    ).not.toThrow();
-    expect(
-      result.htmlOutput!.html.match(
-        new RegExp(`<h1>${content.title}</h1>`, "g"),
-      ),
-    ).toHaveLength(1);
-    for (const block of content.blocks) {
-      expect(countBodyText(result.htmlOutput!.html, block.body)).toBe(1);
-    }
-    for (const criterion of interaction.evaluationCriteria) {
-      expect(countBodyText(result.htmlOutput!.html, criterion)).toBe(1);
-    }
-    expect(result.htmlOutput?.html).toContain('data-runtime-input="true"');
-    expect(result.htmlOutput?.html).toContain('data-runtime-submit="true"');
-    expect(
-      result.events.find(({ type }) => type === "validation")?.data,
-    ).toMatchObject({ fallbackApplied: true });
-  });
-
-  it("renders ready and fallback asset slots through the same strict contract", () => {
-    const fallbackAsset: AssetGenerationResult = {
-      request: readyAssetResults[1]!.request,
-      status: "fallback",
-      fallback: {
-        kind: "css-gradient",
-        description: "使用柔和渐变代替角色贴纸。",
-      },
-      durationMs: 10,
-    };
-    const assets = [readyAssetResults[0]!, fallbackAsset];
-    const styleTemplate = resolveHtmlEngineerInput({
-      content: assetRichContent,
-      visualBrief,
-      assets,
-    }).styleTemplate;
-    const html = renderDeterministicPageFallback({
-      assets,
-      content: assetRichContent,
-      styleTemplate,
-    });
-
-    expect(() =>
-      validateHtmlEngineerOutput(html, {
-        assets,
-        content: assetRichContent,
-        visualBrief,
-      }),
-    ).not.toThrow();
-    expect(html).toContain(
-      'data-asset-slot-id="asset-slot-01" src="/api/assets/asset-background"',
-    );
-    expect(html).toContain(
-      'data-asset-slot-id="asset-slot-02" data-asset-fallback="css-gradient"',
+    expect(generateHtml).toHaveBeenCalledTimes(2);
+    expect(result.status).toBe("failed");
+    expect(result.htmlOutput).toBeUndefined();
+    expect(result.error).toMatchObject({ code: "SCHEMA_ERROR" });
+    expect(result.events.map(({ type }) => type)).toEqual([
+      "start",
+      "model_call",
+      "model_call",
+      "error",
+    ]);
+    expect(result.events).not.toContainEqual(
+      expect.objectContaining({ type: "validation" }),
     );
   });
 
@@ -554,50 +445,6 @@ describe("HtmlEngineerModelStep", () => {
     expect(normalized).toContain('href="#"');
   });
 
-  it("upgrades complete explore cards to native progressive details controls", () => {
-    const interaction = {
-      type: "explore" as const,
-      prompt: "逐项探索三类环境挑战。",
-      items: [
-        {
-          id: "item-01",
-          label: "稀薄大气",
-          content: "气压很低，液态水难以稳定存在。",
-        },
-        {
-          id: "item-02",
-          label: "极端低温",
-          content: "平均温度远低于地球。",
-        },
-      ],
-    };
-    const content = withTrustedRuntime(interaction);
-    const cards = interaction.items
-      .map(
-        (item) =>
-          `<div class="explore-item" data-interaction-item-id="${item.id}"><h3>${item.label}</h3><div>${item.content}</div></div>`,
-      )
-      .join("");
-    const html =
-      `<!doctype html><html><head></head><body>` +
-      `<main data-page-id="${content.pageId}">` +
-      `<section data-interaction-type="explore" data-interaction-id="interaction-${content.pageId}">${cards}</section>` +
-      `</main></body></html>`;
-
-    const normalized = normalizeExploreCardInteraction(html, content);
-
-    expect(normalized).toContain(
-      '<details class="keya-trusted-explore-card" data-interaction-item-id="item-01"',
-    );
-    expect(normalized).toContain("<summary>稀薄大气</summary>");
-    expect(normalized).toContain(
-      'data-course-contract-restored="explore-control"',
-    );
-    expect(
-      String(normalized).match(/data-interaction-item-id="item-01"/g),
-    ).toHaveLength(1);
-  });
-
   it("injects a visual-neutral trusted player guard exactly once", () => {
     const generated =
       "<!doctype html><html><head><style>main{gap:3rem}</style></head><body><main data-page-id=\"page-01\"></main></body></html>";
@@ -608,10 +455,18 @@ describe("HtmlEngineerModelStep", () => {
 
     expect(normalized).toContain('data-keya-layout-guard="current"');
     expect(normalized).toContain(
-      "html,body{width:100%!important;height:100%!important;margin:0!important;padding:0!important",
+      "html,body{width:100%!important;height:100%!important;margin:0!important;overflow:visible!important",
     );
+    expect(normalized).not.toContain("padding:0!important");
     expect(normalized).toContain(
       "main[data-page-id]>*{min-width:0}",
+    );
+    expect(normalized).toContain("max-width:none!important");
+    expect(normalized).toContain(
+      "@media (max-width:520px)",
+    );
+    expect(normalized).toContain(
+      "main[data-page-id]{height:auto!important;min-height:100%!important}",
     );
     expect(normalized).toContain(
       ':where(button,[role="button"],summary,select,input:not([type="hidden"]),textarea){min-width:44px;min-height:44px}',
@@ -628,289 +483,33 @@ describe("HtmlEngineerModelStep", () => {
     );
   });
 
-  it("restores the immutable page title when the model omits the h1", () => {
-    const html = buildValidGeneratedHtml(pageContentDsl).replace(
-      `<h1>${pageContentDsl.title}</h1>`,
-      "",
-    );
+  it("delays only wide single-column breakpoints until the narrow viewport", () => {
+    const generated = `<!doctype html><html><head><style>
+      @media (max-width: 900px) { main { grid-template-columns: 1fr 1fr; } }
+      @media (max-width: 712px) { main { grid-template-columns: 1fr; } }
+      @media (max-width: 768px) { h1 { font-size: 2rem; } }
+    </style></head><body></body></html>`;
 
-    const normalized = normalizeTrustedPageTitle(html, input);
+    const normalized = normalizeWideSingleColumnBreakpoints(generated);
 
-    expect(normalized).toContain(
-      `<h1 data-keya-trusted-page-title="true">${pageContentDsl.title}</h1>`,
-    );
-    expect(() => validateHtmlEngineerOutput(normalized, input)).not.toThrow();
+    expect(normalized).toContain("@media (max-width: 520px) { main");
+    expect(normalized).toContain("@media (max-width: 900px) { main");
+    expect(normalized).toContain("@media (max-width: 768px) { h1");
+    expect(normalized).not.toContain("@media (max-width: 712px)");
   });
 
-  it("promotes a unique matching display heading instead of duplicating the page title", () => {
-    const html = buildValidGeneratedHtml(pageContentDsl).replace(
-      `<h1>${pageContentDsl.title}</h1>`,
-      `<h2 class="display-title">${pageContentDsl.title}</h2>`,
-    );
+  it("delays compound wide single-column breakpoints without leaving an impossible range", () => {
+    const generated = `<!doctype html><html><head><style>
+      @media (max-width: 921px) and (min-width: 521px) {
+        main { grid-template-columns: 1fr; }
+      }
+    </style></head><body></body></html>`;
 
-    const normalized = normalizeTrustedPageTitle(html, input);
-    if (typeof normalized !== "string") {
-      throw new Error("标题规范化必须返回 HTML 字符串");
-    }
+    const normalized = normalizeWideSingleColumnBreakpoints(generated);
 
-    expect(normalized).toContain(
-      '<h1 class="display-title" data-keya-trusted-page-title="true"',
-    );
-    expect(normalized).not.toContain("<h2 class=\"display-title\">");
-    expect(normalized.match(new RegExp(pageContentDsl.title, "g"))).toHaveLength(2);
-    expect(() => validateHtmlEngineerOutput(normalized, input)).not.toThrow();
-  });
-
-  it("marks a uniquely named code-native visual root with the trusted primitive", () => {
-    const runtimeContent = {
-      ...pageContentDsl,
-      runtime: {
-        sceneKind: "demo" as const,
-        visualPrimitive: "concept-map" as const,
-        motionPlan: {
-          intensity: "guided" as const,
-          cuePoints: [],
-        },
-        completionRule: {
-          type: "interaction-complete" as const,
-          interactionId: `interaction-${pageContentDsl.pageId}`,
-        },
-      },
-    } satisfies PageContentDSL;
-    const generated = `<!doctype html><html><head><title>${runtimeContent.title}</title></head><body><main data-page-id="${runtimeContent.pageId}"><section class="course-concept-map"><article>${runtimeContent.blocks[0]?.heading}</article><article>${runtimeContent.blocks[1]?.heading}</article></section></main></body></html>`;
-
-    const normalized = normalizeVisualPrimitiveMarker(generated, {
-      content: runtimeContent,
-      visualBrief,
-    });
-
-    expect(normalized).toContain(
-      '<section class="course-concept-map" data-visual-primitive="concept-map">',
-    );
-  });
-
-  it("uses the smallest complete block group as a code-native comparison visual", () => {
-    const runtimeContent = {
-      ...pageContentDsl,
-      runtime: {
-        sceneKind: "demo" as const,
-        visualPrimitive: "comparison" as const,
-        motionPlan: {
-          intensity: "guided" as const,
-          cuePoints: [],
-        },
-        completionRule: {
-          type: "interaction-complete" as const,
-          interactionId: `interaction-${pageContentDsl.pageId}`,
-        },
-      },
-    } satisfies PageContentDSL;
-    const blocks = runtimeContent.blocks
-      .map(
-        ({ id, heading }) =>
-          `<article data-block-id="${id}">${heading}</article>`,
-      )
-      .join("");
-    const generated = `<!doctype html><html><head><title>${runtimeContent.title}</title></head><body><main data-page-id="${runtimeContent.pageId}"><div class="left-content"><div class="blocks-group">${blocks}</div></div></main></body></html>`;
-
-    const normalized = normalizeVisualPrimitiveMarker(generated, {
-      content: runtimeContent,
-      visualBrief,
-    });
-
-    expect(normalized).toContain(
-      '<div class="blocks-group" data-visual-primitive="comparison">',
-    );
-    expect(normalized).not.toContain(
-      'data-course-contract-restored="visual-primitive"',
-    );
-  });
-
-  it("marks a complete native interaction visual when the model omits the primitive", () => {
-    const runtimeContent = {
-      ...pageContentDsl,
-      runtime: {
-        sceneKind: "demo" as const,
-        visualPrimitive: "concept-map" as const,
-        motionPlan: {
-          intensity: "guided" as const,
-          cuePoints: [],
-        },
-        completionRule: {
-          type: "interaction-complete" as const,
-          interactionId: `interaction-${pageContentDsl.pageId}`,
-        },
-      },
-    } satisfies PageContentDSL;
-    const generated = buildValidGeneratedHtml(runtimeContent).replace(
-      ' data-visual-primitive="concept-map"',
-      "",
-    );
-
-    const normalized = normalizeVisualPrimitiveMarker(generated, {
-      content: runtimeContent,
-      visualBrief,
-    });
-
-    expect(normalized).toContain('data-visual-primitive="concept-map"');
-    expect(normalized).not.toContain(
-      'data-course-contract-restored="visual-primitive"',
-    );
-  });
-
-  it("allows a code-native primitive inside main when main only consumes a background asset", () => {
-    const runtimeContent = {
-      ...assetRichContent,
-      assetSlots: [assetRichContent.assetSlots[0]!],
-      runtime: {
-        sceneKind: "demo" as const,
-        visualPrimitive: "concept-map" as const,
-        motionPlan: {
-          intensity: "guided" as const,
-          cuePoints: [],
-        },
-        completionRule: {
-          type: "interaction-complete" as const,
-          interactionId: `interaction-${assetRichContent.pageId}`,
-        },
-      },
-    } satisfies PageContentDSL;
-    const generated = buildValidGeneratedHtml(runtimeContent).replace(
-      `<main data-page-id="${runtimeContent.pageId}">`,
-      `<main data-page-id="${runtimeContent.pageId}" data-asset-slot-id="asset-slot-01">`,
-    );
-
-    const normalized = normalizeVisualPrimitiveMarker(generated, {
-      content: runtimeContent,
-      visualBrief,
-    });
-
-    expect(normalized).toContain('data-visual-primitive="concept-map"');
-  });
-
-  it("uses the smallest complete interaction-item container as a native timeline", () => {
-    const interaction = pageContentDsl.interaction;
-    if (interaction.type !== "reveal") {
-      throw new Error("reveal fixture is required");
-    }
-    const runtimeContent = {
-      ...pageContentDsl,
-      runtime: {
-        sceneKind: "demo" as const,
-        visualPrimitive: "timeline" as const,
-        motionPlan: {
-          intensity: "guided" as const,
-          cuePoints: [],
-        },
-        completionRule: {
-          type: "interaction-complete" as const,
-          interactionId: `interaction-${pageContentDsl.pageId}`,
-        },
-      },
-    } satisfies PageContentDSL;
-    const items = interaction.items
-      .map(
-        ({ id, label }) =>
-          `<details data-interaction-item-id="${id}"><summary>${label}</summary></details>`,
-      )
-      .join("");
-    const generated = `<!doctype html><html><head><title>${runtimeContent.title}</title></head><body><main data-page-id="${runtimeContent.pageId}"><section data-interaction-type="reveal" data-interaction-id="interaction-${runtimeContent.pageId}"><div class="planet-cards">${items}</div></section></main></body></html>`;
-
-    const normalized = normalizeVisualPrimitiveMarker(generated, {
-      content: runtimeContent,
-      visualBrief,
-    });
-
-    expect(normalized).toContain(
-      '<div class="planet-cards" data-visual-primitive="timeline">',
-    );
-    expect(normalized).not.toContain(
-      'data-course-contract-restored="visual-primitive"',
-    );
-  });
-
-  it("does not relabel mismatched or out-of-main visual content", () => {
-    const runtimeContent = {
-      ...pageContentDsl,
-      runtime: {
-        sceneKind: "demo" as const,
-        visualPrimitive: "concept-map" as const,
-        motionPlan: {
-          intensity: "guided" as const,
-          cuePoints: [],
-        },
-        completionRule: {
-          type: "interaction-complete" as const,
-          interactionId: `interaction-${pageContentDsl.pageId}`,
-        },
-      },
-    } satisfies PageContentDSL;
-    const mismatched = `<!doctype html><html><head><title>${runtimeContent.title}</title></head><body><main data-page-id="${runtimeContent.pageId}"><section class="course-concept-map" data-visual-primitive="timeline"><article>${runtimeContent.blocks[0]?.heading}</article><article>${runtimeContent.blocks[1]?.heading}</article></section></main></body></html>`;
-    const outsideMain = `<!doctype html><html><head><title>${runtimeContent.title}</title></head><body><section class="course-concept-map"><article>${runtimeContent.blocks[0]?.heading}</article><article>${runtimeContent.blocks[1]?.heading}</article></section><main data-page-id="${runtimeContent.pageId}"></main></body></html>`;
-
-    expect(
-      normalizeVisualPrimitiveMarker(mismatched, {
-        content: runtimeContent,
-        visualBrief,
-      }),
-    ).toBe(mismatched);
-    const normalizedOutside = normalizeVisualPrimitiveMarker(outsideMain, {
-      content: runtimeContent,
-      visualBrief,
-    });
-    if (typeof normalizedOutside !== "string") {
-      throw new Error("visual primitive normalization must return HTML");
-    }
-    expect(normalizedOutside).toContain(
-      '<section class="course-concept-map"><article>',
-    );
-    expect(normalizedOutside).toContain(
-      'data-course-contract-restored="visual-primitive"',
-    );
-    expect(normalizedOutside.match(/data-visual-primitive="concept-map"/g))
-      .toHaveLength(1);
-  });
-
-  it("moves an asset-bound primitive marker to the complete native visual", () => {
-    const runtimeContent = {
-      ...assetRichContent,
-      runtime: {
-        sceneKind: "demo" as const,
-        visualPrimitive: "comparison" as const,
-        motionPlan: {
-          intensity: "guided" as const,
-          cuePoints: [],
-        },
-        completionRule: {
-          type: "interaction-complete" as const,
-          interactionId: `interaction-${assetRichContent.pageId}`,
-        },
-      },
-    } satisfies PageContentDSL;
-    const generated = buildValidGeneratedHtml(runtimeContent)
-      .replace(' data-visual-primitive="comparison"', "")
-      .replace(
-        '<figure data-asset-slot-id="asset-slot-01">',
-        '<figure data-asset-slot-id="asset-slot-01" data-visual-primitive="comparison">',
-      );
-
-    const normalized = normalizeVisualPrimitiveMarker(generated, {
-      content: runtimeContent,
-      visualBrief,
-    });
-    if (typeof normalized !== "string") {
-      throw new Error("代码原生图示规范化必须返回 HTML 字符串");
-    }
-
-    expect(
-      normalized.match(/data-visual-primitive="comparison"/g),
-    ).toHaveLength(1);
-    expect(normalized).not.toContain(
-      'data-course-contract-restored="visual-primitive"',
-    );
-    expect(normalized).not.toContain(
-      'data-asset-slot-id="asset-slot-01" data-visual-primitive',
-    );
+    expect(normalized).toContain("@media (max-width: 520px) {");
+    expect(normalized).not.toContain("max-width: 921px");
+    expect(normalized).not.toContain("min-width: 521px");
   });
 
   it("adds choice runtime markers only to uniquely provable native controls", () => {
@@ -956,6 +555,46 @@ describe("HtmlEngineerModelStep", () => {
     expect(normalized).toContain('data-runtime-submit="true"');
   });
 
+  it("normalizes a single-question form without forcing a full HTML regeneration", () => {
+    const choice = getChoiceContent();
+    const question = choice.interaction.questions[0]!;
+    const content = {
+      ...choice,
+      interaction: {
+        ...choice.interaction,
+        questions: [question],
+      },
+    } satisfies ChoiceContent;
+    const options = question.options
+      .map(
+        (option) =>
+          `<label><input type="radio" name="${question.id}" value="${option.id}">${option.label}</label>`,
+      )
+      .join("");
+    const generated =
+      `<!doctype html><html><head><title>${choice.title}</title></head><body>` +
+      `<main data-page-id="${choice.pageId}"><form>${question.prompt}${options}` +
+      `<button type="button" disabled>提交答案</button></form></main></body></html>`;
+
+    const normalizedRoot = normalizeChoiceInteractionRoot(generated, {
+      content,
+    });
+    const normalized = normalizeChoiceRuntimeMarkers(normalizedRoot, {
+      content,
+      visualBrief,
+    });
+
+    expect(normalized).toContain('data-interaction-type="choice"');
+    expect(normalized).toContain(
+      `data-interaction-id="interaction-${choice.pageId}"`,
+    );
+    expect(normalized).toContain(`data-question-id="${question.id}"`);
+    expect(normalized).toContain('data-runtime-submit="true"');
+    expect(normalized).not.toContain(" disabled");
+    expect(normalized).toContain('data-feedback-kind="success" hidden');
+    expect(normalized).toContain('data-feedback-kind="retry" hidden');
+  });
+
   it("adds the sort submit marker to one unambiguous native button", () => {
     const interaction = {
       type: "sort" as const,
@@ -981,10 +620,7 @@ describe("HtmlEngineerModelStep", () => {
       `</section></main></body></html>`;
 
     const normalized = normalizeConditionalFeedbackVisibility(
-      normalizeSubmissionRuntimeMarker(
-        normalizeSortCardInteraction(generated, content),
-        content,
-      ),
+      normalizeSubmissionRuntimeMarker(generated, content),
       content,
     );
 
@@ -992,10 +628,9 @@ describe("HtmlEngineerModelStep", () => {
       'class="check-order" data-runtime-submit="true"',
     );
     expect(normalized).toContain(
-      '<details class="keya-trusted-sort-card" data-interaction-item-id="item-earth"',
+      '<div data-interaction-item-id="item-earth">地球 第三颗行星</div>',
     );
-    expect(normalized).toContain("<summary>地球</summary>");
-    expect(normalized).toContain("<p>第三颗行星</p>");
+    expect(normalized).not.toContain("keya-trusted-sort-card");
     expect(normalized).toContain(
       'data-feedback-kind="success" hidden="hidden"',
     );
@@ -1313,93 +948,6 @@ describe("HtmlEngineerModelStep", () => {
     );
   });
 
-  it("restores omitted multi-question prompts inside option-bound question scopes", () => {
-    const choice = getChoiceContent();
-    const content = {
-      ...choice,
-      runtime: {
-        sceneKind: "practice" as const,
-        visualPrimitive: "none" as const,
-        motionPlan: {
-          intensity: "guided" as const,
-          cuePoints: [],
-        },
-        completionRule: {
-          type: "correct-answer" as const,
-          interactionId: `interaction-${choice.pageId}`,
-        },
-      },
-    } satisfies PageContentDSL;
-    const questions = content.interaction.questions
-      .map(
-        (question) =>
-          `<fieldset>${question.options
-            .map(
-              (option) =>
-                `<label><input type="radio" value="${option.id}">${option.label}</label>`,
-            )
-            .join("")}</fieldset>`,
-      )
-      .join("");
-    const generated = `<!doctype html><html><head><title>${content.title}</title></head><body><main data-page-id="${content.pageId}"><section data-interaction-type="choice" data-interaction-id="interaction-${content.pageId}">${questions}<button data-runtime-submit="true">提交</button><p data-feedback-kind="success" hidden>正确</p><p data-feedback-kind="retry" hidden>再试一次</p></section></main></body></html>`;
-
-    const normalized = normalizeChoiceRuntimeMarkers(generated, {
-      content,
-      visualBrief,
-    });
-
-    for (const question of content.interaction.questions) {
-      expect(normalized).toContain(
-        `data-question-id="${question.id}"`,
-      );
-      expect(normalized).toContain(question.prompt);
-    }
-  });
-
-  it("restores missing hidden choice feedback from the trusted DSL", () => {
-    const choice = getChoiceContent();
-    const content = {
-      ...choice,
-      runtime: {
-        sceneKind: "practice" as const,
-        visualPrimitive: "none" as const,
-        motionPlan: {
-          intensity: "guided" as const,
-          cuePoints: [],
-        },
-        completionRule: {
-          type: "correct-answer" as const,
-          interactionId: `interaction-${choice.pageId}`,
-        },
-      },
-    } satisfies PageContentDSL;
-    const questions = content.interaction.questions
-      .map(
-        (question) =>
-          `<fieldset data-question-id="${question.id}"><legend>${question.prompt}</legend>${question.options
-            .map(
-              (option) =>
-                `<label><input type="radio" name="${question.id}" value="${option.id}">${option.label}</label>`,
-            )
-            .join("")}</fieldset>`,
-      )
-      .join("");
-    const generated = `<!doctype html><html><head><title>${content.title}</title></head><body><main data-page-id="${content.pageId}"><section data-interaction-type="choice" data-interaction-id="interaction-${content.pageId}">${questions}<button data-runtime-submit="true">提交答案</button><p data-feedback-kind="success">${content.interaction.questions[0].feedback.success}</p></section></main></body></html>`;
-
-    const normalized = normalizeChoiceRuntimeMarkers(generated, {
-      content,
-      visualBrief,
-    });
-
-    expect(normalized).toContain(
-      'data-feedback-kind="success" hidden="hidden"',
-    );
-    expect(normalized).toContain('data-feedback-kind="retry" hidden>');
-    expect(normalized).toContain(
-      content.interaction.questions[0].feedback.retry,
-    );
-  });
-
   it("canonicalizes a uniquely bound CSS background to the approved alt text", async () => {
     const generatedHtml = buildAssetRichHtml()
       .replace(
@@ -1462,11 +1010,11 @@ describe("HtmlEngineerModelStep", () => {
     ).not.toThrow();
   });
 
-  it("canonicalizes immutable page title and uniquely bound image alt text", async () => {
+  it("preserves the model-authored heading hierarchy while canonicalizing asset alt text", async () => {
     const generatedHtml = buildAssetRichHtml()
       .replace(
         `<h1>${assetRichContent.title}</h1>`,
-        "<h1>模型擅自改写的标题</h1>",
+        `<p class="course-kicker">${assetRichContent.title}</p><h1>从光源档案开始观察</h1>`,
       )
       .replace(
         'alt="保留左侧文字安全区的太空观察背景。"',
@@ -1485,15 +1033,17 @@ describe("HtmlEngineerModelStep", () => {
 
     expect(result.status).toBe("completed");
     expect(result.htmlOutput?.html).toContain(
-      `<h1>${assetRichContent.title}</h1>`,
+      '<h1>从光源档案开始观察</h1>',
+    );
+    expect(result.htmlOutput?.html).toContain(
+      `<p class="course-kicker">${assetRichContent.title}</p>`,
+    );
+    expect(result.htmlOutput?.html).not.toContain(
+      `data-keya-trusted-page-title="true"`,
     );
     expect(result.htmlOutput?.html).toContain(
       'alt="保留左侧文字安全区的太空观察背景。"',
     );
-    expect(result.htmlOutput?.html).not.toContain("模型擅自改写");
-    expect(
-      result.events.find(({ type }) => type === "validation")?.data,
-    ).toMatchObject({ fallbackApplied: false });
   });
 
   it("discards unsafe model HTML without replacing the model layout", async () => {
@@ -1522,8 +1072,10 @@ describe("HtmlEngineerModelStep", () => {
       result.events.find(({ type }) => type === "validation")?.data,
     ).toMatchObject({
       contractRetryApplied: false,
-      fallbackApplied: false,
     });
+    expect(
+      result.events.find(({ type }) => type === "validation")?.data,
+    ).not.toHaveProperty("fallbackApplied");
   });
 
   it("rejects a page without a unique main content region", () => {
@@ -1600,17 +1152,20 @@ describe("HtmlEngineerModelStep", () => {
     );
   });
 
-  it("rejects block markers whose DOM order differs from the DSL", () => {
-    const firstId = pageContentDsl.blocks[0]!.id;
-    const secondId = pageContentDsl.blocks[1]!.id;
-    const html = buildValidGeneratedHtml(pageContentDsl)
-      .replace(`data-block-id="${firstId}"`, 'data-block-id="swap-marker"')
-      .replace(`data-block-id="${secondId}"`, `data-block-id="${firstId}"`)
-      .replace('data-block-id="swap-marker"', `data-block-id="${secondId}"`);
-
-    expect(() => validateHtmlEngineerOutput(html, input)).toThrow(
-      "data-block-id 的 DOM 顺序必须与 PageContentDSL.blocks 一致",
+  it("accepts a creative block DOM order when every stable runtime pair remains intact", () => {
+    const generated = buildValidGeneratedHtml(pageContentDsl);
+    const blocks = generated.match(
+      /<article data-block-id="[^"]+"[\s\S]*?<\/article>/g,
     );
+    if (!blocks || blocks.length < 2) {
+      throw new Error("测试夹具必须至少包含两个完整内容块");
+    }
+    const html = generated
+      .replace(blocks[0], "__FIRST_BLOCK__")
+      .replace(blocks[1], blocks[0])
+      .replace("__FIRST_BLOCK__", blocks[1]);
+
+    expect(() => validateHtmlEngineerOutput(html, input)).not.toThrow();
   });
 
   it("rejects an empty interaction marker separated from its teaching content", () => {
@@ -1685,14 +1240,10 @@ describe("HtmlEngineerModelStep", () => {
       throw new Error("reveal fixture is required");
     }
     const content = withTrustedRuntime(interaction);
-    const styleTemplate = resolveHtmlEngineerInput({
-      content,
-      visualBrief,
-    }).styleTemplate;
     const html = interaction.items.reduce(
       (document, item) =>
         document.replace(` data-interaction-item-id="${item.id}"`, ""),
-      renderDeterministicPageFallback({ content, styleTemplate }),
+      buildValidGeneratedHtml(content),
     );
 
     const normalized = normalizeRevealRuntimeMarkers(html, {
@@ -1704,211 +1255,6 @@ describe("HtmlEngineerModelStep", () => {
       expect(normalized).toContain(
         `data-interaction-item-id="${item.id}"`,
       );
-    }
-    expect(() =>
-      validateHtmlEngineerOutput(normalized, { content, visualBrief }),
-    ).not.toThrow();
-  });
-
-  it("restores uniquely bound trusted DSL content and escapes mathematical text", () => {
-    const mathematicalBody =
-      "不等式是用不等号（>、<、≥、≤等）连接两个表达式所形成的式子，表示两个量之间的大小关系";
-    const interactionPrompt = "点击对应卡片查看详细内容";
-    const draftContent = {
-      ...pageContentDsl,
-      title: "高一数学核心概念拆解",
-      blocks: pageContentDsl.blocks.map((block, index) =>
-        index === 1 ? { ...block, body: mathematicalBody } : block,
-      ),
-      interaction: {
-        ...pageContentDsl.interaction,
-        prompt: interactionPrompt,
-      },
-    };
-    const content = withTrustedRuntime(
-      draftContent.interaction,
-      draftContent,
-    );
-    const styleTemplate = resolveHtmlEngineerInput({
-      content,
-      visualBrief,
-    }).styleTemplate;
-    const escapedMathematicalBody = mathematicalBody
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;");
-    const html = renderDeterministicPageFallback({
-      content,
-      styleTemplate,
-    })
-      .replaceAll(content.title, "数学概念课程")
-      .replaceAll(interactionPrompt, "")
-      .replace(escapedMathematicalBody, "模型改写的数学正文");
-
-    let normalized = normalizeTrustedPageTitle(html, { content });
-    normalized = normalizeNativeInteractionMarker(normalized, {
-      content,
-      visualBrief,
-    });
-    normalized = normalizeRevealCardInteraction(normalized, {
-      content,
-      visualBrief,
-    });
-    normalized = normalizeRevealRuntimeMarkers(normalized, {
-      content,
-      visualBrief,
-    });
-    normalized = normalizeTrustedDslMarkup(normalized, {
-      content,
-      visualBrief,
-    });
-
-    expect(normalized).toContain("高一数学核心概念拆解");
-    expect(normalized).toContain("点击对应卡片查看详细内容");
-    expect(normalized).toContain("&gt;、&lt;、≥、≤");
-    expect(normalized).toContain('data-interaction-type="reveal"');
-    expect(normalized).toContain(
-      'data-course-contract-restored="interaction-prompt"',
-    );
-    expect(normalized).toContain(
-      'data-course-contract-restored="block"',
-    );
-    expect(() =>
-      validateHtmlEngineerOutput(normalized, { content, visualBrief }),
-    ).not.toThrow();
-  });
-
-  it("restores omitted reveal item text only inside its unique stable item root", () => {
-    const interaction = pageContentDsl.interaction;
-    if (interaction.type !== "reveal") {
-      throw new Error("reveal fixture is required");
-    }
-    const trustedInteraction = {
-      ...interaction,
-      items: interaction.items.map((item, index) => ({
-        ...item,
-        content: `第 ${index + 1} 张卡片的可信完整讲解正文`,
-      })),
-    };
-    const content = withTrustedRuntime(trustedInteraction);
-    const styleTemplate = resolveHtmlEngineerInput({
-      content,
-      visualBrief,
-    }).styleTemplate;
-    const html = trustedInteraction.items.reduce(
-      (document, item, index) =>
-        document.replace(item.content, `模型改写的第 ${index + 1} 项`),
-      renderDeterministicPageFallback({ content, styleTemplate }),
-    );
-
-    const normalized = normalizeTrustedDslMarkup(html, {
-      content,
-      visualBrief,
-    });
-    if (typeof normalized !== "string") {
-      throw new Error("可信 DSL 规范化必须返回 HTML 字符串");
-    }
-
-    for (const item of trustedInteraction.items) {
-      expect(normalized).toContain(item.content);
-    }
-    expect(
-      normalized.match(
-        /data-course-contract-restored="interaction-item"/g,
-      ),
-    ).toHaveLength(trustedInteraction.items.length);
-    expect(() =>
-      validateHtmlEngineerOutput(normalized, { content, visualBrief }),
-    ).not.toThrow();
-  });
-
-  it("restores trusted sort item labels and content inside stable item roots", () => {
-    const interaction = {
-      type: "sort" as const,
-      prompt: "按学习顺序排列观察步骤。",
-      items: [
-        {
-          id: "item-observe",
-          label: "先观察",
-          content: "查看天体是否发光。",
-        },
-        {
-          id: "item-compare",
-          label: "再比较",
-          content: "比较两类天体的差异。",
-        },
-      ],
-      correctOrderIds: ["item-observe", "item-compare"],
-      feedback: {
-        success: "顺序正确，先观察再比较。",
-        retry: "先寻找线索，再进行比较。",
-      },
-    };
-    const content = withTrustedRuntime(interaction);
-    const styleTemplate = resolveHtmlEngineerInput({
-      content,
-      visualBrief,
-    }).styleTemplate;
-    const html = interaction.items.reduce(
-      (document, item, index) =>
-        document
-          .replace(item.label, `模型改写的步骤 ${index + 1}`)
-          .replace(item.content, `模型改写的说明 ${index + 1}`),
-      renderDeterministicPageFallback({ content, styleTemplate }),
-    );
-
-    const normalized = normalizeTrustedDslMarkup(html, {
-      content,
-      visualBrief,
-    });
-    if (typeof normalized !== "string") {
-      throw new Error("可信 DSL 规范化必须返回 HTML 字符串");
-    }
-
-    for (const item of interaction.items) {
-      expect(normalized).toContain(item.label);
-      expect(normalized).toContain(item.content);
-    }
-    expect(() =>
-      validateHtmlEngineerOutput(normalized, { content, visualBrief }),
-    ).not.toThrow();
-  });
-
-  it("preserves aligned block roots when a reveal item wraps its content block", () => {
-    const interaction = pageContentDsl.interaction;
-    if (interaction.type !== "reveal") {
-      throw new Error("reveal fixture is required");
-    }
-    const trustedInteraction = {
-      ...interaction,
-      items: interaction.items.map((item, index) => ({
-        ...item,
-        content: `第 ${index + 1} 张卡片的独立可信讲解`,
-      })),
-    };
-    const content = withTrustedRuntime(trustedInteraction);
-    const blocks = content.blocks
-      .map(
-        (block, index) =>
-          `<details data-interaction-item-id="${trustedInteraction.items[index]!.id}"><summary>${trustedInteraction.items[index]!.label}</summary><article data-block-id="${block.id}" data-runtime-target-id="${block.id}"><p>模型改写正文</p></article></details>`,
-      )
-      .join("");
-    const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${content.title}</title><style>body{margin:0}</style></head><body><main data-page-id="${content.pageId}"><h1>${content.title}</h1>${content.narration.map((line) => `<p>${line}</p>`).join("")}<div data-visual-primitive="comparison"></div><section data-interaction-type="reveal" data-interaction-id="interaction-${content.pageId}"><p>${trustedInteraction.prompt}</p>${blocks}</section></main></body></html>`;
-
-    const normalized = normalizeTrustedDslMarkup(html, {
-      content,
-      visualBrief,
-    });
-    if (typeof normalized !== "string") {
-      throw new Error("可信 DSL 规范化必须返回 HTML 字符串");
-    }
-
-    for (const block of content.blocks) {
-      expect(normalized).toContain(`data-block-id="${block.id}"`);
-      expect(normalized).toContain(block.body);
-    }
-    for (const item of trustedInteraction.items) {
-      expect(normalized).toContain(item.content);
     }
     expect(() =>
       validateHtmlEngineerOutput(normalized, { content, visualBrief }),
@@ -1934,97 +1280,8 @@ describe("HtmlEngineerModelStep", () => {
         "正确示例：<code>username</code>；错误示例：<code>1name</code>",
       );
 
-    const normalized = normalizeTrustedDslMarkup(html, {
-      content,
-      visualBrief,
-    });
-
-    expect(normalized).not.toContain(
-      'data-course-contract-restored="block"',
-    );
     expect(() =>
-      validateHtmlEngineerOutput(normalized, { content, visualBrief }),
-    ).not.toThrow();
-  });
-
-  it("removes stale restored block copies when rendered code already contains the DSL", () => {
-    const body = "变量`name`的数据类型是`str`。";
-    const content = {
-      ...pageContentDsl,
-      blocks: pageContentDsl.blocks.map((block, index) =>
-        index === 0 ? { ...block, body } : block,
-      ),
-    };
-    const html = buildValidGeneratedHtml(content)
-      .replace(body, "变量<code>name</code>的数据类型是<code>str</code>。")
-      .replace(
-        "</article>",
-        `<div data-course-contract-restored="block"><p>${body}</p></div></article>`,
-      );
-
-    const normalized = removeRedundantRestoredDslMarkup(html, { content });
-
-    expect(normalized).not.toContain(
-      'data-course-contract-restored="block"',
-    );
-    expect(() =>
-      validateHtmlEngineerOutput(normalized, { content, visualBrief }),
-    ).not.toThrow();
-  });
-
-  it("does not append reveal item copies when aligned blocks already carry the content", () => {
-    const interaction = pageContentDsl.interaction;
-    if (interaction.type !== "reveal") {
-      throw new Error("reveal fixture is required");
-    }
-    const originalInteraction = `<section data-interaction-type="reveal">${[
-      interaction.prompt,
-      ...interaction.items.flatMap((item) => [item.label, item.content]),
-    ].join(" ")}</section>`;
-    const incompleteInteraction = `<section data-interaction-type="reveal">${interaction.prompt}${interaction.items
-      .map(
-        (item) =>
-          `<div data-interaction-item-id="${item.id}">${item.label}</div>`,
-      )
-      .join("")}</section>`;
-    const html = buildValidGeneratedHtml(pageContentDsl).replace(
-      originalInteraction,
-      incompleteInteraction,
-    );
-
-    const normalized = normalizeTrustedDslMarkup(html, input);
-
-    expect(normalized).not.toContain(
-      'data-course-contract-restored="interaction-item"',
-    );
-    expect(() =>
-      validateHtmlEngineerOutput(normalized, input),
-    ).not.toThrow();
-  });
-
-  it("merges duplicated aligned blocks and reveal items into shared native details", () => {
-    const html = buildValidGeneratedHtml(pageContentDsl);
-
-    const normalized = normalizeMergedInteractiveBlocks(html, input);
-    if (typeof normalized !== "string") {
-      throw new Error("合并式互动规范化必须返回 HTML 字符串");
-    }
-
-    for (const [index, block] of pageContentDsl.blocks.entries()) {
-      const item = pageContentDsl.interaction.type === "reveal"
-        ? pageContentDsl.interaction.items[index]
-        : undefined;
-      if (!item) throw new Error("测试 fixture 必须使用 reveal");
-      expect(normalized).toContain(
-        `data-block-id="${block.id}" data-runtime-target-id="${block.id}" data-interaction-item-id="${item.id}"`,
-      );
-      expect(
-        normalized.match(new RegExp(`data-block-id="${block.id}"`, "g")),
-      ).toHaveLength(1);
-    }
-    expect(normalized).not.toContain("<article data-block-id=");
-    expect(() =>
-      validateHtmlEngineerOutput(normalized, input),
+      validateHtmlEngineerOutput(html, { content, visualBrief }),
     ).not.toThrow();
   });
 
@@ -2052,7 +1309,7 @@ describe("HtmlEngineerModelStep", () => {
     );
   });
 
-  it("accepts reveal item references already represented by their aligned content blocks", () => {
+  it("does not require reveal item detail copy when the prompt and labels are present", () => {
     const content = {
       ...pageContentDsl,
       blocks: pageContentDsl.blocks.map((block, index) => ({
@@ -2065,7 +1322,7 @@ describe("HtmlEngineerModelStep", () => {
         items: pageContentDsl.blocks.map((_block, index) => ({
           id: `item-${String(index + 1).padStart(2, "0")}`,
           label: `知识点${index + 1}卡片`,
-          content: `知识点${index + 1}卡片`,
+          content: `第${index + 1}个知识点的渐进讲解`,
         })),
       },
     };
@@ -2079,37 +1336,49 @@ describe("HtmlEngineerModelStep", () => {
     ).not.toThrow();
   });
 
-  it("still rejects reveal teaching content that is not a block reference", () => {
-    const item = pageContentDsl.interaction.type === "reveal"
-      ? pageContentDsl.interaction.items[0]
-      : undefined;
-    if (!item) throw new Error("fixture must use reveal interaction");
-    const html = buildValidGeneratedHtml(pageContentDsl).replaceAll(
-      item.content,
+  it("accepts trusted narration as the visible reveal instruction", () => {
+    const content = {
+      ...pageContentDsl,
+      narration: ["先观察两种光路，再比较散射方向。"],
+    };
+    const html = buildValidGeneratedHtml(content).replaceAll(
+      content.interaction.type === "reveal"
+        ? content.interaction.prompt
+        : "",
       "",
     );
 
-    expect(() => validateHtmlEngineerOutput(html, input)).toThrow(
-      `页面正文缺少 DSL 文本：${item.content}`,
-    );
+    expect(() =>
+      validateHtmlEngineerOutput(html, { content, visualBrief }),
+    ).not.toThrow();
+
+    expect(() =>
+      validateHtmlEngineerOutput(
+        html.replaceAll(content.narration[0]!, ""),
+        { content, visualBrief },
+      ),
+    ).toThrow("页面正文缺少 DSL 文本");
   });
 
-  it("does not require retry-only feedback in a static choice preview", () => {
+  it("does not require conditional choice feedback in the static document", () => {
     const content = getChoiceContent();
-    const htmlWithoutRetryFeedback = content.interaction.questions.reduce(
-      (html, question) => html.replace(question.feedback.retry, ""),
+    const htmlWithoutFeedback = content.interaction.questions.reduce(
+      (html, question) =>
+        html
+          .replace(question.feedback.success, "")
+          .replace(question.feedback.retry, ""),
       buildValidGeneratedHtml(content),
     );
 
     expect(() =>
-      validateHtmlEngineerOutput(htmlWithoutRetryFeedback, {
+      validateHtmlEngineerOutput(htmlWithoutFeedback, {
         content,
         visualBrief,
       }),
     ).not.toThrow();
   });
 
-  it("still requires choice prompts, options and reference feedback", () => {
+  it("still requires choice prompts and option labels", () => {
     const content = getChoiceContent();
     const question = content.interaction.questions[0];
     const html = buildValidGeneratedHtml(content);
@@ -2129,15 +1398,6 @@ describe("HtmlEngineerModelStep", () => {
         },
       ),
     ).toThrow(`页面正文缺少 DSL 文本：${question.options[0].label}`);
-    expect(() =>
-      validateHtmlEngineerOutput(
-        html.replaceAll(question.feedback.success, ""),
-        {
-          content,
-          visualBrief,
-        },
-      ),
-    ).toThrow(`页面正文缺少 DSL 文本：${question.feedback.success}`);
   });
 
   it("accepts a numbered choice prompt rendered as its trusted question block body", () => {
@@ -2261,7 +1521,7 @@ describe("HtmlEngineerModelStep", () => {
     );
   });
 
-  it("accepts input placeholder text on the unique runtime input without duplicating it in visible copy", () => {
+  it("treats an input placeholder as optional while keeping the task prompt core", () => {
     const example = getFunctionalTemplateDslExample("achievement-task");
     if (!example || example.interaction.type !== "input") {
       throw new Error("achievement-task 测试夹具必须使用 input interaction");
@@ -2292,9 +1552,13 @@ describe("HtmlEngineerModelStep", () => {
         ),
         { content, visualBrief },
       ),
-    ).toThrow(
-      `页面正文缺少 DSL 文本：${interaction.placeholder}`,
-    );
+    ).not.toThrow();
+    expect(() =>
+      validateHtmlEngineerOutput(
+        html.replaceAll(interaction.prompt, ""),
+        { content, visualBrief },
+      ),
+    ).toThrow(`页面正文缺少 DSL 文本：${interaction.prompt}`);
   });
 
   it("requires VisualBrief guidance for the current DSL page", () => {
@@ -2443,6 +1707,43 @@ describe("HtmlEngineerModelStep", () => {
         assets: readyAssetResults,
       }),
     ).toThrow("素材 URI 不在已批准素材清单中：/api/assets/unapproved");
+  });
+
+  it("keeps DOM SVG available while rejecting encoded SVG assets with a short instruction", () => {
+    const domSvgHtml = buildValidGeneratedHtml(pageContentDsl).replace(
+      "</main>",
+      '<svg aria-label="光路关系" viewBox="0 0 100 40"><path d="M0 20h100" /></svg></main>',
+    );
+    const encodedPayload =
+      "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%3E%3Cpath%20d='M0%200h10'/%3E%3C/svg%3E";
+    const dataSvgHtml = buildValidGeneratedHtml(pageContentDsl).replace(
+      "</body>",
+      `<img src="${encodedPayload}" alt="光路图标"></body>`,
+    );
+
+    expect(() =>
+      validateHtmlEngineerOutput(domSvgHtml, {
+        content: pageContentDsl,
+        visualBrief,
+        assets: [],
+      }),
+    ).not.toThrow();
+
+    let validationError: unknown;
+    try {
+      validateHtmlEngineerOutput(dataSvgHtml, {
+        content: pageContentDsl,
+        visualBrief,
+        assets: [],
+      });
+    } catch (error) {
+      validationError = error;
+    }
+
+    expect(String(validationError)).toContain(
+      "代码原生 SVG 必须直接使用文档内 <svg>",
+    );
+    expect(String(validationError)).not.toContain(encodedPayload);
   });
 
   it("accepts a ready asset bound through a wrapper or a unique CSS selector", () => {

@@ -51,7 +51,7 @@ export function validateAssetReferences(
   const assetSources = collectAssetSources(html);
   for (const source of new Set(assetSources)) {
     if (!allowedUris.has(source)) {
-      issues.push(`素材 URI 不在已批准素材清单中：${source}`);
+      issues.push(describeUnapprovedAssetSource(source));
     }
   }
 
@@ -63,6 +63,16 @@ export function validateAssetReferences(
       );
     }
   }
+}
+
+function describeUnapprovedAssetSource(source: string) {
+  if (/^data:image\/svg\+xml(?:;|,)/i.test(source)) {
+    return "代码原生 SVG 必须直接使用文档内 <svg>，不得编码为 data URI。";
+  }
+  if (/^(?:data|blob):/i.test(source)) {
+    return "页面不得使用 data: 或 blob: 素材 URI；只能使用已批准的 ready 素材 URI。";
+  }
+  return `素材 URI 不在已批准素材清单中：${source}`;
 }
 
 /** ready 素材必须能唯一关联到自己的槽位根节点，不能跨槽误用。 */

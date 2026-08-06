@@ -11,42 +11,35 @@ import { PageWriterInteractionDraftSchema } from "./page-writer-schema";
 
 /** 为模型返回的选择题语义草稿补齐稳定 question/option ID。 */
 export function materializeChoiceQuestions(
-  draft: z.infer<typeof PageWriterInteractionDraftSchema>,
+  draft: Extract<
+    z.infer<typeof PageWriterInteractionDraftSchema>,
+    { type: "choice" }
+  >,
 ) {
-  if (draft.questions.length === 0) {
+  if (draft.correctOptionIndex >= draft.options.length) {
     throw new AiSchemaValidationError(
-      "choice 至少需要一道 questions 题目。",
+      "choice question 1 的正确选项位置越界。",
     );
   }
 
-  return draft.questions.map((question, questionIndex) => {
-    if (question.correctOptionIndex >= question.options.length) {
-      throw new AiSchemaValidationError(
-        `choice question ${questionIndex + 1} 的正确选项位置越界。`,
-      );
-    }
+  const options = draft.options.map((label, optionIndex) => ({
+    id: `option-01-${String(optionIndex + 1).padStart(2, "0")}`,
+    label,
+  }));
 
-    const questionNumber = String(questionIndex + 1).padStart(
-      2,
-      "0",
-    );
-    const options = question.options.map((label, optionIndex) => ({
-      id: `option-${questionNumber}-${String(optionIndex + 1).padStart(2, "0")}`,
-      label,
-    }));
-
-    return {
-      id: `question-${questionNumber}`,
-      prompt: question.prompt,
+  return [
+    {
+      id: "question-01",
+      prompt: draft.prompt,
       options,
-      correctOptionId: options[question.correctOptionIndex]?.id ?? "",
+      correctOptionId: options[draft.correctOptionIndex]?.id ?? "",
       feedback: {
-        success: question.feedbackSuccess,
-        retry: question.feedbackRetry,
+        success: draft.feedbackSuccess,
+        retry: draft.feedbackRetry,
       },
-      maxAttempts: question.maxAttempts,
-    };
-  });
+      maxAttempts: draft.maxAttempts,
+    },
+  ];
 }
 
 /** 按 FunctionalTemplate 的声明校验每个语义槽位是否越界。 */

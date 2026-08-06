@@ -122,6 +122,11 @@ export function createArchitecture(input?: {
         styleTemplateId: "minimal",
         interactionType: "navigate",
         assetNeeds: [],
+        visualDesign: {
+          theme: "从恒星光芒进入分类任务",
+          layout: "超大课程问题居左，右侧用发光天体和开始动作形成入口",
+          graphicMotif: "用同心光环与一条轨道表达课程探索范围",
+        },
         acceptance: {
           requiredConcepts: ["恒星", "行星"],
           expectedLearnerOutcome: "知道本课要解决的问题",
@@ -153,6 +158,11 @@ export function createArchitecture(input?: {
         styleTemplateId: "minimal",
         interactionType: "reveal",
         assetNeeds: [],
+        visualDesign: {
+          theme: "恒星发光与行星反光的双档案",
+          layout: "左右分屏对照两类天体，中线承载判断标准，展开动作贴近对应一侧",
+          graphicMotif: "用实体光线与反射虚线形成两套方向相反的光路",
+        },
         acceptance: {
           requiredConcepts: ["恒星", "行星"],
           expectedLearnerOutcome: "能说出恒星和行星的一项关键区别",
@@ -181,6 +191,11 @@ export function createArchitecture(input?: {
         styleTemplateId: "minimal",
         interactionType: "choice",
         assetNeeds: [],
+        visualDesign: {
+          theme: "在观测台上完成一次天体身份判定",
+          layout: "题干与观测线索占左侧主舞台，选项和提交动作组成右侧判定区",
+          graphicMotif: "用扫描准星和二分轨道把线索导向恒星或行星",
+        },
         acceptance: {
           requiredConcepts: ["恒星", "行星"],
           expectedLearnerOutcome: "能用是否自身发光作为分类依据",
@@ -209,6 +224,11 @@ export function createArchitecture(input?: {
         styleTemplateId: "minimal",
         interactionType: "navigate",
         assetNeeds: [],
+        visualDesign: {
+          theme: "把判断方法压缩成可携带的观测准则",
+          layout: "中央展示一句核心准则，前后两端分别锚定恒星与行星结果",
+          graphicMotif: "用一条发光刻度轴连接自发光与不自发光两个端点",
+        },
         acceptance: {
           requiredConcepts: ["恒星", "行星"],
           expectedLearnerOutcome: "能独立复述判断恒星和行星的方法",

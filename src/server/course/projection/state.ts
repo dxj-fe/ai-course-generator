@@ -642,6 +642,19 @@ function resolveCourseStage(input: {
     );
   }
 
+  const failedPageIds = new Set(
+    input.pages
+      .filter(({ status }) => status === "failed")
+      .map(({ pageId }) => pageId),
+  );
+  const latestPageStage = [...input.events]
+    .reverse()
+    .find(
+      ({ pageId, stage }) =>
+        Boolean(pageId && failedPageIds.has(pageId)) && stage !== "complete",
+    )?.stage;
+  if (latestPageStage) return latestPageStage;
+
   return (
     [...input.events]
       .reverse()
@@ -664,7 +677,17 @@ function projectErrors(input: {
   pages: PageGenerationState[];
 }) {
   const errors: CourseGenerationError[] = [];
-  if (input.run.error) {
+  const selectedOrders = [
+    input.selectedArchitectWorkOrder,
+    input.selectedReviewWorkOrder,
+    ...input.selectedPageWorkOrders.values(),
+  ].filter((workOrder): workOrder is WorkOrder => Boolean(workOrder));
+  const genericBlockedRunErrorIsExplained =
+    input.run.error?.code === "WORK_ORDER_BLOCKED" &&
+    selectedOrders.some(
+      ({ status }) => status === "blocked" || status === "failed",
+    );
+  if (input.run.error && !genericBlockedRunErrorIsExplained) {
     errors.push({
       stage: input.currentStage,
       code: sanitizePublicErrorCode(input.run.error.code, "COURSE_RUN_FAILED"),
@@ -676,11 +699,6 @@ function projectErrors(input: {
     });
   }
 
-  const selectedOrders = [
-    input.selectedArchitectWorkOrder,
-    input.selectedReviewWorkOrder,
-    ...input.selectedPageWorkOrders.values(),
-  ].filter((workOrder): workOrder is WorkOrder => Boolean(workOrder));
   for (const workOrder of selectedOrders) {
     if (workOrder.status !== "failed" && workOrder.status !== "blocked") {
       continue;
@@ -690,6 +708,7 @@ function projectErrors(input: {
     const page = pageId
       ? input.pages.find((candidate) => candidate.pageId === pageId)
       : undefined;
+    const diagnostic = workOrderDiagnostic(workOrder);
     errors.push({
       stage:
         page?.currentStage ??
@@ -698,13 +717,14 @@ function projectErrors(input: {
           : stageForWorkOrder(workOrder)),
       pageId,
       code: sanitizePublicErrorCode(
-        workOrder.error?.code,
-        "WORK_ORDER_BLOCKED",
+        diagnostic.code,
+        workOrder.status === "blocked" && pageId
+          ? "PAGE_WORK_ORDER_BLOCKED"
+          : "WORK_ORDER_BLOCKED",
       ),
       causeCode: workOrder.error?.causeCode,
       message: sanitizePublicDiagnosticText(
-        workOrder.error?.message ??
-          workOrder.submission?.issues.join("；"),
+        diagnostic.message,
         {
           fallback: "Agent 无法完成当前任务。",
           maxLength: 1_000,
@@ -731,21 +751,50 @@ function projectPageError(
   ) {
     return undefined;
   }
+  const diagnostic = workOrderDiagnostic(workOrder);
   return {
     code: sanitizePublicErrorCode(
-      workOrder.error?.code,
-      "WORK_ORDER_BLOCKED",
+      diagnostic.code,
+      workOrder.status === "blocked"
+        ? "PAGE_WORK_ORDER_BLOCKED"
+        : "WORK_ORDER_BLOCKED",
     ),
     causeCode: workOrder.error?.causeCode,
     message: sanitizePublicDiagnosticText(
-      workOrder.error?.message ??
-        workOrder.submission?.issues.join("；"),
+      diagnostic.message,
       {
         fallback: "页面 Agent 无法完成当前任务。",
         maxLength: 1_000,
       },
     ),
   };
+}
+
+function workOrderDiagnostic(workOrder: WorkOrder) {
+  const submissionIssue = [...(workOrder.submission?.issues ?? [])]
+    .reverse()
+    .map(parseSubmissionIssue)
+    .find(Boolean);
+  const evidence = workOrder.submission?.evidence.join("；").trim();
+
+  return {
+    code: workOrder.error?.code ?? submissionIssue?.code,
+    message:
+      workOrder.error?.message ||
+      evidence ||
+      submissionIssue?.message ||
+      workOrder.submission?.issues.join("；"),
+  };
+}
+
+function parseSubmissionIssue(value: string) {
+  const match = /^([A-Za-z][A-Za-z0-9_.:-]{0,99}):\s*(.+)$/.exec(value);
+  return match
+    ? {
+        code: match[1],
+        message: match[2],
+      }
+    : undefined;
 }
 
 function stageForWorkOrder(workOrder: WorkOrder): CourseGenerationStage {

@@ -2,8 +2,8 @@ import type { ModelTier } from "@/server/infra/ai/model-router";
 
 const DEFAULT_ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
 const DEFAULT_ARK_IMAGE_MODEL_ID = "doubao-seedream-4-5-251128";
-const DEFAULT_HTML_ENGINEER_TIMEOUT_MS = 120_000;
-const DEFAULT_COURSE_PLANNER_TIMEOUT_MS = 180_000;
+const DEFAULT_HTML_ENGINEER_TIMEOUT_MS = 240_000;
+const DEFAULT_COURSE_PLANNER_TIMEOUT_MS = 150_000;
 const MIN_HTML_ENGINEER_TIMEOUT_MS = 30_000;
 const MAX_HTML_ENGINEER_TIMEOUT_MS = 300_000;
 const MIN_COURSE_PLANNER_TIMEOUT_MS = 60_000;
@@ -53,6 +53,21 @@ export function getModelConfig(tier: ModelTier) {
     baseURL: requireEnv("MODEL_BASE_URL"),
     modelName: requireEnv(`MODEL_NAME${suffix}`),
     providerName: "model-provider",
+  };
+}
+
+/**
+ * HTML 生成可优先使用方舟的代码模型；未配置时由既有 tier 路由处理。
+ */
+export function getHtmlModelConfig() {
+  const modelName = optionalEnv("ARK_HTML_MODEL_ID");
+  if (!modelName) return undefined;
+
+  return {
+    apiKey: requireEnv("ARK_API_KEY"),
+    baseURL: optionalEnv("ARK_BASE_URL") || DEFAULT_ARK_BASE_URL,
+    modelName,
+    providerName: "volcengine-ark",
   };
 }
 

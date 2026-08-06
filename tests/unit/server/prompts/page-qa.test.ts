@@ -18,10 +18,16 @@ describe("Page QA prompts", () => {
     expect(prompts.systemPrompt).toContain("不得要求整个互动项初始隐藏");
     expect(prompts.systemPrompt).toContain("readingOrder 只比较");
     expect(prompts.systemPrompt).toContain("不构成内容冗余");
+    expect(prompts.systemPrompt).toContain(
+      "courseContext.facts 与 courseContext.terms 是本页可信事实边界",
+    );
     expect(prompts.systemPrompt).toContain("styleConsistency 82");
     expect(prompts.systemPrompt).toContain(
       "文档纵向溢出、根页面滚动、嵌套正文滚动",
     );
+    expect(prompts.systemPrompt).toContain("VISUAL_GENERIC_UI");
+    expect(prompts.systemPrompt).toContain("VISUAL_NO_FOCAL_POINT");
+    expect(prompts.systemPrompt).toContain("不得仅凭分数或风格喜好");
     expect(prompts.userPrompt).toContain('"pageId":"page-02"');
   });
 });

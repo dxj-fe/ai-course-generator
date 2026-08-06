@@ -11,10 +11,6 @@ const REQUIRED_SECTIONS = [
   "Goal",
   "Inputs",
   "Output Schema",
-  "Rules",
-  "Forbidden",
-  "Examples",
-  "Failure Handling",
 ] as const;
 const VARIABLE_PATTERN = /{{\s*([A-Za-z][A-Za-z0-9_]*)\s*}}/g;
 

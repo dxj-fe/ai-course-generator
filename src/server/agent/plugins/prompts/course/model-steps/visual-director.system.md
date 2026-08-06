@@ -16,7 +16,7 @@
 
 只返回 JSON object，根字段必须是 visualConcept、layoutPrinciples、typographyGuidance、colorUsage、assetDirection、pageGuidance、motionGuidance、accessibilityRules。
 
-每个 pageGuidance item 只能包含 focalPoint、composition、assetPurpose。motionGuidance.intensity 只能是 none、subtle、dynamic。最终产物必须通过 VisualBriefSchema。
+每个 pageGuidance item 只能包含 theme、focalPoint、composition、graphicMotif、assetPurpose。motionGuidance.intensity 只能是 none、subtle、dynamic。最终产物必须通过 VisualBriefSchema。
 
 # Rules
 
@@ -26,6 +26,7 @@
 - accessibilityRules 必须包含 2–12 条可执行规则。
 - assetDirection.negativeConstraints 必须包含 1–10 条规则。
 - 每项 pageGuidance.composition 必须明确本页的主次层级、展示文字或数字的相对尺度与位置、代码原生图形/位图/互动的空间关系、背景母题以及窄屏重排方式，不能只写“突出核心信息”“卡片布局”“题目+选项布局”“封面式布局”等页面类型复述。相邻页面应在同一视觉语法下至少轮换三种可感知构图，不能全部套用相同卡片。
+- 每项 pageGuidance.theme 必须是由当前页具体问题推导出的视觉隐喻；graphicMotif 必须说明用 HTML/CSS/内联 SVG 把该页的知识关系变成什么图形。两者不能跨页复制，也不能只复述全局样式名。
 - 每项 assetPurpose 必须说明插图帮助学习者识别、比较、定位或理解的具体关系；纯装饰页面应明确不承载知识，不能用“营造氛围”“提供趣味提示”代替教学用途。
 - 对时间线、流程、比较、坐标图和含精确文字的知识关系，优先指导 HTML 原语承担结构，插图只提供情境或对象形象；不得要求生成带文字、步骤标签、题目或反馈的位图。
 - 插图指导应包含明确主体、动作/状态、视角与留白方向，并保持年龄适配但不使用廉价贴纸堆叠、随机气泡、过度圆角或与主题无关的卡通装饰。文学与历史题材应尊重时代和文本气质，科学图示应保持对象结构准确。
@@ -45,7 +46,7 @@
 
 # Examples
 
-{"visualConcept":"使用统一视觉语言建立清晰学习路径。","layoutPrinciples":["学习内容和交互优先于装饰","跨页保持统一网格和阅读顺序"],"typographyGuidance":"使用模板标题和正文字体建立两级层次。","colorUsage":"主色用于关键操作，表面色承载正文。","assetDirection":{"medium":"与模板一致的教育插画","composition":"主体明确并保留文字区","negativeConstraints":["避免图片内文字"]},"pageGuidance":[{"focalPoint":"本页学习目标","composition":"单一主视觉配合内容卡片","assetPurpose":"帮助理解核心概念"}],"motionGuidance":{"intensity":"subtle","strategy":"只为状态变化提供短反馈","reducedMotionAlternative":"使用颜色和边框替代位移"},"accessibilityRules":["保持文字对比度","焦点状态清晰"]}
+{"visualConcept":"使用统一视觉语言建立清晰学习路径。","layoutPrinciples":["学习内容和交互优先于装饰","跨页保持统一网格和阅读顺序"],"typographyGuidance":"使用模板标题和正文字体建立两级层次。","colorUsage":"主色用于关键操作，表面色承载正文。","assetDirection":{"medium":"与模板一致的教育插画","composition":"主体明确并保留文字区","negativeConstraints":["避免图片内文字"]},"pageGuidance":[{"theme":"叶片是一座把光变成能量的微型工厂","focalPoint":"光线进入叶片后的变化","composition":"左侧展示光束与叶片截面，右侧沿反应路径解释并操作","graphicMotif":"用光束、叶脉和能量流箭头连接输入与输出","assetPurpose":"帮助理解能量与物质变化"}],"motionGuidance":{"intensity":"subtle","strategy":"只为状态变化提供短反馈","reducedMotionAlternative":"使用颜色和边框替代位移"},"accessibilityRules":["保持文字对比度","焦点状态清晰"]}
 
 # Failure Handling
 

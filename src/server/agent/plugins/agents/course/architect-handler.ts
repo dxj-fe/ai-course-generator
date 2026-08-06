@@ -6,6 +6,7 @@ import {
   AgentToolSets,
   ToolIds,
 } from "@/server/agent/ids";
+import { getCoursePlannerTimeoutMs } from "@/config/env";
 import {
   prepareAgentSkillRuntime,
   type ReadLocalResourceTool,
@@ -29,6 +30,7 @@ import {
   ReferencePackSchema,
   WorkOrderSchema,
   type ArtifactRef,
+  type CourseArchitecture,
   type CourseCreationBrief,
   type ReferencePack,
   type Submission,
@@ -44,6 +46,19 @@ import { getAgentSystem } from "@/server/setup/agent";
 
 const ARCHITECT_TOOL_NAMES = AgentToolSets.CourseArchitect;
 
+const ARCHITECT_SUBMISSION_CALIBRATION = `# 提交前校准
+
+现在只构造 submit_course_architecture 的参数。提交前做一次短校准：
+- 没有授权资料或可复核推导时，删掉精确倍数、范围、阈值和“只有、全部、完全”等排他结论，保留适用条件、观察对象与相对关系。
+- 不把散射、反射、传递或重新分配写成“消耗、消失、变成另一类”；局部或特定观察方向的结果不能泛化成整个环境。
+- 每页只保留一个可观察的认知命题；后页负责应用或测验时，前页不要把同一应用完整讲完，也不要提前复制后页的整套证据图。例如后页专门判断高/低太阳路径时，前页的散射解释只保留散射拓扑，不再塞入完整双路径对比。视觉图必须让证据本身成立，不能只靠“更长、更强、更高”等标签宣告结论。
+- 样式按材料语言和知识表达选择。自然现象不自动等于植物色、标本手账或有机曲线；精确物理关系图优先比较真正支持清晰几何与信息图的候选。
+- 做一次路径拓扑测试：先判断观察者接收的是主路径还是散射、反射、折射等机制产生的支路。所有光路都从光源沿传播方向到达接收者；观察者只能是路径终点，绝不能写成路径起点。结论说支路进入观察者时，观察者必须位于该支路末端，主路继续到它的物理终点。比较状态必须各自提供从源头经同一介质到同一接收者的完整路径，共享尺度与基线；遮掉“长、短、强、弱”标签后，方向和差异仍必须成立。
+- 同一图同时表达波长与传播路径时必须分离视觉编码：波长用波峰间距、波形疏密或独立标尺，大气路径用完整光路的几何长度；不得用整条光路/线段长度表示波长。“光程”若保留，CoursePack 必须给出包含折射率的定义，并说明折射率近似不变时才可用几何路径比较；否则整份架构统一称“大气路径长度”，包括目标、标题、purpose 与验收字段。
+- 解释瑞利散射时明确写“空气分子”；太阳高度与大气路径长度是反向关系（太阳越低，路径越长），不得写成正相关。
+- 工具外壳始终同时传 architecture 与 patches。第一次提交使用 {"architecture":完整对象,"patches":null}。门禁失败或已有可恢复候选后，优先用 {"architecture":null,"patches":[{"path":"pageTasks.0.visualDesign.layout","value":"新值"}]} 修复反馈路径。跨模型层级若只保留了完整候选，也可把完整 architecture 作为兼容修复提案重新提交；工具只会采纳当前反馈路径内的安全差异并忽略无关改写。root 级或结构性修复仍需显式 patches。path 使用点路径，不要添加 revision、difficult 或其他 Schema 外字段。
+`;
+
 const ArchitectureCandidateInputSchema = z
   .object({
     architecture: z
@@ -52,11 +67,96 @@ const ArchitectureCandidateInputSchema = z
   })
   .strict();
 
+const ArchitecturePatchOperationSchema = z
+  .object({
+    path: z
+      .string()
+      .min(1)
+      .max(200)
+      .regex(
+        /^(?:[A-Za-z][A-Za-z0-9_]*|0|[1-9]\d*)(?:\.(?:[A-Za-z][A-Za-z0-9_]*|0|[1-9]\d*|-))*$/u,
+        "path 必须使用安全的点路径，例如 pageTasks.0.visualDesign.layout",
+      )
+      .describe("要替换的现有字段点路径"),
+    value: z.unknown().describe("该字段的新值"),
+  })
+  .strict();
+
+// Keep the provider-facing patch shape explicit. A z.record(..., z.unknown())
+// is converted by the AI SDK into an object with no writable properties, so
+// models cannot emit path/value even though Zod accepts them at runtime.
+const ArchitecturePatchEnvelopeItemSchema = z
+  .object({
+    op: z
+      .enum(["replace", "add", "remove"])
+      .optional()
+      .describe("默认 replace；增删 pageTasks 数组项时使用 add/remove"),
+    path: z
+      .string()
+      .optional()
+      .describe("点路径或 JSON Pointer，例如 pageTasks.0.visualDesign.layout"),
+    value: z
+      .unknown()
+      .optional()
+      .describe("replace/add 的新值；remove 时省略"),
+  })
+  .strict();
+
+type ArchitecturePatchOperation =
+  | {
+      op: "replace" | "add";
+      path: string;
+      value: unknown;
+    }
+  | { op: "remove"; path: string };
+
+// Keep the tool's public JSON Schema as one permissive root object. Business
+// validation happens inside execute so malformed model arguments produce
+// retryable feedback instead of an SDK-level terminal tool error.
+const ArchitectureSubmissionRuntimeInputSchema = z
+  .object({
+    architecture: z
+      .unknown()
+      .optional()
+      .describe("仅首次提交使用的完整 CourseArchitecture"),
+    patches: z
+      .unknown()
+      .optional()
+      .describe("已有候选后使用的最小字段替换数组"),
+  })
+  .passthrough();
+
+// The public tool envelope deliberately requires both keys. A full submission
+// uses { architecture, patches: null }; a repair uses
+// { architecture: null, patches }. This keeps the root schema deterministic
+// without putting a discriminated union around the whole tool input, while the
+// optional patch fields still let execute return retryable business feedback
+// for missing path/value while exposing those fields in the real JSON Schema.
+const ArchitectureSubmissionInputSchema = z
+  .object({
+    architecture: z
+      .union([CourseArchitectureSchema, z.null()])
+      .describe("首次提交传完整 CourseArchitecture；修复候选时传 null"),
+    patches: z
+      .array(ArchitecturePatchEnvelopeItemSchema)
+      .max(30)
+      .nullable()
+      .describe("首次提交传 null；修复候选时传最小字段补丁数组"),
+  })
+  .passthrough();
+
+type ArchitectureSubmissionInput = z.infer<
+  typeof ArchitectureSubmissionRuntimeInputSchema
+>;
+
 type ArchitectRepository = Pick<
   CourseRunRepository,
-  "submitArchitecture"
+  "checkpointArchitectureCandidate" | "submitArchitecture"
 > & {
-  artifacts: Pick<CourseRunRepository["artifacts"], "load">;
+  artifacts: Pick<
+    CourseRunRepository["artifacts"],
+    "listByTask" | "load"
+  >;
   runs: Pick<CourseRunRepository["runs"], "loadByTaskId">;
   toolOperations: CourseRunRepository["toolOperations"];
   workOrders: Pick<CourseRunRepository["workOrders"], "load">;
@@ -85,6 +185,8 @@ type ArchitectToolContext = {
   workOrder: WorkOrder;
   workOrderLeaseOwner: string;
   readLocalResourceTool: ReadLocalResourceTool;
+  onTemplatesRetrieved?: () => void;
+  workingCandidate?: CourseArchitecture;
 };
 
 function createCurriculumArchitectTools(context: ArchitectToolContext) {
@@ -109,7 +211,8 @@ function createCurriculumArchitectTools(context: ArchitectToolContext) {
         "按整课的一组页面需求、受众和视觉方向一次查询真实可用的功能模板与样式模板。可在 pageNeeds 中传入目标及预期 pageType；最终必须使用返回的稳定 ID。",
       inputSchema: RetrieveTemplateCardsInputSchema,
       execute: (input) => {
-        const result = retrieveTemplateCards(input);
+        const result = retrieveTemplateCards(input, context.creationBrief);
+        context.onTemplatesRetrieved?.();
         return successResult(
           `返回 ${result.functional.length} 个功能模板和 ${result.style.length} 个样式模板候选。`,
           result,
@@ -129,7 +232,12 @@ function createCurriculumArchitectTools(context: ArchitectToolContext) {
         });
 
         if (!gate.ok) {
-          return gateFailureResult(gate.issues);
+          const candidateNote = checkpointValidArchitectureCandidate(
+            context,
+            architecture,
+          );
+          rememberWorkingArchitectureCandidate(context, architecture);
+          return gateFailureResult(gate.issues, candidateNote);
         }
 
         return successResult("课程架构通过确定性检查，可以提交。", {
@@ -141,9 +249,12 @@ function createCurriculumArchitectTools(context: ArchitectToolContext) {
     }),
     [ToolIds.SubmitCourseArchitecture]: tool({
       description:
-        "提交完整 CourseArchitecture。工具会再次执行确定性检查；检查失败只返回反馈，检查通过才会原子保存 Artifact 并结束当前 WorkOrder。",
-      inputSchema: ArchitectureCandidateInputSchema,
-      execute: ({ architecture }) => {
+        "提交 CourseArchitecture。固定外壳必须同时包含 architecture 与 patches：首次提交传 {architecture: 完整对象, patches: null}；已有候选后优先传 {architecture: null, patches: [{path: 点路径, value: 新值}]}。跨模型层级也可把完整 architecture 作为兼容修复提案提交，工具只采纳当前反馈路径内的安全差异并忽略无关改写。兼容 replace JSON Patch 与 /pageTasks/0/... 路径；add/remove 只用于修复 pageTasks 页数，另允许补上缺失的 visualDesign。工具会再次执行确定性检查；通过后才原子保存并结束 WorkOrder。",
+      inputSchema: ArchitectureSubmissionInputSchema,
+      execute: (input) => {
+        const resolved = resolveArchitectureSubmission(context, input);
+        if (!resolved.ok) return resolved.result;
+        const { architecture } = resolved;
         const gate = runArchitectureGate({
           candidate: architecture,
           creationBrief: context.creationBrief,
@@ -152,7 +263,12 @@ function createCurriculumArchitectTools(context: ArchitectToolContext) {
         });
 
         if (!gate.ok) {
-          return gateFailureResult(gate.issues);
+          const candidateNote = checkpointValidArchitectureCandidate(
+            context,
+            architecture,
+          );
+          rememberWorkingArchitectureCandidate(context, architecture);
+          return gateFailureResult(gate.issues, candidateNote);
         }
 
         try {
@@ -226,6 +342,8 @@ export async function runCurriculumArchitectAgent(
     agentDefinition.prompt,
     skillRuntime.promptContext,
   );
+  const resumableCandidate = loadResumableArchitectureCandidate(input);
+  let templatesRetrieved = Boolean(resumableCandidate);
   const tools = createCurriculumArchitectTools({
     creationBrief: input.creationBrief,
     expectedCourseId: input.workOrder.courseId,
@@ -237,6 +355,10 @@ export async function runCurriculumArchitectAgent(
     workOrder: input.workOrder,
     workOrderLeaseOwner: input.workOrderLeaseOwner,
     readLocalResourceTool: skillRuntime.readLocalResourceTool,
+    workingCandidate: resumableCandidate?.architecture,
+    onTemplatesRetrieved: () => {
+      templatesRetrieved = true;
+    },
   });
   const runner = new AgentRunner<CurriculumArchitectTools, Submission>({
     createAgent: dependencies.createAgent,
@@ -248,7 +370,6 @@ export async function runCurriculumArchitectAgent(
   const activeTools = configuredToolNames.filter((toolName) =>
     input.workOrder.allowedTools.includes(toolName),
   );
-
   return runner.run({
     abortSignal: input.abortSignal,
     activeTools,
@@ -259,7 +380,12 @@ export async function runCurriculumArchitectAgent(
       maxOutputTokens: input.workOrder.budget.maxOutputTokens,
       maxSteps: input.workOrder.budget.maxSteps,
       maxToolCalls: input.workOrder.budget.maxToolCalls,
-      timeout: { totalMs: input.workOrder.budget.timeoutMs },
+      timeout: {
+        totalMs: Math.min(
+          input.workOrder.budget.timeoutMs,
+          getCoursePlannerTimeoutMs(),
+        ),
+      },
     },
     instructions,
     model:
@@ -267,8 +393,20 @@ export async function runCurriculumArchitectAgent(
       getLanguageModel(
         resolveModelRoute(agentDefinition.modelCapability).primary,
       ),
-    prompt: buildCurriculumArchitectPrompt(input),
-    temperature: 0.2,
+    prompt: buildCurriculumArchitectPrompt(input, resumableCandidate),
+    prepareStep: () =>
+      templatesRetrieved &&
+      activeTools.includes(ToolIds.SubmitCourseArchitecture)
+        ? {
+            activeTools: [ToolIds.SubmitCourseArchitecture],
+            instructions: `${instructions}\n\n${ARCHITECT_SUBMISSION_CALIBRATION}`,
+            toolChoice: {
+              type: "tool" as const,
+              toolName: ToolIds.SubmitCourseArchitecture,
+            },
+          }
+        : { activeTools },
+    temperature: 0.4,
     terminalToolNames: [ToolIds.SubmitCourseArchitecture],
     toolLedger: createCourseToolLedger(
       input.repository.toolOperations,
@@ -470,6 +608,9 @@ function isTerminalLoaderValue(
 
 function buildCurriculumArchitectPrompt(
   input: ReturnType<typeof parseAgentInput>,
+  resumableCandidate: ReturnType<
+    typeof loadResumableArchitectureCandidate
+  >,
 ) {
   const referenceIndex = input.referencePacks.map((pack) => ({
     id: pack.id,
@@ -489,8 +630,664 @@ revision：${input.workOrder.revision}
 用户 brief：${JSON.stringify(input.creationBrief)}
 可检索资料索引：${JSON.stringify(referenceIndex)}
 返工上下文：${JSON.stringify(revisionContext)}
+上一档模型留下的最新可恢复候选：${JSON.stringify(resumableCandidate?.architecture ?? null)}
+该候选的确定性门禁反馈：${JSON.stringify(resumableCandidate?.issues ?? [])}
 
+如果有可恢复候选，不要从头重写；仅修复列出的确定性问题，保留已通过的页面职责、样式与事实。
+submit_course_architecture 的固定外壳必须同时包含两个键：首次提交用 {"architecture":完整对象,"patches":null}；修复可恢复候选时优先用 {"architecture":null,"patches":[{"path":"点路径","value":"新值"}]}，只替换反馈字段。跨模型层级若只保留了完整候选，也可将完整 architecture 作为兼容修复提案提交；工具只提取当前反馈路径内的安全差异并忽略无关改写。root 级或结构性修改请继续使用显式 patches。
 如果 brief 的 sectionCount 是数字，必须严格生成该页数；如果是 auto 或没填，用满足目标所需的最少页面。`;
+}
+
+function resolveArchitectureSubmission(
+  context: ArchitectToolContext,
+  rawInput: ArchitectureSubmissionInput,
+):
+  | { ok: true; architecture: unknown }
+  | {
+      ok: false;
+      result: AgentToolResult<never, ArtifactRef>;
+    } {
+  const parsed = ArchitectureSubmissionRuntimeInputSchema.safeParse(rawInput);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      result: architecturePatchFailureResult(
+        `提交参数不符合 architecture/patches 合同：${parsed.error.issues
+          .slice(0, 4)
+          .map((issue) => `${issue.path.join(".") || "root"}: ${issue.message}`)
+          .join("；")}`,
+      ),
+    };
+  }
+
+  const hasArchitecture =
+    Object.hasOwn(parsed.data, "architecture") &&
+    parsed.data.architecture !== null &&
+    parsed.data.architecture !== undefined;
+  const hasPatches =
+    Object.hasOwn(parsed.data, "patches") &&
+    (!isEmptyArchitecturePatchEnvelope(parsed.data.patches) ||
+      !hasArchitecture);
+  if (hasArchitecture === hasPatches) {
+    return {
+      ok: false,
+      result: architecturePatchFailureResult(
+        "architecture 与 patches 的有效值必须二选一：首次提交传完整 architecture 且 patches=null；已有候选后传 architecture=null 与 patches 数组。",
+      ),
+    };
+  }
+
+  const base =
+    context.workingCandidate ?? loadLatestArchitectureCandidate(context);
+  if (hasArchitecture) {
+    if (!base) {
+      return { ok: true, architecture: parsed.data.architecture };
+    }
+    const baseGate = runArchitectureGate({
+      candidate: base,
+      creationBrief: context.creationBrief,
+      referencePacks: context.referencePacks,
+      expectedCourseId: context.expectedCourseId,
+    });
+    if (baseGate.ok) {
+      return { ok: true, architecture: base };
+    }
+    const proposed = CourseArchitectureSchema.safeParse(
+      parsed.data.architecture,
+    );
+    if (!proposed.success) {
+      return {
+        ok: false,
+        result: architecturePatchFailureResult(
+          `已有候选后的完整修复提案不符合 CourseArchitecture Schema：${proposed.error.issues
+            .slice(0, 4)
+            .map(
+              (issue) =>
+                `${issue.path.join(".") || "root"}: ${issue.message}`,
+            )
+            .join("；")}`,
+        ),
+      };
+    }
+    const scopedRepair = deriveIssueScopedArchitectureRepair(
+      base,
+      proposed.data,
+      baseGate.issues,
+    );
+    if (!scopedRepair.ok) {
+      return {
+        ok: false,
+        result: architecturePatchFailureResult(scopedRepair.message),
+      };
+    }
+    return { ok: true, architecture: scopedRepair.architecture };
+  }
+
+  if (!base) {
+    return {
+      ok: false,
+      result: architecturePatchFailureResult(
+        "当前没有可恢复候选。请先提交一次完整 architecture，门禁保存候选后再使用 patches。",
+      ),
+    };
+  }
+
+  try {
+    const baseGate = runArchitectureGate({
+      candidate: base,
+      creationBrief: context.creationBrief,
+      referencePacks: context.referencePacks,
+      expectedCourseId: context.expectedCourseId,
+    });
+    if (baseGate.ok) {
+      return { ok: true, architecture: base };
+    }
+    const patches = parseArchitecturePatches(parsed.data.patches);
+    if (!patches.ok) {
+      return {
+        ok: false,
+        result: architecturePatchFailureResult(patches.message),
+      };
+    }
+    return {
+      ok: true,
+      architecture: applyArchitecturePatches(
+        base,
+        patches.data,
+        baseGate.issues,
+      ),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      result: architecturePatchFailureResult(
+        error instanceof Error ? error.message : "无法应用架构补丁。",
+      ),
+    };
+  }
+}
+
+function deriveIssueScopedArchitectureRepair(
+  base: CourseArchitecture,
+  proposed: CourseArchitecture,
+  issues: Array<{ code: string; path: string }>,
+):
+  | { ok: true; architecture: CourseArchitecture }
+  | { ok: false; message: string } {
+  if (issues.some(({ path }) => path === "root")) {
+    return {
+      ok: false,
+      message:
+        "当前候选存在 root 级问题，无法安全地从完整重投中提取局部修改；请使用 patches 指明要修复的字段。",
+    };
+  }
+
+  let architecture = structuredClone(base);
+  const diffs = collectArchitectureDiffPatches(base, proposed);
+  const scopedDiffs = diffs.filter((patch) =>
+    issues.some(
+      (issue) =>
+        patch.path === issue.path ||
+        patch.path.startsWith(`${issue.path}.`),
+    ),
+  );
+
+  for (const patch of scopedDiffs) {
+    try {
+      architecture = applyArchitecturePatches(
+        architecture,
+        [patch],
+        issues,
+      ) as CourseArchitecture;
+    } catch {
+      // A complete re-submission is only a compatibility proposal. Broad,
+      // structural, or otherwise unsafe differences are ignored; explicit
+      // patches remain the escape hatch for those repairs.
+    }
+  }
+
+  return { ok: true, architecture };
+}
+
+function collectArchitectureDiffPatches(
+  base: unknown,
+  proposed: unknown,
+  path = "",
+): ArchitecturePatchOperation[] {
+  if (Object.is(base, proposed)) return [];
+
+  if (Array.isArray(base) && Array.isArray(proposed)) {
+    if (base.length !== proposed.length) {
+      return path
+        ? [{ op: "replace", path, value: structuredClone(proposed) }]
+        : [];
+    }
+    return base.flatMap((value, index) =>
+      collectArchitectureDiffPatches(
+        value,
+        proposed[index],
+        path ? `${path}.${index}` : String(index),
+      ),
+    );
+  }
+
+  if (
+    isRecord(base) &&
+    isRecord(proposed) &&
+    !Array.isArray(base) &&
+    !Array.isArray(proposed)
+  ) {
+    const keys = new Set([...Object.keys(base), ...Object.keys(proposed)]);
+    return [...keys].flatMap((key) => {
+      const childPath = path ? `${path}.${key}` : key;
+      if (!Object.hasOwn(base, key) && Object.hasOwn(proposed, key)) {
+        return [
+          {
+            op: "add" as const,
+            path: childPath,
+            value: structuredClone(proposed[key]),
+          },
+        ];
+      }
+      if (Object.hasOwn(base, key) && !Object.hasOwn(proposed, key)) {
+        return [];
+      }
+      return collectArchitectureDiffPatches(
+        base[key],
+        proposed[key],
+        childPath,
+      );
+    });
+  }
+
+  return path
+    ? [{ op: "replace", path, value: structuredClone(proposed) }]
+    : [];
+}
+
+function isEmptyArchitecturePatchEnvelope(value: unknown) {
+  if (value === null || value === undefined) return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (!isRecord(value)) return false;
+  if (Object.keys(value).length === 0) return true;
+  return Array.isArray(value.patches) && value.patches.length === 0;
+}
+
+function parseArchitecturePatches(
+  value: unknown,
+):
+  | {
+      ok: true;
+      data: ArchitecturePatchOperation[];
+    }
+  | { ok: false; message: string } {
+  const items = normalizeArchitecturePatchItems(value);
+  if (!items || items.length < 1 || items.length > 30) {
+    return {
+      ok: false,
+      message:
+        'patches 必须包含 1 到 30 个字段修改；推荐格式为 [{"path":"pageTasks.0.visualDesign.layout","value":"新值"}]。',
+    };
+  }
+
+  const patches: ArchitecturePatchOperation[] = [];
+  for (const [index, item] of items.entries()) {
+    if (!isRecord(item) || typeof item.path !== "string") {
+      return {
+        ok: false,
+        message: `patches.${index} 必须包含字符串 path；推荐使用 pageTasks.0.visualDesign.layout 这样的点路径。`,
+      };
+    }
+    const op =
+      typeof item.op === "string"
+        ? item.op.toLowerCase()
+        : "replace";
+    if (op !== "replace" && op !== "add" && op !== "remove") {
+      return {
+        ok: false,
+        message: `patches.${index}.op 只支持 replace、add 或 remove。`,
+      };
+    }
+    const path = normalizeArchitecturePatchPath(item.path);
+    if (op === "remove") {
+      const parsedPath = ArchitecturePatchOperationSchema.shape.path.safeParse(
+        path,
+      );
+      if (!parsedPath.success) {
+        return {
+          ok: false,
+          message: `patches.${index}.path 无效：${parsedPath.error.issues[0]?.message ?? "路径格式错误"}`,
+        };
+      }
+      patches.push({ op: "remove", path: parsedPath.data });
+      continue;
+    }
+    if (!Object.hasOwn(item, "value")) {
+      return {
+        ok: false,
+        message: `patches.${index} 的 ${op} 操作必须包含 value。`,
+      };
+    }
+    const parsed = ArchitecturePatchOperationSchema.safeParse({
+      path,
+      value: item.value,
+    });
+    if (!parsed.success) {
+      return {
+        ok: false,
+        message: `patches.${index} 无效：${parsed.error.issues
+          .slice(0, 3)
+          .map((issue) => issue.message)
+          .join("；")}`,
+      };
+    }
+    patches.push({ op, path: parsed.data.path, value: parsed.data.value });
+  }
+  return { ok: true, data: patches };
+}
+
+function normalizeArchitecturePatchItems(value: unknown) {
+  if (Array.isArray(value)) return value;
+  if (!isRecord(value)) return undefined;
+  if (Object.hasOwn(value, "path")) return [value];
+  if (Array.isArray(value.patches)) return value.patches;
+  return Object.entries(value).map(([path, patchValue]) => ({
+    path,
+    value: patchValue,
+  }));
+}
+
+function normalizeArchitecturePatchPath(path: string) {
+  if (!path.startsWith("/")) return path;
+  return path
+    .slice(1)
+    .split("/")
+    .map((segment) => segment.replaceAll("~1", "/").replaceAll("~0", "~"))
+    .join(".");
+}
+
+function applyArchitecturePatches(
+  base: CourseArchitecture,
+  patches: ArchitecturePatchOperation[],
+  issues: Array<{ code: string; path: string }>,
+) {
+  const candidate = structuredClone(base) as unknown;
+  for (const patch of patches) {
+    assertPatchTargetsArchitectureIssue(patch, issues);
+    if (
+      /^pageTasks\.(?:0|[1-9]\d*|-)$/u.test(patch.path) &&
+      ["add", "remove"].includes(patch.op)
+    ) {
+      applyPageCountPatch(candidate, patch, issues);
+      continue;
+    }
+    if (patch.op === "remove") {
+      throw new Error(
+        `补丁路径 ${patch.path} 不支持删除；remove 只用于修复 pageTasks 页数。`,
+      );
+    }
+    replaceExistingArchitecturePath(candidate, patch.path, patch.value);
+  }
+  return candidate;
+}
+
+function assertPatchTargetsArchitectureIssue(
+  patch: ArchitecturePatchOperation,
+  issues: Array<{ code: string; path: string }>,
+) {
+  const matchingIssues = issues.filter(
+    (issue) =>
+      issue.path === "root" ||
+      patch.path === issue.path ||
+      patch.path.startsWith(`${issue.path}.`),
+  );
+  if (matchingIssues.length === 0) {
+    throw new Error(
+      `补丁路径 ${patch.path} 不在当前门禁反馈范围内；请只修改反馈 code/path 指向的字段。`,
+    );
+  }
+  if (
+    matchingIssues.every(
+      ({ code }) => code === "ARCHITECTURE_PAGE_COUNT_MISMATCH",
+    ) &&
+    !(
+      (/^pageTasks\.(?:0|[1-9]\d*|-)$/u.test(patch.path) &&
+        ["add", "remove"].includes(patch.op)) ||
+      (/^pageTasks\.(?:0|[1-9]\d*)\.(?:order|buildDependsOnPageIds)$/u.test(
+        patch.path,
+      ) && patch.op === "replace")
+    )
+  ) {
+    throw new Error(
+      "ARCHITECTURE_PAGE_COUNT_MISMATCH 只允许用 add/remove 增删 pageTasks 的直接数组项，并在同一补丁中 replace 后续页面的 order/buildDependsOnPageIds 以恢复连续顺序与依赖。",
+    );
+  }
+  if (
+    matchingIssues.every(
+      ({ code }) => code === "SCATTERING_MEDIUM_UNSPECIFIED",
+    ) &&
+    !/^coursePack\.facts\.(?:0|[1-9]\d*)\.text$/u.test(patch.path)
+  ) {
+    throw new Error(
+      "SCATTERING_MEDIUM_UNSPECIFIED 只允许修改 coursePack.facts.N.text。",
+    );
+  }
+}
+
+function applyPageCountPatch(
+  candidate: unknown,
+  patch: ArchitecturePatchOperation,
+  issues: Array<{ code: string; path: string }>,
+) {
+  if (
+    !issues.some(
+      ({ code, path }) =>
+        code === "ARCHITECTURE_PAGE_COUNT_MISMATCH" &&
+        path === "pageTasks",
+    )
+  ) {
+    throw new Error(
+      "只有门禁明确返回 ARCHITECTURE_PAGE_COUNT_MISMATCH 时，才允许增删 pageTasks。",
+    );
+  }
+  if (!isRecord(candidate) || !Array.isArray(candidate.pageTasks)) {
+    throw new Error("当前候选缺少可修改的 pageTasks 数组。");
+  }
+  const pages = candidate.pageTasks;
+  const segment = patch.path.split(".").at(-1)!;
+  if (patch.op === "remove") {
+    pages.splice(parseArrayIndex(segment, pages.length, patch.path), 1);
+    return;
+  }
+  const index =
+    segment === "-"
+      ? pages.length
+      : parseArrayInsertionIndex(segment, pages.length, patch.path);
+  pages.splice(index, 0, structuredClone(patch.value));
+}
+
+function replaceExistingArchitecturePath(
+  candidate: unknown,
+  path: string,
+  value: unknown,
+) {
+  const segments = path.split(".");
+  const forbidden = new Set(["__proto__", "constructor", "prototype"]);
+  if (segments.some((segment) => forbidden.has(segment))) {
+    throw new Error(`补丁路径 ${path} 包含禁止字段。`);
+  }
+
+  let cursor: unknown = candidate;
+  for (const segment of segments.slice(0, -1)) {
+    cursor = readExistingPathSegment(cursor, segment, path);
+  }
+
+  const finalSegment = segments.at(-1)!;
+  if (Array.isArray(cursor)) {
+    const index = parseArrayIndex(finalSegment, cursor.length, path);
+    assertNarrowArchitecturePatch(path, cursor[index]);
+    cursor[index] = structuredClone(value);
+    return;
+  }
+  if (!isRecord(cursor)) {
+    throw new Error(`补丁路径 ${path} 必须指向候选中已经存在的字段。`);
+  }
+  if (!Object.hasOwn(cursor, finalSegment)) {
+    if (!/^pageTasks\.(?:0|[1-9]\d*)\.visualDesign$/u.test(path)) {
+      throw new Error(`补丁路径 ${path} 必须指向候选中已经存在的字段。`);
+    }
+    cursor[finalSegment] = structuredClone(value);
+    return;
+  }
+  assertNarrowArchitecturePatch(path, cursor[finalSegment]);
+  cursor[finalSegment] = structuredClone(value);
+}
+
+function assertNarrowArchitecturePatch(path: string, current: unknown) {
+  const forbiddenBroadPaths = [
+    "coursePack",
+    "blueprint",
+    "pageTasks",
+    "coursePack.facts",
+    "coursePack.terms",
+    "coursePack.examples",
+    "blueprint.objectives",
+    "blueprint.audience",
+    "blueprint.courseRules",
+  ];
+  if (
+    forbiddenBroadPaths.includes(path) ||
+    /^pageTasks\.(?:0|[1-9]\d*)$/u.test(path)
+  ) {
+    throw new Error(
+      `补丁路径 ${path} 范围过大；请拆成门禁反馈对应的叶字段修改。`,
+    );
+  }
+  if (
+    isRecord(current) &&
+    !Array.isArray(current) &&
+    !/^pageTasks\.(?:0|[1-9]\d*)\.visualDesign$/u.test(path)
+  ) {
+    throw new Error(
+      `补丁路径 ${path} 会替换整块对象；请只修改其中的具体字段。`,
+    );
+  }
+}
+
+function readExistingPathSegment(
+  cursor: unknown,
+  segment: string,
+  path: string,
+) {
+  if (Array.isArray(cursor)) {
+    return cursor[parseArrayIndex(segment, cursor.length, path)];
+  }
+  if (!isRecord(cursor) || !Object.hasOwn(cursor, segment)) {
+    throw new Error(`补丁路径 ${path} 必须经过候选中已经存在的字段。`);
+  }
+  return cursor[segment];
+}
+
+function parseArrayIndex(segment: string, length: number, path: string) {
+  if (!/^(?:0|[1-9]\d*)$/u.test(segment)) {
+    throw new Error(`补丁路径 ${path} 的数组段 ${segment} 不是有效索引。`);
+  }
+  const index = Number(segment);
+  if (!Number.isSafeInteger(index) || index >= length) {
+    throw new Error(`补丁路径 ${path} 的数组索引 ${segment} 越界。`);
+  }
+  return index;
+}
+
+function parseArrayInsertionIndex(
+  segment: string,
+  length: number,
+  path: string,
+) {
+  if (!/^(?:0|[1-9]\d*)$/u.test(segment)) {
+    throw new Error(`补丁路径 ${path} 的数组段 ${segment} 不是有效索引。`);
+  }
+  const index = Number(segment);
+  if (!Number.isSafeInteger(index) || index > length) {
+    throw new Error(`补丁路径 ${path} 的数组插入索引 ${segment} 越界。`);
+  }
+  return index;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function checkpointValidArchitectureCandidate(
+  context: ArchitectToolContext,
+  candidate: unknown,
+) {
+  const parsed = CourseArchitectureSchema.safeParse(candidate);
+  if (!parsed.success) {
+    return "当前提交未符合 CourseArchitecture Schema，因此没有覆盖可恢复候选；若尚无候选，请再次提交完整 architecture。";
+  }
+
+  const previous = loadLatestArchitectureCandidate(context);
+  if (previous) {
+    const previousGate = runArchitectureGate({
+      candidate: previous,
+      creationBrief: context.creationBrief,
+      referencePacks: context.referencePacks,
+      expectedCourseId: context.expectedCourseId,
+    });
+    const nextGate = runArchitectureGate({
+      candidate: parsed.data,
+      creationBrief: context.creationBrief,
+      referencePacks: context.referencePacks,
+      expectedCourseId: context.expectedCourseId,
+    });
+    if (
+      previousGate.ok ||
+      nextGate.ok ||
+      !hasStrictlyFewerArchitectureIssues(
+        previousGate.issues,
+        nextGate.issues,
+      )
+    ) {
+      return "本次确定性问题数量没有减少，因此未晋升可恢复候选。下一次 patches 仍以此前候选为基线，请把本次有效修改与新增修复合并提交。";
+    }
+  }
+
+  context.repository.checkpointArchitectureCandidate({
+    workOrderId: context.workOrder.id,
+    expectedWorkOrderLockVersion: context.workOrder.lockVersion,
+    workOrderLeaseOwner: context.workOrderLeaseOwner,
+    runLeaseOwner: context.runLeaseOwner,
+    traceId: context.traceId,
+    architecture: parsed.data,
+    now: context.now(),
+  });
+  return undefined;
+}
+
+function rememberWorkingArchitectureCandidate(
+  context: ArchitectToolContext,
+  candidate: unknown,
+) {
+  const parsed = CourseArchitectureSchema.safeParse(candidate);
+  if (parsed.success) context.workingCandidate = parsed.data;
+}
+
+function hasStrictlyFewerArchitectureIssues(
+  previous: Array<{ code: string; path: string }>,
+  next: Array<{ code: string; path: string }>,
+) {
+  const previousKeys = new Set(
+    previous.map(({ code, path }) => `${code}@${path}`),
+  );
+  const nextKeys = new Set(
+    next.map(({ code, path }) => `${code}@${path}`),
+  );
+  // A repair can expose a new deterministic issue after removing several
+  // earlier ones. Persist that materially better recovery point, but never
+  // replace the previous candidate when the distinct issue count is flat or
+  // worse.
+  return nextKeys.size < previousKeys.size;
+}
+
+function loadResumableArchitectureCandidate(
+  input: ReturnType<typeof parseAgentInput>,
+) {
+  const architecture = loadLatestArchitectureCandidate(input);
+  if (!architecture) return undefined;
+
+  const gate = runArchitectureGate({
+    candidate: architecture,
+    creationBrief: input.creationBrief,
+    referencePacks: input.referencePacks,
+    expectedCourseId: input.workOrder.courseId,
+  });
+  return {
+    architecture,
+    issues: gate.ok ? [] : gate.issues,
+  };
+}
+
+function loadLatestArchitectureCandidate(
+  context: Pick<
+    ArchitectToolContext,
+    "repository" | "workOrder"
+  >,
+) {
+  const latest = context.repository.artifacts
+    .listByTask(
+      context.workOrder.taskId,
+      "course_architecture_candidate",
+    )
+    .filter(
+      ({ createdByWorkOrderId }) =>
+        createdByWorkOrderId === context.workOrder.id,
+    )
+    .sort((left, right) => right.revision - left.revision)[0];
+  if (!latest) return undefined;
+
+  const parsed = CourseArchitectureSchema.safeParse(latest.payload);
+  return parsed.success ? parsed.data : undefined;
 }
 
 function buildRevisionContext(
@@ -588,9 +1385,10 @@ function successResult<T>(
 
 function gateFailureResult(
   issues: Array<{ code: string; path: string; message: string }>,
+  candidateNote?: string,
 ): AgentToolResult<never, ArtifactRef> {
   const diagnostic = issues
-    .slice(0, 3)
+    .slice(0, 8)
     .map(({ code, path, message }) => `${code} @ ${path}: ${message}`)
     .join("；");
   return {
@@ -601,11 +1399,28 @@ function gateFailureResult(
     // Keep the first deterministic diagnostics in the durable tool ledger. This
     // contains only public schema/gate feedback (never model reasoning) and makes
     // repeated terminal failures diagnosable after the model session has ended.
-    message: `课程架构还有 ${issues.length} 个可修正问题：${diagnostic}`,
+    message: `课程架构还有 ${issues.length} 个可修正问题：${diagnostic}${candidateNote ? `；${candidateNote}` : ""}`,
     retryable: true,
-    feedback: issues
-      .slice(0, 40)
-      .map(({ code, path, message }) => `${code} @ ${path}: ${message}`),
+    feedback: [
+      ...(candidateNote ? [candidateNote] : []),
+      ...issues
+        .slice(0, 40)
+        .map(({ code, path, message }) => `${code} @ ${path}: ${message}`),
+    ],
+  };
+}
+
+function architecturePatchFailureResult(
+  message: string,
+): AgentToolResult<never, ArtifactRef> {
+  return {
+    ok: false,
+    committed: false,
+    terminal: false,
+    code: "ARCHITECTURE_PATCH_INVALID",
+    message,
+    retryable: true,
+    feedback: [message],
   };
 }
 

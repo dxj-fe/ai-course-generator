@@ -6,6 +6,7 @@ import {
   sanitizePublicDiagnosticText,
   sanitizePublicErrorCode,
 } from "../../../../src/server/course/projection/public-error";
+import { FatalAgentRuntimeError } from "../../../../src/server/agent/runtime";
 import { encodeCourseTaskSseMessage } from "../../../../src/server/course/task/sse";
 import type { CourseGenerationState } from "../../../../src/shared/course-schema";
 
@@ -30,6 +31,20 @@ describe("course public error", () => {
     expect(JSON.stringify(classified)).not.toMatch(
       /sk-live|top-secret|privatePrompt|requestBody/i,
     );
+  });
+
+  it("稳定业务错误码优先于通用 Provider 误分类", () => {
+    const error = new FatalAgentRuntimeError(
+      "PAGE_GATE_FAILED",
+      "页面提交检查执行失败。",
+      new Error("内部结构不一致"),
+    );
+
+    expect(classifyPublicAgentError({ error })).toEqual({
+      code: "PAGE_GATE_FAILED",
+      causeCode: undefined,
+      message: "Agent 执行失败，请根据错误码排查后重试。",
+    });
   });
 
   it("投影边界清洗历史事件、页面错误和课程终态错误", () => {

@@ -35,7 +35,7 @@ describe("page quality rules", () => {
     expect(report.decision).toBe("pass");
   });
 
-  it("caps the affected dimension and forces repair for an error", () => {
+  it("keeps non-browser layout heuristics observational", () => {
     const issue: QualityIssue = {
       code: "LAYOUT_CLIPPING",
       dimension: "layoutQuality",
@@ -60,9 +60,9 @@ describe("page quality rules", () => {
       requireScreenshotEvidence: false,
     });
 
-    expect(report.dimensions.layoutQuality.score).toBe(69);
-    expect(report.shouldRepair).toBe(true);
-    expect(report.decision).toBe("revise");
+    expect(report.dimensions.layoutQuality.score).toBe(84);
+    expect(report.shouldRepair).toBe(false);
+    expect(report.decision).toBe("pass");
     expect(report.dimensions.layoutQuality.issueCodes).toEqual([
       "LAYOUT_CLIPPING",
     ]);
@@ -121,6 +121,41 @@ describe("page quality rules", () => {
     expect(report.decision).toBe("pass");
   });
 
+  it("截图可定位的结构性视觉失败会触发一次 HTML 返工", () => {
+    const report = buildPageQualityReport({
+      id: "quality-visual-structure",
+      createdAt: "2026-07-24T15:00:00+08:00",
+      pageId: "page-visual-structure",
+      modelDimensions: dimensions,
+      heuristicIssues: [],
+      modelIssues: [
+        {
+          code: "VISUAL_GENERIC_UI",
+          dimension: "styleConsistency",
+          severity: "error",
+          source: "model",
+          message: "首屏由等权白卡和通用面板组成，主题视觉缺席。",
+          location: {
+            pageId: "page-visual-structure",
+            selector: "main",
+            viewport: "922x460",
+            description: "桌面首屏整体构图",
+          },
+          repairHint:
+            "围绕本页知识关系重新构图，让证据图与学习动作形成一个主题专属画面。",
+        },
+      ],
+      requireScreenshotEvidence: false,
+    });
+
+    expect(report.shouldRepair).toBe(true);
+    expect(report.decision).toBe("revise");
+    expect(report.issues[0]).toMatchObject({
+      code: "VISUAL_GENERIC_UI",
+      severity: "error",
+    });
+  });
+
   it("sorts content errors before visual errors and keeps deterministic ties", () => {
     const issue = (
       code: string,
@@ -152,8 +187,8 @@ describe("page quality rules", () => {
 
     expect(report.issues.map(({ code }) => code)).toEqual([
       "CONTENT_ERROR",
-      "STYLE_ERROR",
       "HTML_WARNING",
+      "STYLE_ERROR",
     ]);
   });
 
@@ -190,10 +225,16 @@ describe("page quality rules", () => {
       requireScreenshotEvidence: false,
     });
 
-    expect(report.issues).toEqual([browserIssue]);
+    expect(report.issues).toMatchObject([
+      {
+        code: browserIssue.code,
+        source: "browser",
+        severity: "warning",
+      },
+    ]);
   });
 
-  it("does not pass a page when mandatory screenshot evidence is missing", () => {
+  it("keeps missing screenshot infrastructure as a warning", () => {
     const report = buildPageQualityReport({
       id: "quality-screenshot-gate",
       createdAt: "2026-07-24T15:00:00+08:00",
@@ -203,12 +244,12 @@ describe("page quality rules", () => {
       modelIssues: [],
     });
 
-    expect(report.shouldRepair).toBe(true);
-    expect(report.decision).toBe("revise");
+    expect(report.shouldRepair).toBe(false);
+    expect(report.decision).toBe("pass");
     expect(report.issues).toMatchObject([
       {
         code: "SCREENSHOT_EVIDENCE_MISSING",
-        severity: "error",
+        severity: "warning",
         source: "browser",
       },
     ]);

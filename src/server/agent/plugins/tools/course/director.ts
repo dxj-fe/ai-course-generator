@@ -75,7 +75,7 @@ export function createCourseDirectorTools(
 
     [ToolIds.InspectArchitecture]: tool({
       description:
-        "检查当前封口课程架构的目标矩阵、页面职责、学习行为、考核和真实生成依赖。",
+        "检查不可变用户 brief 与当前封口课程架构：目标矩阵、页面职责、事实/术语定义、视觉拓扑、量的编码、样式材料语言、考核和真实生成依赖。",
       inputSchema: EmptyInputSchema,
       execute: () => {
         execution.inspections.architecture = true;
@@ -101,7 +101,7 @@ export function createCourseDirectorTools(
 
     [ToolIds.RequestArchitectureRevision]: tool({
       description:
-        "当目标矩阵、页面职责、难度或生成依赖存在语义问题时，退回当前架构并创建新版 Architect WorkOrder。最多 2 轮，剩余次数见 RunSummary；必须给具体问题。",
+        "当不可变 brief 未被保留，或目标矩阵、页面职责、难度、生成依赖、事实/术语正确性、视觉路径拓扑、量的编码或样式材料语言存在语义问题时，退回当前架构并创建新版 Architect WorkOrder。最多 2 轮，剩余次数见 RunSummary；必须给出 pageId/术语与可直接修正的具体矛盾。",
       inputSchema: ArchitectureRevisionInputSchema,
       execute: ({ issues }) =>
         runTerminal(
@@ -133,7 +133,7 @@ export function createCourseDirectorTools(
 
     [ToolIds.AcceptArchitectureAndDispatchPages]: tool({
       description:
-        "接受当前完整课程架构，并在一个事务里按全部 PageTask 创建页面 WorkOrder。不能改写或补造 PageTask。",
+        "只在不可变 brief、事实/术语、逐页职责、视觉拓扑、量的编码、样式材料语言和考核都已证明一致时，才接受当前完整课程架构，并在一个事务里按全部 PageTask 创建页面 WorkOrder。任一机制支路未明确连到接收者、主路未明确继续到物理终点、量编码冲突或术语把代理量冒充原量时不得接受。不能改写或补造 PageTask。",
       inputSchema: EmptyInputSchema,
       execute: () =>
         runTerminal(

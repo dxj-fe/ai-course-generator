@@ -9,6 +9,7 @@ import {
 import {
   CourseDesignBriefsSchema,
   CoursePlanSchema,
+  DesignDirectionSchema,
   StoryArcSchema,
   VisualBriefSchema,
 } from "../../../src/shared/course-schema";
@@ -39,6 +40,56 @@ describe("course design schemas", () => {
       VisualBriefSchema.safeParse({
         ...visualBrief,
         layoutPrinciples: [visualBrief.layoutPrinciples[0]],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps HTML design direction compact while preserving global guardrails", () => {
+    const pageGuidance = visualBrief.pageGuidance[0];
+    const designDirection = {
+      courseThesis: visualBrief.visualConcept,
+      globalGuardrails: {
+        layoutPrinciples: visualBrief.layoutPrinciples,
+        typographyGuidance: visualBrief.typographyGuidance,
+        colorUsage: visualBrief.colorUsage,
+        assetDirection: {
+          medium: visualBrief.assetDirection.medium,
+          composition: visualBrief.assetDirection.composition,
+        },
+        motionGuidance: visualBrief.motionGuidance,
+        accessibilityRules: visualBrief.accessibilityRules,
+        negativeConstraints: [
+          "避免通用后台面板、等权白卡网格和组件展示页",
+        ],
+      },
+      page: {
+        theme: pageGuidance.theme,
+        proofGoal: pageGuidance.focalPoint,
+        composition: pageGuidance.composition,
+        graphicMotif: pageGuidance.graphicMotif,
+        assetPurpose: pageGuidance.assetPurpose,
+      },
+      styleReference: {
+        goal: "保留模板的字体角色、色场、节奏和图形气质",
+        motif: "模板只提供风格灵感，不固定 DOM",
+      },
+      inspirationNotes: [],
+    };
+
+    expect(DesignDirectionSchema.safeParse(designDirection).success).toBe(
+      true,
+    );
+    expect(
+      DesignDirectionSchema.safeParse({
+        ...designDirection,
+        globalGuardrails: {
+          ...designDirection.globalGuardrails,
+          layoutPrinciples: [
+            ...visualBrief.layoutPrinciples,
+            "第三条原则",
+            "第四条原则",
+          ],
+        },
       }).success,
     ).toBe(false);
   });

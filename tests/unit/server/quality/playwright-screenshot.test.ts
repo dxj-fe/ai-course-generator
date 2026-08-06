@@ -7,6 +7,7 @@ import {
   capturePageScreenshot,
   countAuthoredTouchTargets,
   resolveDominantVisualMetrics,
+  VISUAL_PROMINENCE_SELECTOR,
 } from "../../../../src/server/infra/browser/page-screenshot";
 import { pageContentDsl } from "../../../fixtures/course-design";
 import { buildValidGeneratedHtml } from "../../../fixtures/generated-html";
@@ -121,6 +122,21 @@ describe("Playwright screenshot QA evidence", () => {
       Buffer.from([137, 80, 78, 71]),
     );
     expect(JSON.stringify(result.evidence)).not.toContain(result.serverPath);
+    expect(result.modelImages).toEqual([
+      {
+        viewport: { width: 922, height: 460 },
+        png: new Uint8Array([137, 80, 78, 71]),
+      },
+      {
+        viewport: { width: 712, height: 650 },
+        png: new Uint8Array([137, 80, 78, 71]),
+      },
+      {
+        viewport: { width: 366, height: 500 },
+        png: new Uint8Array([137, 80, 78, 71]),
+      },
+    ]);
+    expect(JSON.stringify(result.evidence)).not.toContain("modelImages");
   });
 
   it("rejects document and nested vertical overflow on a balanced lesson", async () => {
@@ -176,6 +192,11 @@ describe("Playwright screenshot QA evidence", () => {
         expect.objectContaining({
           code: "BROWSER_NESTED_VERTICAL_OVERFLOW",
           severity: "error",
+        }),
+        expect.objectContaining({
+          code: "BROWSER_VERTICAL_OVERFLOW",
+          severity: "warning",
+          location: expect.objectContaining({ viewport: "366x500" }),
         }),
       ]),
     );
@@ -461,7 +482,7 @@ describe("Playwright screenshot QA evidence", () => {
     );
   });
 
-  it("rejects a required course illustration rendered as a tiny decoration", async () => {
+  it("observes a required course illustration rendered as a tiny decoration", async () => {
     const content = {
       ...pageContentDsl,
       assetSlots: [
@@ -504,7 +525,7 @@ describe("Playwright screenshot QA evidence", () => {
     expect(tinyVisualIssues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          severity: "error",
+          severity: "info",
           dimension: "assetUsability",
           location: expect.objectContaining({
             selector: '[data-asset-slot-id="asset-slot-01"]',
@@ -551,6 +572,13 @@ describe("Playwright screenshot QA evidence", () => {
       largestVisualAreaRatio: 1,
       largestVisualSelector: '[data-asset-slot-id="hero-visual"]',
     });
+  });
+
+  it("includes naked SVG and canvas knowledge graphics as visual candidates", () => {
+    const selectors = new Set(VISUAL_PROMINENCE_SELECTOR.split(","));
+
+    expect(selectors.has("svg")).toBe(true);
+    expect(selectors.has("canvas")).toBe(true);
   });
 
   it("does not render unsafe HTML in a browser", async () => {

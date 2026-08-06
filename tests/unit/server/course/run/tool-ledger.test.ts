@@ -114,7 +114,8 @@ describe("Course Tool Ledger", () => {
         agentStepNumber: 2,
         toolOrdinal: 2,
         status: "failed",
-        safeSummary: "模型服务未返回有效结果，请稍后重试。",
+        safeSummary:
+          "MODEL_ERROR: 模型服务未返回有效结果，请稍后重试。",
       },
     ]);
   });

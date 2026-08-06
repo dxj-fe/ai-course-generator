@@ -84,6 +84,32 @@ export const TemplateCardMatchSchema = z
   .object({
     card: TemplateCardSchema,
     reason: z.string().min(2).max(240),
+    score: z.number().optional(),
+    candidateRole: z.enum(["best-match", "safe", "explore"]).optional(),
+    confidence: z.number().min(0).max(1).optional(),
+    scoreBreakdown: z
+      .array(
+        z
+          .object({
+            key: z.enum([
+              "explicit",
+              "keyword",
+              "domain",
+              "audience",
+              "activity",
+              "narrative",
+              "affordance",
+              "formality",
+              "scheme",
+              "tone",
+            ]),
+            label: z.string().min(2).max(160),
+            score: z.number(),
+          })
+          .strict(),
+      )
+      .max(12)
+      .optional(),
   })
   .strict();
 

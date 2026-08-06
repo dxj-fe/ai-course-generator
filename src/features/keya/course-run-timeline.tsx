@@ -410,10 +410,13 @@ function briefFromRun(
     outline?.pages.map(({ interactionType }) => interactionType) ?? [],
   );
   const learningMode =
-    interactionTypes.size === 0 ||
-    [...interactionTypes].every((type) => type === "none" || type === "navigate")
-      ? "guided"
-      : "mixed";
+    !outline?.pages.length
+      ? base.learningMode
+      : [...interactionTypes].every(
+            (type) => type === "none" || type === "navigate",
+          )
+        ? "guided"
+        : "mixed";
 
   return {
     ...base,

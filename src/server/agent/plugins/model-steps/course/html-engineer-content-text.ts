@@ -2,22 +2,20 @@ import type { PageContentDSL } from "@/shared/course-schema";
 
 import { normalizeText } from "./html-engineer-text";
 
-/** 静态预览必须常显的正文；答错后的 retry 反馈仍由 DSL 保存，不要求永久铺开。 */
+/**
+ * 只把学习主干视为页面必须保留的文字。旁白、supporting points、placeholder、
+ * 评价标准与反馈仍保存在 DSL，可由设计按层级渐进或条件呈现，不能再逼迫它们
+ * 同时铺满固定画布。
+ */
 export function collectRequiredStaticContentText(content: PageContentDSL) {
   const blockText = content.blocks.flatMap((block) => [
     block.heading,
     block.body,
-    ...block.supportingPoints,
   ]);
   const interactionText = collectInteractionStaticContentText(content);
 
   return [
-    ...new Set([
-      content.title,
-      ...content.narration,
-      ...blockText,
-      ...interactionText,
-    ]),
+    ...new Set([...blockText, ...interactionText]),
   ];
 }
 
@@ -35,34 +33,23 @@ function collectInteractionStaticContentText(content: PageContentDSL) {
     case "explore":
       interactionText = [
         interaction.prompt,
-        ...interaction.items.flatMap((item, index) =>
-          isAlignedBlockReference(item, content.blocks[index])
-            ? []
-            : [item.label, item.content],
-        ),
+        ...interaction.items.map(({ label }) => label),
       ];
       break;
     case "choice":
       interactionText = interaction.questions.flatMap((question) => [
         question.prompt,
         ...question.options.map(({ label }) => label),
-        question.feedback.success,
       ]);
       break;
     case "sort":
       interactionText = [
         interaction.prompt,
-        ...interaction.items.flatMap((item) => [item.label, item.content]),
-        interaction.feedback.success,
+        ...interaction.items.map(({ label }) => label),
       ];
       break;
     case "input":
-      interactionText = [
-        interaction.prompt,
-        interaction.placeholder,
-        ...interaction.evaluationCriteria,
-        interaction.feedback.success,
-      ];
+      interactionText = [interaction.prompt];
       break;
   }
 

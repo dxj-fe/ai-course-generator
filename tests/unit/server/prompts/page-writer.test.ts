@@ -4,42 +4,47 @@ import {
   courseDesignIntent,
   courseDesignOutline,
   pedagogyPlan,
-  storyArc,
   visualBrief,
 } from "../../../fixtures/course-design";
 import { buildPageWriterPrompts } from "../../../../src/server/agent/plugins/prompts/course/model-steps/page-writer";
-import { getFunctionalTemplate } from "../../../../src/shared/templates/functional";
 
 describe("Page Writer prompts", () => {
-  it("优先提供完整课程方向和首轮生成质量，而不是堆叠末端修复规则", async () => {
+  it("用紧凑 page brief 指导首轮语义写作，不注入模板槽位合同", async () => {
     const pagePlan = courseDesignOutline.pages[1];
-    const functionalTemplate = getFunctionalTemplate(
-      pagePlan.functionalTemplateId,
-    );
-
-    expect(functionalTemplate).toBeDefined();
 
     const prompts = await buildPageWriterPrompts({
-      courseIntent: courseDesignIntent,
-      courseArchitectureContext: {
-        courseTitle: "理解太阳系",
-        pageTask: {
-          purpose: "比较恒星与行星",
-          learnerAction: "根据特征完成分类",
+      pageBrief: {
+        course: {
+          title: "理解太阳系",
+          audience: courseDesignIntent.audienceAgeRange,
+          language: courseDesignIntent.language,
+          learningGoal: courseDesignIntent.learningGoal,
+          objectives: [pagePlan.learningObjective],
+          tone: "清楚、好奇",
+          terminology: [],
+          facts: [{ id: "fact-01", text: "行星绕恒星运行。" }],
+          terms: [{ term: "轨道", definition: "天体运行的路径。" }],
+          constraints: courseDesignIntent.avoid,
         },
-        neighboringPageTasks: [
-          { pageId: "page-01", purpose: "建立太阳系整体模型" },
-        ],
+        page: {
+          id: pagePlan.id,
+          title: pagePlan.title,
+          pageType: pagePlan.pageType,
+          objective: pagePlan.learningObjective,
+          interactionType: pagePlan.interactionType,
+          task: {
+            purpose: "比较恒星与行星",
+            learnerAction: "根据特征完成分类",
+          },
+          pedagogy: pedagogyPlan.pageGuidance[1],
+          visualFocus: visualBrief.pageGuidance[1],
+          neighbors: [
+            { pageId: "page-01", purpose: "建立太阳系整体模型" },
+          ],
+          dependencySummaries: [],
+          assetNeeds: pagePlan.assetNeeds,
+        },
       },
-      pagePlan,
-      pageWorkerBrief: {
-        pageId: pagePlan.id,
-        styleTemplateId: visualBrief.styleTemplateId,
-        pedagogy: pedagogyPlan.pageGuidance[1],
-        story: storyArc.pageBeats[1],
-        visual: visualBrief.pageGuidance[1],
-      },
-      functionalTemplate,
       validationFeedback: {
         code: "SCHEMA_ERROR",
         issues: ["questions.0.correctOptionIndex 超出 options 范围"],
@@ -47,48 +52,62 @@ describe("Page Writer prompts", () => {
     });
 
     expect(prompts.fingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(prompts.systemPrompt).toContain("首稿就应值得交付");
     expect(prompts.systemPrompt).toContain(
-      "首轮结果应当已经值得交付",
+      "用最少但充分的文字完成本页唯一认知动作",
     );
     expect(prompts.systemPrompt).toContain(
-      "CourseArchitecture Context 是本页最完整的课程事实与职责来源",
+      "PageBrief 是本页职责、事实锚点、受众、前后页分工、互动意图和视觉重心的唯一输入",
+    );
+    expect(prompts.systemPrompt).toContain("blocks 是语义锚点");
+    expect(prompts.systemPrompt).toContain(
+      "只保留互动之外不可缺少的共同依据",
     );
     expect(prompts.systemPrompt).toContain(
-      "表达方式由你在边界内决定",
+      "不自作主张补充波长区间、倍数、百分比、年份",
     );
     expect(prompts.systemPrompt).toContain(
-      "固定画布不是字符竞赛",
+      "继承 facts 中的观察对象、比较范围和程度限定",
     );
     expect(prompts.systemPrompt).toContain(
-      "模板没有声明的槽必须返回空数组",
+      "保留事实中的因果主体、作用方向、比较范围和限定词",
     );
     expect(prompts.systemPrompt).toContain(
-      "不得受下面“通常使用 2–4 个 blocks”的一般建议影响",
+      "互动项承担实际观察、比较或判断",
     );
     expect(prompts.systemPrompt).toContain(
-      "`visualPriority` 和 `groupingStrategy` 各自是一句简洁字符串",
+      "PAGE_WRITER_CAPACITY_REWRITE",
     );
     expect(prompts.systemPrompt).toContain(
-      "`contentDensity` 只能是 `sparse`、`balanced`、`dense`",
+      "合并重复语义，让互动承担对应证据",
     );
     expect(prompts.systemPrompt).toContain(
-      "choice 只保留最能检验核心判断依据的一题",
+      "body 用最短但可独立理解的表达",
+    );
+    expect(prompts.systemPrompt).toContain("不为凑字数扩写");
+    expect(prompts.systemPrompt).toContain("922×460 的教学画布");
+    expect(prompts.systemPrompt).toContain(
+      "choice 只问一道最有诊断价值的问题",
     );
     expect(prompts.systemPrompt).toContain(
-      "支持性 blocks 只取模板允许的最小充分数量",
+      "让每条必要事实只出现一次",
     );
     expect(prompts.systemPrompt).toContain(
-      "不要无方向扩写",
+      "按 type 只输出该类型真实需要的字段",
     );
-    expect(prompts.systemPrompt).toContain(
-      "不编造事实、不改目标",
-    );
-    expect(prompts.userPrompt).toContain('"courseTitle":"理解太阳系"');
+    expect(prompts.systemPrompt).not.toContain("FunctionalTemplate");
+    expect(prompts.systemPrompt).not.toContain("contentDensity");
+    expect(prompts.systemPrompt).not.toContain("散射出直射光束");
+    expect(prompts.systemPrompt).not.toContain("12–24 个中文字");
+    expect(prompts.userPrompt).toContain('"title":"理解太阳系"');
+    expect(prompts.userPrompt).toContain('"id":"fact-01"');
+    expect(prompts.userPrompt).toContain('"term":"轨道"');
     expect(prompts.userPrompt).toContain(
       '"purpose":"建立太阳系整体模型"',
     );
     expect(prompts.userPrompt).toContain(
       '"issues":["questions.0.correctOptionIndex 超出 options 范围"]',
     );
+    expect(prompts.userPrompt).not.toContain('"functionalTemplateId"');
   });
 });

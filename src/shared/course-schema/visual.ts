@@ -17,8 +17,14 @@ export const VisualAssetDirectionSchema = z.object({
 /** 为单个 PagePlan 指定视觉焦点和构图差异。 */
 export const VisualPageGuidanceSchema = z.object({
   pageId: z.string().min(1).max(80),
+  theme: z.string().min(2).max(240).default("基于当前问题的视觉隐喻"),
   focalPoint: z.string().min(2).max(240),
-  composition: z.string().min(2).max(240),
+  composition: z.string().min(2).max(300),
+  graphicMotif: z
+    .string()
+    .min(2)
+    .max(300)
+    .default("用代码原生图形表达当前知识关系"),
   assetPurpose: z.string().min(2).max(240),
 });
 
@@ -28,6 +34,64 @@ export const VisualMotionGuidanceSchema = z.object({
   strategy: z.string().min(2).max(240),
   reducedMotionAlternative: z.string().min(2).max(240),
 });
+
+/**
+ * HTML Engineer 消费的精简视觉方向。
+ * 保留整课创作约束，但不携带模板实现或固定 DOM 结构。
+ */
+export const DesignDirectionSchema = z
+  .object({
+    courseThesis: z.string().min(5).max(400),
+    globalGuardrails: z
+      .object({
+        layoutPrinciples: z
+          .array(z.string().min(2).max(240))
+          .min(2)
+          .max(3),
+        typographyGuidance: z.string().min(5).max(300),
+        colorUsage: z.string().min(5).max(300),
+        assetDirection: VisualAssetDirectionSchema.pick({
+          medium: true,
+          composition: true,
+        }),
+        motionGuidance: VisualMotionGuidanceSchema,
+        accessibilityRules: z
+          .array(z.string().min(2).max(240))
+          .min(2)
+          .max(4),
+        negativeConstraints: z
+          .array(z.string().min(2).max(240))
+          .min(1)
+          .max(6),
+      })
+      .strict(),
+    page: z
+      .object({
+        theme: z.string().min(2).max(240),
+        proofGoal: z.string().min(2).max(240),
+        composition: z.string().min(2).max(300),
+        graphicMotif: z.string().min(2).max(300),
+        assetPurpose: z.string().min(2).max(240),
+      })
+      .strict(),
+    styleReference: z
+      .object({
+        goal: z.string().min(2).max(400),
+        motif: z.string().min(2).max(300),
+      })
+      .strict(),
+    inspirationNotes: z
+      .array(
+        z
+          .object({
+            source: z.string().min(1).max(400),
+            note: z.string().min(1).max(2_400),
+          })
+          .strict(),
+      )
+      .max(20),
+  })
+  .strict();
 
 /**
  * VisualDirectorAgent 的全局视觉 brief。
@@ -75,4 +139,5 @@ export type VisualPageGuidance = z.infer<typeof VisualPageGuidanceSchema>;
 export type VisualMotionGuidance = z.infer<
   typeof VisualMotionGuidanceSchema
 >;
+export type DesignDirection = z.infer<typeof DesignDirectionSchema>;
 export type VisualBrief = z.infer<typeof VisualBriefSchema>;

@@ -27,6 +27,7 @@ import type {
 } from "../../../../src/shared/course-schema";
 import { getFunctionalTemplateDslExample } from "../../../../src/shared/templates/functional/dsl-examples";
 import {
+  PageWriterBlockDraftSchema,
   PageWriterModelOutputSchema,
   normalizePageWriterModelOutput,
 } from "../../../../src/server/agent/plugins/model-steps/course/page-writer-schema";
@@ -72,18 +73,7 @@ describe("PageWriterModelStep", () => {
             content: "恒星会自己发光并向周围释放能量。",
           },
         ],
-        questions: [],
-        feedbackSuccess: [],
-        feedbackRetry: [],
-        maxAttempts: 1,
-        placeholder: "未使用",
-        evaluationCriteria: [],
-        actionLabel: "未使用",
-        destination: "next" as const,
       },
-      contentDensity: "balanced" as const,
-      visualPriority: "突出恒星与行星的对比。",
-      groupingStrategy: "正文与互动按观察顺序排列。",
       usedReferences: [],
     };
 
@@ -99,7 +89,10 @@ describe("PageWriterModelStep", () => {
     expect(
       PageWriterModelOutputSchema.safeParse({
         ...currentOutput,
-        contentDensity: "medium",
+        interaction: {
+          ...currentOutput.interaction,
+          placeholder: "未使用",
+        },
       }).success,
     ).toBe(false);
   });
@@ -115,60 +108,309 @@ describe("PageWriterModelStep", () => {
     );
   });
 
-  it("在严格校验前无损归一化模型常见的数组和占位 destination 偏差", () => {
+  it("只无损归一化 narration 单字符串，不修补互动占位字段", () => {
     const normalized = normalizePageWriterModelOutput({
       narration: "先观察两个天体是否会自己发光。",
       blocks: [],
       interaction: {
         type: "reveal",
         prompt: "逐项查看特征。",
-        items: [],
-        questions: [],
-        feedbackSuccess: "已找到关键特征。",
-        feedbackRetry: "请重新观察发光方式。",
-        maxAttempts: 1,
-        placeholder: "未使用",
-        evaluationCriteria: "能说明是否自行发光。",
-        actionLabel: "未使用",
-        destination: "未使用",
+        items: [
+          {
+            label: "恒星",
+            content: "恒星能够自行发光并向外释放能量。",
+          },
+        ],
       },
-      contentDensity: "balanced",
-      visualPriority: "突出发光方式的差异。",
-      groupingStrategy: "按观察顺序组织内容。",
       usedReferences: [],
     });
 
-    expect(normalized).toMatchObject({
+    expect(normalized).toEqual({
       narration: ["先观察两个天体是否会自己发光。"],
+      blocks: [],
       interaction: {
-        feedbackSuccess: ["已找到关键特征。"],
-        feedbackRetry: ["请重新观察发光方式。"],
-        evaluationCriteria: ["能说明是否自行发光。"],
-        destination: "next",
+        type: "reveal",
+        prompt: "逐项查看特征。",
+        items: [
+          {
+            label: "恒星",
+            content: "恒星能够自行发光并向外释放能量。",
+          },
+        ],
       },
+      usedReferences: [],
     });
     expect(PageWriterModelOutputSchema.safeParse(normalized).success).toBe(
       true,
     );
+
+    const placeholderInteraction = normalizePageWriterModelOutput({
+      ...(normalized as object),
+      interaction: {
+        type: "reveal",
+        prompt: "逐项查看特征。",
+        items: [{ label: "恒星", content: "恒星能够自行发光。" }],
+        destination: "未使用",
+      },
+    });
+    expect(
+      PageWriterModelOutputSchema.safeParse(placeholderInteraction).success,
+    ).toBe(false);
   });
 
-  it("generates one PageContentDSL in one bounded step", async () => {
-    const generateContent = vi.fn().mockResolvedValue(pageContentDsl);
+  it("只为无语义的可选展示字段提供等价默认形状", () => {
+    const parsed = PageWriterModelOutputSchema.parse({
+      narration: [],
+      blocks: [
+        {
+          kind: "recap",
+          heading: "三步检查",
+          body: "依次检查色相、面积比例和明度层级。",
+        },
+      ],
+      interaction: {
+        type: "input",
+        prompt: "说明你会怎样改进这组配色。",
+        placeholder: "  ",
+        evaluationCriteria: "同时说明三个判断方面",
+        feedbackSuccess: "你已经用三个判断方面解释了改进方案。",
+        feedbackRetry: "请补充尚未说明的判断方面和具体改法。",
+      },
+      usedReferences: [],
+    });
+
+    expect(parsed.blocks[0]?.supportingPoints).toEqual([]);
+    expect(parsed.interaction).toMatchObject({
+      type: "input",
+      placeholder: undefined,
+      evaluationCriteria: ["同时说明三个判断方面"],
+    });
+
+    expect(
+      materializePageWriterInteraction(parsed.interaction, "en-US"),
+    ).toMatchObject({
+      type: "input",
+      placeholder: "Type your answer",
+      evaluationCriteria: ["同时说明三个判断方面"],
+    });
+  });
+
+  it("把旧版单题 questions 包装与 success/retry 别名无损归一化", () => {
+    const normalized = normalizePageWriterModelOutput({
+      narration: [],
+      blocks: [],
+      interaction: {
+        type: "choice",
+        questions: [
+          {
+            prompt: "日落时太阳光为什么更偏红？",
+            options: ["穿过的大气路径更长", "太阳本身变成红色"],
+            correctOptionIndex: 0,
+            success: "光程更长，短波光被散射得更多。",
+            retry: "比较太阳高低不同时光穿过大气的路径长度。",
+            maxAttempts: 2,
+          },
+        ],
+      },
+      usedReferences: [],
+    });
+
+    const parsed = PageWriterModelOutputSchema.parse(normalized);
+    expect(parsed.interaction).toMatchObject({
+      type: "choice",
+      prompt: "日落时太阳光为什么更偏红？",
+      feedbackSuccess: "光程更长，短波光被散射得更多。",
+      feedbackRetry: "比较太阳高低不同时光穿过大气的路径长度。",
+    });
+  });
+
+  it("直接接受不带多余 questions 层级的单题 choice 草稿", () => {
+    const output = {
+      narration: [],
+      blocks: [],
+      interaction: {
+        type: "choice" as const,
+        prompt: "太阳高度角变小时，光程如何变化？",
+        options: ["变长", "变短"],
+        correctOptionIndex: 0,
+        feedbackSuccess: "太阳越接近地平线，光穿过的大气路径越长。",
+        feedbackRetry: "比较斜向与垂直穿过大气的路径。",
+        maxAttempts: 2,
+      },
+      usedReferences: [],
+    };
+
+    expect(PageWriterModelOutputSchema.parse(output)).toEqual(output);
+  });
+
+  it("不静默合并互动项：保留合法项，超出 schema 上限则拒绝", () => {
+    const items = ["红", "橙", "黄", "绿", "青", "蓝", "靛", "紫"].map(
+      (label) => ({ label, content: `${label}色光的观察记录` }),
+    );
+    const output = {
+      narration: [],
+      blocks: [],
+      interaction: {
+        type: "reveal" as const,
+        prompt: "逐项观察白光中的颜色。",
+        items,
+      },
+      usedReferences: [],
+    };
+    const normalized = normalizePageWriterModelOutput(output);
+
+    const parsed = PageWriterModelOutputSchema.parse(normalized);
+    expect(parsed.interaction).toEqual(output.interaction);
+    expect(
+      PageWriterModelOutputSchema.safeParse({
+        ...output,
+        interaction: {
+          ...output.interaction,
+          items: [
+            ...items,
+            { label: "红外", content: "红外辐射的观察记录" },
+          ],
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("拒绝多题 choice，而不是静默截断题目或正文", () => {
+    const block = {
+      kind: "concept",
+      heading: "回顾要点",
+      body: "先回顾判断自然回应时需要关注的语境线索。",
+      supportingPoints: [],
+    };
+    const questionBlock = {
+      ...block,
+      kind: "question",
+      heading: "情境选择",
+    };
+    const question = {
+      prompt: "哪一句回应更自然？",
+      options: ["Sure, what happened?", "I translate now."],
+      correctOptionIndex: 0,
+      feedbackSuccess: "正确，这句话承接了对方的语境。",
+      feedbackRetry: "再看哪一句能让交流继续。",
+      maxAttempts: 2,
+    };
+    const output = {
+      narration: [],
+      blocks: [block, questionBlock],
+      interaction: {
+        type: "choice" as const,
+        questions: [question, { ...question, prompt: "第二题" }],
+      },
+      usedReferences: [],
+    };
+    const normalized = normalizePageWriterModelOutput(output);
+
+    expect(normalized).toEqual(output);
+    expect(PageWriterModelOutputSchema.safeParse(normalized).success).toBe(
+      false,
+    );
+  });
+
+  it("不根据模板槽位静默删除模型写出的正文", () => {
+    const output = {
+      narration: ["先了解课程目标，再开始学习。"],
+      blocks: [
+        {
+          kind: "concept" as const,
+          heading: "课程核心问题",
+          body: "先建立本课需要回答的核心问题，再开始后续学习。",
+          supportingPoints: [],
+        },
+      ],
+      interaction: {
+        type: "navigate" as const,
+        actionLabel: "开始学习",
+        destination: "next" as const,
+      },
+      usedReferences: [],
+    };
+    const normalized = normalizePageWriterModelOutput(output);
+
+    expect(PageWriterModelOutputSchema.parse(normalized).blocks).toEqual(
+      output.blocks,
+    );
+  });
+
+  it("generates one PageContentDSL without a rewrite when it fits the interaction budget", async () => {
+    const compactContent = {
+      ...pageContentDsl,
+      blocks: pageContentDsl.blocks.slice(0, 1),
+      layoutHints: {
+        ...pageContentDsl.layoutHints,
+        readingOrder: [pageContentDsl.blocks[0]!.id],
+      },
+    };
+    const generateContent = vi.fn().mockResolvedValue(compactContent);
     const result = await createPageWriterModelStep({ generateContent }).run(
       createPageWriterModelStepState(input),
       { traceId: "page-writer-test" },
     );
 
     expect(result.status).toBe("completed");
-    expect(result.content).toEqual(pageContentDsl);
+    expect(result.content).toEqual(compactContent);
     expect(result.events.map(({ type }) => type)).toEqual([
       "start",
       "model_call",
       "finish",
     ]);
+    expect(generateContent).toHaveBeenCalledTimes(1);
     expect(generateContent).toHaveBeenCalledWith(
       expect.objectContaining({ page, brief }),
     );
+  });
+
+  it("rewrites an over-capacity draft once with interaction-specific compression feedback", async () => {
+    const compactContent = {
+      ...pageContentDsl,
+      blocks: pageContentDsl.blocks.slice(0, 1),
+      layoutHints: {
+        ...pageContentDsl.layoutHints,
+        readingOrder: [pageContentDsl.blocks[0]!.id],
+      },
+    };
+    const generateContent = vi
+      .fn()
+      .mockResolvedValueOnce(pageContentDsl)
+      .mockResolvedValueOnce(compactContent);
+    const result = await createPageWriterModelStep({ generateContent }).run(
+      createPageWriterModelStepState({
+        ...input,
+        validationFeedback: {
+          code: "PAGE_BUILDER_RETRY",
+          issues: ["保留事实中的比较方向。"],
+        },
+      }),
+      { traceId: "page-writer-capacity-rewrite" },
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.content).toEqual(compactContent);
+    expect(generateContent).toHaveBeenCalledTimes(2);
+    expect(generateContent.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({
+        validationFeedback: expect.objectContaining({
+          code: "PAGE_WRITER_CAPACITY_REWRITE",
+          issues: expect.arrayContaining([
+            "保留事实中的比较方向。",
+            expect.stringContaining("当前 reveal 初稿超出单页语义容量"),
+            expect.stringContaining("blocks 有 2 个，reveal 页预算为 1 个"),
+            expect.stringContaining("interaction item 承担对应观察证据"),
+          ]),
+        }),
+      }),
+    );
+    expect(result.events.map(({ type }) => type)).toEqual([
+      "start",
+      "model_call",
+      "model_call",
+      "finish",
+    ]);
   });
 
   it("rejects a DSL whose pageId differs from PagePlan", () => {
@@ -180,7 +422,7 @@ describe("PageWriterModelStep", () => {
     ).toThrow("DSL pageId 必须是");
   });
 
-  it("rejects content outside FunctionalTemplate slot bounds", () => {
+  it("does not reject semantic content by FunctionalTemplate slot arithmetic", () => {
     expect(() =>
       validatePageWriterOutput(
         {
@@ -190,29 +432,16 @@ describe("PageWriterModelStep", () => {
         },
         input,
       ),
-    ).toThrow("blocks 数量 0 不在模板范围 2-6");
+    ).not.toThrow();
   });
 
-  it("rejects low-information narration, block bodies, and reveal items", () => {
+  it("rejects deterministic low-information narration and reveal items", () => {
     expect(() =>
       validatePageWriterOutput(
         { ...pageContentDsl, narration: ["看特质！"] },
         input,
       ),
     ).toThrow("narration.0 过短");
-
-    expect(() =>
-      validatePageWriterOutput(
-        {
-          ...pageContentDsl,
-          blocks: [
-            { ...pageContentDsl.blocks[0]!, body: "勇敢聪明" },
-            pageContentDsl.blocks[1]!,
-          ],
-        },
-        input,
-      ),
-    ).toThrow("blocks.0.body 信息不足");
 
     if (pageContentDsl.interaction.type !== "reveal") {
       throw new Error("reveal fixture is required");
@@ -234,6 +463,30 @@ describe("PageWriterModelStep", () => {
     ).toThrow("content 必须解释标签");
   });
 
+  it("accepts a concise block body when the relationship is independently clear", () => {
+    const conciseBody = "视觉上，暖色前进，冷色后退。";
+
+    expect(
+      PageWriterBlockDraftSchema.parse({
+        kind: "fact",
+        heading: "冷暖空间感",
+        body: conciseBody,
+      }).body,
+    ).toBe(conciseBody);
+    expect(() =>
+      validatePageWriterOutput(
+        {
+          ...pageContentDsl,
+          blocks: [
+            { ...pageContentDsl.blocks[0]!, body: conciseBody },
+            pageContentDsl.blocks[1]!,
+          ],
+        },
+        input,
+      ),
+    ).not.toThrow();
+  });
+
   it("accepts concise narration when its semantic content is sufficient", () => {
     const conciseNarration = "比较石猴行动后的选择。";
 
@@ -249,7 +502,77 @@ describe("PageWriterModelStep", () => {
     ).not.toThrow();
   });
 
-  it("limits newly written quiz pages to one focused question and one block", () => {
+  it("rejects learner-facing content that is predominantly English in a Chinese course", () => {
+    if (pageContentDsl.interaction.type !== "reveal") {
+      throw new Error("reveal fixture is required");
+    }
+    const englishContent = {
+      ...pageContentDsl,
+      narration: [
+        "Start by comparing how these two objects produce or reflect light.",
+      ],
+      blocks: pageContentDsl.blocks.map((block, index) => ({
+        ...block,
+        heading: index === 0 ? "A star produces light" : "A planet reflects light",
+        body:
+          index === 0
+            ? "A star releases energy and produces its own light across the Solar System."
+            : "A planet travels around a star and reflects the light that reaches its surface.",
+        supportingPoints: [
+          index === 0
+            ? "The Sun is the star at the center of our Solar System."
+            : "Earth is a planet that travels around the Sun.",
+        ],
+      })),
+      interaction: {
+        ...pageContentDsl.interaction,
+        prompt: "Reveal each object to compare its most important feature.",
+        items: pageContentDsl.interaction.items.map((item, index) => ({
+          ...item,
+          label: index === 0 ? "The Sun" : "The Earth",
+          content:
+            index === 0
+              ? "The Sun is a star that produces light and releases energy."
+              : "The Earth is a planet that reflects sunlight as it travels around the Sun.",
+        })),
+      },
+    };
+
+    expect(() => validatePageWriterOutput(englishContent, input)).toThrow(
+      "课程语言为中文，但页面正文以英文为主",
+    );
+  });
+
+  it("allows bilingual content and target-language learning lessons", () => {
+    const bilingualInput: PageWriterInput = {
+      ...input,
+      intent: { ...input.intent, language: "bilingual" },
+    };
+    const englishLessonInput: PageWriterInput = {
+      ...input,
+      intent: { ...input.intent, topic: "英语词汇", language: "zh-CN" },
+    };
+    const englishContent = {
+      ...pageContentDsl,
+      narration: [
+        "Start by comparing how these two objects produce or reflect light.",
+      ],
+      blocks: pageContentDsl.blocks.map((block) => ({
+        ...block,
+        heading: "Learn these English astronomy words",
+        body: "Read each English sentence and explain its meaning using the lesson context.",
+      })),
+    };
+
+    expect(() =>
+      validatePageWriterOutput(englishContent, bilingualInput),
+    ).not.toThrow();
+    expect(() =>
+      validatePageWriterOutput(englishContent, englishLessonInput),
+    ).not.toThrow();
+  });
+
+  it("does not prune quiz content during final DSL validation", () => {
     const quiz = getFunctionalTemplateDslExample("interactive-quiz");
     if (!quiz || quiz.interaction.type !== "choice") {
       throw new Error("interactive-quiz fixture is required");
@@ -275,9 +598,7 @@ describe("PageWriterModelStep", () => {
       },
     };
 
-    expect(() => validatePageWriterOutput(quiz, quizInput)).toThrow(
-      "choice 页面必须且只能包含 1 道完整题目",
-    );
+    expect(() => validatePageWriterOutput(quiz, quizInput)).not.toThrow();
 
     const singleQuestion = {
       ...quiz,
@@ -302,9 +623,7 @@ describe("PageWriterModelStep", () => {
       },
     };
 
-    expect(() => validatePageWriterOutput(twoBlocks, quizInput)).toThrow(
-      "quiz 页面必须且只能包含 1 个题目内容块",
-    );
+    expect(() => validatePageWriterOutput(twoBlocks, quizInput)).not.toThrow();
     expect(() =>
       validatePageWriterOutput(singleQuestion, quizInput),
     ).not.toThrow();
@@ -470,7 +789,7 @@ describe("PageWriterModelStep", () => {
     ).not.toThrow();
   });
 
-  it("lets browser QA judge a timeline that needs all planned stages", () => {
+  it("asks an explore page to let interaction items carry timeline evidence", () => {
     const timeline = structuredClone(
       getFunctionalTemplateDslExample("learning-timeline"),
     );
@@ -527,10 +846,19 @@ describe("PageWriterModelStep", () => {
         ],
       },
     };
+    const interactionLedTimeline = {
+      ...timeline,
+      blocks: timeline.blocks.slice(0, 1),
+      layoutHints: {
+        ...timeline.layoutHints,
+        readingOrder: [timeline.blocks[0]!.id],
+      },
+    };
 
     expect(timeline.assetSlots[0]?.required).toBe(false);
-    expect(exceedsFixedCanvasCapacity(timeline)).toBe(false);
+    expect(exceedsFixedCanvasCapacity(timeline)).toBe(true);
     expect(exceedsFixedCanvasCapacity(denseTimeline)).toBe(true);
+    expect(exceedsFixedCanvasCapacity(interactionLedTimeline)).toBe(false);
     expect(() =>
       validatePageWriterOutput(
         denseTimeline,
@@ -539,7 +867,7 @@ describe("PageWriterModelStep", () => {
     ).not.toThrow();
   });
 
-  it("does not reject substantive card and comparison content by character estimate alone", () => {
+  it("budgets reveal and explore pages by semantic regions, not paragraph length", () => {
     const knowledge = getFunctionalTemplateDslExample(
       "knowledge-card-grid",
     );
@@ -599,15 +927,24 @@ describe("PageWriterModelStep", () => {
         })),
       },
     };
+    const interactionLedKnowledge = {
+      ...denseKnowledge,
+      blocks: denseKnowledge.blocks.slice(0, 1),
+      layoutHints: {
+        ...denseKnowledge.layoutHints,
+        readingOrder: [denseKnowledge.blocks[0]!.id],
+      },
+    };
 
-    expect(exceedsFixedCanvasCapacity(denseKnowledge)).toBe(false);
+    expect(exceedsFixedCanvasCapacity(denseKnowledge)).toBe(true);
+    expect(exceedsFixedCanvasCapacity(interactionLedKnowledge)).toBe(false);
     expect(() =>
       validatePageWriterOutput(
         denseKnowledge,
         pageWriterInputFor(denseKnowledge, "knowledge_card"),
       ),
     ).not.toThrow();
-    expect(exceedsFixedCanvasCapacity(knowledgeWithVisual)).toBe(false);
+    expect(exceedsFixedCanvasCapacity(knowledgeWithVisual)).toBe(true);
     expect(() =>
       validatePageWriterOutput(
         knowledgeWithVisual,
@@ -669,31 +1006,35 @@ describe("PageWriterModelStep", () => {
         ],
       },
     };
-    const compactComparison = {
+    const interactionLedComparison = {
       ...comparisonWithVisual,
-      blocks: comparisonWithVisual.blocks.map((block) => ({
+      blocks: comparisonWithVisual.blocks.slice(0, 1).map((block) => ({
         ...block,
         supportingPoints: block.supportingPoints.slice(0, 1),
       })),
+      layoutHints: {
+        ...comparisonWithVisual.layoutHints,
+        readingOrder: [comparisonWithVisual.blocks[0]!.id],
+      },
     };
 
-    expect(exceedsFixedCanvasCapacity(denseComparison)).toBe(false);
+    expect(exceedsFixedCanvasCapacity(denseComparison)).toBe(true);
     expect(() =>
       validatePageWriterOutput(
         denseComparison,
         pageWriterInputFor(denseComparison, "comparison"),
       ),
     ).not.toThrow();
-    expect(exceedsFixedCanvasCapacity(compactComparison)).toBe(false);
+    expect(exceedsFixedCanvasCapacity(interactionLedComparison)).toBe(false);
     expect(() =>
       validatePageWriterOutput(
-        compactComparison,
-        pageWriterInputFor(compactComparison, "comparison"),
+        interactionLedComparison,
+        pageWriterInputFor(interactionLedComparison, "comparison"),
       ),
     ).not.toThrow();
   });
 
-  it("lets browser QA judge dense quiz and summary compositions", () => {
+  it("asks choice content to remove prose that repeats the question", () => {
     const quiz = getFunctionalTemplateDslExample("interactive-quiz");
     const summary = getFunctionalTemplateDslExample("recap-summary");
     if (
@@ -734,6 +1075,15 @@ describe("PageWriterModelStep", () => {
         ],
       },
     };
+    const interactionLedQuiz = {
+      ...compactQuiz,
+      narration: [],
+      blocks: [],
+      layoutHints: {
+        ...compactQuiz.layoutHints,
+        readingOrder: [],
+      },
+    };
 
     expect(exceedsFixedCanvasCapacity(denseQuiz)).toBe(true);
     expect(() =>
@@ -742,7 +1092,8 @@ describe("PageWriterModelStep", () => {
         pageWriterInputFor(denseQuiz, "quiz"),
       ),
     ).not.toThrow();
-    expect(exceedsFixedCanvasCapacity(compactQuiz)).toBe(false);
+    expect(exceedsFixedCanvasCapacity(compactQuiz)).toBe(true);
+    expect(exceedsFixedCanvasCapacity(interactionLedQuiz)).toBe(false);
     expect(() =>
       validatePageWriterOutput(
         compactQuiz,
@@ -900,7 +1251,7 @@ describe("PageWriterModelStep", () => {
     ).toThrow("Page Writer 的资料引用必须是 PagePlan 引用的子集");
   });
 
-  it("distinguishes programming functions from mathematical function graphs", () => {
+  it("leaves the visual primitive open for the page designer", () => {
     const programmingRuntime = buildLessonRuntime({
       page: {
         ...page,
@@ -929,33 +1280,20 @@ describe("PageWriterModelStep", () => {
       interaction: pageContentDsl.interaction,
     });
 
-    expect(programmingRuntime.visualPrimitive).toBe("process");
-    expect(mathRuntime.visualPrimitive).toBe("function-graph");
+    expect(programmingRuntime.visualPrimitive).toBe("none");
+    expect(mathRuntime.visualPrimitive).toBe("none");
   });
 
-  it("adds stable technical IDs to each nested choice question", () => {
+  it("adds stable technical IDs to the single choice question", () => {
     expect(
       materializePageWriterInteraction({
         type: "choice",
-        prompt: "完成选择题。",
-        items: [],
-        questions: [
-          {
-            prompt: "哪一项符合定义？",
-            options: ["选项一", "选项二"],
-            correctOptionIndex: 1,
-            feedbackSuccess: "选项二满足定义中的全部条件。",
-            feedbackRetry: "请重新核对定义中的必要条件。",
-            maxAttempts: 2,
-          },
-        ],
-        feedbackSuccess: [],
-        feedbackRetry: [],
-        maxAttempts: 1,
-        placeholder: "未使用",
-        evaluationCriteria: [],
-        actionLabel: "未使用",
-        destination: "next",
+        prompt: "哪一项符合定义？",
+        options: ["选项一", "选项二"],
+        correctOptionIndex: 1,
+        feedbackSuccess: "选项二满足定义中的全部条件。",
+        feedbackRetry: "请重新核对定义中的必要条件。",
+        maxAttempts: 2,
       }),
     ).toEqual({
       type: "choice",

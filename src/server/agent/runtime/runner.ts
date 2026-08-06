@@ -242,6 +242,9 @@ export class AgentRunner<Tools extends ToolSet, Terminal> {
     const terminalStop = createCommittedTerminalStopCondition(
       request.terminalToolNames,
     );
+    const terminalToolNames = new Set<string>(
+      request.terminalToolNames,
+    );
     const fatalStop: RuntimeStopCondition = () =>
       executionGuard.fatalError !== undefined;
     const stepLimit = isStepCount(
@@ -276,6 +279,15 @@ export class AgentRunner<Tools extends ToolSet, Terminal> {
         await handle;
       },
       onToolExecutionEnd: async (event) => {
+        const terminalToolError =
+          event.toolOutput.type === "tool-error" &&
+          typeof event.toolCall?.toolName === "string" &&
+          terminalToolNames.has(event.toolCall.toolName)
+            ? toTerminalToolError(
+                event.toolCall.toolName,
+                event.toolOutput.error,
+              )
+            : undefined;
         if (request.toolLedger) {
           const handle = ledgerHandles.get(toolLedgerKey(event));
           if (!handle) {
@@ -286,7 +298,8 @@ export class AgentRunner<Tools extends ToolSet, Terminal> {
           }
           if (event.toolOutput.type === "tool-error") {
             await request.toolLedger.fail({
-              error: event.toolOutput.error,
+              error:
+                terminalToolError ?? event.toolOutput.error,
               handle: await handle,
             });
           } else {
@@ -298,14 +311,14 @@ export class AgentRunner<Tools extends ToolSet, Terminal> {
         }
         if (
           event.toolOutput.type === "tool-error" &&
-          shouldStopForToolError(
-            event.toolOutput.error,
-            request.isFatalToolError,
-          )
+          (terminalToolError ||
+            shouldStopForToolError(
+              event.toolOutput.error,
+              request.isFatalToolError,
+            ))
         ) {
-          executionGuard.fatalError ??= toError(
-            event.toolOutput.error,
-          );
+          executionGuard.fatalError ??=
+            terminalToolError ?? toError(event.toolOutput.error);
         }
       },
       prepareStep: async (input) => {
@@ -340,7 +353,23 @@ export class AgentRunner<Tools extends ToolSet, Terminal> {
         timeout: request.budget.timeout,
       });
     } catch (error) {
-      throw executionGuard.fatalError ?? error;
+      const runtimeError = executionGuard.fatalError ?? error;
+      console.error("[agent-runner]", {
+        event: "agent-run:error",
+        traceId: request.traceId,
+        workOrderId: request.workOrderId,
+        errorName:
+          runtimeError instanceof Error ? runtimeError.name : typeof runtimeError,
+        errorMessage:
+          runtimeError instanceof Error
+            ? runtimeError.message.slice(0, 4_000)
+            : String(runtimeError).slice(0, 4_000),
+        errorStack:
+          runtimeError instanceof Error
+            ? runtimeError.stack?.slice(0, 8_000)
+            : undefined,
+      });
+      throw runtimeError;
     }
 
     throwIfAgentAborted(request.abortSignal);
@@ -496,6 +525,16 @@ function toError(error: unknown) {
   return new FatalAgentRuntimeError(
     "AGENT_FATAL_TOOL_ERROR",
     "Agent 工具发生不可恢复错误。",
+    error,
+  );
+}
+
+function toTerminalToolError(toolName: string, error: unknown) {
+  if (isFatalAgentToolError(error)) return toError(error);
+
+  return new FatalAgentRuntimeError(
+    "AGENT_FATAL_TOOL_ERROR",
+    `终态工具 ${toolName} 执行失败。`,
     error,
   );
 }

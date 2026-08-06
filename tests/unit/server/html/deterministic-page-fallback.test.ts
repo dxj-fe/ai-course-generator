@@ -4,6 +4,7 @@ import { chromium } from "playwright";
 import {
   renderDeterministicPageFallback,
 } from "../../../../src/server/course/page/deterministic-fallback";
+import { buildQaLessonSrcDoc } from "../../../../src/server/infra/browser/page-screenshot";
 import { validateHtmlEngineerOutput } from "../../../../src/server/agent/plugins/model-steps/course/html-engineer-model-step";
 import { buildFittedLessonSrcDoc } from "../../../../src/shared/html-preview";
 import type {
@@ -142,6 +143,123 @@ function createSubstantialStoryContent(): PageContentDSL {
       readingOrder: ["block-01", "block-02", "block-03"],
     },
   };
+}
+
+function createSkyKnowledgeContent(): PageContentDSL {
+  const content = structuredClone(getExample("knowledge-card-grid"));
+  content.pageId = "page-01";
+  content.title = "同一片天空为什么颜色不同";
+  content.narration = [
+    "观察白天和傍晚的天空图片，思考颜色变化的原因。",
+  ];
+  content.blocks = [
+    {
+      id: "block-01",
+      kind: "fact",
+      heading: "天空颜色变化的现象",
+      body: "白天的天空呈蓝色，傍晚的晚霞呈红色，同一片天空在不同时间颜色不同。",
+      supportingPoints: ["这是日常可见的自然现象。"],
+    },
+    {
+      id: "block-02",
+      kind: "concept",
+      heading: "大气层厚度的影响",
+      body: "太阳光穿过大气层的厚度随时间变化：白天较薄，傍晚较厚。",
+      supportingPoints: ["太阳在头顶时，光线穿过的大气层路径更短。"],
+    },
+    {
+      id: "block-03",
+      kind: "concept",
+      heading: "光散射的核心",
+      body: "光遇到空气中的微小颗粒会发生散射，不同颜色的光散射程度不同。",
+      supportingPoints: ["波长较短的光更容易被散射。"],
+    },
+  ];
+  content.interaction = {
+    type: "explore",
+    prompt: "点击查看不同时间天空颜色变化的原因",
+    items: [
+      {
+        id: "item-01",
+        label: "白天天空",
+        content: "大气层薄，蓝光被大量散射，所以天空呈现蓝色。",
+      },
+      {
+        id: "item-02",
+        label: "傍晚天空",
+        content: "大气层厚，蓝光被散射殆尽，红光保留，所以晚霞偏红。",
+      },
+    ],
+  };
+  content.assetSlots = [];
+  content.layoutHints = {
+    ...content.layoutHints,
+    contentDensity: "balanced",
+    readingOrder: ["block-01", "block-02", "block-03"],
+  };
+  return content;
+}
+
+function createSkyScatteringContent(): PageContentDSL {
+  const content = createSkyKnowledgeContent();
+  content.pageId = "page-03";
+  content.title = "光遇到空气会发生什么";
+  content.narration = ["观察光遇到空气分子散射的动画，理解散射过程。"];
+  content.blocks = [
+    {
+      id: "block-01",
+      kind: "concept",
+      heading: "光的散射定义",
+      body: "光遇到微小颗粒时，光线会向不同方向散开，这种现象就是光的散射，是天空颜色变化的核心原因。",
+      supportingPoints: ["空气中的微小颗粒包括空气分子、灰尘等。"],
+    },
+    {
+      id: "block-02",
+      kind: "concept",
+      heading: "散射与波长的关系",
+      body: "不同颜色的光波长不同，波长越短的光，散射程度越强；波长越长的光，散射程度越弱。",
+      supportingPoints: ["可见光中，红光波长最长，蓝光波长最短。"],
+    },
+    {
+      id: "block-03",
+      kind: "concept",
+      heading: "空气分子对光的散射作用",
+      body: "空气中的微小分子会对太阳光产生散射，让太阳光向各个方向散开，这是白天天空呈现蓝色的关键原因。",
+      supportingPoints: ["空气分子的大小刚好适合散射波长较短的蓝光。"],
+    },
+  ];
+  content.interaction = {
+    type: "explore",
+    prompt: "点击不同颜色的光标签，查看它们在空气中的散射差异",
+    items: [
+      {
+        id: "item-01",
+        label: "红光",
+        content: "波长较长，在空气中散射程度弱，能传播到更远的地方。",
+      },
+      {
+        id: "item-02",
+        label: "蓝光",
+        content: "波长较短，在空气中散射程度强，会向各个方向散开。",
+      },
+      {
+        id: "item-03",
+        label: "绿光",
+        content: "波长中等，在空气中散射程度介于红光和蓝光之间。",
+      },
+    ],
+  };
+  content.assetSlots = [
+    {
+      id: "asset-slot-01",
+      type: "illustration",
+      role: "inline",
+      purpose: "展示光与空气分子相互作用的示意图",
+      required: true,
+      altTextGuidance: "展示光与空气分子相互作用的示意图。",
+    },
+  ];
+  return content;
 }
 
 function createFixedCanvasRegressionContents(): PageContentDSL[] {
@@ -314,6 +432,100 @@ function createAchievementCapacityBoundaryContent(): PageContentDSL {
   return achievement;
 }
 
+function createLongInputQuizContent(): PageContentDSL {
+  const quiz = structuredClone(getExample("interactive-quiz"));
+  quiz.title = "设计安全的散射实验";
+  quiz.narration = [
+    "请设计一个安全的散射实验，列出所需材料、操作步骤和安全注意事项。",
+  ];
+  quiz.blocks = [
+    {
+      id: "block-01",
+      kind: "concept",
+      heading: "安全散射实验的核心要素",
+      body: "安全的散射实验需使用常见易获取的材料，操作简单且无危险。",
+      supportingPoints: ["推荐材料：激光笔、透明容器、水、少量牛奶"],
+    },
+  ];
+  quiz.interaction = {
+    type: "input",
+    prompt: "请输入你设计的散射实验的材料、步骤和安全注意事项：",
+    placeholder:
+      "例如：材料：激光笔、透明玻璃杯、水、1勺牛奶；步骤：1. 玻璃杯装半杯水，加入牛奶搅拌；2. 用激光笔从侧面照射水中，观察光路；安全注意事项：1. 激光笔不直射眼睛；2. 实验后整理好器材。",
+    evaluationCriteria: [
+      "包含至少3种推荐材料",
+      "步骤清晰，能说明如何观察到光的散射",
+      "包含至少2条安全注意事项",
+    ],
+    feedback: {
+      success: "你设计的实验符合安全要求。",
+      retry: "请检查材料、步骤和安全注意事项。",
+    },
+  };
+  quiz.assetSlots = [];
+  quiz.runtime = {
+    sceneKind: "practice",
+    visualPrimitive: "process",
+    motionPlan: {
+      intensity: "none",
+      cuePoints: [
+        {
+          id: "cue-wait-interaction",
+          action: "wait-for-interaction",
+          targetId: "interaction-page-quiz",
+          delayMs: 0,
+          durationMs: 180,
+        },
+      ],
+    },
+    completionRule: {
+      type: "interaction-complete",
+      interactionId: "interaction-page-quiz",
+    },
+  };
+  return quiz;
+}
+
+function createMobileComparisonContent(): PageContentDSL {
+  const comparison = structuredClone(getExample("comparison-board"));
+  comparison.title = "晚霞为什么偏红";
+  comparison.narration = [
+    "对比白天和傍晚天空的颜色成因，分析晚霞偏红的原因。",
+  ];
+  comparison.blocks = [
+    {
+      id: "block-01",
+      kind: "fact",
+      heading: "白天天空颜色成因",
+      body: "白天太阳光穿过较薄的大气层，蓝光波长较短，更容易被散射，所以天空呈蓝色。",
+      supportingPoints: ["大气层厚度较薄"],
+    },
+    {
+      id: "block-02",
+      kind: "fact",
+      heading: "傍晚天空颜色成因",
+      body: "傍晚太阳光穿过更厚的大气层，大部分蓝光被散射，红光散射较少，所以晚霞呈红色。",
+      supportingPoints: ["大气层厚度更厚"],
+    },
+  ];
+  comparison.interaction = {
+    type: "sort",
+    prompt: "请将以下对比维度与对应的白天、傍晚情况匹配。",
+    items: [
+      { id: "item-01", label: "大气层厚度", content: "白天：较薄；傍晚：更厚" },
+      { id: "item-02", label: "散射的蓝光量", content: "白天：较多；傍晚：较少" },
+      { id: "item-03", label: "散射的红光量", content: "白天：较少；傍晚：较多" },
+    ],
+    correctOrderIds: ["item-01", "item-02", "item-03"],
+    feedback: {
+      success: "正确匹配了白天和傍晚的散射差异。",
+      retry: "请再对比大气层厚度与散射光量。",
+    },
+  };
+  comparison.assetSlots = [];
+  return comparison;
+}
+
 function createFiveNodeTimelineContent(): PageContentDSL {
   const timeline = structuredClone(getExample("learning-timeline"));
   if (timeline.interaction.type !== "explore") {
@@ -414,7 +626,7 @@ function createFiveNodeTimelineContent(): PageContentDSL {
 }
 
 describe("renderDeterministicPageFallback advanced layout", () => {
-  it("renders a contract-complete frontend-slides Broadside structural page", () => {
+  it("renders a contract-complete Broadside fallback with a code-native visual", () => {
     const broadside = getStyleTemplate("broadside");
     if (!broadside) throw new Error("测试需要 broadside 样式模板");
     const content = {
@@ -429,6 +641,7 @@ describe("renderDeterministicPageFallback advanced layout", () => {
     expect(html).toContain('data-keya-renderer="broadside-structural"');
     expect(html).toContain('class="masthead"');
     expect(html).toContain('class="course-native-visual"');
+    expect(html).toContain('<svg');
     expect(html).not.toContain('class="lesson-card"');
     expect(html).not.toContain("border-radius: var(--course-radius-card)");
     expect(() =>
@@ -439,19 +652,6 @@ describe("renderDeterministicPageFallback advanced layout", () => {
         } as unknown as VisualBrief,
       }),
     ).not.toThrow();
-
-    const listMasqueradingAsVisual = html.replace(
-      /<svg\b[\s\S]*?<\/svg>/i,
-      "<div>普通互动列表</div>",
-    );
-    expect(() =>
-      validateHtmlEngineerOutput(listMasqueradingAsVisual, {
-        content,
-        visualBrief: {
-          styleTemplateId: "broadside",
-        } as unknown as VisualBrief,
-      }),
-    ).toThrow(/必须包含真实 SVG 或 Canvas 图形/);
   });
 
   it("marks generated HTML as deterministic", () => {
@@ -461,6 +661,26 @@ describe("renderDeterministicPageFallback advanced layout", () => {
     });
 
     expect(html).toContain('data-keya-renderer="deterministic"');
+  });
+
+  it("fills the visual rail with a real code-native primitive when no asset exists", () => {
+    const content = structuredClone(getExample("story-intro"));
+    content.assetSlots = [];
+    content.runtime.visualPrimitive = "process";
+    const html = renderDeterministicPageFallback({
+      content,
+      styleTemplate,
+    });
+
+    expect(html).toContain('data-style-template="kids-playful"');
+    expect(html).toContain(
+      '<div class="course-native-visual" data-visual-primitive="process"',
+    );
+    expect(html).toContain('<svg viewBox="0 0 620 360"');
+    expect(html.indexOf('class="course-action"')).toBeLessThan(
+      html.indexOf('class="course-native-visual"'),
+    );
+    expect(html).not.toContain(".course-native-visual { display: none; }");
   });
 
   it("keeps lesson copy visible instead of hiding every block in closed details", () => {
@@ -562,6 +782,327 @@ describe("renderDeterministicPageFallback advanced layout", () => {
       );
     }
   });
+
+  it(
+    "keeps mobile quiz feedback inside the QA viewport after submit",
+    async () => {
+      const content = createFixedCanvasRegressionContents().find(
+        ({ functionalTemplateId }) =>
+          functionalTemplateId === "interactive-quiz",
+      );
+      if (!content) throw new Error("测试数据缺少 interactive-quiz");
+      const html = buildQaLessonSrcDoc(
+        renderDeterministicPageFallback({ content, styleTemplate }),
+        {
+          pageId: content.pageId,
+          runtime: content.runtime,
+          interaction: content.interaction,
+        },
+      );
+      const browser = await chromium.launch({ headless: true });
+
+      try {
+        const page = await browser.newPage({
+          viewport: { width: 366, height: 500 },
+        });
+        await page.setContent(html, { waitUntil: "domcontentloaded" });
+        await page.waitForFunction(
+          () => document.documentElement.dataset.keyaRuntime === "ready",
+        );
+        await page.locator(".option").first().click();
+        await page.locator('[data-runtime-submit="true"]').click();
+        expect(
+          await page.locator("[data-keya-runtime-feedback]").isVisible(),
+        ).toBe(true);
+
+        const metrics = await page.evaluate(() => {
+          const elements = [
+            document.documentElement,
+            document.body,
+            ...document.body.querySelectorAll<HTMLElement>("*"),
+          ];
+          return {
+            documentHeight: document.documentElement.scrollHeight,
+            viewportHeight: window.innerHeight,
+            clippedElementCount: elements.filter((element) => {
+              if (element.closest("[data-asset-slot-id]")) return false;
+              const style = getComputedStyle(element);
+              const clipsX = ["hidden", "clip"].includes(style.overflowX);
+              const clipsY = ["hidden", "clip"].includes(style.overflowY);
+              return (
+                (clipsX && element.scrollWidth > element.clientWidth + 1) ||
+                (clipsY && element.scrollHeight > element.clientHeight + 1)
+              );
+            }).length,
+          };
+        });
+
+        expect(metrics).toEqual({
+          documentHeight: 500,
+          viewportHeight: 500,
+          clippedElementCount: 0,
+        });
+        await page.close();
+      } finally {
+        await browser.close();
+      }
+    },
+    15_000,
+  );
+
+  it(
+    "keeps long input placeholders out of nested QA scroll regions",
+    async () => {
+      const content = createLongInputQuizContent();
+      const natureStyle = getStyleTemplate("nature");
+      if (!natureStyle) throw new Error("测试需要 nature 样式模板");
+      const html = buildQaLessonSrcDoc(
+        renderDeterministicPageFallback({ content, styleTemplate: natureStyle }),
+        {
+          pageId: content.pageId,
+          runtime: content.runtime,
+          interaction: content.interaction,
+        },
+      );
+      const browser = await chromium.launch({ headless: true });
+
+      try {
+        for (const viewport of [
+          { width: 922, height: 460 },
+          { width: 712, height: 650 },
+          { width: 366, height: 500 },
+        ]) {
+          const page = await browser.newPage({ viewport });
+          await page.setContent(html, { waitUntil: "domcontentloaded" });
+          await page.waitForFunction(
+            () => document.documentElement.dataset.keyaRuntime === "ready",
+          );
+          const metrics = await page.evaluate(() => {
+            const elements = [
+              document.documentElement,
+              document.body,
+              ...document.body.querySelectorAll<HTMLElement>("*"),
+            ];
+            return {
+              documentHeight: document.documentElement.scrollHeight,
+              viewportHeight: window.innerHeight,
+              nestedVerticalOverflowCount: elements.filter((element) => {
+                const style = getComputedStyle(element);
+                return (
+                  ["auto", "scroll"].includes(style.overflowY) &&
+                  element.clientHeight > 0 &&
+                  element.scrollHeight > element.clientHeight + 1
+                );
+              }).length,
+              clippedElementCount: elements.filter((element) => {
+                if (element.closest("[data-asset-slot-id]")) return false;
+                const style = getComputedStyle(element);
+                const clipsX = ["hidden", "clip"].includes(style.overflowX);
+                const clipsY = ["hidden", "clip"].includes(style.overflowY);
+                return (
+                  (clipsX && element.scrollWidth > element.clientWidth + 1) ||
+                  (clipsY && element.scrollHeight > element.clientHeight + 1)
+                );
+              }).length,
+            };
+          });
+
+          expect(metrics, `${viewport.width}x${viewport.height}`).toEqual({
+            documentHeight: viewport.height,
+            viewportHeight: viewport.height,
+            nestedVerticalOverflowCount: 0,
+            clippedElementCount: 0,
+          });
+          await page.close();
+        }
+      } finally {
+        await browser.close();
+      }
+    },
+    15_000,
+  );
+
+  it(
+    "fits a two-block comparison and three sort items in the mobile QA canvas",
+    async () => {
+      const content = createMobileComparisonContent();
+      const natureStyle = getStyleTemplate("nature");
+      if (!natureStyle) throw new Error("测试需要 nature 样式模板");
+      const html = buildQaLessonSrcDoc(
+        renderDeterministicPageFallback({ content, styleTemplate: natureStyle }),
+        {
+          pageId: content.pageId,
+          runtime: content.runtime,
+          interaction: content.interaction,
+        },
+      );
+      const browser = await chromium.launch({ headless: true });
+
+      try {
+        const page = await browser.newPage({
+          viewport: { width: 366, height: 500 },
+        });
+        await page.setContent(html, { waitUntil: "domcontentloaded" });
+        await page.waitForFunction(
+          () => document.documentElement.dataset.keyaRuntime === "ready",
+        );
+        const metrics = await page.evaluate(() => {
+          const elements = [
+            document.documentElement,
+            document.body,
+            ...document.body.querySelectorAll<HTMLElement>("*"),
+          ];
+          return {
+            documentHeight: document.documentElement.scrollHeight,
+            clippedElementCount: elements.filter((element) => {
+              if (element.closest("[data-asset-slot-id]")) return false;
+              const style = getComputedStyle(element);
+              const clipsX = ["hidden", "clip"].includes(style.overflowX);
+              const clipsY = ["hidden", "clip"].includes(style.overflowY);
+              return (
+                (clipsX && element.scrollWidth > element.clientWidth + 1) ||
+                (clipsY && element.scrollHeight > element.clientHeight + 1)
+              );
+            }).length,
+          };
+        });
+
+        expect(metrics).toEqual({
+          documentHeight: 500,
+          clippedElementCount: 0,
+        });
+        await page.close();
+      } finally {
+        await browser.close();
+      }
+    },
+    15_000,
+  );
+
+  it(
+    "fits three knowledge blocks and two explore items in the mobile QA canvas",
+    async () => {
+      const content = createSkyKnowledgeContent();
+      const natureStyle = getStyleTemplate("nature");
+      if (!natureStyle) throw new Error("测试需要 nature 样式模板");
+      const html = buildQaLessonSrcDoc(
+        renderDeterministicPageFallback({ content, styleTemplate: natureStyle }),
+        {
+          pageId: content.pageId,
+          runtime: content.runtime,
+          interaction: content.interaction,
+        },
+      );
+      const browser = await chromium.launch({ headless: true });
+
+      try {
+        const page = await browser.newPage({
+          viewport: { width: 366, height: 500 },
+        });
+        await page.setContent(html, { waitUntil: "domcontentloaded" });
+        await page.waitForFunction(
+          () => document.documentElement.dataset.keyaRuntime === "ready",
+        );
+        const metrics = await page.evaluate(() => {
+          const elements = [
+            document.documentElement,
+            document.body,
+            ...document.body.querySelectorAll<HTMLElement>("*"),
+          ];
+          return {
+            documentHeight: document.documentElement.scrollHeight,
+            clippedElementCount: elements.filter((element) => {
+              const style = getComputedStyle(element);
+              const clipsX = ["hidden", "clip"].includes(style.overflowX);
+              const clipsY = ["hidden", "clip"].includes(style.overflowY);
+              return (
+                (clipsX && element.scrollWidth > element.clientWidth + 1) ||
+                (clipsY && element.scrollHeight > element.clientHeight + 1)
+              );
+            }).length,
+          };
+        });
+
+        expect(metrics).toEqual({
+          documentHeight: 500,
+          clippedElementCount: 0,
+        });
+        await page.close();
+      } finally {
+        await browser.close();
+      }
+    },
+    15_000,
+  );
+
+  it(
+    "fits three scattering blocks with a background visual in every QA canvas",
+    async () => {
+      const content = createSkyScatteringContent();
+      const natureStyle = getStyleTemplate("nature");
+      if (!natureStyle) throw new Error("测试需要 nature 样式模板");
+      const html = buildQaLessonSrcDoc(
+        renderDeterministicPageFallback({
+          assets: [createReadyAsset(content, { assetType: "background" })],
+          content,
+          styleTemplate: natureStyle,
+        }),
+        {
+          pageId: content.pageId,
+          runtime: content.runtime,
+          interaction: content.interaction,
+        },
+      );
+      const browser = await chromium.launch({ headless: true });
+
+      try {
+        for (const viewport of [
+          { width: 922, height: 460 },
+          { width: 712, height: 650 },
+          { width: 366, height: 500 },
+        ]) {
+          const page = await browser.newPage({ viewport });
+          await page.route("**/*", (route) => route.abort());
+          await page.setContent(html, { waitUntil: "domcontentloaded" });
+          await page.waitForFunction(
+            () => document.documentElement.dataset.keyaRuntime === "ready",
+          );
+          const metrics = await page.evaluate(() => {
+            const elements = [
+              document.documentElement,
+              document.body,
+              ...document.body.querySelectorAll<HTMLElement>("*"),
+            ];
+            return {
+              contentHeight: Math.max(
+                document.documentElement.scrollHeight,
+                document.body.scrollHeight,
+              ),
+              clippedElementCount: elements.filter((element) => {
+                if (element.closest("[data-asset-slot-id]")) return false;
+                const style = getComputedStyle(element);
+                const clipsX = ["hidden", "clip"].includes(style.overflowX);
+                const clipsY = ["hidden", "clip"].includes(style.overflowY);
+                return (
+                  (clipsX && element.scrollWidth > element.clientWidth + 1) ||
+                  (clipsY && element.scrollHeight > element.clientHeight + 1)
+                );
+              }).length,
+            };
+          });
+
+          expect(metrics, `${viewport.width}x${viewport.height}`).toEqual({
+            contentHeight: viewport.height,
+            clippedElementCount: 0,
+          });
+          await page.close();
+        }
+      } finally {
+        await browser.close();
+      }
+    },
+    15_000,
+  );
 
   it(
     "fits a substantial story page at native scale without clipping required copy",

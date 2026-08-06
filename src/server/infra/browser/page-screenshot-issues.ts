@@ -44,15 +44,19 @@ export function collectBrowserIssues(
       evidence.metrics.documentHeight - evidence.viewport.height,
     );
   if (verticalOverflowPx > MAX_LAYOUT_ROUNDING_OVERFLOW_PX) {
+    const isNarrowViewport = evidence.viewport.width < 640;
     issues.push({
       code: "BROWSER_VERTICAL_OVERFLOW",
       dimension: "layoutQuality",
-      severity: "error",
+      severity: isNarrowViewport ? "warning" : "error",
       source: "browser",
-      message: `页面产生 ${verticalOverflowPx}px 纵向溢出。`,
+      message: isNarrowViewport
+        ? `移动端页面采用纵向阅读，文档比首屏长 ${verticalOverflowPx}px。`
+        : `页面产生 ${verticalOverflowPx}px 纵向溢出。`,
       location,
-      repairHint:
-        "压缩单页内容或在规划阶段拆分页面，确保全部教学内容在固定播放器画布内完整可见。",
+      repairHint: isNarrowViewport
+        ? "保留页面根节点自然滚动；只在出现裁切、嵌套滚动或主操作不可达时返工。"
+        : "压缩单页内容或在规划阶段拆分页面，确保横向播放器画布内完整可见。",
     });
   }
   if ((evidence.metrics.nestedVerticalOverflowCount ?? 0) > 0) {
@@ -85,19 +89,23 @@ export function collectBrowserIssues(
   if (
     (evidence.metrics.primaryActionBelowFoldCount ?? 0) > 0
   ) {
+    const isNarrowViewport = evidence.viewport.width < 640;
     issues.push({
       code: "BROWSER_PRIMARY_ACTION_BELOW_FOLD",
       dimension: "layoutQuality",
-      severity: "error",
+      severity: isNarrowViewport ? "warning" : "error",
       source: "browser",
-      message: `${evidence.metrics.primaryActionBelowFoldCount} 个课程主操作未完整出现在播放器首屏内。`,
+      message: isNarrowViewport
+        ? `${evidence.metrics.primaryActionBelowFoldCount} 个课程主操作位于移动端首屏之后，可通过页面滚动到达。`
+        : `${evidence.metrics.primaryActionBelowFoldCount} 个课程主操作未完整出现在播放器首屏内。`,
       location: {
         ...location,
         selector: '[data-interaction-type="navigate"]',
         description: "播放器首屏中的课程导航主操作",
       },
-      repairHint:
-        "压缩首屏装饰、标题或重复信息，让核心说明与主操作在当前播放器视口完整可见。",
+      repairHint: isNarrowViewport
+        ? "仅在操作不可达或被裁切时返工；移动端自然纵向阅读允许主操作位于首屏之后。"
+        : "压缩首屏装饰、标题或重复信息，让核心说明与主操作在当前播放器视口完整可见。",
     });
   }
   if (evidence.metrics.zeroSizeInteractiveCount > 0) {
@@ -193,7 +201,7 @@ export function collectBrowserIssues(
     issues.push({
       code: "BROWSER_VISUAL_DOMINATES_VIEWPORT",
       dimension: "assetUsability",
-      severity: "error",
+      severity: "info",
       source: "browser",
       message: `单个视觉素材占据约 ${Math.round((evidence.metrics.largestVisualAreaRatio ?? 0) * 100)}% 的首屏面积。`,
       location: {
@@ -204,7 +212,7 @@ export function collectBrowserIssues(
         description: "播放器首屏中占比最大的可见视觉素材",
       },
       repairHint:
-        "缩小或裁切素材，把标题、核心解释和学习动作放回首屏主焦点。",
+        "仅作为构图观察：沉浸式或海报页可以合理使用大面积主视觉。",
     });
   }
   if (
@@ -226,7 +234,7 @@ export function collectBrowserIssues(
     issues.push({
       code: "BROWSER_VISUAL_TOO_SMALL",
       dimension: "assetUsability",
-      severity: "error",
+      severity: "info",
       source: "browser",
       message: `页面要求展示的主插图仅占首屏约 ${Math.round(evidence.metrics.largestVisualAreaRatio * 100)}%，无法形成清晰的视觉焦点。`,
       location: {
@@ -237,7 +245,7 @@ export function collectBrowserIssues(
         description: "播放器首屏中面积过小的必需视觉素材",
       },
       repairHint:
-        "在不引起画布溢出的前提下扩大素材容器，使可见面积至少占视口 8%，建议达到 12%–30%；配合 object-fit 或 background-size 保持主体完整、清晰且不遮挡正文。",
+        "仅作为构图观察：由页面视觉命题判断素材是否需要更大，不以固定面积阈值返工。",
     });
   }
   if (
@@ -248,12 +256,12 @@ export function collectBrowserIssues(
     issues.push({
       code: "BROWSER_FIRST_SCREEN_TOO_EMPTY",
       dimension: "layoutQuality",
-      severity: "error",
+      severity: "info",
       source: "browser",
       message: `首屏可见教学内容面积不足 ${Math.round(evidence.metrics.visibleContentAreaRatio * 100)}%。`,
       location,
       repairHint:
-        "移除无效留白或空素材，让核心说明与互动形成完整首屏任务。",
+        "仅作为构图观察：有意图的留白与陈述页不以面积阈值返工。",
     });
   }
   if (
@@ -263,7 +271,7 @@ export function collectBrowserIssues(
     issues.push({
       code: "BROWSER_CANVAS_NOT_FILLED",
       dimension: "layoutQuality",
-      severity: "error",
+      severity: "warning",
       source: "browser",
       message: `课程主画布只覆盖约 ${Math.round(evidence.metrics.mainViewportCoverageRatio * 100)}% 的播放器视口。`,
       location: {
@@ -272,7 +280,7 @@ export function collectBrowserIssues(
         description: "新生成页面的主画布视口覆盖率",
       },
       repairHint:
-        "让 html、body、main 使用 100% 宽高和 border-box，并把页面安全留白放入 main 内边距。",
+        "检查主画布是否有意覆盖视口；只有真实裁切或不可达时才阻断交付。",
     });
   }
   return issues;

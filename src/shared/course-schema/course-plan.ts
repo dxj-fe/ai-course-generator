@@ -2,7 +2,13 @@ import { z } from "zod";
 
 import { CourseOutlineSchema } from "./course";
 
-const INTRO_PAGE_TYPES = new Set(["cover", "story_intro"]);
+const LEAD_PAGE_TYPES = new Set([
+  "cover",
+  "story_intro",
+  "knowledge_card",
+  "comparison",
+  "timeline",
+]);
 const CLOSING_PAGE_TYPES = new Set(["summary", "quiz", "achievement"]);
 const EXPLANATION_PAGE_TYPES = new Set([
   "knowledge_card",
@@ -24,11 +30,11 @@ export const CoursePlanSchema = CourseOutlineSchema.superRefine(
     if (
       !isSinglePageCourse &&
       firstPage &&
-      !INTRO_PAGE_TYPES.has(firstPage.pageType)
+      !LEAD_PAGE_TYPES.has(firstPage.pageType)
     ) {
       context.addIssue({
         code: "custom",
-        message: "课程第一页必须是封面或故事导入",
+        message: "课程第一页必须是导入页或知识讲解页",
         path: ["pages", 0, "pageType"],
       });
     }

@@ -26,14 +26,18 @@ import {
 } from "./html-engineer-text";
 
 const TRUSTED_PLAYER_LAYOUT_GUARD = `<style data-keya-layout-guard="current">
-html,body{width:100%!important;height:100%!important;margin:0!important;padding:0!important;overflow:visible!important;box-sizing:border-box}
-main[data-page-id]{position:relative;width:100%!important;height:100%!important;min-width:0;min-height:0;margin:0 auto!important;overflow:visible!important;box-sizing:border-box}
+html,body{width:100%!important;height:100%!important;margin:0!important;overflow:visible!important;box-sizing:border-box}
+main[data-page-id]{position:relative;width:100%!important;max-width:none!important;height:100%!important;min-width:0;min-height:0;margin:0 auto!important;overflow:visible!important;box-sizing:border-box}
 main[data-page-id],main[data-page-id] *,main[data-page-id] *::before,main[data-page-id] *::after{box-sizing:border-box}
 main[data-page-id]>*{min-width:0}
 main[data-page-id] img,main[data-page-id] svg,main[data-page-id] canvas,main[data-page-id] video{max-width:100%;max-height:100%}
 main[data-page-id] :where(button,[role="button"],summary,select,input:not([type="hidden"]),textarea){min-width:44px;min-height:44px}
 main[data-page-id] :where(button,[role="button"],summary,select,input,textarea):focus-visible{outline:2px solid var(--course-color-primary,currentColor);outline-offset:3px}
 main[data-page-id] [data-feedback-kind][hidden]{display:none!important}
+@media (max-width:520px){
+  html,body{height:auto!important;min-height:100%!important}
+  main[data-page-id]{height:auto!important;min-height:100%!important}
+}
 @media (prefers-reduced-motion:reduce){
   main[data-page-id] *,main[data-page-id] *::before,main[data-page-id] *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
 }
@@ -59,6 +63,62 @@ export function normalizeTrustedPlayerLayout(output: unknown) {
     TRUSTED_PLAYER_LAYOUT_GUARD +
     output.slice(headClose.index)
   );
+}
+
+/**
+ * 低高度平板仍需要保持横向构图。模型偶尔会在 712/768/922px 把 grid 或
+ * flex 整体折成单列；这里只把这种明确的单列断点推迟到 520px，不改字体、
+ * 间距等其他响应式规则，也不重写模型的桌面构图。
+ */
+export function normalizeWideSingleColumnBreakpoints(output: unknown) {
+  if (typeof output !== "string") return output;
+
+  const mediaPattern = /@media\s*\(\s*max-width\s*:\s*(\d+(?:\.\d+)?)px\s*\)(?:\s+and\s+\([^{}]*\))*\s*(?=\{)/gi;
+  const matches = [...output.matchAll(mediaPattern)];
+  if (matches.length === 0) return output;
+
+  let html = output;
+  for (const match of [...matches].reverse()) {
+    const threshold = Number(match[1]);
+    if (
+      !Number.isFinite(threshold) ||
+      threshold <= 520 ||
+      match.index === undefined
+    ) {
+      continue;
+    }
+    const bodyStart = match.index + match[0].length;
+    const nextMedia = output.indexOf("@media", bodyStart);
+    const styleEnd = output.indexOf("</style", bodyStart);
+    const boundaries = [nextMedia, styleEnd].filter(
+      (index) => index >= 0,
+    );
+    const bodyEnd =
+      boundaries.length > 0
+        ? Math.min(...boundaries)
+        : output.length;
+    const segment = output.slice(bodyStart, bodyEnd);
+    const collapsesToSingleColumn =
+      /grid-template-columns\s*:\s*1fr\s*(?:!important\s*)?(?:;|})/i.test(
+        segment,
+      ) ||
+      /flex-direction\s*:\s*column\s*(?:!important\s*)?(?:;|})/i.test(
+        segment,
+      );
+    if (!collapsesToSingleColumn) continue;
+
+    const normalizedHeader = match[0]
+      .replace(match[1]!, "520")
+      .replace(
+        /\s+and\s+\(\s*min-width\s*:\s*[^)]+\)/gi,
+        "",
+      );
+    html = `${html.slice(0, match.index)}${normalizedHeader}${html.slice(
+      match.index + match[0].length,
+    )}`;
+  }
+
+  return html;
 }
 
 /**
@@ -956,10 +1016,8 @@ export function normalizeChoiceInteractionRoot(
               ({ tag }) => /^<input\b/i.test(tag),
             ).length === 1,
         ) &&
-        findTagMatchesWithAttributes(element, {}).some(
-          ({ tag }) =>
-            /^<button\b/i.test(tag) &&
-            !/\sdisabled(?:\s|=|\/?>)/i.test(tag),
+        findTagMatchesWithAttributes(element, {}).some(({ tag }) =>
+          /^<button\b/i.test(tag),
         ) &&
         relatedMarkers.every((related) => isWithin(related, marker)),
     );
@@ -1058,7 +1116,7 @@ export function normalizeChoiceRuntimeMarkers(
     const candidates = findTagMatchesWithAttributes(html, {})
       .filter(
         (marker) =>
-          /^(?:<fieldset|<section|<article|<div|<li)\b/i.test(
+          /^(?:<form|<fieldset|<section|<article|<div|<li)\b/i.test(
             marker.tag,
           ) &&
           (isOpeningTagInsideElement(html, marker, root) ||
@@ -1131,7 +1189,6 @@ export function normalizeChoiceRuntimeMarkers(
       .filter(
         (marker) =>
           /^<button\b/i.test(marker.tag) &&
-          !/\sdisabled(?:\s|=|\/?>)/i.test(marker.tag) &&
           isOpeningTagInsideElement(html, marker, interactionRoot),
       )
       .map((marker) => ({

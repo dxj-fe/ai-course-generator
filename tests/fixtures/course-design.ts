@@ -167,20 +167,26 @@ export const visualBrief: VisualBrief = {
   pageGuidance: [
     {
       pageId: "page-01-cover",
+      theme: "从舷窗进入太阳系观察任务",
       focalPoint: "空间观察台入口",
       composition: "居中主视觉配底部行动按钮",
+      graphicMotif: "用轨道圆环和舷窗边框建立观察入口",
       assetPurpose: "建立探索情境和方向感",
     },
     {
       pageId: "page-02-knowledge",
+      theme: "两份天体光源档案的并置调查",
       focalPoint: "太阳与行星对比卡",
       composition: "左右两组等权卡片，揭示前保持轮廓提示",
+      graphicMotif: "用发光核心与反射轨道对比是否自身发光",
       assetPurpose: "帮助观察能否自行发光的差异",
     },
     {
       pageId: "page-03-summary",
+      theme: "完成观察记录并封存两条发现",
       focalPoint: "两项探索发现",
       composition: "纵向总结卡配一个完成状态标记",
+      graphicMotif: "用两枚已确认的轨道印章回收核心结论",
       assetPurpose: "帮助回忆而不引入新信息",
     },
   ],

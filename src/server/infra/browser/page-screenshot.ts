@@ -27,6 +27,9 @@ const QA_VIEWPORTS = [
 ] as const;
 const DEFAULT_TIMEOUT_MS = 12_000;
 
+export const VISUAL_PROMINENCE_SELECTOR =
+  "img,svg,canvas,[role='img'],[data-asset-slot-id]";
+
 export type BrowserScreenshotMetrics = NonNullable<
   QualityScreenshotCapture["metrics"]
 >;
@@ -36,6 +39,11 @@ type ScreenshotCapture = QualityScreenshotCapture;
 export type BrowserScreenshotSnapshot = {
   png: Uint8Array;
   metrics: BrowserScreenshotMetrics;
+};
+
+export type PageScreenshotModelImage = {
+  viewport: BrowserViewport;
+  png: Uint8Array;
 };
 
 export type VisualProminenceCandidate = {
@@ -94,6 +102,8 @@ export type PageScreenshotResult = {
   issues: QualityIssue[];
   /** 只供服务器日志和测试使用，不能进入共享 QualityReport。 */
   serverPath?: string;
+  /** 只供本次 Page QA 多模态请求使用，不能进入共享 QualityReport 或日志。 */
+  modelImages?: PageScreenshotModelImage[];
 };
 
 type CapturePageScreenshotOptions = {
@@ -199,6 +209,12 @@ export async function capturePageScreenshot(
 
   const captures: ScreenshotCapture[] = [];
   const serverPaths = new Map<string, string>();
+  const modelImages: PageScreenshotModelImage[] = outcomes.flatMap(
+    ({ snapshot, error, viewport }) =>
+      snapshot && !error
+        ? [{ viewport, png: snapshot.png }]
+        : [],
+  );
   for (const outcome of outcomes) {
     if (!outcome.snapshot || outcome.error || storageError) {
       captures.push(
@@ -245,6 +261,7 @@ export async function capturePageScreenshot(
       collectBrowserIssues(input.pageId, capture, input.content),
     ),
     serverPath: serverPaths.get("desktop"),
+    ...(modelImages.length > 0 ? { modelImages } : {}),
   };
 }
 
@@ -420,7 +437,7 @@ async function captureViewport(
       await page.waitForTimeout(32);
     }
 
-    const evaluated = await page.evaluate(() => {
+    const evaluated = await page.evaluate((visualProminenceSelector) => {
       const root = document.documentElement;
       const body = document.body;
       const interactiveElements = Array.from(
@@ -559,7 +576,7 @@ async function captureViewport(
       };
       const visualCandidates = Array.from(
         document.querySelectorAll<HTMLElement>(
-          "img,[role='img'],[data-asset-slot-id]",
+          visualProminenceSelector,
         ),
       ).map((element) => {
           const rect = element.getBoundingClientRect();
@@ -646,7 +663,7 @@ async function captureViewport(
         visibleContentAreaRatio: Math.min(1, visibleArea / viewportArea),
         visualCandidates,
       };
-    });
+    }, VISUAL_PROMINENCE_SELECTOR);
     const {
       visualCandidates,
       visibleInteractiveSizes,

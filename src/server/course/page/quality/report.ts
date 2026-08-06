@@ -45,6 +45,24 @@ const DIMENSION_PRIORITY: Record<QualityDimensionName, number> = {
 
 const SEVERITY_PRIORITY = { error: 0, warning: 1, info: 2 } as const;
 
+const DELIVERY_BLOCKING_BROWSER_CODES = new Set([
+  "BROWSER_HORIZONTAL_OVERFLOW",
+  "BROWSER_VERTICAL_OVERFLOW",
+  "BROWSER_NESTED_VERTICAL_OVERFLOW",
+  "BROWSER_CONTENT_CLIPPED",
+  "BROWSER_PRIMARY_ACTION_BELOW_FOLD",
+  "BROWSER_TOUCH_TARGET_UNDER_24",
+  "BROWSER_FEEDBACK_VISIBLE_BY_DEFAULT",
+  "BROWSER_INTERACTION_SUBMIT_UNTESTED",
+  "BROWSER_INTERACTION_FEEDBACK_MISSING",
+]);
+const DELIVERY_BLOCKING_VISUAL_CODES = new Set([
+  "VISUAL_GENERIC_UI",
+  "VISUAL_NO_FOCAL_POINT",
+  "VISUAL_HIERARCHY_FAILURE",
+  "VISUAL_INFORMATION_DUPLICATION",
+]);
+
 /** 合并确定性与模型证据，并由代码统一计算观测分数和交付决策。 */
 export function buildPageQualityReport(input: {
   pageId: string;
@@ -72,6 +90,7 @@ export function buildPageQualityReport(input: {
         ),
     ),
   ])
+    .map(normalizeIssueSeverityForDelivery)
     .sort(compareQualityIssues)
     .slice(0, 50);
   const dimensions = attachDimensionEvidence(
@@ -85,9 +104,7 @@ export function buildPageQualityReport(input: {
       0,
     ),
   );
-  const shouldRepair = issues.some(
-    ({ severity }) => severity === "error",
-  );
+  const shouldRepair = issues.some(isDeliveryBlockingQualityIssue);
   const hardFailure = issues.some(
     ({ code, severity }) =>
       severity === "error" &&
@@ -108,6 +125,50 @@ export function buildPageQualityReport(input: {
   });
 }
 
+/**
+ * 生产修订只由内容、安全、运行时和真实不可用布局触发。审美评分、截图服务
+ * 状态与面积启发式继续作为观测数据，不再伪装成发布门禁。
+ */
+export function isDeliveryBlockingQualityIssue(issue: QualityIssue) {
+  return issue.severity === "error" && isDeliveryBlockingIssueKind(issue);
+}
+
+function isDeliveryBlockingIssueKind(issue: QualityIssue) {
+  if (DELIVERY_BLOCKING_VISUAL_CODES.has(issue.code)) {
+    return true;
+  }
+  if (
+    issue.code.startsWith("HTML_CONTRACT_") ||
+    issue.code.startsWith("HTML_SAFETY_")
+  ) {
+    return true;
+  }
+  if (issue.code.startsWith("BROWSER_")) {
+    return DELIVERY_BLOCKING_BROWSER_CODES.has(issue.code);
+  }
+  return (
+    issue.dimension === "contentAccuracy" ||
+    issue.dimension === "courseCoherence" ||
+    issue.dimension === "htmlRuntime"
+  );
+}
+
+function normalizeIssueSeverityForDelivery(
+  issue: QualityIssue,
+): QualityIssue {
+  if (
+    issue.severity !== "error" ||
+    isDeliveryBlockingIssueKind(issue)
+  ) {
+    return issue;
+  }
+
+  return {
+    ...issue,
+    severity: "warning",
+  };
+}
+
 function isBrowserOwnedIssueCode(code: string) {
   return code.startsWith("BROWSER_") || code.startsWith("SCREENSHOT_");
 }
@@ -124,14 +185,14 @@ function screenshotGateIssues(input: {
       {
         code: "SCREENSHOT_EVIDENCE_MISSING",
         dimension: "layoutQuality",
-        severity: "error",
+        severity: "warning",
         source: "browser",
-        message: "页面缺少强制截图证据，不能通过质量闸门。",
+        message: "页面缺少截图观测证据。",
         location: {
           pageId: input.pageId,
           description: "页面视觉质量闸门",
         },
-        repairHint: "在真实播放器、平板和移动视口完成截图后重新运行 QA。",
+        repairHint: "恢复截图能力后补充观测；不替代页面安全与运行时检查。",
       },
     ];
   }
@@ -146,16 +207,16 @@ function screenshotGateIssues(input: {
                 ? "SCREENSHOT_CAPTURE_SKIPPED"
                 : "SCREENSHOT_CAPTURE_FAILED",
             dimension: "layoutQuality" as const,
-            severity: "error" as const,
+            severity: "warning" as const,
             source: "browser" as const,
-            message: `截图证据${capture.status === "skipped" ? "被跳过" : "采集失败"}，当前页面不能通过。`,
+            message: `截图证据${capture.status === "skipped" ? "被跳过" : "采集失败"}。`,
             location: {
               pageId: input.pageId,
               viewport: `${capture.viewport.width}x${capture.viewport.height}`,
               description: "强制截图质量证据",
             },
             repairHint:
-              "恢复 Playwright 与截图存储后，在全部要求视口重新采集并复验。",
+              "恢复截图与存储后补充观测，不将基础设施故障归因于页面设计。",
           },
         ],
   );

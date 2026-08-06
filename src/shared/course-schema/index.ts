@@ -160,11 +160,13 @@ export {
   type StoryPageBeat,
 } from "./story";
 export {
+  DesignDirectionSchema,
   VisualAssetDirectionSchema,
   VisualBriefSchema,
   VisualMotionIntensitySchema,
   VisualMotionGuidanceSchema,
   VisualPageGuidanceSchema,
+  type DesignDirection,
   type VisualAssetDirection,
   type VisualBrief,
   type VisualMotionIntensity,

@@ -24,11 +24,13 @@
 - heuristics 是确定性证据，不得否认；可以补充影响，但不要复制相同问题。
 - browserIssues 和 screenshotEvidence 是固定视口的浏览器证据；存在时必须纳入对应维度，不得伪造成其他视口结论。
 - 内容事实错误必须输出 error，不能因为页面美观或其他维度高分而降低严重度。
+- courseContext.facts 与 courseContext.terms 是本页可信事实边界。逐项核对 DSL 和 HTML；输入只给相对关系时，页面新增的数值范围、倍率、百分比、年份，或把“大部分、主要、更强”强化成“完全、全部、只剩”的绝对断言，都属于未授权事实并必须输出 contentAccuracy error。
 - courseCoherence 必须核对本页目标、课程学习目标、前后页承接和理解检查是否形成有效教学路径；空泛填充、跨页重复、缺少具体示例、练习未检验目标或反馈不解释原因，都必须降低该维度分数并输出可定位问题。
 - styleConsistency 必须逐项对照 VisualBrief 的构图、排版、色彩、素材和无障碍约束。
 - 六维期望目标为：contentAccuracy 88、courseCoherence 88、layoutQuality 82、styleConsistency 82、htmlRuntime 92、assetUsability 80。分数用于观测，不是自动返工门槛。只有能够指出具体位置、影响和修复方向时才输出 issue；不要为了给低分补造问题。一般改进建议使用 warning，只有会妨碍正确学习、操作、可读性、安全或交付合同的问题才使用 error。
 - layoutQuality 必须以课程播放器固定内容视口为准，重点检查 366×500、712×650、922×460。任何页面的文档纵向溢出、根页面滚动、嵌套正文滚动或必要内容裁切都是 error；标题、核心说明和主操作被大标题、装饰或重复卡片推离画布时也必须降低分数。
 - styleConsistency 不得仅检查颜色是否一致；还要识别通用后台面板、等权卡片堆叠、缺少主焦点、过度装饰和素材/HTML 信息重复。
+- 只有截图直接证明页面存在结构性视觉失败时，才把下列稳定 code 标为 error：`VISUAL_GENERIC_UI`（页面退化为无主题的后台/组件面板）、`VISUAL_NO_FOCAL_POINT`（没有承担学习目标的主视觉或主动作）、`VISUAL_HIERARCHY_FAILURE`（标题、证据和动作主次混乱，妨碍理解）、`VISUAL_INFORMATION_DUPLICATION`（同一信息被素材、图形和文字实质重复并挤占画布）。轻微偏好仍用 warning；不得仅凭分数或风格喜好使用这些 code。
 - 每个具体问题都必须输出可操作的 repairHint；程序会按 dimension 派生维度内 issueCodes 和 repairHints。
 - severity 只能是 `info`、`warning`、`error` 之一，不得使用 high、medium、low 或其他同义词。
 - 每个 location 只允许 pageId、blockId、selector、viewport、description；必须包含 2–240 字符的 description。视口字段只能使用单数键 viewport 和字符串值，禁止输出复数键 viewports 或数组；即使已有 blockId、selector 或 viewport 也不能省略 description。

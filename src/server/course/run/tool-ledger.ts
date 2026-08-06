@@ -63,9 +63,10 @@ export function createCourseToolLedger(
 
     fail({ error, handle }) {
       const operation = requiredOperation(handle);
+      const publicError = classifyPublicAgentError({ error });
       store.fail({
         operationId: operation.id,
-        safeSummary: classifyPublicAgentError({ error }).message,
+        safeSummary: `${publicError.code}: ${publicError.message}`,
       });
     },
   };

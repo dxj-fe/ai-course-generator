@@ -45,7 +45,10 @@ describe("页面确定性 Gate", () => {
       ...candidate,
     });
 
-    expect(result.ok).toBe(true);
+    expect(
+      result.ok,
+      result.ok ? undefined : JSON.stringify(result.issues),
+    ).toBe(true);
     if (result.ok) {
       expect(result.payloads.summary).toMatchObject({
         courseId: COURSE_ID,
@@ -57,7 +60,134 @@ describe("页面确定性 Gate", () => {
     }
   });
 
-  it("低主观分数不单独触发返工，但没有截图证据仍不能提交", () => {
+  it("互动承载全部正文时仍能生成可提交的内容摘要", () => {
+    const candidate = validCandidate();
+    const content: PageContentDSL = {
+      ...candidate.content,
+      narration: [],
+      blocks: [],
+      layoutHints: {
+        ...candidate.content.layoutHints,
+        readingOrder: [],
+      },
+      interaction: {
+        type: "reveal",
+        prompt: "点击两个天体查看判断依据。",
+        items: [
+          {
+            id: "item-star",
+            label: "恒星",
+            content: "恒星能够自身发光发热。",
+          },
+          {
+            id: "item-planet",
+            label: "行星",
+            content: "行星不会自身发光。",
+          },
+        ],
+      },
+    };
+    const style = getStyleTemplate("minimal");
+    if (!style) throw new Error("测试需要 minimal 样式模板");
+    const result = runPageGate({
+      architecture: architecture(),
+      creationBrief: creationBrief(),
+      referencePacks: [],
+      pageId: PAGE_ID,
+      ...candidate,
+      content,
+      html: {
+        ...candidate.html,
+        html: renderDeterministicPageFallback({
+          content,
+          styleTemplate: style,
+        }),
+      },
+    });
+
+    expect(
+      result.ok,
+      result.ok ? undefined : JSON.stringify(result.issues),
+    ).toBe(true);
+    if (result.ok) {
+      expect(result.payloads.summary.contentDigest).toContain(
+        "恒星能够自身发光发热",
+      );
+    }
+  });
+
+  it("拒绝与课程语言不一致的整页学习内容", () => {
+    const candidate = validCandidate();
+    const content: PageContentDSL = {
+      ...candidate.content,
+      narration: [
+        "Compare these objects and decide whether each one produces its own light.",
+      ],
+      blocks: candidate.content.blocks.map((block, index) => ({
+        ...block,
+        heading: index === 0 ? "A star produces light" : "A planet reflects light",
+        body:
+          index === 0
+            ? "A star releases energy and produces its own light across the Solar System."
+            : "A planet travels around a star and reflects the light that reaches its surface.",
+        supportingPoints: [
+          index === 0
+            ? "The Sun is the star at the center of our Solar System."
+            : "Earth is a planet that travels around the Sun.",
+        ],
+      })),
+      interaction: {
+        type: "reveal",
+        prompt: "Reveal each object to compare its most important feature.",
+        items: [
+          {
+            id: "item-star",
+            label: "The Sun",
+            content: "The Sun is a star that produces light and releases energy.",
+          },
+          {
+            id: "item-planet",
+            label: "The Earth",
+            content: "The Earth is a planet that reflects light from the Sun.",
+          },
+        ],
+      },
+    };
+    const style = getStyleTemplate("minimal");
+    if (!style) throw new Error("测试需要 minimal 样式模板");
+    const html = {
+      ...candidate.html,
+      html: renderDeterministicPageFallback({
+        content,
+        styleTemplate: style,
+      }),
+    };
+    const result = runPageGate({
+      architecture: architecture(),
+      creationBrief: creationBrief(),
+      referencePacks: [],
+      pageId: PAGE_ID,
+      ...candidate,
+      content,
+      html,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: "PAGE_CONTENT_CONTRACT_FAILED",
+            message: expect.stringContaining(
+              "课程语言为中文，但页面正文以英文为主",
+            ),
+          }),
+        ]),
+      );
+    }
+  });
+
+  it("低主观分数和截图基础设施状态都不替代交付故障判断", () => {
     const candidate = validCandidate();
     const quality = {
       ...candidate.quality,
@@ -80,12 +210,7 @@ describe("页面确定性 Gate", () => {
       quality,
     });
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.issues.map(({ code }) => code)).toEqual(
-        ["PAGE_SCREENSHOT_EVIDENCE_MISSING"],
-      );
-    }
+    expect(result.ok).toBe(true);
   });
 
   it("有完整证据且没有可定位 error 时，不因单个模型分数较低拒绝首轮页面", () => {

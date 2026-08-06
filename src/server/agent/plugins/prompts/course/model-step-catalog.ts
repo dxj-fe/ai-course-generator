@@ -114,11 +114,7 @@ export const MODEL_STEP_PROMPT_CATALOG = [
     outputSchema: "PageContentDSLSchema",
     moduleFile: "page-writer.ts",
     templateVariables: [
-      "courseIntentJson",
-      "courseArchitectureContextJson",
-      "pagePlanJson",
-      "pageWorkerBriefJson",
-      "functionalTemplateJson",
+      "pageBriefJson",
       "referenceContextJson",
       "validationFeedbackJson",
     ],
@@ -126,7 +122,7 @@ export const MODEL_STEP_PROMPT_CATALOG = [
       name: "page-writer-system",
       role: "system",
       inputContract: [
-        "已校验的 CourseIntent、单页 PagePlan、同页 PageWorkerBrief 和唯一 FunctionalTemplate。",
+        "一个合并后的单页学习 brief、授权资料与可选修订反馈。",
       ],
       outputContract: [
         "只返回直接满足本页 learningObjective 的内容语义草稿；技术 ID 和素材槽由代码补齐。",
@@ -174,21 +170,17 @@ export const MODEL_STEP_PROMPT_CATALOG = [
     outputSchema: "HtmlOutputSchema",
     moduleFile: "html-engineer.ts",
     templateVariables: [
-      "pageContentDslJson",
-      "functionalTemplateJson",
-      "styleTemplateJson",
+      "pageBriefJson",
+      "designDirectionJson",
       "styleCssText",
-      "visualBriefJson",
-      "pageGuidanceJson",
       "assetsJson",
-      "pageDesignGuidanceJson",
       "validationFeedbackJson",
     ],
     system: {
       name: "html-engineer-system",
       role: "system",
       inputContract: [
-        "只接收 DSL、服务端模板、视觉指导和已校验素材；不接收原始用户 Prompt。",
+        "只接收精简 PageBrief、当前页 DesignDirection、CSS 变量和已校验素材。",
       ],
       outputContract: [
         "只返回以 <!doctype html> 开始的完整、自包含静态 HTML。",

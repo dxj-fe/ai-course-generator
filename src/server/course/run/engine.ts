@@ -362,6 +362,13 @@ async function runCourseToTerminal(
     throw new Error("CourseRunEngine 超过最大状态迁移次数");
   } catch (error) {
     if (isAbortError(error, context.abortSignal)) throw error;
+    console.error("[course-run]", {
+      event: "engine:error",
+      traceId: input.traceId,
+      taskId: input.taskId,
+      courseId: input.courseId,
+      ...serializeErrorForLog(error),
+    });
     const current = repository.runs.load(run.id);
     if (current && TERMINAL_PHASES.has(current.phase)) {
       return checkpoint();

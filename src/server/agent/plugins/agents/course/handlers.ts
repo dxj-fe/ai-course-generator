@@ -51,9 +51,15 @@ export function createCourseAgentHandlerPlugins(
     {
       id: AgentIds.CourseDirector,
       execute: async (request) => {
-        await implementations.runDirector(commonInput(request), {
-          model: request.model,
-        });
+        await implementations.runDirector(
+          {
+            ...commonInput(request),
+            creationBrief: request.creationBrief,
+          },
+          {
+            model: request.model,
+          },
+        );
       },
     },
     {

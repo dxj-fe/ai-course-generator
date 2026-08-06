@@ -5,6 +5,7 @@ export type AiCapability =
   | "course-review"
   | "general"
   | "html"
+  | "html-repair"
   | "image-prompt"
   | "page-qa"
   | "page-writer"
@@ -22,6 +23,7 @@ export type ModelRoute = {
 };
 
 const STRONG_CAPABILITIES = new Set<AiCapability>([
+  "html-repair",
   "page-qa",
   "page-writer",
   "pedagogy",
@@ -37,20 +39,23 @@ const CHEAP_CAPABILITIES = new Set<AiCapability>([
 
 /** 路由规则是服务端业务配置，模型和前端都不能自行选择档位。 */
 export function resolveModelRoute(capability: AiCapability): ModelRoute {
-  // 课程架构需要长工具回合。当前平衡档在完整输出和终态工具提交上更稳定，
-  // 强档作为失败升级；Blueprint Gate 与 Director 继续承担独立质量验收。
+  // 课程架构是多步工具循环；平衡档能在单次预算内完成 Gate 修复，
+  // 强档只在供应商瞬时失败时兜底，避免主档耗尽整个 WorkOrder。
   if (capability === "course-architecture") {
     return { primary: "balanced", fallback: "strong" };
   }
-  // 整课审查依赖多轮工具调用。平衡档在长工具回合中比强档更稳定，
-  // 仅在供应商失败时再升级强档，避免整课已经生成却卡在发布 Gate。
+  // 整课审查要综合页面证据与教学目标，保持质量优先；供应商瞬时失败时
+  // 才降级，不能默认让较弱模型决定整课是否可发布。
   if (capability === "course-review") {
-    return { primary: "balanced", fallback: "strong" };
+    return { primary: "strong", fallback: "balanced" };
   }
-  // 当前强档 HTML 模型在固定 120s 窗口内频繁超时；平衡档能稳定完成长 HTML
-  // 输出，失败时再升级强档，比每页先等待一次超时更可靠。
+  // 专用代码模型失败后仍优先保住教学图示与构图质量；只有强档也遇到
+  // 瞬时供应商故障时才降级到平衡档。
   if (capability === "html") {
-    return { primary: "balanced", fallback: "strong" };
+    return { primary: "strong", fallback: undefined };
+  }
+  if (capability === "html-repair") {
+    return { primary: "strong", fallback: undefined };
   }
   if (STRONG_CAPABILITIES.has(capability)) {
     return { primary: "strong", fallback: "balanced" };

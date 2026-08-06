@@ -47,26 +47,17 @@ export function createCourseReviewerBudget(
     throw new Error("Reviewer 页面数必须是 1 到 200 的整数。");
   }
 
-  const evidenceBatchCount = Math.ceil(
-    pageCount / COURSE_REVIEWER_PAGE_BATCH_LIMIT,
-  );
-  // 必需调用：课程矩阵 1 次、摘要/质量各 N 批、校验 1 次、终态 1 次。
-  const requiredToolCalls = 2 * evidenceBatchCount + 3;
-  // 每批额外留 1 次定向核对，再留 6 次修正/重试；最大课程仍只有 35 次。
-  const boundedToolCalls =
-    requiredToolCalls + evidenceBatchCount + 6;
-
   return {
     maxSteps: Math.min(
-      boundedToolCalls,
+      4,
       REVIEWER_DEFAULTS.budget.maxSteps,
     ),
     maxToolCalls: Math.min(
-      boundedToolCalls,
+      4,
       REVIEWER_DEFAULTS.budget.maxToolCalls,
     ),
     timeoutMs: Math.min(
-      180_000 + (evidenceBatchCount - 1) * 30_000,
+      120_000,
       REVIEWER_DEFAULTS.budget.timeoutMs,
     ),
     maxOutputTokens: REVIEWER_DEFAULTS.budget.maxOutputTokens,
@@ -209,6 +200,12 @@ export function authorizeCourseReviewerToolCall(
   const current = assertCurrentReviewerState(execution, now, true);
   if (!current.allowedTools.includes(input.toolName)) return false;
   if (
+    input.toolName === ToolIds.SubmitCourseReview &&
+    isCourseReviewerBlockEligible(execution)
+  ) {
+    return false;
+  }
+  if (
     input.toolName === ToolIds.BlockCourseReview &&
     !isCourseReviewerBlockEligible(execution)
   ) {
@@ -273,6 +270,26 @@ export function loadCourseReviewerSnapshot(
     pageSummaries,
     workOrder,
   };
+}
+
+/**
+ * Reviewer 只需对已封口证据作一次语义判断。Harness 在调用模型前
+ * 确定性地读取全部摘要和质量报告，避免模型在分页读取循环中耗尽时间。
+ */
+export function preloadCourseReviewerEvidence(
+  execution: CourseReviewerExecution,
+): CourseReviewerSnapshot {
+  const snapshot = loadCourseReviewerSnapshot(execution);
+  const pageIds = snapshot.manifest.pages.map(({ pageId }) => pageId);
+  const progress = execution.evidenceReadProgress;
+  progress.courseMatrixRead = true;
+  pageIds.forEach((pageId) => {
+    progress.summaryPageIds.add(pageId);
+    progress.qualityPageIds.add(pageId);
+  });
+  progress.summaryReachedEnd = true;
+  progress.qualityReachedEnd = true;
+  return snapshot;
 }
 
 export function collectUnreadCourseReviewerEvidenceIssues(
@@ -389,6 +406,25 @@ export function resolveCourseReviewerActiveTools(
       (toolName !== ToolIds.BlockCourseReview ||
         isCourseReviewerBlockEligible(execution)),
   );
+}
+
+export function resolveCourseReviewerTerminalTools(
+  execution: CourseReviewerExecution,
+): CourseReviewerToolName[] {
+  const current = execution.repository.workOrders.load(
+    execution.initialWorkOrder.id,
+  );
+  if (!current || current.status !== "running") return [];
+  const terminalTool = isCourseReviewerBlockEligible(execution)
+    ? ToolIds.BlockCourseReview
+    : ToolIds.SubmitCourseReview;
+  if (!current.allowedTools.includes(terminalTool)) {
+    throw fatal(
+      "REVIEWER_TERMINAL_TOOL_MISSING",
+      `Reviewer 当前终态 ${terminalTool} 未被 WorkOrder 授权。`,
+    );
+  }
+  return [terminalTool];
 }
 
 export function loadCourseReviewerTerminal(

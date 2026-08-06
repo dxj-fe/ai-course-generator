@@ -38,8 +38,10 @@ export const VisualModelOutputSchema = z
       .array(
         z
           .object({
+            theme: z.string().min(2).max(240),
             focalPoint: z.string().min(2).max(240),
-            composition: z.string().min(2).max(240),
+            composition: z.string().min(2).max(300),
+            graphicMotif: z.string().min(2).max(300),
             assetPurpose: z.string().min(2).max(240),
           })
           .strict(),

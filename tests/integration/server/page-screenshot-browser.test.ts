@@ -418,6 +418,69 @@ describe.runIf(process.env.KEYA_BROWSER_INTEGRATION === "true")(
       },
       30_000,
     );
+
+    it(
+      "把未包裹在素材槽中的 SVG 与 canvas 知识图纳入首屏视觉占比",
+      async () => {
+        const examples = [
+          {
+            id: "svg-knowledge-graphic",
+            markup:
+              '<svg id="svg-knowledge-graphic" viewBox="0 0 600 300" aria-label="光路关系图"><path d="M20 150 H580" stroke="#2563eb" stroke-width="12" /></svg>',
+          },
+          {
+            id: "canvas-knowledge-graphic",
+            markup:
+              '<canvas id="canvas-knowledge-graphic" aria-label="波长关系图"></canvas>',
+          },
+        ];
+
+        for (const example of examples) {
+          const html = `<!doctype html>
+<html lang="zh-CN" data-keya-canvas-mode="fluid">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>光路知识图</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body, main { width: 100%; height: 100%; margin: 0; }
+    #${example.id} { display: block; width: 60vw; height: 60vh; }
+  </style>
+</head>
+<body>
+  <main data-page-id="page-${example.id}">
+    ${example.markup}
+  </main>
+</body>
+</html>`;
+          const result = await capturePageScreenshot(
+            {
+              pageId: `page-${example.id}`,
+              html,
+              traceId: `trace-browser-${example.id}-prominence`,
+            },
+            {
+              enabled: true,
+              rootDir,
+              timeoutMs: 12_000,
+            },
+          );
+
+          for (const capture of result.evidence.captures ?? []) {
+            expect(capture.status).toBe("captured");
+            expect(capture.metrics?.largestVisualAreaRatio).toBeCloseTo(
+              0.36,
+              2,
+            );
+            expect(capture.metrics?.largestVisualSelector).toBe(
+              `#${example.id}`,
+            );
+          }
+        }
+      },
+      30_000,
+    );
   },
 );
 
@@ -491,7 +554,7 @@ function choiceHtml(content: PageContentDSL) {
         <legend>${question.prompt}</legend>
         ${options}
       </fieldset>
-      <button type="button" data-runtime-submit="true">提交答案</button>
+      <button type="button" data-runtime-submit="true" disabled>提交答案</button>
       <p data-feedback-kind="success" hidden>${question.feedback.success}</p>
       <p data-feedback-kind="retry" hidden>${question.feedback.retry}</p>
     </section>

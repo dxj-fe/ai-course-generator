@@ -19,15 +19,7 @@ import {
   type PageWorkerBrief,
   type ReferencePack,
 } from "@/shared/course-schema";
-import {
-  getFunctionalTemplate,
-} from "@/shared/templates/functional";
-
-import {
-  ACHIEVEMENT_VISUAL_INPUT_LIMITS,
-  RENDERED_VISUAL_FIXED_CANVAS_LIMITS,
-  STORY_INTRO_VISUAL_CHOICE_LIMITS,
-} from "./page-writer-capacity";
+import { findPageWriterSemanticCapacityIssues } from "./page-writer-capacity";
 import {
   PageWriterInteractionDraftSchema,
   PageWriterInteractionItemDraftSchema,
@@ -38,10 +30,7 @@ import {
   buildLessonRuntime,
   selectPageReferenceContext,
 } from "./page-writer-runtime";
-import {
-  materializeChoiceQuestions,
-  validateTemplateSlots,
-} from "./page-writer-interaction";
+import { materializeChoiceQuestions } from "./page-writer-interaction";
 import { createModelStep } from "./model-step";
 import type {
   ModelStep,
@@ -112,7 +101,7 @@ const defaultDependencies: PageWriterModelStepDependencies = {
   generateContent,
 };
 
-/** 创建只负责一次页面内容 DSL 生成的模型步骤，不承担编排或自主决策。 */
+/** 创建有界 Page Writer 步骤：首稿超出语义预算时只允许一次同阶段重写。 */
 export function createPageWriterModelStep(
   dependencies: PageWriterModelStepDependencies = defaultDependencies,
 ): ModelStep<PageWriterModelStepState> {
@@ -120,7 +109,7 @@ export function createPageWriterModelStep(
     name: "page-writer-model-step",
     isComplete: (state) => Boolean(state.content),
     step: async (state, context, emit) => {
-      const content = validatePageWriterOutput(
+      let content = validatePageWriterOutput(
         await dependencies.generateContent({
           ...state.task,
           abortSignal: context.abortSignal,
@@ -138,6 +127,35 @@ export function createPageWriterModelStep(
           templateId: content.functionalTemplateId,
         },
       });
+
+      const capacityIssues = findPageWriterSemanticCapacityIssues(content);
+      if (capacityIssues.length > 0) {
+        content = validatePageWriterOutput(
+          await dependencies.generateContent({
+            ...state.task,
+            validationFeedback: {
+              code: "PAGE_WRITER_CAPACITY_REWRITE",
+              issues: [
+                ...(state.task.validationFeedback?.issues.slice(0, 6) ?? []),
+                ...capacityIssues,
+              ].slice(0, 12),
+            },
+            abortSignal: context.abortSignal,
+            traceId: context.traceId,
+          }),
+          state.task,
+        );
+
+        emit({
+          type: "model_call",
+          summary: "Page Writer 已依据语义容量反馈重写页面内容。",
+          data: {
+            pageId: content.pageId,
+            purpose: "page-content-capacity-rewrite",
+            templateId: content.functionalTemplateId,
+          },
+        });
+      }
 
       return { ...state, content };
     },
@@ -184,14 +202,7 @@ export function validatePageWriterOutput(
   }
 
   const dsl = parsed.data;
-  const template = getFunctionalTemplate(input.page.functionalTemplateId);
   const issues: string[] = [];
-
-  if (!template) {
-    issues.push(`找不到功能模板 ${input.page.functionalTemplateId}`);
-  } else if (template.pageType !== input.page.pageType) {
-    issues.push(`功能模板 ${template.id} 与 pageType ${input.page.pageType} 不匹配`);
-  }
 
   if (
     input.brief.pageId !== input.page.id ||
@@ -219,20 +230,6 @@ export function validatePageWriterOutput(
       `DSL interaction.type ${dsl.interaction.type} 与 PagePlan ${input.page.interactionType} 不一致`,
     );
   }
-  if (
-    dsl.interaction.type === "choice" &&
-    dsl.interaction.questions.length !== 1
-  ) {
-    issues.push(
-      "固定课程画布中的 choice 页面必须且只能包含 1 道完整题目",
-    );
-  }
-  if (input.page.pageType === "quiz" && dsl.blocks.length !== 1) {
-    issues.push(
-      "固定课程画布中的 quiz 页面必须且只能包含 1 个题目内容块",
-    );
-  }
-
   issues.push(
     ...validateReferenceUsages(
       dsl.usedReferences ?? [],
@@ -272,10 +269,8 @@ export function validatePageWriterOutput(
     });
   }
 
-  if (template) {
-    issues.push(...validateTemplateSlots(dsl, template));
-  }
   issues.push(...validateContentSubstance(dsl));
+  issues.push(...validateLearnerFacingLanguage(dsl, input));
 
   if (issues.length > 0) {
     throw new AiSchemaValidationError(
@@ -286,6 +281,195 @@ export function validatePageWriterOutput(
   return dsl;
 }
 
+/**
+ * 阻止模型把整页学习内容写成与课程语言不一致的语言。阈值按“多个完整句段”判断，
+ * 因此不会因为 API、HTML 等术语或单个双语词汇误拒绝页面。
+ */
+function validateLearnerFacingLanguage(
+  dsl: PageContentDSL,
+  input: PageWriterInput,
+) {
+  const language = input.courseContext?.language ?? input.intent.language;
+  if (language === "bilingual" || isTargetLanguageLesson(input, language)) {
+    return [];
+  }
+
+  const segments = collectLearnerFacingSegments(dsl);
+  const dominantSegments = segments.map(classifySegmentLanguage);
+  const chineseSegments = dominantSegments.filter(
+    (segment) => segment === "zh",
+  ).length;
+  const englishSegments = dominantSegments.filter(
+    (segment) => segment === "en",
+  ).length;
+
+  if (
+    language === "zh-CN" &&
+    englishSegments >= 3 &&
+    englishSegments > chineseSegments * 2
+  ) {
+    return [
+      "课程语言为中文，但页面正文以英文为主；所有面向学习者的标题、讲解、题干、选项和反馈必须使用中文",
+    ];
+  }
+  if (
+    language === "en-US" &&
+    chineseSegments >= 3 &&
+    chineseSegments > englishSegments * 2
+  ) {
+    return [
+      "The course language is English, but the page is predominantly Chinese; write learner-facing titles, explanations, questions, options, and feedback in English",
+    ];
+  }
+
+  return [];
+}
+
+function collectLearnerFacingSegments(dsl: PageContentDSL) {
+  const segments = [
+    dsl.title,
+    ...dsl.narration,
+    ...dsl.blocks.flatMap((block) => [
+      block.label,
+      block.heading,
+      block.body,
+      ...block.supportingPoints,
+    ]),
+  ];
+  const interaction = dsl.interaction;
+
+  switch (interaction.type) {
+    case "none":
+      break;
+    case "navigate":
+      segments.push(interaction.actionLabel);
+      break;
+    case "reveal":
+    case "explore":
+      segments.push(
+        interaction.prompt,
+        ...interaction.items.flatMap((item) => [item.label, item.content]),
+      );
+      break;
+    case "choice":
+      segments.push(
+        ...interaction.questions.flatMap((question) => [
+          question.prompt,
+          ...question.options.map((option) => option.label),
+          question.feedback.success,
+          question.feedback.retry,
+        ]),
+      );
+      break;
+    case "sort":
+      segments.push(
+        interaction.prompt,
+        ...interaction.items.flatMap((item) => [item.label, item.content]),
+        interaction.feedback.success,
+        interaction.feedback.retry,
+      );
+      break;
+    case "input":
+      segments.push(
+        interaction.prompt,
+        interaction.placeholder,
+        ...interaction.evaluationCriteria,
+        interaction.feedback.success,
+        interaction.feedback.retry,
+      );
+      break;
+  }
+
+  return segments.filter((segment): segment is string => Boolean(segment));
+}
+
+function classifySegmentLanguage(segment: string): "zh" | "en" | "neutral" {
+  const hanCount = segment.match(/\p{Script=Han}/gu)?.length ?? 0;
+  const latinWords = segment.match(/[A-Za-z]+(?:['’-][A-Za-z]+)*/g) ?? [];
+  const latinLetterCount = latinWords.join("").length;
+
+  if (hanCount >= 4 && hanCount > latinLetterCount * 0.5) return "zh";
+  if (latinWords.length >= 4 && latinLetterCount > hanCount * 2) return "en";
+  return "neutral";
+}
+
+function isTargetLanguageLesson(
+  input: PageWriterInput,
+  language: "zh-CN" | "en-US",
+) {
+  const intentText = [
+    input.intent.topic,
+    input.intent.learningGoal,
+    ...input.intent.mustInclude,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return language === "zh-CN"
+    ? /英语|英文|单词|词汇|语法|口语|听力|翻译|\benglish\b/i.test(intentText)
+    : /中文|汉语|普通话|汉字|拼音|\bchinese\b/i.test(intentText);
+}
+
+function buildCompactPageWriterBrief(input: PageWriterInput) {
+  const context = input.courseContext;
+  return {
+    course: {
+      title: context?.courseTitle ?? input.intent.topic,
+      audience: context?.audience ?? input.intent.audienceAgeRange,
+      language: context?.language ?? input.intent.language,
+      learningGoal: input.intent.learningGoal,
+      objectives:
+        context?.objectives.map(({ outcome, evidence }) => ({
+          outcome,
+          evidence,
+        })) ?? [input.page.learningObjective],
+      tone: context?.courseRules.tone,
+      terminology: context?.courseRules.terminology ?? [],
+      facts:
+        context?.coursePack.facts.map(({ id, text }) => ({ id, text })) ?? [],
+      terms:
+        context?.coursePack.terms.map(({ term, definition }) => ({
+          term,
+          definition,
+        })) ?? [],
+      constraints: context?.coursePack.constraints ?? input.intent.avoid,
+    },
+    page: {
+      id: input.page.id,
+      title: input.page.title,
+      pageType: input.page.pageType,
+      objective: input.page.learningObjective,
+      interactionType: input.page.interactionType,
+      task: context?.pageTask ?? {
+        purpose: input.page.contentSummary,
+        teachingPoints: input.intent.mustInclude,
+        learnerAction: input.brief.pedagogy.interactionPurpose,
+      },
+      pedagogy: input.brief.pedagogy,
+      visualFocus: input.brief.visual,
+      neighbors: context?.neighboringPageTasks ?? [],
+      dependencySummaries: context?.dependencySummaries ?? [],
+      assetNeeds: input.page.assetNeeds,
+    },
+  };
+}
+
+function inferContentDensity(
+  draft: z.infer<typeof PageWriterModelOutputSchema>,
+): "sparse" | "balanced" | "dense" {
+  const interactionEntries =
+    draft.interaction.type === "choice"
+      ? draft.interaction.options.length
+      : "items" in draft.interaction
+        ? draft.interaction.items.length
+        : draft.interaction.type === "none"
+          ? 0
+          : 1;
+  const weight =
+    draft.narration.length + draft.blocks.length * 2 + interactionEntries;
+  return weight <= 4 ? "sparse" : weight <= 9 ? "balanced" : "dense";
+}
+
 /** 调用模型生成语义草稿，再由代码补齐所有稳定技术字段。 */
 async function generateContent(
   input: PageWriterInput & {
@@ -293,20 +477,8 @@ async function generateContent(
     traceId: string;
   },
 ) {
-  const template = getFunctionalTemplate(input.page.functionalTemplateId);
-
-  if (!template) {
-    throw new AiSchemaValidationError(
-      `Page Writer 找不到功能模板 ${input.page.functionalTemplateId}。`,
-    );
-  }
-
   const prompts = await buildPageWriterPrompts({
-    courseIntent: input.intent,
-    courseArchitectureContext: input.courseContext ?? null,
-    pagePlan: input.page,
-    pageWorkerBrief: input.brief,
-    functionalTemplate: template,
+    pageBrief: buildCompactPageWriterBrief(input),
     referenceContext: selectPageReferenceContext(input),
     validationFeedback: input.validationFeedback
       ? PageWriterValidationFeedbackSchema.parse(input.validationFeedback)
@@ -315,8 +487,8 @@ async function generateContent(
   const draft = await generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
     capability: "page-writer",
-    includeSchemaInPrompt: true,
-    maxTokens: 4_000,
+    includeSchemaInPrompt: false,
+    maxTokens: 3_200,
     prompt: prompts.userPrompt,
     promptFingerprint: prompts.fingerprint,
     schema: PageWriterModelOutputSchema,
@@ -325,7 +497,7 @@ async function generateContent(
     schemaName: "page_content_dsl_content",
     normalizeOutput: normalizePageWriterModelOutput,
     systemPrompt: prompts.systemPrompt,
-    temperature: 0.2,
+    temperature: 0.4,
     traceId: input.traceId,
   });
   const blocks = materializeBlocks(draft.blocks);
@@ -336,7 +508,10 @@ async function generateContent(
     );
   }
 
-  const interaction = materializePageWriterInteraction(draft.interaction);
+  const interaction = materializePageWriterInteraction(
+    draft.interaction,
+    input.courseContext?.language ?? input.intent.language,
+  );
   const candidate: PageContentDSL = {
     pageId: input.page.id,
     functionalTemplateId: input.page.functionalTemplateId,
@@ -354,9 +529,9 @@ async function generateContent(
           : `${need.purpose.replace(/[。.!！?？]+$/u, "")}。`,
     })),
     layoutHints: {
-      contentDensity: draft.contentDensity,
-      visualPriority: draft.visualPriority,
-      groupingStrategy: draft.groupingStrategy,
+      contentDensity: inferContentDensity(draft),
+      visualPriority: input.brief.visual.focalPoint,
+      groupingStrategy: input.brief.visual.composition,
       readingOrder: blocks.map(({ id }) => id),
     },
     runtime: buildLessonRuntime({
@@ -365,11 +540,6 @@ async function generateContent(
       interaction,
     }),
   };
-
-  // 静态容量只能提示渲染密度，不能替代真实浏览器证据拒绝教学所需内容。
-  if (exceedsFixedCanvasCapacity(candidate)) {
-    candidate.layoutHints.contentDensity = "dense";
-  }
 
   return validatePageWriterOutput(candidate, input);
 }
@@ -412,12 +582,8 @@ export function normalizeMultilineBulletBody(body: string) {
 /** 根据 interaction.type 投影当前领域协议所需字段。 */
 export function materializePageWriterInteraction(
   draft: z.infer<typeof PageWriterInteractionDraftSchema>,
+  language: "zh-CN" | "en-US" | "bilingual" = "zh-CN",
 ): PageContentInteraction {
-  const feedback = {
-    success: draft.feedbackSuccess[0] ?? "回答正确。",
-    retry: draft.feedbackRetry[0] ?? "请根据页面内容再试一次。",
-  };
-
   switch (draft.type) {
     case "none":
       return { type: "none" };
@@ -447,16 +613,23 @@ export function materializePageWriterInteraction(
         prompt: draft.prompt,
         items,
         correctOrderIds: items.map(({ id }) => id),
-        feedback,
+        feedback: {
+          success: draft.feedbackSuccess,
+          retry: draft.feedbackRetry,
+        },
       };
     }
     case "input":
       return {
         type: "input",
         prompt: draft.prompt,
-        placeholder: draft.placeholder,
+        placeholder:
+          draft.placeholder ?? defaultInputPlaceholder(language),
         evaluationCriteria: draft.evaluationCriteria,
-        feedback,
+        feedback: {
+          success: draft.feedbackSuccess,
+          retry: draft.feedbackRetry,
+        },
       };
     case "explore":
       return {
@@ -465,6 +638,14 @@ export function materializePageWriterInteraction(
         items: materializeInteractionItems(draft.items),
       };
   }
+}
+
+function defaultInputPlaceholder(
+  language: "zh-CN" | "en-US" | "bilingual",
+) {
+  if (language === "en-US") return "Type your answer";
+  if (language === "bilingual") return "写下你的回答 / Type your answer";
+  return "写下你的回答";
 }
 
 /** 为互动项补齐可被 QA 定位的稳定 ID。 */
@@ -494,15 +675,6 @@ function validateContentSubstance(dsl: PageContentDSL) {
   });
 
   dsl.blocks.forEach((block, index) => {
-    const minimumLength = ["instruction", "question"].includes(block.kind)
-      ? 8
-      : 12;
-
-    if (semanticTextLength(block.body) < minimumLength) {
-      issues.push(
-        `blocks.${index}.body 信息不足，必须使用完整解释而不是词组`,
-      );
-    }
     if (
       normalizeComparableText(block.body) ===
       normalizeComparableText(block.heading)
@@ -557,75 +729,9 @@ function feedbackSubstanceIssue(
     : `${path} 必须给出重新判断所需的具体观察线索或改进方法`;
 }
 
-/**
- * 最窄课程画布需要同时容纳必需插图、正文与真实互动。FunctionalTemplate
- * 的槽位上限描述语义能力，不等于在 366×500 固定画布中可同时完整展示的
- * 数量；这里先处理两种高成本任务，再用统一预算兜住其他必需插图页面。
- */
+/** 兼容现有调用方；容量只触发一次源头重写，不作为最终 DSL 门禁。 */
 export function exceedsFixedCanvasCapacity(dsl: PageContentDSL) {
-  if (dsl.assetSlots.length === 0) return false;
-
-  const supportingPointCount = dsl.blocks.reduce(
-    (total, block) => total + block.supportingPoints.length,
-    0,
-  );
-
-  if (
-    dsl.functionalTemplateId === "story-intro" &&
-    dsl.interaction.type === "choice"
-  ) {
-    const question = dsl.interaction.questions[0];
-    return (
-      dsl.narration.length > STORY_INTRO_VISUAL_CHOICE_LIMITS.narration ||
-      dsl.blocks.length > STORY_INTRO_VISUAL_CHOICE_LIMITS.blocks ||
-      supportingPointCount >
-        STORY_INTRO_VISUAL_CHOICE_LIMITS.supportingPoints ||
-      (question?.options.length ?? 0) >
-        STORY_INTRO_VISUAL_CHOICE_LIMITS.options
-    );
-  }
-
-  if (
-    dsl.functionalTemplateId === "achievement-task" &&
-    dsl.interaction.type === "input"
-  ) {
-    return (
-      dsl.narration.length > ACHIEVEMENT_VISUAL_INPUT_LIMITS.narration ||
-      dsl.blocks.length > ACHIEVEMENT_VISUAL_INPUT_LIMITS.blocks ||
-      supportingPointCount >
-        ACHIEVEMENT_VISUAL_INPUT_LIMITS.supportingPoints ||
-      dsl.interaction.evaluationCriteria.length >
-        ACHIEVEMENT_VISUAL_INPUT_LIMITS.evaluationCriteria
-    );
-  }
-
-  return (
-    dsl.narration.length > RENDERED_VISUAL_FIXED_CANVAS_LIMITS.narration ||
-    dsl.blocks.length > RENDERED_VISUAL_FIXED_CANVAS_LIMITS.blocks ||
-    supportingPointCount >
-      RENDERED_VISUAL_FIXED_CANVAS_LIMITS.supportingPoints ||
-    fixedCanvasInteractionEntryCount(dsl.interaction) >
-      RENDERED_VISUAL_FIXED_CANVAS_LIMITS.interactionEntries
-  );
-}
-
-function fixedCanvasInteractionEntryCount(
-  interaction: PageContentInteraction,
-) {
-  switch (interaction.type) {
-    case "choice":
-      return interaction.questions[0]?.options.length ?? 0;
-    case "reveal":
-    case "explore":
-    case "sort":
-      return interaction.items.length;
-    case "input":
-      return interaction.evaluationCriteria.length;
-    case "navigate":
-      return 1;
-    case "none":
-      return 0;
-  }
+  return findPageWriterSemanticCapacityIssues(dsl).length > 0;
 }
 
 

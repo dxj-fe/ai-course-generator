@@ -58,10 +58,23 @@ describe("Style Template Registry", () => {
 
   it.each([
     [{ visualStyle: "sci-fi" as const }, "sci-fi"],
-    [{ query: "适合孩子的明亮童趣风格" }, "kids-playful"],
-    [{ query: "黑板粉笔数学课堂" }, "blackboard"],
+    [{ query: "给 10 岁孩子讲太阳系，让他们探索行星" }, "kids-playful"],
+    [{ query: "面向大学生推导轨道力学公式并安排练习" }, "blackboard"],
+    [{ query: "管理层生成式 AI 风险、法规与合规培训" }, "minimal"],
+    [{ query: "中国古典文学赏析与作品叙事" }, "editorial-night"],
+    [{ query: "英语词汇闯关，每关都有测验和反馈" }, "game-quest"],
     [{ query: "深夜编辑杂志风格的夜空与极光" }, "editorial-night"],
-    [{ query: "frontend-slides Broadside 火焰橙大字海报" }, "broadside"],
+    [{ query: "火焰橙大字报式城市文化观点课程" }, "broadside"],
+    [{ query: "为植物光合作用设计自然观察课程" }, "nature"],
+    [
+      {
+        query:
+          "为初中生解释可观察的光路并完成选择题，精确关系用 HTML/CSS/SVG 表达",
+        audience: "初中生",
+        learningActivities: ["practice", "assess"] as const,
+      },
+      "minimal",
+    ],
   ])("matches %o to %s", (input, expectedId) => {
     const [match] = searchStyleTemplates({ ...input, limit: 1 });
 
@@ -69,7 +82,39 @@ describe("Style Template Registry", () => {
     expect(match.score).toBeGreaterThan(0);
   });
 
-  it("keeps all 48 functional and style combinations valid", () => {
+  it("returns explainable and intentionally different top-three directions", () => {
+    const matches = searchStyleTemplates({
+      query: "给初中生讲人工智能原理，通过案例、图表和互动练习理解",
+      limit: 3,
+    });
+
+    expect(matches).toHaveLength(3);
+    expect(matches.map(({ candidateRole }) => candidateRole)).toEqual([
+      "best-match",
+      "safe",
+      "explore",
+    ]);
+    expect(new Set(matches.map(({ template }) => template.profile.family)).size)
+      .toBeGreaterThan(1);
+    expect(matches[0]?.factors.some(({ score }) => score > 0)).toBe(true);
+    expect(matches[0]?.reason.length).toBeGreaterThan(2);
+  });
+
+  it("uses a hard risk constraint for regulated learning", () => {
+    const matches = searchStyleTemplates({
+      query: "面向医生的患者安全法规与临床合规培训",
+      limit: 8,
+    });
+
+    expect(matches).not.toHaveLength(0);
+    expect(
+      matches.every(({ template }) =>
+        template.profile.riskContexts.includes("regulated"),
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps all 64 functional and style combinations valid", () => {
     let combinationCount = 0;
 
     for (const pagePlan of functionalTemplateExamples) {
@@ -86,6 +131,18 @@ describe("Style Template Registry", () => {
     }
 
     expect(combinationCount).toBe(64);
+  });
+
+  it("没有明确关键词时允许架构师看到全部主题，而不是固定前三种", () => {
+    const matches = searchStyleTemplates({
+      query: "面向成人讲解一个尚未收录关键词的主题",
+      limit: 8,
+    });
+
+    expect(matches).toHaveLength(listStyleTemplates().length);
+    expect(matches.map(({ template }) => template.id)).toEqual(
+      expect.arrayContaining(listStyleTemplates().map(({ id }) => id)),
+    );
   });
 
   it("keeps concrete course content outside the style protocol", () => {

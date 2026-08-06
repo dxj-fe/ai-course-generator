@@ -14,6 +14,8 @@ import {
   toAiErrorPayload,
 } from "./error";
 import {
+  getHtmlLanguageModel,
+  getHtmlLanguageModelIdentity,
   getLanguageModel,
   getLanguageModelIdentity,
 } from "./model-provider";
@@ -58,6 +60,11 @@ export type StructuredAiClientRequest<T> = {
   fallbackTimeoutMs?: number;
   includeSchemaInPrompt?: boolean;
   maxTokens?: number;
+  /**
+   * Optional multimodal UI messages. When present they replace `prompt` as the
+   * model input while `prompt` remains the text-only fingerprint/logging source.
+   */
+  messages?: UIMessage[];
   model?: LanguageModel;
   normalizeOutput?: (output: unknown) => unknown;
   prompt: string;
@@ -175,10 +182,15 @@ export async function generateStructuredObjectSafe<T>(
     const { result, selected } = await executeWithFallback(
       request,
       async (model, candidateIndex) => {
+        const modelInput = request.messages
+          ? {
+              messages: await convertToModelMessages(request.messages),
+            }
+          : { prompt: request.prompt };
         const generated = await generateText({
           model,
           instructions: structuredOutputInstructions(request),
-          prompt: request.prompt,
+          ...modelInput,
           output: Output.json({
             name: request.schemaName,
             description: request.schemaDescription,
@@ -302,11 +314,26 @@ function resolveModelCandidates(
   const tiers = route.fallback
     ? [route.primary, route.fallback]
     : [route.primary];
-  const candidates = tiers.map((tier) => ({
+  const candidates: ModelCandidate[] = tiers.map((tier) => ({
     identity: getLanguageModelIdentity(tier),
     model: getLanguageModel(tier),
     tier,
   }));
+
+  if (request.capability === "html") {
+    const htmlModel = getHtmlLanguageModel();
+    const htmlIdentity = htmlModel
+      ? getHtmlLanguageModelIdentity()
+      : undefined;
+
+    if (htmlModel && htmlIdentity) {
+      candidates.unshift({
+        identity: htmlIdentity,
+        model: htmlModel,
+        tier: "custom",
+      });
+    }
+  }
 
   return candidates.filter(
     ({ identity }, index) =>
@@ -374,6 +401,7 @@ function logStructuredAiEvent<T>(
     traceId: request.traceId,
     capability: request.capability ?? "general",
     promptLength: request.prompt.length,
+    messageCount: request.messages?.length,
     promptFingerprint: request.promptFingerprint,
     schemaName: request.schemaName,
     hasSystemPrompt: Boolean(request.systemPrompt),

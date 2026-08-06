@@ -22,12 +22,16 @@ describe("model router", () => {
     });
     expect(resolveModelRoute("page-qa").primary).toBe("strong");
     expect(resolveModelRoute("course-review")).toEqual({
-      primary: "balanced",
-      fallback: "strong",
+      primary: "strong",
+      fallback: "balanced",
     });
     expect(resolveModelRoute("html")).toEqual({
-      primary: "balanced",
-      fallback: "strong",
+      primary: "strong",
+      fallback: undefined,
+    });
+    expect(resolveModelRoute("html-repair")).toEqual({
+      primary: "strong",
+      fallback: undefined,
     });
   });
 

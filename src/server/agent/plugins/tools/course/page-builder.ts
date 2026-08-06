@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 
-import { SkillIds, ToolIds } from "@/server/agent/ids";
+import { ToolIds } from "@/server/agent/ids";
 import { FatalAgentRuntimeError } from "@/server/agent/runtime";
 import {
   clearPageBuilderRepairDeclined,
@@ -21,8 +21,6 @@ import {
 import { classifyPublicAgentError } from "@/server/course/projection/public-error";
 import {
   defaultPageBuilderModelSteps,
-  getRequiredFrontendSlidesStyleRecipe,
-  hasLoadedFrontendSlidesStyleRecipe,
   type PageBuilderModelSteps,
 } from "@/server/agent/plugins/tools/course/page-builder-model-steps";
 import {
@@ -77,6 +75,7 @@ const MAX_PAGE_CONTENT_GENERATION_ATTEMPTS = 3;
 const MAX_PAGE_REPAIR_GENERATION_ATTEMPTS = 3;
 const STRUCTURAL_HTML_REGENERATION_CODES = new Set([
   "BROWSER_CONTENT_CLIPPED",
+  "BROWSER_NESTED_VERTICAL_OVERFLOW",
   "BROWSER_VERTICAL_OVERFLOW",
   "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
 ]);
@@ -341,7 +340,7 @@ export function createPageBuilderTools(
 
     [ToolIds.GeneratePageHtml]: tool({
       description:
-        "把已保存的内容和素材实现为安全的单页 HTML，并立即保存 checkpoint；强视觉风格需先读取指定 frontend-slides 设计配方。",
+        "把已保存的内容、当前页视觉方向和素材实现为安全的单页 HTML，并立即保存 checkpoint。",
       inputSchema: ScopeInputSchema,
       execute: (_input, options) =>
         runExclusive(async () => {
@@ -369,26 +368,6 @@ export function createPageBuilderTools(
               snapshot.workOrder,
               "page_html",
               "已复用保存的页面 HTML。",
-            );
-          }
-          const requiredDesignRecipe =
-            getRequiredFrontendSlidesStyleRecipe(
-              execution.pageTask.styleTemplateId,
-            );
-          if (
-            requiredDesignRecipe &&
-            execution.localResourceSession &&
-            !hasLoadedFrontendSlidesStyleRecipe(
-              execution,
-              requiredDesignRecipe,
-            )
-          ) {
-            return failure(
-              "FRONTEND_SLIDES_RECIPE_MISSING",
-              `当前 ${execution.pageTask.styleTemplateId} 风格尚未读取对应 frontend-slides 设计配方。`,
-              [
-                `调用 read_local_resource 读取 ${requiredDesignRecipe}，再重新调用 generate_page_html。`,
-              ],
             );
           }
           const generated = await recoverableModelStep(
@@ -557,16 +536,25 @@ export function createPageBuilderTools(
               ["补齐缺失产物后再次提交。"],
             );
           }
-          const gate = pageGate({
-            architecture: execution.architecture,
-            creationBrief: execution.creationBrief,
-            referencePacks: execution.referencePacks,
-            pageId: execution.pageId,
-            content: snapshot.content,
-            assets: snapshot.assets ?? [],
-            html: snapshot.html,
-            quality: snapshot.quality,
-          });
+          let gate: PageGateResult;
+          try {
+            gate = pageGate({
+              architecture: execution.architecture,
+              creationBrief: execution.creationBrief,
+              referencePacks: execution.referencePacks,
+              pageId: execution.pageId,
+              content: snapshot.content,
+              assets: snapshot.assets ?? [],
+              html: snapshot.html,
+              quality: snapshot.quality,
+            });
+          } catch (error) {
+            throw new FatalAgentRuntimeError(
+              "PAGE_GATE_FAILED",
+              "页面提交检查执行失败。",
+              error,
+            );
+          }
           if (!gate.ok) {
             return failure(
               "PAGE_GATE_FAILED",
@@ -611,7 +599,7 @@ export function createPageBuilderTools(
       description:
         "仅在读取上下文、已有失败 PageQuality，且 repair 明确拒绝、无法授权修复或修订预算耗尽时阻塞页面。普通生成或 Provider 失败不能阻塞。",
       inputSchema: BlockPageInputSchema,
-      execute: ({ code }) =>
+      execute: ({ code, message }) =>
         runExclusive(async () => {
           const eligibility =
             evaluatePageBlockEligibility(execution);
@@ -636,15 +624,17 @@ export function createPageBuilderTools(
               runLeaseOwner: execution.runLeaseOwner,
               traceId: execution.traceId,
               code: publicError.code,
-              message: publicError.message,
+              message,
               evidence: eligibility.evidence,
             });
           execution.currentLockVersion =
             blocked.workOrder.lockVersion;
+          const blockedMessage =
+            blocked.workOrder.error?.message ?? publicError.message;
           return success({
             committed: true,
             terminal: true,
-            summary: `页面已阻塞：${publicError.message}`,
+            summary: `页面已阻塞：${blockedMessage}`,
             data: {
               code: publicError.code,
               pageId: execution.pageId,
@@ -684,14 +674,6 @@ export function resolvePageBuilderActiveTools(
   }
   if (execution.pageTask.referenceUsages.length > 0) {
     base.push(ToolIds.SearchReferences);
-  }
-  if (
-    requiresPageDesignSkill &&
-    !execution.localResourceSession?.activatedSkillIds.includes(
-      SkillIds.FrontendSlides,
-    )
-  ) {
-    return base.filter((name) => available.has(name));
   }
   if (
     execution.initialWorkOrder.kind === "fix_page" &&
@@ -852,7 +834,6 @@ async function repairPageArtifact(input: {
           content: snapshot.content!,
           assets: snapshot.assets ?? [],
           validationFeedback: structuralRegenerationFeedback,
-          structuralRebuild: true,
           abortSignal: input.abortSignal,
         });
         return {
@@ -982,7 +963,7 @@ async function repairPageArtifact(input: {
 
 /**
  * 大幅纵向溢出不是局部 CSS selector 能可靠修好的呈现缺陷。保留原 DSL、
- * 素材与 frontend-slides 设计配方，从干净 HTML 检查点重建结构，再走同一
+ * 素材与当前页视觉方向，从干净 HTML 检查点重建结构，再走同一
  * checkpoint、re-QA 与修订预算，避免连续追加缩字补丁。
  */
 function buildStructuralHtmlRegenerationFeedback(
@@ -996,7 +977,27 @@ function buildStructuralHtmlRegenerationFeedback(
   if (issues.length === 0) return [];
 
   return [
-    "从干净 HTML 检查点完整重建构图；保留 DSL、运行时标记和 frontend-slides 视觉身份，不沿用旧页面的纵向堆叠。合并同义 block/interaction 根节点，使用横向或网格布局；禁止仅缩小字号、间距、图片或追加补丁。",
+    "VIEWPORT_RECOMPOSE：从干净 HTML 检查点完整重建构图；保留页面事实、学习动作和视觉命题，不沿用旧页面的纵向堆叠，也不要只缩小字号、间距或图片。把 DesignDirection 中的上下阅读顺序翻译成并列、环绕、叠层或主视觉内嵌关系。",
+    ...(quality.screenshotEvidence?.captures ?? []).flatMap((capture) => {
+      if (capture.status !== "captured") return [];
+      const { metrics, viewport } = capture;
+      if (!metrics) return [];
+      return [
+        [
+          `viewport=${viewport.width}x${viewport.height}`,
+          `documentHeight=${metrics.documentHeight}`,
+          `verticalOverflow=${metrics.verticalOverflowPx}`,
+          metrics.largestVisualAreaRatio !== undefined
+            ? `largestVisualAreaRatio=${metrics.largestVisualAreaRatio.toFixed(2)}`
+            : undefined,
+          metrics.largestVisualSelector
+            ? `largestVisualSelector=${metrics.largestVisualSelector}`
+            : undefined,
+        ]
+          .filter(Boolean)
+          .join(" | "),
+      ];
+    }),
     ...issues.slice(0, 9).map((issue) =>
       [
         issue.code,

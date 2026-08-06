@@ -326,7 +326,7 @@ ${styleTemplateToCssText(styleTemplate)}
       background: color-mix(in srgb, var(--course-color-surface) 88%, transparent);
       backdrop-filter: blur(18px) saturate(1.18);
     }
-    .course-action:not(:has(.asset-panel)) .interaction-panel {
+    .course-action:not(:has(.asset-panel)):not(:has(.course-native-visual)) .interaction-panel {
       align-self: stretch;
       max-height: none;
       margin: 0;
@@ -392,7 +392,67 @@ ${styleTemplateToCssText(styleTemplate)}
       background: color-mix(in srgb, var(--course-color-success) 14%, var(--course-color-surface));
     }
     .criteria { margin-bottom: .7rem; }
-    .course-native-visual { display: none; }
+    .course-native-visual {
+      position: relative;
+      grid-area: 1 / 1;
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border: 1px solid color-mix(in srgb, var(--course-color-border) 82%, transparent);
+      border-radius: var(--course-radius-card);
+      background:
+        radial-gradient(circle at 76% 22%, color-mix(in srgb, var(--course-color-accent) 26%, transparent), transparent 31%),
+        linear-gradient(145deg, color-mix(in srgb, var(--course-color-primary) 14%, var(--course-color-surface)), var(--course-color-surface-alt));
+      box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 72%, transparent);
+    }
+    main[data-has-assets="true"] .course-content > .course-native-visual {
+      display: none;
+    }
+    .course-native-visual::before,
+    .course-native-visual::after {
+      content: "";
+      position: absolute;
+      pointer-events: none;
+      border: 1px solid color-mix(in srgb, var(--course-color-primary) 36%, transparent);
+      border-radius: 50%;
+    }
+    .course-native-visual::before { top: 3%; right: 3%; width: 42%; aspect-ratio: 1; }
+    .course-native-visual::after { bottom: 8%; left: 9%; width: 14%; aspect-ratio: 1; border-color: color-mix(in srgb, var(--course-color-accent) 52%, transparent); }
+    .course-native-visual svg {
+      position: relative;
+      z-index: 1;
+      display: block;
+      width: 88%;
+      height: 88%;
+      min-height: 150px;
+      filter: drop-shadow(0 15px 22px color-mix(in srgb, var(--course-color-text) 12%, transparent));
+    }
+    .course-native-visual svg path,
+    .course-native-visual svg circle,
+    .course-native-visual svg rect { vector-effect: non-scaling-stroke; }
+    .native-grid { fill: none; stroke: color-mix(in srgb, var(--course-color-border) 88%, transparent); stroke-width: 2; stroke-dasharray: 5 10; }
+    .native-primary { fill: none; stroke: var(--course-color-primary); stroke-width: 9; }
+    .native-accent { fill: none; stroke: var(--course-color-accent); stroke-width: 8; stroke-linecap: round; stroke-linejoin: round; }
+    .native-progress { stroke-linecap: round; }
+    .native-fill { fill: color-mix(in srgb, var(--course-color-primary) 72%, transparent); }
+    .native-fill.native-accent { fill: color-mix(in srgb, var(--course-color-accent) 72%, transparent); }
+    .native-fill-soft { fill: color-mix(in srgb, var(--course-color-primary) 15%, transparent); }
+    .native-fill-soft.native-accent { fill: color-mix(in srgb, var(--course-color-accent) 18%, transparent); }
+    .native-node-group { fill: var(--course-color-surface); stroke: var(--course-color-primary); stroke-width: 4; }
+    .native-dot-group, .native-dot, .native-node { fill: var(--course-color-accent); stroke: var(--course-color-surface); stroke-width: 4; }
+    main[data-style-template="kids-playful"] .course-native-visual::after {
+      content: "✦";
+      display: grid;
+      place-items: center;
+      color: var(--course-color-accent);
+      border-width: 2px;
+      background: var(--course-color-surface);
+      font-size: clamp(16px, 4vmin, 34px);
+      font-weight: 900;
+      transform: rotate(12deg);
+    }
     main[data-block-count="3"] .course-content {
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
@@ -559,6 +619,10 @@ ${styleTemplateToCssText(styleTemplate)}
       align-content: center;
       background: color-mix(in srgb, var(--course-color-surface) 95%, transparent);
     }
+    main[data-template="interactive-quiz"] textarea {
+      min-height: clamp(116px, 28vh, 160px);
+      overflow-y: hidden;
+    }
     main[data-template="recap-summary"] .interaction-panel {
       justify-self: center;
       width: calc(100% - 1.3rem);
@@ -576,6 +640,35 @@ ${styleTemplateToCssText(styleTemplate)}
       .course-block-body { padding-top: .3rem; }
       .interaction-panel { margin: .45rem; padding: 9px 11px; max-height: calc(100% - .9rem); }
       .course-narration { display: none; }
+      main[data-template="knowledge-card-grid"][data-block-count="3"] .course-content {
+        gap: 5px;
+        padding: 5px;
+      }
+      main[data-template="knowledge-card-grid"][data-block-count="3"] .lesson-card {
+        min-height: 0;
+        padding: 5px 6px;
+        font-size: .78em;
+        line-height: 1.25;
+      }
+      main[data-template="knowledge-card-grid"][data-block-count="3"] .course-block-body {
+        padding-top: 3px;
+      }
+      main[data-template="knowledge-card-grid"][data-block-count="3"] .course-block-body ul {
+        margin-top: 2px;
+      }
+      main[data-template="knowledge-card-grid"] .course-stage:has(.asset-panel--background) .interaction-panel {
+        margin: 4px;
+        padding: 5px 6px;
+        font-size: .72em;
+        line-height: 1.15;
+      }
+      main[data-template="knowledge-card-grid"] .interaction-items {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 3px;
+      }
+      main[data-template="knowledge-card-grid"] .explore-item {
+        padding: 3px 4px;
+      }
       main[data-template="story-intro"] .course-narration {
         display: grid;
         font-size: .82em;
@@ -653,7 +746,7 @@ ${styleTemplateToCssText(styleTemplate)}
       .course-action { align-content: stretch; }
       .interaction-panel { margin: 5px; padding: 8px; max-height: calc(100% - 10px); }
       .interaction-items { gap: .32rem; }
-      .course-native-visual { display: none; }
+      .course-native-visual svg { min-height: 80px; }
       .course-narration { display: none; }
       main[data-template="story-intro"] .course-narration {
         display: grid;
@@ -713,6 +806,8 @@ ${styleTemplateToCssText(styleTemplate)}
         font-size: .78em;
         line-height: 1.25;
       }
+      main[data-template="interactive-quiz"] { gap: 4px; }
+      main[data-template="interactive-quiz"] .course-header { padding-bottom: 3px; }
       main[data-template="interactive-quiz"] .interaction-items { gap: 3px; }
       main[data-template="interactive-quiz"] fieldset { padding: 4px; }
       main[data-template="interactive-quiz"] fieldset > p { margin-bottom: 2px; }
@@ -720,6 +815,44 @@ ${styleTemplateToCssText(styleTemplate)}
       main[data-template="interactive-quiz"] .interaction-panel button {
         min-height: 44px;
         padding: 4px 6px;
+      }
+      main[data-template="comparison-board"] .interaction-panel {
+        padding: 5px;
+        font-size: .72em;
+        line-height: 1.15;
+      }
+      main[data-template="comparison-board"] .interaction-items { gap: 2px; }
+      main[data-template="comparison-board"] .sort-item { padding: 2px 3px; }
+      main[data-template="knowledge-card-grid"] .course-stage {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) auto;
+      }
+      main[data-template="knowledge-card-grid"] .course-content {
+        grid-area: 1 / 1;
+      }
+      main[data-template="knowledge-card-grid"] .course-action {
+        grid-area: 2 / 1;
+        min-height: 0;
+      }
+      main[data-template="knowledge-card-grid"] .interaction-panel {
+        display: grid;
+        grid-template-columns: minmax(6rem, .42fr) minmax(0, 1fr);
+        align-items: center;
+        gap: 3px;
+        margin: 0;
+        padding: 4px 6px;
+        font-size: .7em;
+        line-height: 1.15;
+      }
+      main[data-template="knowledge-card-grid"] .interaction-prompt {
+        margin-bottom: 0;
+      }
+      main[data-template="knowledge-card-grid"] .interaction-items {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 3px;
+      }
+      main[data-template="knowledge-card-grid"] .explore-item {
+        padding: 2px 3px;
       }
       main[data-template="story-intro"] .course-stage:has(.asset-panel--background) {
         grid-template-columns: minmax(0, 1fr);
@@ -777,7 +910,7 @@ ${styleTemplateToCssText(styleTemplate)}
   </style>
 </head>
 <body>
-  <main data-page-id="${escapeHtmlAttribute(content.pageId)}" data-density="${density}" data-template="${escapeHtmlAttribute(content.functionalTemplateId)}" data-scene="${escapeHtmlAttribute(sceneKind ?? "explain")}" data-block-count="${content.blocks.length}" data-has-assets="${content.assetSlots.length > 0 ? "true" : "false"}">
+  <main data-page-id="${escapeHtmlAttribute(content.pageId)}" data-density="${density}" data-template="${escapeHtmlAttribute(content.functionalTemplateId)}" data-style-template="${escapeHtmlAttribute(styleTemplate.id)}" data-scene="${escapeHtmlAttribute(sceneKind ?? "explain")}" data-block-count="${content.blocks.length}" data-has-assets="${content.assetSlots.length > 0 ? "true" : "false"}">
     <header class="course-header">
       <div>
         <p class="course-kicker">${escapeHtmlText(templateLabel)}</p>
@@ -787,11 +920,12 @@ ${styleTemplateToCssText(styleTemplate)}
     </header>
     <div class="course-stage">
       <section class="course-content">
-        ${visualPrimitive}
+        ${assetMarkup ? visualPrimitive : ""}
         ${blocks}
       </section>
       <aside class="course-action">
         ${assetMarkup}
+        ${assetMarkup ? "" : visualPrimitive}
         ${interaction}
       </aside>
     </div>

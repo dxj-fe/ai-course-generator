@@ -131,6 +131,7 @@ function buildCourseDirectorPrompt(
       `验收要求：${JSON.stringify(execution.initialWorkOrder.acceptance)}`,
       `初始 RunSummary：${JSON.stringify(summary)}`,
       `已封口的架构决策证据：${JSON.stringify(decisionEvidence)}`,
+      "决策前必须逐页做一次“遮掉长/短/强/弱标签，从源头沿单路径追到接收者”的拓扑审判。机制产生的支路必须在 visualDesign 中明说进入接收者，主路必须明说继续到物理终点；不能从横向布局猜测拓扑。同图的波长与路径长度必须使用不同编码，光程定义必须包含折射率或改称大气路径长度。观察者接到错误分支、任一对比路径不完整、量编码冲突或遮标签后结论不成立，都必须退回并指明 pageId 与几何矛盾。",
       "证据已经完整加载，请直接执行一个终态决策工具：合格就接受并派发，不合格就给出具体问题退回。不要先调用读取工具。",
     ].join("\n");
   }

@@ -86,6 +86,102 @@ export const StyleDecorationSchema = z.object({
 
 export const MotionIntensitySchema = z.enum(["none", "subtle", "dynamic"]);
 
+export const StyleTemplateFamilySchema = z.enum([
+  "technology",
+  "editorial",
+  "authority",
+  "playful",
+  "organic",
+  "academic",
+  "immersive",
+]);
+
+export const StyleFormalitySchema = z.enum([
+  "low",
+  "medium-low",
+  "medium",
+  "medium-high",
+  "high",
+]);
+
+export const StyleColorSchemeSchema = z.enum(["light", "dark", "mixed"]);
+
+export const StyleDomainSchema = z.enum([
+  "stem",
+  "humanities",
+  "business",
+  "creative",
+  "life",
+  "language",
+  "general",
+]);
+
+export const StyleAudienceStageSchema = z.enum([
+  "early-childhood",
+  "young-learners",
+  "secondary",
+  "higher-education",
+  "professional",
+  "general",
+]);
+
+export const StyleLearningActivitySchema = z.enum([
+  "explain",
+  "derive",
+  "compare",
+  "remember",
+  "practice",
+  "explore",
+  "assess",
+]);
+
+export const StyleNarrativeModeSchema = z.enum([
+  "tutorial",
+  "story",
+  "argument",
+  "case-study",
+  "lab",
+  "quest",
+  "reference",
+]);
+
+export const StyleContentAffordanceSchema = z.enum([
+  "formula",
+  "code",
+  "chart",
+  "table",
+  "timeline",
+  "long-text",
+  "photography",
+  "illustration",
+  "diagram",
+  "bilingual",
+  "high-interaction",
+]);
+
+export const StyleRiskContextSchema = z.enum([
+  "standard",
+  "care",
+  "regulated",
+]);
+
+/** 为确定性匹配提供可测试的语义能力，不把具体课程内容写进视觉协议。 */
+export const StyleTemplateProfileSchema = z.object({
+  family: StyleTemplateFamilySchema,
+  formality: StyleFormalitySchema,
+  scheme: StyleColorSchemeSchema,
+  domains: z.array(StyleDomainSchema).min(1),
+  audienceStages: z.array(StyleAudienceStageSchema).min(1),
+  learningActivities: z.array(StyleLearningActivitySchema).min(1),
+  narrativeModes: z.array(StyleNarrativeModeSchema).min(1),
+  contentAffordances: z.array(StyleContentAffordanceSchema).min(1),
+  riskContexts: z.array(StyleRiskContextSchema).min(1),
+  tones: z.array(z.string().min(2).max(40)).min(2).max(10),
+  safeDefault: z.boolean(),
+  inspirationTemplate: z.string().min(2).max(80),
+  recipePath: z.string().min(2).max(240),
+});
+
 /** 动效 Token 包含标准时长、缓动和 reduced-motion 降级值。 */
 export const StyleMotionSchema = z.object({
   durationFast: CssValueSchema,
@@ -111,6 +207,7 @@ export const StyleTemplateSchema = z.object({
   id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(80),
   name: z.string().min(2).max(80),
   visualStyle: CoreVisualStyleSchema,
+  profile: StyleTemplateProfileSchema,
   goal: z.string().min(5).max(300),
   colorTokens: StyleColorTokensSchema,
   typography: StyleTypographySchema,
@@ -133,4 +230,18 @@ export type StyleSurface = z.infer<typeof StyleSurfaceSchema>;
 export type StyleDecoration = z.infer<typeof StyleDecorationSchema>;
 export type StyleMotion = z.infer<typeof StyleMotionSchema>;
 export type StyleAssetGuidance = z.infer<typeof StyleAssetGuidanceSchema>;
+export type StyleTemplateFamily = z.infer<typeof StyleTemplateFamilySchema>;
+export type StyleFormality = z.infer<typeof StyleFormalitySchema>;
+export type StyleColorScheme = z.infer<typeof StyleColorSchemeSchema>;
+export type StyleDomain = z.infer<typeof StyleDomainSchema>;
+export type StyleAudienceStage = z.infer<typeof StyleAudienceStageSchema>;
+export type StyleLearningActivity = z.infer<
+  typeof StyleLearningActivitySchema
+>;
+export type StyleNarrativeMode = z.infer<typeof StyleNarrativeModeSchema>;
+export type StyleContentAffordance = z.infer<
+  typeof StyleContentAffordanceSchema
+>;
+export type StyleRiskContext = z.infer<typeof StyleRiskContextSchema>;
+export type StyleTemplateProfile = z.infer<typeof StyleTemplateProfileSchema>;
 export type StyleTemplate = z.infer<typeof StyleTemplateSchema>;

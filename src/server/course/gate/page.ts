@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { validateHtmlEngineerOutput } from "@/server/agent/plugins/model-steps/course/html-engineer-model-step";
 import { validatePageWriterOutput } from "@/server/agent/plugins/model-steps/course/page-writer-model-step";
+import { isDeliveryBlockingQualityIssue } from "@/server/course/page/quality/report";
 import { projectCourseArchitecture } from "@/server/course/projection/architecture";
 import {
   AssetGenerationResultSchema,
@@ -193,22 +194,14 @@ function validateQuality(
       message: `质量报告必须只检查页面 ${pageId}`,
     });
   }
-  if (report.shouldRepair || report.decision !== "pass") {
+  const blockingIssues = report.issues.filter(
+    isDeliveryBlockingQualityIssue,
+  );
+  if (report.shouldRepair || blockingIssues.length > 0) {
     issues.push({
       code: "PAGE_QUALITY_NOT_PASSED",
       path: "quality.decision",
-      message: "质量报告仍要求返工，页面不能提交",
-    });
-  }
-  const captures = report.screenshotEvidence?.captures ?? [];
-  if (
-    captures.length === 0 ||
-    captures.some(({ status }) => status !== "captured")
-  ) {
-    issues.push({
-      code: "PAGE_SCREENSHOT_EVIDENCE_MISSING",
-      path: "quality.screenshotEvidence",
-      message: "页面必须有完整的真实浏览器截图证据",
+      message: `页面仍有 ${blockingIssues.length} 个内容、安全、运行时或真实布局故障`,
     });
   }
 }
@@ -223,12 +216,14 @@ function buildPageSummary(input: {
     ({ pageId }) => pageId === input.pageId,
   )!;
   const contentDigest = [
+    input.content.title,
     ...input.content.narration,
     ...input.content.blocks.flatMap(({ heading, body, supportingPoints }) => [
       heading,
       body,
       ...supportingPoints,
     ]),
+    ...summarizeInteraction(input.content.interaction),
   ]
     .join("；")
     .slice(0, 2_000);
@@ -252,6 +247,46 @@ function buildPageSummary(input: {
       issueCodes: input.quality.issues.map(({ code }) => code),
     },
   });
+}
+
+function summarizeInteraction(
+  interaction: PageContentDSL["interaction"],
+): string[] {
+  switch (interaction.type) {
+    case "none":
+      return [];
+    case "navigate":
+      return [interaction.actionLabel];
+    case "reveal":
+    case "explore":
+      return [
+        interaction.prompt,
+        ...interaction.items.flatMap(({ label, content }) => [label, content]),
+      ];
+    case "choice":
+      return interaction.questions.flatMap((question) => {
+        const correct = question.options.find(
+          ({ id }) => id === question.correctOptionId,
+        );
+        return [
+          question.prompt,
+          ...(correct ? [correct.label] : []),
+          question.feedback.success,
+        ];
+      });
+    case "sort":
+      return [
+        interaction.prompt,
+        ...interaction.items.flatMap(({ label, content }) => [label, content]),
+        interaction.feedback.success,
+      ];
+    case "input":
+      return [
+        interaction.prompt,
+        ...interaction.evaluationCriteria,
+        interaction.feedback.success,
+      ];
+  }
 }
 
 function schemaIssues(

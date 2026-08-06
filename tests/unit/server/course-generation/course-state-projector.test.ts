@@ -163,6 +163,42 @@ describe("CourseStateProjector", () => {
     ]);
   });
 
+  it("blocked 页面保留 QA 阶段、页面错误码和具体阻断证据", () => {
+    const state = projectCourseState(blockedPageFixture());
+
+    expect(state).toMatchObject({
+      status: "failed",
+      currentStage: "qa",
+      pages: [
+        {
+          pageId: PAGE_ID,
+          status: "failed",
+          currentStage: "qa",
+          error: {
+            code: "PAGE_WORK_ORDER_BLOCKED",
+            message: "当前质量报告仍未通过，已完成 1 轮定向质量修订",
+          },
+        },
+      ],
+      errors: [
+        {
+          stage: "qa",
+          pageId: PAGE_ID,
+          code: "PAGE_WORK_ORDER_BLOCKED",
+          message: "当前质量报告仍未通过，已完成 1 轮定向质量修订",
+        },
+      ],
+    });
+    expect(state.events.at(-2)).toMatchObject({
+      type: "error",
+      stage: "qa",
+      pageId: PAGE_ID,
+    });
+    expect(state.errors.some(({ code }) => code === "WORK_ORDER_BLOCKED")).toBe(
+      false,
+    );
+  });
+
   it("current page 的结构化 Artifact payload 不合法时直接拒绝投影", () => {
     const fixture = completedFixture();
     const summaryId = fixture.run.currentPages[PAGE_ID]!.summaryRef.id;
@@ -532,6 +568,102 @@ function revisingFixture(): CourseStateProjectorInput {
         summary: "当前返工失败",
         payload: { workOrderId: fix.id },
         createdAt: "2026-07-29T08:07:00.000Z",
+      }),
+    ],
+  };
+}
+
+function blockedPageFixture(): CourseStateProjectorInput {
+  const completed = completedFixture();
+  const page = completed.workOrders.find(
+    (workOrder) =>
+      workOrder.kind === "build_page" && workOrder.status === "accepted",
+  )!;
+  const blockedPage = WorkOrderSchema.parse({
+    ...page,
+    lockVersion: page.lockVersion + 1,
+    status: "blocked",
+    error: undefined,
+    submission: {
+      workOrderId: page.id,
+      status: "blocked",
+      artifactRefs: page.checkpointArtifactRefs,
+      evidence: ["当前质量报告仍未通过，已完成 1 轮定向质量修订"],
+      issues: [
+        "PAGE_WORK_ORDER_BLOCKED: Agent 执行失败，请根据错误码排查后重试。",
+      ],
+    },
+    updatedAt: "2026-07-29T08:04:00.000Z",
+  });
+  const architect = completed.workOrders.find(
+    (workOrder) => workOrder.kind === "architect_course",
+  )!;
+
+  return {
+    ...completed,
+    run: CourseRunSchema.parse({
+      ...completed.run,
+      lockVersion: completed.run.lockVersion + 1,
+      phase: "failed",
+      currentPages: {},
+      currentManifestHash: undefined,
+      currentReview: undefined,
+      error: {
+        code: "WORK_ORDER_BLOCKED",
+        message: "Agent 执行失败，请根据错误码排查后重试。",
+      },
+    }),
+    workOrders: [architect, blockedPage],
+    artifacts: completed.artifacts.filter(
+      ({ kind }) => kind !== "course_review",
+    ),
+    events: [
+      runEvent({
+        sequence: 1,
+        type: "course_run_bootstrapped",
+        stage: "planning",
+        summary: "课程任务已建立",
+        payload: {},
+        createdAt: STARTED_AT,
+      }),
+      runEvent({
+        sequence: 2,
+        type: "architecture_accepted",
+        stage: "building",
+        summary: "当前架构已接受",
+        payload: {
+          architectureRef: completed.run.activeArchitecture!.architectureRef,
+        },
+        createdAt: "2026-07-29T08:01:10.000Z",
+      }),
+      runEvent({
+        sequence: 3,
+        type: "page_checkpoint_saved",
+        stage: "qa",
+        pageId: PAGE_ID,
+        summary: "页面质量报告已保存",
+        payload: { workOrderId: page.id },
+        createdAt: "2026-07-29T08:03:30.000Z",
+      }),
+      runEvent({
+        sequence: 4,
+        type: "page_blocked",
+        stage: "building",
+        pageId: PAGE_ID,
+        summary: "页面任务已阻塞",
+        payload: {
+          workOrderId: page.id,
+          code: "PAGE_WORK_ORDER_BLOCKED",
+        },
+        createdAt: "2026-07-29T08:04:00.000Z",
+      }),
+      runEvent({
+        sequence: 5,
+        type: "course_failed",
+        stage: "building",
+        summary: "课程生成失败",
+        payload: { code: "WORK_ORDER_BLOCKED" },
+        createdAt: "2026-07-29T08:04:01.000Z",
       }),
     ],
   };

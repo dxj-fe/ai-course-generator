@@ -124,6 +124,17 @@ export type CourseRunRepository = {
         event?: CourseRunEvent;
       }
     | undefined;
+  checkpointArchitectureCandidate(input: {
+    workOrderId: string;
+    expectedWorkOrderLockVersion: number;
+    workOrderLeaseOwner: string;
+    runLeaseOwner: string;
+    traceId: string;
+    architecture: CourseArchitecture;
+    now?: string;
+  }): {
+    artifact: CourseArtifact;
+  };
   submitArchitecture(input: {
     workOrderId: string;
     expectedWorkOrderLockVersion: number;
@@ -482,6 +493,44 @@ export function createCourseRunRepository(
           cancelledWorkOrders,
           event,
         };
+      });
+    },
+
+    checkpointArchitectureCandidate(input) {
+      const architecture = CourseArchitectureSchema.parse(input.architecture);
+      const now = input.now ?? new Date().toISOString();
+      return runInTransaction(database, () => {
+        const current = requiredWorkOrder(
+          workOrders.load(input.workOrderId),
+          input.workOrderId,
+        );
+        const run = requiredRun(runs.loadByTaskId(current.taskId), current.taskId);
+        assertRunExecutionFence(
+          database,
+          run,
+          input.traceId,
+          input.runLeaseOwner,
+        );
+        if (
+          current.kind !== "architect_course" ||
+          current.status !== "running" ||
+          current.lockVersion !== input.expectedWorkOrderLockVersion ||
+          current.leaseOwner !== input.workOrderLeaseOwner ||
+          architecture.courseId !== current.courseId
+        ) {
+          throw new Error("Architect 候选架构 checkpoint 围栏失效");
+        }
+
+        const artifact = artifacts.putInTransaction({
+          taskId: current.taskId,
+          courseId: current.courseId,
+          scopeKey: "course",
+          kind: "course_architecture_candidate",
+          createdByWorkOrderId: current.id,
+          payload: architecture,
+          createdAt: now,
+        });
+        return { artifact };
       });
     },
 

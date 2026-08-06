@@ -1095,7 +1095,7 @@ export function ChatApp({
     const courseRun: KeyaCourseRun = {
       id: `run-${startedAt}`,
       courseId,
-      prompt: taskPrompt,
+      prompt: brief.originalRequest,
       traceId,
       startedAt,
       planner: { status: "running", events: [] },
@@ -1170,7 +1170,7 @@ export function ChatApp({
           conversationId,
           assistantId,
           runId: courseRun.id,
-          prompt: taskPrompt,
+          prompt: brief.originalRequest,
           runStartedAt: startedAt,
           requestStartedAt: startedAt,
           mode: "create",
@@ -1369,17 +1369,23 @@ export function ChatApp({
         },
         controller.signal,
       );
-      const task = await createCourseTask(
-        {
-          courseId,
-          userPrompt: run.prompt,
-          creationBrief:
-            courseBriefs[conversationId] ??
-            createCourseCreationBrief(run.prompt),
-          ...(pageCount ? { pageCount } : {}),
-        },
-        { signal: controller.signal, traceId },
-      );
+      const task =
+        previousTaskStatus === "paused" && run.taskId
+          ? await resumeCourseTask(run.taskId, {
+              signal: controller.signal,
+              traceId,
+            })
+          : await createCourseTask(
+              {
+                courseId,
+                userPrompt: run.prompt,
+                creationBrief:
+                  courseBriefs[conversationId] ??
+                  createCourseCreationBrief(run.prompt),
+                ...(pageCount ? { pageCount } : {}),
+              },
+              { signal: controller.signal, traceId },
+            );
       setConversations((current) =>
         updateConversation(current, conversationId, (conversation) => ({
           ...conversation,

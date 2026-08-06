@@ -160,6 +160,46 @@ describe("AgentRunner", () => {
     expect(load).not.toHaveBeenCalled();
   });
 
+  it("终态工具的普通异常也会立即停止，不交回模型反复重试", async () => {
+    const rawError = new Error("提交时的内部结构错误");
+    let fatalStopObserved = false;
+    const load = vi.fn();
+    const runner = new AgentRunner<TestTools, TestSubmission>({
+      createAgent: createFakeFactory(async (settings) => {
+        await settings.onToolExecutionEnd({
+          toolCall: {
+            input: {},
+            toolCallId: "tool-call-submit",
+            toolName: "submit_result",
+          },
+          toolOutput: {
+            error: rawError,
+            type: "tool-error",
+          },
+        });
+        fatalStopObserved = (
+          await Promise.all(
+            settings.stopWhen.map((stop) =>
+              stop({ steps: [{ toolResults: [] }] }),
+            ),
+          )
+        ).some(Boolean);
+        return {};
+      }),
+      terminalStateLoader: {
+        load,
+        parse: () => null,
+      },
+    });
+
+    await expect(runner.run(createRequest())).rejects.toMatchObject({
+      code: "AGENT_FATAL_TOOL_ERROR",
+      originalError: rawError,
+    });
+    expect(fatalStopObserved).toBe(true);
+    expect(load).not.toHaveBeenCalled();
+  });
+
   it("把 abort 和总超时原样交给 generate，并读取刚提交的终态", async () => {
     const abortController = new AbortController();
     let persisted: PersistedAgentTerminal<TestSubmission> | null = null;

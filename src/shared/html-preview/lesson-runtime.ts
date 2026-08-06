@@ -40,6 +40,9 @@ export function buildTrustedLessonSrcDoc(
     [data-keya-runtime-motion="pending"] { opacity: 0; transform: translateY(8px); }
     [data-keya-runtime-motion="visible"] { opacity: 1; transform: none; transition: opacity var(--keya-runtime-duration, 420ms) ease, transform var(--keya-runtime-duration, 420ms) ease; }
     [data-keya-runtime-highlight="true"] { outline: 3px solid color-mix(in srgb, #397a52 55%, transparent); outline-offset: 4px; }
+    @media (max-width: 560px) {
+      [data-keya-runtime-feedback] { margin-top: 4px; padding: 4px 6px; font-size: .82em; line-height: 1.2; }
+    }
     @media (prefers-reduced-motion: reduce) {
       [data-keya-runtime-motion] { opacity: 1 !important; transform: none !important; transition: none !important; }
     }
@@ -142,6 +145,10 @@ export function buildTrustedLessonSrcDoc(
           submit.setAttribute("data-runtime-submit", "true");
           container.append(submit);
         }
+        // 作者 HTML 有时把提交按钮初始设为 disabled，但运行时本身会校验
+        // 是否已选择答案。若不解除该静态状态，真实用户和截图审查都永远
+        // 无法提交，且页面没有任何代码能重新启用它。
+        submit.disabled = false;
         submit.addEventListener("click", () => {
           attempts += 1;
           markStarted(interactionId);

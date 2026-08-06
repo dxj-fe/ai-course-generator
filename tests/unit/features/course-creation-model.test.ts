@@ -26,6 +26,51 @@ describe("course creation model", () => {
     expect(getNextClarificationQuestion(brief)).toBeUndefined();
   });
 
+  it("keeps a numeric child audience separate from section count and topic", () => {
+    const brief = createCourseCreationBrief(
+      "为 10 岁孩子制作一门 4 节的太阳系互动课程，用探索任务认识行星，包含比较和小测验。",
+    );
+
+    expect(brief).toMatchObject({
+      topic: "太阳系",
+      audience: "10 岁儿童",
+      sectionCount: 4,
+      learningMode: "practice",
+    });
+    expect(brief.goal).toContain("太阳系");
+  });
+
+  it("prefers an explicitly quoted topic over generic course-format words", () => {
+    const brief = createCourseCreationBrief(
+      "请为 12 岁初学者制作一个 5 页互动微课，主题是“三步看懂色彩搭配”。",
+    );
+
+    expect(brief).toMatchObject({
+      topic: "三步看懂色彩搭配",
+      audience: "12 岁儿童",
+      sectionCount: 5,
+    });
+  });
+
+  it("recognizes a concrete post-course outcome with comma-separated criteria", () => {
+    const brief = createCourseCreationBrief(
+      "色彩搭配。学完后，学习者应能从色相关系、面积比例、明度层级三个方面判断并改进一组配色。",
+    );
+
+    expect(brief.goal).toBe(
+      "能从色相关系、面积比例、明度层级三个方面判断并改进一组配色",
+    );
+  });
+
+  it("allows a follow-up to correct an incorrectly inferred topic", () => {
+    const brief = applyCourseCreationAnswer(
+      createCourseCreationBrief("制作一个 5 页互动微课"),
+      "请把课程主题更正为“三步看懂色彩搭配”。",
+    );
+
+    expect(brief.topic).toBe("三步看懂色彩搭配");
+  });
+
   it("asks a broad request only for its goal and lets the backend plan sections", () => {
     const brief = createCourseCreationBrief("帮我学英语");
 

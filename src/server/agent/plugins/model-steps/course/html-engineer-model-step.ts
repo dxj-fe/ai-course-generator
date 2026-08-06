@@ -6,7 +6,6 @@ import {
   AiSchemaValidationError,
   serializeErrorForLog,
 } from "@/server/infra/ai/error";
-import { renderDeterministicPageFallback } from "@/server/course/page/deterministic-fallback";
 import { buildHtmlEngineerPrompts } from "@/server/agent/plugins/prompts/course/model-steps/html-engineer";
 import type { LoadedLocalResource } from "@/server/agent/skill";
 import {
@@ -22,10 +21,6 @@ import {
   validateGeneratedHtmlContract,
 } from "@/shared/html-preview";
 import {
-  getFunctionalTemplate,
-  type FunctionalTemplate,
-} from "@/shared/templates/functional";
-import {
   getStyleTemplate,
   type StyleTemplate,
 } from "@/shared/templates/style";
@@ -34,16 +29,12 @@ import { validateHtmlEngineerOutput } from "./html-engineer-contract";
 import {
   normalizeChoiceInteractionRoot,
   normalizeChoiceRuntimeMarkers,
-  normalizeMergedInteractiveBlocks,
   normalizeNativeInteractionMarker,
   normalizeReadyCssBackgroundAccessibility,
-  normalizeRevealCardInteraction,
   normalizeRevealRuntimeMarkers,
-  normalizeTrustedPageTitle,
-  normalizeTrustedDslMarkup,
   normalizeTrustedPlayerLayout,
+  normalizeWideSingleColumnBreakpoints,
   normalizeUniqueReadyAssetSlotRoots,
-  normalizeVisualPrimitiveMarker,
   removeAttribute,
   setAttributeValue,
 } from "./html-engineer-normalizers";
@@ -52,9 +43,7 @@ import {
   normalizeGeneratedHtmlEnvelope,
 } from "./html-engineer-safety-normalizer";
 import {
-  normalizeExploreCardInteraction,
   normalizeConditionalFeedbackVisibility,
-  normalizeSortCardInteraction,
   normalizeSubmissionRuntimeMarker,
 } from "./html-engineer-interaction-normalizers";
 import { createModelStep } from "./model-step";
@@ -78,7 +67,6 @@ export type HtmlEngineerValidationFeedback = {
 };
 
 export type HtmlEngineerResolvedInput = HtmlEngineerInput & {
-  functionalTemplate: FunctionalTemplate;
   pageGuidance: VisualPageGuidance;
   styleTemplate: StyleTemplate;
 };
@@ -135,7 +123,6 @@ export function createHtmlEngineerModelStep(
         },
       });
 
-      let fallbackApplied = false;
       let contractRetryApplied = false;
       let validated: ReturnType<typeof validateHtmlEngineerOutput>;
       try {
@@ -177,36 +164,10 @@ export function createHtmlEngineerModelStep(
           },
         });
 
-        try {
-          validated = normalizeAndValidateHtmlEngineerOutput(
-            generated,
-            state.task,
-          );
-        } catch (retryError) {
-          if (!(retryError instanceof AiSchemaValidationError)) {
-            throw retryError;
-          }
-          console.error("[html-engineer]", {
-            event: "model-html:contract-retry-failed",
-            traceId: context.traceId,
-            pageId: state.task.content.pageId,
-            stage: "html",
-            errorCode: retryError.code,
-            ...serializeErrorForLog(retryError),
-            recovery: "deterministic-fallback",
-          });
-
-          const fallbackHtml = renderDeterministicPageFallback({
-            assets: resolved.assets,
-            content: resolved.content,
-            styleTemplate: resolved.styleTemplate,
-          });
-          validated = validateHtmlEngineerOutput(
-            fallbackHtml,
-            state.task,
-          );
-          fallbackApplied = true;
-        }
+        validated = normalizeAndValidateHtmlEngineerOutput(
+          generated,
+          state.task,
+        );
       }
       const { html, validation } = validated;
       const htmlOutput = HtmlOutputSchema.parse({
@@ -217,13 +178,10 @@ export function createHtmlEngineerModelStep(
 
       emit({
         type: "validation",
-        summary: fallbackApplied
-          ? "模型 HTML 未通过合同校验，已使用可信课程数据生成安全回退页面。"
-          : "HTML 合同、内容标记与安全预检已通过。",
+        summary: "HTML 合同、内容标记与安全预检已通过。",
         data: {
           blockCount: state.task.content.blocks.length,
           contractRetryApplied,
-          fallbackApplied,
           pageId: state.task.content.pageId,
           safetyIssueCount: validation.safety.issues.length,
         },
@@ -241,16 +199,11 @@ function normalizeAndValidateHtmlEngineerOutput(
   let normalized: unknown = normalizeGeneratedHtmlEnvelope(generated);
   normalized = normalizeGeneratedActiveContent(normalized);
   normalized = normalizeGeneratedCanvasRoot(normalized);
+  normalized = normalizeWideSingleColumnBreakpoints(normalized);
   normalized = normalizeTrustedPlayerLayout(normalized);
-  normalized = normalizeTrustedPageTitle(normalized, input);
+  // 运行层只补安全与稳定 runtime 属性，不重写模型的内容层级、互动结构或图形。
   normalized = normalizeNativeInteractionMarker(normalized, input);
-  normalized = normalizeRevealCardInteraction(normalized, input);
   normalized = normalizeRevealRuntimeMarkers(normalized, input);
-  normalized = normalizeExploreCardInteraction(
-    normalized,
-    input.content,
-  );
-  normalized = normalizeSortCardInteraction(normalized, input.content);
   normalized = normalizeSubmissionRuntimeMarker(
     normalized,
     input.content,
@@ -261,9 +214,6 @@ function normalizeAndValidateHtmlEngineerOutput(
   );
   normalized = normalizeChoiceInteractionRoot(normalized, input);
   normalized = normalizeChoiceRuntimeMarkers(normalized, input);
-  normalized = normalizeMergedInteractiveBlocks(normalized, input);
-  normalized = normalizeTrustedDslMarkup(normalized, input);
-  normalized = normalizeVisualPrimitiveMarker(normalized, input);
   normalized = normalizeUniqueReadyAssetSlotRoots(normalized, input);
   normalized = normalizeReadyCssBackgroundAccessibility(
     normalized,
@@ -333,18 +283,12 @@ export function runHtmlEngineerModelStep(
 export function resolveHtmlEngineerInput(
   input: HtmlEngineerInput,
 ): HtmlEngineerResolvedInput {
-  const functionalTemplate = getFunctionalTemplate(
-    input.content.functionalTemplateId,
-  );
   const styleTemplate = getStyleTemplate(input.visualBrief.styleTemplateId);
   const pageGuidance = input.visualBrief.pageGuidance.find(
     ({ pageId }) => pageId === input.content.pageId,
   );
   const issues: string[] = [];
 
-  if (!functionalTemplate) {
-    issues.push(`找不到功能模板 ${input.content.functionalTemplateId}`);
-  }
   if (!styleTemplate) {
     issues.push(`找不到样式模板 ${input.visualBrief.styleTemplateId}`);
   }
@@ -352,7 +296,7 @@ export function resolveHtmlEngineerInput(
     issues.push(`VisualBrief 缺少页面 ${input.content.pageId} 的视觉指导`);
   }
 
-  if (issues.length > 0 || !functionalTemplate || !styleTemplate || !pageGuidance) {
+  if (issues.length > 0 || !styleTemplate || !pageGuidance) {
     throw new AiSchemaValidationError(
       `HTML Engineer 输入校验失败：${issues.join("；")}`,
     );
@@ -362,7 +306,6 @@ export function resolveHtmlEngineerInput(
     ...input,
     assets: input.assets ?? [],
     validationFeedback: input.validationFeedback,
-    functionalTemplate,
     styleTemplate,
     pageGuidance,
   };
@@ -377,7 +320,6 @@ async function generateHtml(
 ) {
   const prompts = await buildHtmlEngineerPrompts({
     pageContentDsl: input.content,
-    functionalTemplate: input.functionalTemplate,
     styleTemplate: input.styleTemplate,
     visualBrief: input.visualBrief,
     pageGuidance: input.pageGuidance,
@@ -392,15 +334,17 @@ async function generateHtml(
       parts: [{ type: "text", text: prompts.userPrompt }],
     },
   ] satisfies UIMessage[];
+  const isRepair = Boolean(input.validationFeedback);
   const result = await generateTextSafe({
     abortSignal: input.abortSignal,
-    capability: "html",
-    maxTokens: 8_000,
+    capability: isRepair ? "html-repair" : "html",
+    fallbackTimeoutMs: isRepair ? undefined : 150_000,
+    maxTokens: 10_000,
     messages,
     promptFingerprint: prompts.fingerprint,
     systemPrompt: prompts.systemPrompt,
-    temperature: 0.2,
-    timeoutMs: getHtmlEngineerTimeoutMs(),
+    temperature: input.validationFeedback ? 0.3 : 0.55,
+    timeoutMs: isRepair ? 150_000 : getHtmlEngineerTimeoutMs(),
     traceId: input.traceId,
   });
 
@@ -419,6 +363,7 @@ export {
   normalizeRevealRuntimeMarkers,
   normalizeTrustedDslMarkup,
   normalizeTrustedPlayerLayout,
+  normalizeWideSingleColumnBreakpoints,
   normalizeUniqueReadyAssetSlotRoots,
   normalizeVisualPrimitiveMarker,
   removeRedundantRestoredDslMarkup,

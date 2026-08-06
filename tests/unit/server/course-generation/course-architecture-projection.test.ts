@@ -25,6 +25,21 @@ describe("CourseArchitecture 当前投影", () => {
     ]);
     expect(projected.outline.pages[1]?.dependsOnPageIds).toEqual([]);
     expect(projected.briefs.visual.styleTemplateId).toBe("minimal");
+    expect(projected.briefs.visual.pageGuidance).toEqual([
+      expect.objectContaining({
+        theme: "课程目标的内容隐喻",
+        composition: expect.stringContaining("cover页面"),
+      }),
+      expect.objectContaining({
+        theme: "叶片把光变成能量的微型工厂",
+        composition: "左侧展示光线进入叶片，右侧沿反应路径解释并完成揭示",
+        graphicMotif: "用光束、叶片截面和能量流箭头连接输入与输出",
+      }),
+      expect.objectContaining({
+        theme: "回顾与练习的内容隐喻",
+        composition: expect.stringContaining("summary页面"),
+      }),
+    ]);
     expect(projected.pageWorkerBriefs).toHaveLength(3);
   });
 
@@ -172,6 +187,15 @@ function pageTask(
     styleTemplateId: "minimal",
     interactionType: overrides.interactionType,
     assetNeeds: [],
+    ...(overrides.order === 2
+      ? {
+          visualDesign: {
+            theme: "叶片把光变成能量的微型工厂",
+            layout: "左侧展示光线进入叶片，右侧沿反应路径解释并完成揭示",
+            graphicMotif: "用光束、叶片截面和能量流箭头连接输入与输出",
+          },
+        }
+      : {}),
     acceptance: {
       requiredConcepts: ["光合作用"],
       expectedLearnerOutcome: "能用自己的话说明本页核心内容",

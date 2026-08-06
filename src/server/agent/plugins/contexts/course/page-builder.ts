@@ -2,7 +2,6 @@ import { z } from "zod";
 
 import {
   AgentToolSets,
-  SkillIds,
   ToolIds,
 } from "@/server/agent/ids";
 import type { LocalResourceSession } from "@/server/agent/skill";
@@ -338,31 +337,8 @@ export function assertPageBuilderToolCall(
   if (input.toolName === ToolIds.SearchReferences) {
     assertAuthorizedReferenceInput(execution, toolInput);
   }
-  if (
-    workOrder.allowedTools.includes(ToolIds.ReadLocalResource) &&
-    execution.localResourceSession &&
-    PAGE_CREATION_TOOL_IDS.has(input.toolName) &&
-    !execution.localResourceSession.activatedSkillIds.includes(
-      SkillIds.FrontendSlides,
-    )
-  ) {
-    throw forbidden(
-      input.toolName,
-      "首次生成页面前必须先加载 Agent 配置的 frontend-slides Skill",
-    );
-  }
   return true;
 }
-
-const PAGE_CREATION_TOOL_IDS = new Set<string>([
-  ToolIds.GeneratePageContent,
-  ToolIds.ResolvePageAssets,
-  ToolIds.GeneratePageHtml,
-  ToolIds.InspectPage,
-  ToolIds.RepairPageContent,
-  ToolIds.RepairPageHtml,
-  ToolIds.SubmitPage,
-]);
 
 export function loadPageBuilderSnapshot(
   execution: PageBuilderExecution,

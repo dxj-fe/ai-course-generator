@@ -7,7 +7,6 @@ import {
   runCourseReviewerAgent,
 } from "../../../../src/server/agent/plugins/agents/course/reviewer-handler";
 import {
-  COURSE_REVIEWER_PAGE_BATCH_LIMIT,
   createCourseReviewerBudget,
 } from "../../../../src/server/agent/plugins/contexts/course/reviewer";
 import { createCourseRunCommands } from "../../../../src/server/course/run/commands";
@@ -48,24 +47,16 @@ afterEach(async () => {
 });
 
 describe("Course Reviewer Agent", () => {
-  it.each([
-    { pageCount: 81, expectedBatches: 5, expectedMaxToolCalls: 24 },
-    { pageCount: 200, expectedBatches: 10, expectedMaxToolCalls: 35 },
-  ])(
-    "$pageCount 页课程的有限预算覆盖全部证据分页和终态调用",
-    ({ pageCount, expectedBatches, expectedMaxToolCalls }) => {
+  it.each([1, 81, 200])(
+    "%i 页课程都使用一次预加载和有界终态预算",
+    (pageCount) => {
       const budget = createCourseReviewerBudget(pageCount);
-      const requiredToolCalls = expectedBatches * 2 + 3;
 
-      expect(
-        Math.ceil(pageCount / COURSE_REVIEWER_PAGE_BATCH_LIMIT),
-      ).toBe(expectedBatches);
-      expect(budget.maxToolCalls).toBe(expectedMaxToolCalls);
-      expect(budget.maxSteps).toBe(expectedMaxToolCalls);
-      expect(budget.maxToolCalls).toBeGreaterThanOrEqual(
-        requiredToolCalls,
-      );
-      expect(budget.maxToolCalls).toBeLessThanOrEqual(35);
+      expect(budget).toMatchObject({
+        maxToolCalls: 4,
+        maxSteps: 4,
+        timeoutMs: 120_000,
+      });
     },
   );
 
@@ -73,22 +64,9 @@ describe("Course Reviewer Agent", () => {
     const prepared = await prepareReviewer({
       duplicateDigests: true,
     });
-    let matrixOutput: unknown;
     let toolOutput: unknown;
     const createAgent = createFakeFactory(async (settings) => {
-      matrixOutput = await executeTool(
-        settings.tools,
-        "read_course_matrix",
-        {},
-      );
-      await executeTool(settings.tools, "read_page_summary", {
-        offset: 0,
-        limit: 20,
-      });
-      await executeTool(settings.tools, "read_page_quality", {
-        offset: 0,
-        limit: 20,
-      });
+      expect(settings.activeTools).toEqual(["submit_course_review"]);
       toolOutput = await executeTool(
         settings.tools,
         "submit_course_review",
@@ -106,17 +84,6 @@ describe("Course Reviewer Agent", () => {
       committed: false,
       terminal: false,
     });
-    expect(matrixOutput).toMatchObject({
-      ok: true,
-      data: {
-        evidenceArtifactRefs: [
-          {
-            kind: "course_architecture",
-            id: prepared.run.activeArchitecture?.architectureRef.id,
-          },
-        ],
-      },
-    });
     expect(readFeedback(toolOutput).join(" ")).toContain(
       "REVIEWER_CROSS_PAGE_DUPLICATE",
     );
@@ -131,32 +98,32 @@ describe("Course Reviewer Agent", () => {
     ).toBe("running");
   });
 
-  it("未把 PageSummary 和 PageQuality 的分页游标读到末尾时不能提交伪 pass", async () => {
+  it("Harness 预加载全部封口证据后直接强制终态提交", async () => {
     const prepared = await prepareReviewer();
     const candidate = passReview(prepared.run.currentManifestHash!);
-    let earlySubmission: unknown;
     const createAgent = createFakeFactory(async (settings) => {
-      await executeTool(settings.tools, "read_course_matrix", {});
-      await executeTool(settings.tools, "read_page_summary", {
-        offset: 0,
-        limit: 1,
-      });
-      await executeTool(settings.tools, "read_page_quality", {
-        offset: 0,
-        limit: 1,
-      });
-      earlySubmission = await executeTool(
-        settings.tools,
-        "submit_course_review",
-        { review: candidate },
+      expect(settings.activeTools).toEqual(["submit_course_review"]);
+      expect(settings.prompt).toContain("已封口的全部决策证据");
+      expect(settings.prompt).toContain("page-001");
+      expect(settings.prompt).toContain("page-002");
+      expect(settings.prompt).toContain(
+        '"interactionSubmitTested":true',
       );
-      await executeTool(settings.tools, "read_page_summary", {
-        offset: 1,
-        limit: 1,
-      });
-      await executeTool(settings.tools, "read_page_quality", {
-        offset: 1,
-        limit: 1,
+      expect(settings.prompt).toContain(
+        '"interactionFeedbackVisible":true',
+      );
+      await expect(
+        settings.prepareStep({
+          messages: [],
+          stepNumber: 0,
+          steps: [],
+        }),
+      ).resolves.toMatchObject({
+        activeTools: ["submit_course_review"],
+        toolChoice: {
+          type: "tool",
+          toolName: "submit_course_review",
+        },
       });
       return executeTool(
         settings.tools,
@@ -167,19 +134,12 @@ describe("Course Reviewer Agent", () => {
 
     const result = await runPreparedReviewer(prepared, createAgent);
 
-    expect(earlySubmission).toMatchObject({
-      ok: false,
-      code: "COURSE_REVIEW_GATE_FAILED",
-      committed: false,
-      terminal: false,
-    });
-    expect(readFeedback(earlySubmission).join(" ")).toContain(
-      "REVIEWER_SUMMARY_NOT_FULLY_READ",
-    );
-    expect(readFeedback(earlySubmission).join(" ")).toContain(
-      "REVIEWER_QUALITY_NOT_FULLY_READ",
-    );
     expect(result.status).toBe("submitted");
+    expect(result.budget).toMatchObject({
+      maxToolCalls: 4,
+      reservedToolCalls: 1,
+      remainingToolCalls: 3,
+    });
   });
 
   it("manifest 变化后，旧 Reviewer 的任意工具调用都会被双围栏拒绝", async () => {
@@ -202,7 +162,9 @@ describe("Course Reviewer Agent", () => {
       ),
     ).toBe(true);
     const createAgent = createFakeFactory(async (settings) => {
-      await executeTool(settings.tools, "read_course_matrix", {});
+      await executeTool(settings.tools, "submit_course_review", {
+        review: passReview(prepared.run.currentManifestHash!),
+      });
       return {};
     });
 
@@ -220,39 +182,11 @@ describe("Course Reviewer Agent", () => {
     ).toBe("running");
   });
 
-  it("读取全部当前证据并提交后，从 Repository 重读 submitted 终态", async () => {
+  it("单次提交后，从 Repository 重读 submitted 终态", async () => {
     const prepared = await prepareReviewer();
     const candidate = passReview(prepared.run.currentManifestHash!);
     const calls: string[] = [];
     const createAgent = createFakeFactory(async (settings) => {
-      calls.push("read_course_matrix");
-      await executeTool(settings.tools, "read_course_matrix", {});
-      calls.push("read_page_summary");
-      const summaries = await executeTool(
-        settings.tools,
-        "read_page_summary",
-        { offset: 0, limit: 20 },
-      );
-      expect(summaries).toMatchObject({
-        ok: true,
-        data: { total: 2, nextOffset: null },
-      });
-      calls.push("read_page_quality");
-      await executeTool(settings.tools, "read_page_quality", {
-        offset: 0,
-        limit: 20,
-      });
-      calls.push("validate_course_review");
-      const validated = await executeTool(
-        settings.tools,
-        "validate_course_review",
-        { review: candidate },
-      );
-      expect(validated).toMatchObject({
-        ok: true,
-        committed: false,
-        terminal: false,
-      });
       calls.push("submit_course_review");
       const submitted = await executeTool(
         settings.tools,
@@ -269,13 +203,7 @@ describe("Course Reviewer Agent", () => {
 
     const result = await runPreparedReviewer(prepared, createAgent);
 
-    expect(calls).toEqual([
-      "read_course_matrix",
-      "read_page_summary",
-      "read_page_quality",
-      "validate_course_review",
-      "submit_course_review",
-    ]);
+    expect(calls).toEqual(["submit_course_review"]);
     expect(result.status).toBe("submitted");
     expect(result.submission.status).toBe("done");
     const stored = prepared.repository.workOrders.load(
@@ -298,28 +226,6 @@ describe("Course Reviewer Agent", () => {
   it("提交边界从封口快照补齐稳定字段和目标覆盖，模型无需重复抄写机器合同", async () => {
     const prepared = await prepareReviewer();
     const createAgent = createFakeFactory(async (settings) => {
-      const matrix = await executeTool(
-        settings.tools,
-        "read_course_matrix",
-        {},
-      );
-      expect(matrix).toMatchObject({
-        ok: true,
-        data: {
-          submissionTemplate: {
-            decision: "pass",
-            issues: [],
-          },
-        },
-      });
-      await executeTool(settings.tools, "read_page_summary", {
-        offset: 0,
-        limit: 20,
-      });
-      await executeTool(settings.tools, "read_page_quality", {
-        offset: 0,
-        limit: 20,
-      });
       return executeTool(settings.tools, "submit_course_review", {
         review: {
           decision: "pass",
@@ -343,15 +249,6 @@ describe("Course Reviewer Agent", () => {
   it("Reviewer 只声明页面证据 ID，提交边界写入当前精确 ArtifactRef", async () => {
     const prepared = await prepareReviewer();
     const createAgent = createFakeFactory(async (settings) => {
-      await executeTool(settings.tools, "read_course_matrix", {});
-      await executeTool(settings.tools, "read_page_summary", {
-        offset: 0,
-        limit: 20,
-      });
-      await executeTool(settings.tools, "read_page_quality", {
-        offset: 0,
-        limit: 20,
-      });
       return executeTool(settings.tools, "submit_course_review", {
         review: {
           decision: "revise_pages",
@@ -387,7 +284,7 @@ describe("Course Reviewer Agent", () => {
   });
 
   it(
-    "200 页最大课程可在动态预算内分页读完摘要和质量并提交",
+    "200 页最大课程也只需一次终态提交",
     async () => {
       const pageCount = 200;
       const prepared = await prepareReviewer({ pageCount });
@@ -396,44 +293,9 @@ describe("Course Reviewer Agent", () => {
         pageCount,
       );
       const createAgent = createFakeFactory(async (settings) => {
-        await executeTool(settings.tools, "read_course_matrix", {});
-        for (
-          let offset = 0;
-          offset < pageCount;
-          offset += COURSE_REVIEWER_PAGE_BATCH_LIMIT
-        ) {
-          const summaries = await executeTool(
-            settings.tools,
-            "read_page_summary",
-            {
-              offset,
-              limit: COURSE_REVIEWER_PAGE_BATCH_LIMIT,
-            },
-          );
-          expect(summaries).not.toMatchObject({
-            data: { truncated: true },
-          });
-        }
-        for (
-          let offset = 0;
-          offset < pageCount;
-          offset += COURSE_REVIEWER_PAGE_BATCH_LIMIT
-        ) {
-          const qualities = await executeTool(
-            settings.tools,
-            "read_page_quality",
-            {
-              offset,
-              limit: COURSE_REVIEWER_PAGE_BATCH_LIMIT,
-            },
-          );
-          expect(qualities).not.toMatchObject({
-            data: { truncated: true },
-          });
-        }
-        await executeTool(settings.tools, "validate_course_review", {
-          review: candidate,
-        });
+        expect(settings.activeTools).toEqual(["submit_course_review"]);
+        expect(settings.prompt).toContain("page-200");
+        expect(settings.prompt.length).toBeLessThan(500_000);
         return executeTool(settings.tools, "submit_course_review", {
           review: candidate,
         });
@@ -441,40 +303,35 @@ describe("Course Reviewer Agent", () => {
 
       const result = await runPreparedReviewer(prepared, createAgent);
 
-      expect(prepared.workOrder.budget.maxToolCalls).toBe(35);
+      expect(prepared.workOrder.budget.maxToolCalls).toBe(4);
       expect(prepared.workOrder.inputArtifactRefs).toHaveLength(2);
       expect(result.status).toBe("submitted");
       expect(result.budget).toMatchObject({
-        maxToolCalls: 35,
-        reservedToolCalls: 23,
-        remainingToolCalls: 12,
+        maxToolCalls: 4,
+        reservedToolCalls: 1,
+        remainingToolCalls: 3,
       });
     },
     60_000,
   );
 
-  it("健康封口即使读完全部证据也不会开放 block_course_review", async () => {
+  it("健康封口只开放 submit_course_review", async () => {
     const prepared = await prepareReviewer();
     const createAgent = createFakeFactory(async (settings) => {
-      expect(settings.activeTools).not.toContain("block_course_review");
-      await executeTool(settings.tools, "read_course_matrix", {});
-      await executeTool(settings.tools, "read_page_summary", {
-        offset: 0,
-        limit: 20,
+      expect(settings.activeTools).toEqual(["submit_course_review"]);
+      await expect(
+        settings.prepareStep({
+          messages: [],
+          stepNumber: 0,
+          steps: [],
+        }),
+      ).resolves.toMatchObject({
+        activeTools: ["submit_course_review"],
+        toolChoice: {
+          type: "tool",
+          toolName: "submit_course_review",
+        },
       });
-      await executeTool(settings.tools, "read_page_quality", {
-        offset: 0,
-        limit: 20,
-      });
-      expect(
-        (
-          await settings.prepareStep({
-            messages: [],
-            stepNumber: 3,
-            steps: [],
-          })
-        ).activeTools,
-      ).not.toContain("block_course_review");
       return executeTool(
         settings.tools,
         "block_course_review",
@@ -499,25 +356,25 @@ describe("Course Reviewer Agent", () => {
       evidenceContractConflict: true,
     });
     const createAgent = createFakeFactory(async (settings) => {
-      expect(settings.activeTools).not.toContain("block_course_review");
-      await executeTool(settings.tools, "read_course_matrix", {});
-      await executeTool(settings.tools, "read_page_summary", {
-        offset: 0,
-        limit: 20,
+      expect(settings.activeTools).toEqual(["block_course_review"]);
+      await expect(
+        executeTool(settings.tools, "submit_course_review", {
+          review: passReview(prepared.run.currentManifestHash!),
+        }),
+      ).rejects.toBeInstanceOf(AgentToolAuthorizationError);
+      await expect(
+        settings.prepareStep({
+          messages: [],
+          stepNumber: 0,
+          steps: [],
+        }),
+      ).resolves.toMatchObject({
+        activeTools: ["block_course_review"],
+        toolChoice: {
+          type: "tool",
+          toolName: "block_course_review",
+        },
       });
-      await executeTool(settings.tools, "read_page_quality", {
-        offset: 0,
-        limit: 20,
-      });
-      expect(
-        (
-          await settings.prepareStep({
-            messages: [],
-            stepNumber: 3,
-            steps: [],
-          })
-        ).activeTools,
-      ).toContain("block_course_review");
       return executeTool(settings.tools, "block_course_review", {
         code: "UNRECOVERABLE_STATE",
         message: "模型自报文案不会成为授权依据。",
@@ -731,13 +588,13 @@ function runPreparedReviewer(
 
 function createFakeFactory(
   generate: (
-    settings: Parameters<
-      RuntimeAgentFactory<CourseReviewerTools>
-    >[0],
+    settings: Parameters<RuntimeAgentFactory<CourseReviewerTools>>[0] & {
+      prompt: string;
+    },
   ) => PromiseLike<unknown>,
 ): RuntimeAgentFactory<CourseReviewerTools> {
   return (settings) => ({
-    generate: () => generate(settings),
+    generate: ({ prompt }) => generate({ ...settings, prompt }),
   });
 }
 

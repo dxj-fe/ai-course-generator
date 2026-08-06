@@ -5,105 +5,231 @@ import {
   visualBrief,
 } from "../../../fixtures/course-design";
 import { buildHtmlEngineerPrompts } from "../../../../src/server/agent/plugins/prompts/course/model-steps/html-engineer";
-import { getFunctionalTemplate } from "../../../../src/shared/templates/functional";
 import { getStyleTemplate } from "../../../../src/shared/templates/style";
 
 describe("HTML Engineer prompts", () => {
-  it("renders only the resolved DSL, templates and visual contracts", async () => {
-    const functionalTemplate = getFunctionalTemplate(
-      pageContentDsl.functionalTemplateId,
-    );
+  it("只渲染紧凑 page brief、设计方向、样式变量与必要合同", async () => {
     const styleTemplate = getStyleTemplate(visualBrief.styleTemplateId);
     const pageGuidance = visualBrief.pageGuidance.find(
       ({ pageId }) => pageId === pageContentDsl.pageId,
     );
-    expect(functionalTemplate && styleTemplate && pageGuidance).toBeTruthy();
+    expect(styleTemplate && pageGuidance).toBeTruthy();
 
     const prompts = await buildHtmlEngineerPrompts({
       pageContentDsl,
-      functionalTemplate,
       styleTemplate: styleTemplate!,
       visualBrief,
-      pageGuidance,
+      pageGuidance: pageGuidance!,
       pageDesignGuidance: [
         {
           logicalPath:
-            "agent/skills/frontend-slides/SKILL.md",
+            "agent/skills/course-page-design/references/fixed-canvas-composition.md",
           digest: "a".repeat(64),
-          content: "Commit to a cohesive aesthetic and a clear visual thesis.",
+          content: "Keep the learning action inside the main composition.",
         },
       ],
     });
 
     expect(prompts.fingerprint).toMatch(/^[a-f0-9]{64}$/);
-    expect(prompts.systemPrompt).toContain("禁止任何 `<script>`");
-    expect(prompts.systemPrompt).toContain("不得交换槽位");
-    expect(prompts.systemPrompt).toContain("精确 altText");
-    expect(prompts.systemPrompt).toContain("只包裹一个此类直接消费节点");
+    expect(prompts.systemPrompt).toContain("HTML Page Designer");
+    expect(prompts.systemPrompt).toContain("而不是组件演示页");
     expect(prompts.systemPrompt).toContain(
-      "唯一 class、唯一 id、精确 `[data-asset-slot-id",
-    );
-    expect(prompts.systemPrompt).toContain("不使用其他命名实体");
-    expect(prompts.systemPrompt).toContain("`none` 页面不要为了标记");
-    expect(prompts.systemPrompt).toContain(
-      "`feedback.retry` 只属于答错后的条件状态",
+      "由主题和学习动作决定的视觉主角",
     );
     expect(prompts.systemPrompt).toContain(
-      "choice prompt 若只比对应 question block 的 body 多一个纯题号前缀",
-    );
-    expect(prompts.systemPrompt).toContain("x1&lt;x2");
-    expect(prompts.systemPrompt).toContain("PageDesignGuidance");
-    expect(prompts.systemPrompt).toContain(
-      "不得使用 `overflow:auto` / `overflow:scroll`",
+      "视觉编码必须与结论一致",
     );
     expect(prompts.systemPrompt).toContain(
-      "`html`、`body` 和唯一 `main` 必须使用 `width:100%`",
-    );
-    expect(prompts.systemPrompt).toContain("不能依赖播放器整体缩放");
-    expect(prompts.systemPrompt).toContain(
-      "禁止先渲染一份静态题卡",
+      "关键关系在缩略图尺度也清楚可辨",
     );
     expect(prompts.systemPrompt).toContain(
-      "input 页面必须逐字呈现页面 title",
+      "互动应成为画面核心的一部分",
     );
     expect(prompts.systemPrompt).toContain(
-      "choice 是主要动作时，题目任务区占据主要空间",
+      "操作会改变什么",
     );
-    expect(prompts.systemPrompt).not.toContain(
-      "三个及以上内容块",
+    expect(prompts.systemPrompt).toContain(
+      "避免把无关模板组件、后台面板或等权卡片当作设计",
     );
+    expect(prompts.systemPrompt).toContain(
+      "DOM 内联 SVG 表达精确关系",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "位图只使用输入中的 ready 素材",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "922×460 是首要画布",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "712×650 也须完整单屏",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "366×500 可自然纵向滚动",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "标题、核心证据和主要动作必须可见",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "主要控件至少 44×44px",
+    );
+    expect(prompts.systemPrompt).toContain(
+      "每个 block 在 `main` 内有一个根节点",
+    );
+    expect(prompts.systemPrompt).toContain("禁止 script");
+    expect(prompts.systemPrompt).toContain(
+      "`src`、`srcset`、`poster`、CSS `url()`",
+    );
+    expect(prompts.systemPrompt).not.toContain("观察者必须位于该支路末端");
+    expect(prompts.systemPrompt).not.toContain("2×2 判断区");
+    expect(prompts.systemPrompt).not.toContain("max-width: 520px");
+    expect(prompts.systemPrompt).not.toContain("FunctionalTemplate");
     expect(prompts.userPrompt).toContain(pageContentDsl.pageId);
     expect(prompts.userPrompt).toContain("--course-color-background");
-    expect(prompts.userPrompt).not.toContain("为 8 岁儿童设计一门");
+    expect(prompts.userPrompt).not.toContain("--course-color-surface");
+    expect(prompts.userPrompt).not.toContain("--course-color-surface-alt");
+    expect(prompts.userPrompt).not.toContain("--course-color-border");
+    expect(prompts.userPrompt).toContain("--course-font-size-base");
+    expect(prompts.userPrompt).toContain("--course-line-height-body");
+    expect(prompts.userPrompt).toContain("--course-spacing-unit");
+    expect(prompts.userPrompt).toContain("--course-radius-control");
+    expect(prompts.userPrompt).toContain("--course-decoration-background");
+    expect(prompts.userPrompt).toContain("--course-motion-reduced-duration");
+    expect(prompts.userPrompt).not.toContain("--course-spacing-section");
+    expect(prompts.userPrompt).not.toContain("--course-spacing-card");
+    expect(prompts.userPrompt).not.toContain("--course-content-max-width");
+    expect(prompts.userPrompt).not.toContain("--course-radius-card");
+    expect(prompts.userPrompt).not.toContain("--course-border-width-card");
+    expect(prompts.userPrompt).not.toContain("--course-shadow-card");
+    expect(prompts.userPrompt).not.toContain("--course-layout-density");
+    expect(prompts.userPrompt).toContain(visualBrief.visualConcept);
+    expect(prompts.userPrompt).toContain('"globalGuardrails":{');
     expect(prompts.userPrompt).toContain(
-      "同一页面上一次确定性 HTML 校验反馈",
+      visualBrief.layoutPrinciples[0],
     );
     expect(prompts.userPrompt).toContain(
-      'data-runtime-submit="true"',
+      visualBrief.layoutPrinciples[1],
     );
-    expect(prompts.userPrompt).toContain("data-question-id");
     expect(prompts.userPrompt).toContain(
-      "Commit to a cohesive aesthetic and a clear visual thesis",
+      visualBrief.typographyGuidance,
     );
+    expect(prompts.userPrompt).toContain(visualBrief.colorUsage);
+    expect(prompts.userPrompt).toContain(
+      visualBrief.assetDirection.medium,
+    );
+    expect(prompts.userPrompt).toContain(
+      visualBrief.assetDirection.composition,
+    );
+    expect(prompts.userPrompt).toContain(
+      visualBrief.motionGuidance.strategy,
+    );
+    expect(prompts.userPrompt).toContain(
+      visualBrief.accessibilityRules[0],
+    );
+    expect(prompts.userPrompt).toContain(
+      visualBrief.assetDirection.negativeConstraints[0],
+    );
+    expect(prompts.userPrompt).toContain(
+      "避免通用后台面板、等权白卡网格和组件展示页",
+    );
+    expect(prompts.userPrompt).toContain(pageGuidance!.theme);
+    expect(prompts.userPrompt).toContain(pageGuidance!.composition);
+    expect(prompts.userPrompt).toContain(pageGuidance!.graphicMotif);
+    expect(prompts.userPrompt).toContain(pageGuidance!.focalPoint);
+    expect(prompts.userPrompt).toContain(pageGuidance!.assetPurpose);
+    expect(prompts.userPrompt).not.toContain(
+      pageContentDsl.layoutHints.visualPriority,
+    );
+    expect(prompts.userPrompt).not.toContain(
+      pageContentDsl.layoutHints.groupingStrategy,
+    );
+    expect(prompts.userPrompt).toContain(styleTemplate!.goal);
+    expect(prompts.userPrompt).toContain(
+      styleTemplate!.decoration.shapeLanguage,
+    );
+    expect(prompts.userPrompt).not.toContain('"paletteRoles"');
+    expect(prompts.userPrompt).not.toContain('"density"');
+    expect(prompts.userPrompt).not.toContain('"assetLanguage"');
+    expect(prompts.userPrompt).toContain(
+      "A retro-futuristic pixel-art presentation system",
+    );
+    expect(prompts.userPrompt).toContain(
+      "Keep the learning action inside the main composition",
+    );
+    expect(prompts.userPrompt).not.toContain("pixel-stack-cyan-yellow");
+    expect(prompts.userPrompt).not.toMatch(/1920\s*(?:×|x)\s*1080/i);
+    expect(prompts.userPrompt).not.toMatch(/deck[-_\s]?(?:runtime|viewport|stage)/i);
+    expect(prompts.userPrompt).not.toContain("viewport-base.css");
+    expect(prompts.userPrompt).not.toContain("functionalTemplateId");
     expect(prompts.userPrompt).toContain("null");
   });
 
+  it("只把 HTML 消费素材所需的槽位、URI 与无障碍信息注入 prompt", async () => {
+    const styleTemplate = getStyleTemplate(visualBrief.styleTemplateId)!;
+    const pageGuidance = visualBrief.pageGuidance.find(
+      ({ pageId }) => pageId === pageContentDsl.pageId,
+    )!;
+    const prompts = await buildHtmlEngineerPrompts({
+      pageContentDsl,
+      styleTemplate,
+      visualBrief,
+      pageGuidance,
+      assets: [
+        {
+          request: {
+            assetSlotId: "asset-slot-01",
+            assetType: "background",
+            usage: "解释课程主题",
+            prompt: "这段很长的生图构图指令不应进入 HTML prompt。",
+            transparentBackground: false,
+            safeArea: {
+              position: "left",
+              coveragePercent: 40,
+              description: "左侧保留文字安全区",
+            },
+            aspectRatio: "16:9",
+          },
+          status: "ready",
+          asset: {
+            id: "asset-01",
+            type: "illustration",
+            role: "inline",
+            source: "generated",
+            status: "ready",
+            uri: "/api/assets/asset-01",
+            altText: "主题关系插图",
+            generationPrompt: "重复的完整生图指令",
+            mimeType: "image/png",
+            dimensions: { width: 1600, height: 900 },
+            usedByPageIds: [pageContentDsl.pageId],
+          },
+          provider: "provider-name",
+          model: "image-model-name",
+          durationMs: 1200,
+        },
+      ],
+    });
+
+    expect(prompts.userPrompt).toContain('"assetSlotId":"asset-slot-01"');
+    expect(prompts.userPrompt).toContain('"uri":"/api/assets/asset-01"');
+    expect(prompts.userPrompt).toContain('"altText":"主题关系插图"');
+    expect(prompts.userPrompt).not.toContain("这段很长的生图构图指令");
+    expect(prompts.userPrompt).not.toContain("重复的完整生图指令");
+    expect(prompts.userPrompt).not.toContain("provider-name");
+    expect(prompts.userPrompt).not.toContain("image-model-name");
+  });
+
   it("renders deterministic validation feedback only as retry data", async () => {
-    const functionalTemplate = getFunctionalTemplate(
-      pageContentDsl.functionalTemplateId,
-    );
     const styleTemplate = getStyleTemplate(visualBrief.styleTemplateId);
     const pageGuidance = visualBrief.pageGuidance.find(
       ({ pageId }) => pageId === pageContentDsl.pageId,
     );
-    expect(functionalTemplate && styleTemplate && pageGuidance).toBeTruthy();
+    expect(styleTemplate && pageGuidance).toBeTruthy();
 
     const prompts = await buildHtmlEngineerPrompts({
       pageContentDsl,
-      functionalTemplate,
       styleTemplate: styleTemplate!,
       visualBrief,
-      pageGuidance,
+      pageGuidance: pageGuidance!,
       validationFeedback: {
         code: "AGENT_EXECUTION_ERROR",
         issues: ["页面正文缺少 DSL 文本：课程总结与后续展望"],
@@ -115,28 +241,39 @@ describe("HTML Engineer prompts", () => {
     );
   });
 
-  it.each(["sci-fi", "kids-playful", "minimal"])(
-    "injects the %s style contract for the same DSL",
-    async (styleId) => {
-      const functionalTemplate = getFunctionalTemplate(
-        pageContentDsl.functionalTemplateId,
-      );
+  it.each([
+    ["sci-fi", "A retro-futuristic pixel-art presentation system"],
+    ["kids-playful", "A cheerful, childlike presentation system"],
+    [
+      "minimal",
+      "A literary editorial system rendered in black ink on cream paper",
+    ],
+  ])(
+    "injects the %s style contract and bounded recipe description for the same DSL",
+    async (styleId, recipeDescription) => {
       const styleTemplate = getStyleTemplate(styleId);
       const pageGuidance = visualBrief.pageGuidance.find(
         ({ pageId }) => pageId === pageContentDsl.pageId,
       );
-      expect(functionalTemplate && styleTemplate && pageGuidance).toBeTruthy();
+      expect(styleTemplate && pageGuidance).toBeTruthy();
 
       const prompts = await buildHtmlEngineerPrompts({
         pageContentDsl,
-        functionalTemplate,
         styleTemplate: styleTemplate!,
         visualBrief: { ...visualBrief, styleTemplateId: styleId },
-        pageGuidance,
+        pageGuidance: pageGuidance!,
       });
 
-      expect(prompts.userPrompt).toContain(`\"id\":\"${styleId}\"`);
+      expect(prompts.userPrompt).toContain(styleTemplate!.goal);
+      expect(prompts.userPrompt).toContain(
+        styleTemplate!.decoration.shapeLanguage,
+      );
       expect(prompts.userPrompt).toContain(styleTemplate!.colorTokens.primary);
+      expect(prompts.userPrompt).toContain(recipeDescription);
+      expect(prompts.userPrompt).not.toContain(styleTemplate!.name);
+      expect(prompts.userPrompt).not.toContain("--course-radius-card");
+      expect(prompts.userPrompt).not.toContain("--course-layout-density");
+      expect(prompts.userPrompt).not.toContain(`\"id\":\"${styleId}\"`);
     },
   );
 });

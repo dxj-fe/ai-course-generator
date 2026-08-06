@@ -278,6 +278,8 @@ function mapEventStage(
   type: CourseGenerationPublicEvent["type"] | undefined,
   run: CourseRun,
 ): CourseGenerationStage | undefined {
+  if (event.type === "page_blocked") return "qa";
+
   const publicStage = CourseGenerationStageSchema.safeParse(event.stage);
   if (publicStage.success) return publicStage.data;
 

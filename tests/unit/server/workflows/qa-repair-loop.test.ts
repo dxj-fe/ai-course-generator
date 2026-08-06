@@ -246,6 +246,43 @@ describe("QA repair planning", () => {
     });
   });
 
+  it("routes option content errors to interaction DSL before layout repair", () => {
+    const report = qualityReportWithIssue({
+      code: "CONTENT_SKILL_COUNT",
+      dimension: "contentAccuracy",
+      selector: '.option[value="option-01-01"]',
+    });
+    const request = planRepairRound({
+      ...base,
+      report: {
+        ...report,
+        issues: [
+          ...report.issues,
+          {
+            code: "LAYOUT_CLIPPING_RISK",
+            dimension: "layoutQuality" as const,
+            severity: "error" as const,
+            source: "model" as const,
+            message: "页面根节点可能裁切内容。",
+            location: {
+              pageId: pageContentDsl.pageId,
+              selector: "style",
+              description: "根节点 overflow 规则",
+            },
+            repairHint: "限制 overflow 作用范围。",
+          },
+        ],
+      },
+    });
+
+    expect(request).toMatchObject({
+      targetArtifact: "dsl",
+      issueCodes: ["CONTENT_SKILL_COUNT"],
+      allowedContentFields: ["interaction"],
+      allowedSelectors: [],
+    });
+  });
+
   it("routes a blockless cover objective gap to narration DSL repair", () => {
     const example = getFunctionalTemplateDslExample("course-cover");
     if (!example) throw new Error("course-cover fixture is required");

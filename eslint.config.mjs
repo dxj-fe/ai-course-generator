@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     ".data/**",
+    // Read-only upstream skill snapshots keep their original toolchain and lint rules.
+    "resources/research/**",
     "next-env.d.ts",
   ]),
 ]);

@@ -1,3 +1,4 @@
+import type { UIMessage } from "ai";
 import { z } from "zod";
 
 import { generateStructuredObjectSafe } from "@/server/infra/ai/client";
@@ -13,6 +14,7 @@ import {
   VisualBriefSchema,
   type PageContentDSL,
   type AssetGenerationResult,
+  type CoursePack,
   type PagePlan,
   type QualityIssue,
   type QualityReport,
@@ -29,6 +31,7 @@ import {
 } from "@/server/course/page/quality/report";
 import {
   capturePageScreenshot,
+  type PageScreenshotModelImage,
   type PageScreenshotResult,
 } from "@/server/infra/browser/page-screenshot";
 
@@ -104,6 +107,10 @@ const MODEL_TOUCH_TARGET_ISSUE_CODES = new Set([
 export type PageQACourseContext = {
   courseOverview?: string;
   learningObjectives: string[];
+  facts?: Array<Pick<CoursePack["facts"][number], "id" | "text">>;
+  terms?: Array<
+    Pick<CoursePack["terms"][number], "term" | "definition">
+  >;
   previousPage?: PagePlan;
   nextPage?: PagePlan;
 };
@@ -127,6 +134,8 @@ export type PageQAModelStepDependencies = {
     heuristicIssues: QualityIssue[];
     browserIssues: QualityIssue[];
     screenshotEvidence: QualityScreenshotEvidence;
+    /** Ephemeral PNGs for this model call only; never persist in QualityReport. */
+    screenshotImages: PageScreenshotModelImage[];
     abortSignal?: AbortSignal;
     traceId: string;
   }): Promise<unknown>;
@@ -198,6 +207,7 @@ export function createPageQAModelStep(
         heuristicIssues,
         browserIssues: screenshot.issues,
         screenshotEvidence: screenshot.evidence,
+        screenshotImages: screenshot.modelImages ?? [],
         abortSignal: context.abortSignal,
         traceId: context.traceId,
       });
@@ -544,6 +554,7 @@ async function evaluate(
     heuristicIssues: QualityIssue[];
     browserIssues: QualityIssue[];
     screenshotEvidence: QualityScreenshotEvidence;
+    screenshotImages: PageScreenshotModelImage[];
     abortSignal?: AbortSignal;
     traceId: string;
   },
@@ -559,11 +570,16 @@ async function evaluate(
     screenshotEvidence: input.screenshotEvidence,
     assets: input.assets ?? [],
   });
+  const messages = buildPageQAModelMessages(
+    prompts.userPrompt,
+    input.screenshotImages,
+  );
 
   return generateStructuredObjectSafe({
     abortSignal: input.abortSignal,
     capability: "page-qa",
     maxTokens: 4_000,
+    messages,
     prompt: prompts.userPrompt,
     promptFingerprint: prompts.fingerprint,
     schema: PageQAModelOutputSchema,
@@ -574,4 +590,41 @@ async function evaluate(
     temperature: 0.1,
     traceId: input.traceId,
   });
+}
+
+/**
+ * 把浏览器首屏证据作为真正的视觉输入发送给模型。data URL 只存在于本次
+ * 请求的内存对象中；持久化报告仍只保留脱敏后的 viewport/metrics 证据。
+ */
+export function buildPageQAModelMessages(
+  userPrompt: string,
+  images: PageScreenshotModelImage[],
+) {
+  const parts: UIMessage["parts"] = [
+    { type: "text", text: userPrompt },
+  ];
+
+  for (const image of images) {
+    const viewport = `${image.viewport.width}x${image.viewport.height}`;
+    parts.push(
+      {
+        type: "text",
+        text: `\nPlaywright 首屏截图（视口 ${viewport}）：`,
+      },
+      {
+        type: "file",
+        mediaType: "image/png",
+        filename: `page-qa-${viewport}.png`,
+        url: `data:image/png;base64,${Buffer.from(image.png).toString("base64")}`,
+      },
+    );
+  }
+
+  return [
+    {
+      id: "page-qa-request",
+      role: "user",
+      parts,
+    },
+  ] satisfies UIMessage[];
 }

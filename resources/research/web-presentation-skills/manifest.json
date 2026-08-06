@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "captured_on": "2026-08-05",
+  "purpose": "Research-only snapshots for designing one consolidated, demand-matched web-presentation capability. These folders are not registered as project runtime skills and their scripts must not be executed implicitly.",
+  "selection_policy": [
+    "The source contains one or more real SKILL.md files.",
+    "The source contributes a distinct presentation-generation, template-selection, pedagogy, or verification capability.",
+    "GitHub stars are a popularity signal, not a substitute for relevance, license, maintainability, and project fit.",
+    "Only sources whose repository license permits retention are stored in this project.",
+    "Large presentation engines without an Agent Skill are benchmarks, not vendored skills."
+  ],
+  "selected_sources": [
+    {
+      "rank": 1,
+      "repository": "zarazhangrui/frontend-slides",
+      "url": "https://github.com/zarazhangrui/frontend-slides",
+      "source_path": ".",
+      "upstream_commit": "9906a34d640d2111f724544cbc50f7f130569ae1",
+      "stars_snapshot": 26962,
+      "forks_snapshot": 2190,
+      "license": "MIT",
+      "status": "already-active-and-current",
+      "local_path": "resources/agent/skills/frontend-slides",
+      "contribution": "Browser-native HTML deck workflow, fixed-stage rendering, visual preview selection, 12 safe presets, and a 34-template bold design pack with compact selection metadata."
+    },
+    {
+      "rank": 2,
+      "repository": "nexu-io/codex-slides",
+      "url": "https://github.com/nexu-io/codex-slides",
+      "source_path": "skills/codex-slides*",
+      "upstream_commit": "dbc2a5992e937760e9ce8e587e11729f970881cb",
+      "stars_snapshot": 759,
+      "forks_snapshot": 62,
+      "license": "MIT",
+      "status": "research-snapshot-suite",
+      "local_path": "resources/research/web-presentation-skills/snapshots/nexu-codex-slides",
+      "entry_skills": [
+        "codex-slides",
+        "codex-slides-browser",
+        "codex-slides-deck",
+        "codex-slides-known-errors",
+        "codex-slides-research",
+        "codex-slides-structured-intake",
+        "codex-slides-verification"
+      ],
+      "contribution": "Structured intake, scenario routing, semantic inspiration ranking, brand systems, durable project state, and two-signal verification."
+    },
+    {
+      "rank": 3,
+      "repository": "ryanbbrown/revealjs-skill",
+      "url": "https://github.com/ryanbbrown/revealjs-skill",
+      "source_path": "skills/revealjs",
+      "upstream_commit": "d0ccd344c4aaf9f045e5a15be6a2ab67b595796f",
+      "stars_snapshot": 380,
+      "forks_snapshot": 35,
+      "license": "MIT",
+      "status": "research-snapshot",
+      "local_path": "resources/research/web-presentation-skills/snapshots/ryanbbrown-revealjs/revealjs",
+      "contribution": "Reveal.js structure, horizontal and vertical slide organization, chart layout rules, overflow checks, and screenshot-based visual review."
+    },
+    {
+      "rank": 4,
+      "repository": "zouchenzhen/thesis-defense-pptx-skill",
+      "url": "https://github.com/zouchenzhen/thesis-defense-pptx-skill",
+      "source_path": "skills/thesis-defense-pptx",
+      "upstream_commit": "7cf83b6fe264410aec39ab73d8cfa48f1c9a73bb",
+      "stars_snapshot": 212,
+      "forks_snapshot": 13,
+      "license": "Apache-2.0",
+      "status": "research-snapshot",
+      "local_path": "resources/research/web-presentation-skills/snapshots/zouchenzhen-thesis-defense/thesis-defense-pptx",
+      "contribution": "Source-asset inventory, template-as-source-of-truth, editable output discipline, stale-placeholder detection, and visual quality gates."
+    },
+    {
+      "rank": 5,
+      "repository": "Noi1r/powerpoint-skill",
+      "url": "https://github.com/Noi1r/powerpoint-skill",
+      "source_path": "powerpoint-slides",
+      "upstream_commit": "a39cd8cfba332741a96d52bebd2bb378b638364e",
+      "stars_snapshot": 106,
+      "forks_snapshot": 9,
+      "license": "MIT",
+      "status": "research-snapshot",
+      "local_path": "resources/research/web-presentation-skills/snapshots/noi1r-powerpoint/powerpoint-slides",
+      "contribution": "Academic presentation pedagogy, five visual themes, a broad layout-pattern pool, formula and diagram affordances, and scored QA."
+    }
+  ],
+  "reviewed_not_vendored": [
+    {
+      "repository": "anthropics/skills",
+      "stars_snapshot": 166401,
+      "reason": "The pptx skill's license explicitly prohibits retaining copies outside Anthropic services and creating derivatives."
+    },
+    {
+      "repository": "K-Dense-AI/scientific-agent-skills",
+      "stars_snapshot": 32714,
+      "reason": "Strong scientific-slide specialization, but the very large catalog overlaps the smaller selected academic sources; retain the link as a future benchmark rather than vendoring the catalog."
+    },
+    {
+      "repository": "Gabberflast/academic-pptx-skill",
+      "stars_snapshot": 737,
+      "reason": "The repository declares MIT while SKILL.md declares a proprietary license and points to a missing LICENSE.txt; do not retain until provenance is clarified."
+    },
+    {
+      "repository": "presenton/presenton",
+      "stars_snapshot": 9356,
+      "reason": "Useful presentation engine and HTML-template benchmark, but not an Agent Skill and too large to vendor as a reference skill."
+    },
+    {
+      "repository": "slidevjs/slidev",
+      "stars_snapshot": 47964,
+      "reason": "High-quality developer presentation engine, but not a reusable Agent Skill; treat as an implementation benchmark."
+    },
+    {
+      "repository": "hakimel/reveal.js",
+      "stars_snapshot": 72084,
+      "reason": "Framework rather than Agent Skill; the selected revealjs-skill already packages the relevant workflow."
+    },
+    {
+      "repository": "marp-team/marp",
+      "stars_snapshot": 12301,
+      "reason": "Markdown presentation engine rather than an Agent Skill; useful only if Markdown-first authoring becomes a product requirement."
+    }
+  ]
+}

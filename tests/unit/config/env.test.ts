@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getCoursePlannerTimeoutMs,
   getHtmlEngineerTimeoutMs,
+  getHtmlModelConfig,
   getImageModelConfig,
   getModelConfig,
 } from "../../../src/config/env";
@@ -150,11 +151,33 @@ describe("getModelConfig", () => {
   );
 });
 
+describe("getHtmlModelConfig", () => {
+  it("uses the dedicated Ark HTML model when configured", () => {
+    vi.stubEnv("ARK_HTML_MODEL_ID", "doubao-code");
+    vi.stubEnv("ARK_API_KEY", "ark-test-key");
+    vi.stubEnv("ARK_BASE_URL", "");
+
+    expect(getHtmlModelConfig()).toEqual({
+      apiKey: "ark-test-key",
+      baseURL: "https://ark.cn-beijing.volces.com/api/v3",
+      modelName: "doubao-code",
+      providerName: "volcengine-ark",
+    });
+  });
+
+  it("does not require Ark configuration when the HTML override is unset", () => {
+    vi.stubEnv("ARK_HTML_MODEL_ID", "");
+    vi.stubEnv("ARK_API_KEY", "");
+
+    expect(getHtmlModelConfig()).toBeUndefined();
+  });
+});
+
 describe("getHtmlEngineerTimeoutMs", () => {
   it("allows long HTML documents more time than ordinary text calls", () => {
     vi.stubEnv("AI_HTML_TIMEOUT_MS", "");
 
-    expect(getHtmlEngineerTimeoutMs()).toBe(120_000);
+    expect(getHtmlEngineerTimeoutMs()).toBe(240_000);
   });
 
   it("accepts a bounded local override", () => {
@@ -179,7 +202,7 @@ describe("getCoursePlannerTimeoutMs", () => {
   it("allows a complete multi-section plan more time than ordinary structured calls", () => {
     vi.stubEnv("AI_PLANNER_TIMEOUT_MS", "");
 
-    expect(getCoursePlannerTimeoutMs()).toBe(180_000);
+    expect(getCoursePlannerTimeoutMs()).toBe(150_000);
   });
 
   it("accepts a bounded local override", () => {

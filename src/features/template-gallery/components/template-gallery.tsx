@@ -54,11 +54,11 @@ export function TemplateGallery() {
                 </span>
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-[#d8e5bd] bg-[#f2f6db] px-3 py-1.5 text-[#5d6f2e]">
                   <Palette aria-hidden="true" className="size-3.5" />
-                  6 个样式模板
+                  8 个样式模板
                 </span>
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-[#eed89d] bg-[#fff1c9] px-3 py-1.5 text-[#7b6423]">
                   <Braces aria-hidden="true" className="size-3.5" />
-                  48 种组合已校验
+                  64 种组合已校验
                 </span>
               </div>
             </div>
