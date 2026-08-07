@@ -14,7 +14,7 @@ export type TrustedLessonRuntimeConfig = {
 };
 
 export type TrustedLessonRuntimeOptions = {
-  /** 缩略图可启用 contain-fit；学习端与 QA 关闭后使用平台纵向滚动边界。 */
+  /** 学习端启用 contain-fit；QA 关闭后测量作者 HTML 的真实 16:9 布局。 */
   viewportFit?: boolean;
 };
 

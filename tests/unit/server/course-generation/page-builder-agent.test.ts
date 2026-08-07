@@ -278,9 +278,9 @@ describe("Page Builder ToolLoopAgent", () => {
     const captureScreenshot = vi.fn(async () => ({
       evidence: {
         captures: [
-          { width: 922, height: 460 },
-          { width: 712, height: 650 },
-          { width: 366, height: 500 },
+          { width: 1280, height: 720 },
+          { width: 960, height: 540 },
+          { width: 640, height: 360 },
         ].map((viewport, index) => ({
           status: "captured" as const,
           artifactId: `workspace-shot-${index}`,
@@ -299,7 +299,7 @@ describe("Page Builder ToolLoopAgent", () => {
       issues: [],
       modelImages: [
         {
-          viewport: { width: 922, height: 460 },
+          viewport: { width: 1280, height: 720 },
           png: new Uint8Array([137, 80, 78, 71]),
         },
       ],
@@ -355,9 +355,9 @@ describe("Page Builder ToolLoopAgent", () => {
     const prepared = await preparePageBuilder();
     prepared.execution.legacyModelPipeline = false;
     const captures = [
-      { width: 922, height: 460 },
-      { width: 712, height: 650 },
-      { width: 366, height: 500 },
+      { width: 1280, height: 720 },
+      { width: 960, height: 540 },
+      { width: 640, height: 360 },
     ].map((viewport, index) => ({
       status: "captured" as const,
       artifactId: `failed-shot-${index}`,
@@ -422,9 +422,9 @@ describe("Page Builder ToolLoopAgent", () => {
   it("修订预算耗尽后由 Harness 直接提交阻塞终态，不再等待模型做机械调用", async () => {
     const prepared = await preparePageBuilder();
     const captures = [
-      { width: 922, height: 460 },
-      { width: 712, height: 650 },
-      { width: 366, height: 500 },
+      { width: 1280, height: 720 },
+      { width: 960, height: 540 },
+      { width: 640, height: 360 },
     ].map((viewport, index) => ({
       status: "captured" as const,
       artifactId: `blocked-shot-${index}`,
@@ -465,7 +465,7 @@ describe("Page Builder ToolLoopAgent", () => {
               message: "按钮没有可信运行时或原生表单行为。",
               location: {
                 pageId: PAGE_ID,
-                viewport: "922x460",
+                viewport: "1280x720",
                 selector: "button",
                 description: "无法完成动作的按钮",
               },
@@ -590,7 +590,7 @@ describe("Page Builder ToolLoopAgent", () => {
           message: "页面产生 561px 纵向溢出。",
           location: {
             pageId: PAGE_ID,
-            viewport: "922x460",
+            viewport: "1280x720",
             description: "Playwright 固定视口渲染结果",
           },
           repairHint: "重构为横向或网格布局。",
@@ -601,7 +601,7 @@ describe("Page Builder ToolLoopAgent", () => {
           {
             status: "captured",
             artifactId: "overflow-desktop",
-            viewport: { width: 922, height: 460 },
+            viewport: { width: 1280, height: 720 },
             metrics: {
               documentWidth: 922,
               documentHeight: 1021,
@@ -618,7 +618,7 @@ describe("Page Builder ToolLoopAgent", () => {
           {
             status: "captured",
             artifactId: "overflow-tablet",
-            viewport: { width: 712, height: 650 },
+            viewport: { width: 960, height: 540 },
             metrics: {
               documentWidth: 712,
               documentHeight: 910,
@@ -633,7 +633,7 @@ describe("Page Builder ToolLoopAgent", () => {
           {
             status: "captured",
             artifactId: "overflow-mobile",
-            viewport: { width: 366, height: 500 },
+            viewport: { width: 640, height: 360 },
             metrics: {
               documentWidth: 366,
               documentHeight: 980,

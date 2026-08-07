@@ -1,4 +1,5 @@
 import { StyleTemplateSchema } from "./schema";
+import { extendedStyleTemplates } from "./templates-extended";
 
 const definitions = [
   {
@@ -791,5 +792,5 @@ const definitions = [
 
 /** 启动时校验全部风格，阻止无效 Token 进入 CSS 转换和 Gallery。 */
 export const styleTemplates = StyleTemplateSchema.array()
-  .length(8)
-  .parse(definitions);
+  .length(12)
+  .parse([...definitions, ...extendedStyleTemplates]);

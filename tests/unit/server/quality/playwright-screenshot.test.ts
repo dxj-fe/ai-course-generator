@@ -14,8 +14,8 @@ import { buildValidGeneratedHtml } from "../../../fixtures/generated-html";
 
 const html = buildValidGeneratedHtml(pageContentDsl);
 const cleanMetrics = {
-  documentWidth: 922,
-  documentHeight: 460,
+  documentWidth: 1280,
+  documentHeight: 720,
   horizontalOverflowPx: 0,
   clippedElementCount: 0,
   zeroSizeInteractiveCount: 0,
@@ -38,7 +38,7 @@ describe("Playwright screenshot QA evidence", () => {
     vi.restoreAllMocks();
   });
 
-  it("keeps the trusted interaction runtime but excludes player contain-fit from QA", () => {
+  it("uses the same fixed-stage fit runtime in QA and the learner", () => {
     const srcDoc = buildQaLessonSrcDoc(html, {
       pageId: pageContentDsl.pageId,
       interaction: pageContentDsl.interaction,
@@ -54,15 +54,15 @@ describe("Playwright screenshot QA evidence", () => {
     });
 
     expect(srcDoc).toContain('id="keya-trusted-runtime"');
-    expect(srcDoc).not.toContain('id="keya-viewport-fit"');
-    expect(srcDoc).not.toContain('id="keya-viewport-fit-style"');
+    expect(srcDoc).toContain('id="keya-viewport-fit"');
+    expect(srcDoc).toContain('id="keya-viewport-fit-style"');
   });
 
   it("captures metrics, stores the PNG, and derives browser issues", async () => {
     const captureBrowser = vi.fn().mockImplementation(async ({ viewport }) => ({
       png: new Uint8Array([137, 80, 78, 71]),
       metrics:
-        viewport.width === 922
+        viewport.width === 1280
           ? {
               ...cleanMetrics,
               documentWidth: 1100,
@@ -94,11 +94,11 @@ describe("Playwright screenshot QA evidence", () => {
     expect(result.evidence.captures[0]!.artifactId).toMatch(
       /^page-qa-evidence-.+-desktop$/,
     );
-    expect(result.evidence.captures[0]!.viewport).toEqual({ width: 922, height: 460 });
+    expect(result.evidence.captures[0]!.viewport).toEqual({ width: 1280, height: 720 });
     expect(result.evidence.captures?.map(({ viewport }) => viewport)).toEqual([
-      { width: 922, height: 460 },
-      { width: 712, height: 650 },
-      { width: 366, height: 500 },
+      { width: 1280, height: 720 },
+      { width: 960, height: 540 },
+      { width: 640, height: 360 },
     ]);
     expect(captureBrowser).toHaveBeenCalledTimes(3);
     expect(result.issues.map(({ code }) => code)).toEqual([
@@ -111,7 +111,7 @@ describe("Playwright screenshot QA evidence", () => {
     ]);
     expect(
       result.issues.every(
-        ({ location }) => location.viewport === "922x460",
+        ({ location }) => location.viewport === "1280x720",
       ),
     ).toBe(true);
     expect(
@@ -130,15 +130,15 @@ describe("Playwright screenshot QA evidence", () => {
     expect(JSON.stringify(result.evidence)).not.toContain(result.serverPath);
     expect(result.modelImages).toEqual([
       {
-        viewport: { width: 922, height: 460 },
+        viewport: { width: 1280, height: 720 },
         png: new Uint8Array([137, 80, 78, 71]),
       },
       {
-        viewport: { width: 712, height: 650 },
+        viewport: { width: 960, height: 540 },
         png: new Uint8Array([137, 80, 78, 71]),
       },
       {
-        viewport: { width: 366, height: 500 },
+        viewport: { width: 640, height: 360 },
         png: new Uint8Array([137, 80, 78, 71]),
       },
     ]);
@@ -226,7 +226,7 @@ describe("Playwright screenshot QA evidence", () => {
     });
   });
 
-  it("rejects unreadable documents while keeping nested panel scrolling observational", async () => {
+  it("rejects root and nested scrolling in the fixed 16:9 stage", async () => {
     const content = {
       ...pageContentDsl,
       interaction: {
@@ -273,27 +273,27 @@ describe("Playwright screenshot QA evidence", () => {
       expect.arrayContaining([
         expect.objectContaining({
           code: "BROWSER_VERTICAL_OVERFLOW",
-          severity: "warning",
-          location: expect.objectContaining({ viewport: "922x460" }),
+          severity: "error",
+          location: expect.objectContaining({ viewport: "1280x720" }),
         }),
         expect.objectContaining({
           code: "BROWSER_NESTED_VERTICAL_OVERFLOW",
-          severity: "warning",
+          severity: "error",
         }),
         expect.objectContaining({
           code: "BROWSER_VERTICAL_OVERFLOW",
-          severity: "warning",
-          location: expect.objectContaining({ viewport: "366x500" }),
+          severity: "error",
+          location: expect.objectContaining({ viewport: "640x360" }),
         }),
         expect.objectContaining({
           code: "BROWSER_PRIMARY_ACTION_BELOW_FOLD",
-          severity: "warning",
+          severity: "error",
         }),
       ]),
     );
   });
 
-  it("keeps moderate contain-fit scaling observational instead of deleting useful content", async () => {
+  it("keeps expected fixed-stage scaling observational but rejects authored overflow", async () => {
     const result = await capturePageScreenshot(
       { pageId: "page-readable-scale", html },
       {
@@ -332,7 +332,7 @@ describe("Playwright screenshot QA evidence", () => {
     expect(
       result.issues
         .filter(({ code }) => code === "BROWSER_VERTICAL_OVERFLOW")
-        .every(({ severity }) => severity === "warning"),
+        .every(({ severity }) => severity === "error"),
     ).toBe(true);
   });
 
@@ -441,7 +441,7 @@ describe("Playwright screenshot QA evidence", () => {
           enabled: true,
           rootDir: "/tmp/ai-course-generator-partial-screenshots",
           captureBrowser: vi.fn().mockImplementation(async ({ viewport }) => {
-            if (viewport.width === 712) {
+            if (viewport.width === 960) {
               throw new Error("tablet rendering failed");
             }
             return {
@@ -450,7 +450,7 @@ describe("Playwright screenshot QA evidence", () => {
                 ...cleanMetrics,
                 documentWidth: viewport.width,
                 documentHeight: viewport.height,
-                horizontalOverflowPx: viewport.width === 366 ? 8 : 0,
+                horizontalOverflowPx: viewport.width === 640 ? 8 : 0,
               },
             };
           }),
@@ -471,7 +471,7 @@ describe("Playwright screenshot QA evidence", () => {
         phase: "capture",
         code: "SCREENSHOT_CAPTURE_FAILED",
         message: "tablet rendering failed",
-        viewport: "712x650",
+        viewport: "960x540",
         errorName: "Error",
         errorMessage: "tablet rendering failed",
         errorStack: expect.stringContaining("tablet rendering failed"),
@@ -678,7 +678,7 @@ describe("Playwright screenshot QA evidence", () => {
           dimension: "assetUsability",
           location: expect.objectContaining({
             selector: '[data-asset-slot-id="asset-slot-01"]',
-            viewport: "922x460",
+            viewport: "1280x720",
           }),
         }),
       ]),

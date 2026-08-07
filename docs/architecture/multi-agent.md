@@ -41,7 +41,7 @@ Harness 只负责：
 
 Harness 不规定卡片数量、组件树、页面布局、图片数量、互动形态或样式模板。模型不需要输出 pageType、模板 ID、素材槽等迁移字段，也不需要在写 HTML 时同步填写 blocks、interaction 或 layoutHints。HTML 是页面内容真相，workspace 元数据只记录实际使用的授权资料；Schema 只为旧下游自动补兼容默认值。页面 HTML Gate 也不要求 `data-*` DSL 标记。当前 PageContentDSL 与模板 ID 只是 Harness 自动生成的下游兼容读模型，不是新页面的创作入口。
 
-Harness 负责把高价值决策所需证据提前装入 Prompt：Course Lead 得到 Skill 核心说明和有界资料事实，Page Creator 得到 CourseContext、PageTask、依赖摘要、事实边界与 workspace。这样减少的是机械检索/读取回合，不是课程创作自由；模型首轮直接规划或写 HTML。
+Harness 负责把高价值决策所需证据提前装入 Prompt：Course Lead 得到 Skill 核心说明和有界资料事实，Page Creator 得到 CourseContext、PageTask、依赖摘要、事实边界、workspace，以及匹配出的一个主视觉参考和两个备选方向。`course-page-design` 作为常驻方法 Skill；`frontend-slides` 作为可渐进读取的资源 Skill，Harness 直接提供精确 recipePath 与紧凑 token，模型只有需要更深构图语法时才读取完整配方。配方只约束字体气质、色彩关系、形状语言和节奏，不是 DSL 或布局模板。
 
 ## Browser Harness 证据流
 
@@ -59,7 +59,7 @@ Reviewer 默认获得最多 20 页的桌面截图概览和全课紧凑诊断，�
 
 Page Creator 同样只保留最新一轮三视口截图，历史 PNG 不累积；无变化 HTML 会被 workspace 拒绝。`edit_page_workspace` 自动完成 checkpoint、Playwright 渲染与质量检查，当前 Agent Loop 最多允许三轮有证据的质量修订。达到预算后若只剩 submit/block，Harness 直接执行同一个终态工具，不再要求模型做机械封口。页面使用 `page-writer` 强档模型，生图仍只是按需 Tool。
 
-学习器采用自然纵向滚动，课程 HTML 不再被压进固定幻灯片画布。Browser Harness 只把横向溢出、真实文字/交互裁切、运行时错误和失效互动作为阻断；页面高度与首屏后可达操作是观测。装饰轨道、光晕等 overflow 几何只有在实际文字或交互盒被切掉时才算裁切。
+学习器与 Browser Harness 共用固定 16:9 舞台合同：作者页面以 1920×1080 创作，宿主同比缩放到三个 16:9 视口，任何根级或嵌套滚动都阻断。Page Creator 若无法在单屏保持正文可读和互动完整，应请求 Course Lead 拆页。装饰轨道、光晕等 overflow 几何只有在实际文字或交互盒被切掉时才算裁切。
 
 ## 恢复与迁移
 

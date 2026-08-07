@@ -76,11 +76,11 @@ describe("PageQAModelStep", () => {
     const evaluate = vi.fn().mockResolvedValue(modelOutput);
     const modelImages = [
       {
-        viewport: { width: 922, height: 460 },
+        viewport: { width: 1280, height: 720 },
         png: new Uint8Array([137, 80, 78, 71]),
       },
       {
-        viewport: { width: 366, height: 500 },
+        viewport: { width: 640, height: 360 },
         png: new Uint8Array([1, 2, 3]),
       },
     ];
@@ -106,11 +106,11 @@ describe("PageQAModelStep", () => {
   it("builds actual PNG file parts for each captured viewport", () => {
     const messages = buildPageQAModelMessages("评估页面", [
       {
-        viewport: { width: 922, height: 460 },
+        viewport: { width: 1280, height: 720 },
         png: new Uint8Array([137, 80, 78, 71]),
       },
       {
-        viewport: { width: 366, height: 500 },
+        viewport: { width: 640, height: 360 },
         png: new Uint8Array([1, 2, 3]),
       },
     ]);
@@ -123,22 +123,22 @@ describe("PageQAModelStep", () => {
           { type: "text", text: "评估页面" },
           {
             type: "text",
-            text: "\nPlaywright 首屏截图（视口 922x460）：",
+            text: "\nPlaywright 首屏截图（视口 1280x720）：",
           },
           {
             type: "file",
             mediaType: "image/png",
-            filename: "page-qa-922x460.png",
+            filename: "page-qa-1280x720.png",
             url: "data:image/png;base64,iVBORw==",
           },
           {
             type: "text",
-            text: "\nPlaywright 首屏截图（视口 366x500）：",
+            text: "\nPlaywright 首屏截图（视口 640x360）：",
           },
           {
             type: "file",
             mediaType: "image/png",
-            filename: "page-qa-366x500.png",
+            filename: "page-qa-640x360.png",
             url: "data:image/png;base64,AQID",
           },
         ],
@@ -370,7 +370,7 @@ describe("PageQAModelStep", () => {
       message: "一个可见交互控件小于建议的 44×44px。",
       location: {
         pageId: input.page.id,
-        viewport: "922x460",
+        viewport: "1280x720",
         description: "Playwright 固定视口渲染结果",
       },
       repairHint: "优先扩大主要操作的触控区域。",
@@ -643,9 +643,9 @@ describe("PageQAModelStep", () => {
   it("blocks delivery when required browser capture evidence is unavailable", async () => {
     const failedEvidence = {
       captures: [
-        { width: 922, height: 460 },
-        { width: 712, height: 650 },
-        { width: 366, height: 500 },
+        { width: 1280, height: 720 },
+        { width: 960, height: 540 },
+        { width: 640, height: 360 },
       ].map(({ width, height }) => ({
         status: "failed" as const,
         viewport: { width, height },

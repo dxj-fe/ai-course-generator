@@ -134,7 +134,7 @@ export function HtmlPreviewFrame({
     () =>
       trustedRuntime
         ? buildTrustedLessonSrcDoc(html, trustedRuntime, {
-            viewportFit: false,
+            viewportFit: true,
           })
         : html,
     [html, trustedRuntime],
@@ -243,7 +243,7 @@ export function HtmlPreviewFrame({
           referrerPolicy="no-referrer"
           ref={iframeRef}
           sandbox={trustedRuntime ? "allow-scripts" : ""}
-          scrolling={chrome === "learner" ? "auto" : "no"}
+          scrolling="no"
           srcDoc={srcDoc}
           title={title}
         />

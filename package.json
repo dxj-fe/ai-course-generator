@@ -14,6 +14,7 @@
     "demo:run": "node --import tsx scripts/run-demo.ts",
     "quality:compare": "node --import tsx scripts/compare-course-quality.ts",
     "quality:blind": "node --import tsx scripts/prepare-blind-review.ts",
+    "data:purge-failed": "node --import tsx scripts/purge-failed-courses.ts",
     "worker:course": "node --import tsx scripts/course-task-worker.ts",
     "start": "node --import tsx scripts/run-with-course-worker.ts start",
     "start:web": "next start",

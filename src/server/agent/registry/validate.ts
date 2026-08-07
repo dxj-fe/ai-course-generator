@@ -30,11 +30,15 @@ export function validateAgentRegistry(
     for (const context of agent.contexts) {
       plugins.contexts.get(context);
     }
-    for (const skill of agent.skills) {
+    const grantedSkills = [
+      ...agent.skills,
+      ...(agent.resourceSkills ?? []),
+    ];
+    for (const skill of grantedSkills) {
       plugins.skills.get(skill);
     }
     if (
-      agent.skills.length > 0 &&
+      grantedSkills.length > 0 &&
       !agent.tools.includes(ToolIds.ReadLocalResource)
     ) {
       throw new Error(

@@ -13,12 +13,14 @@ import {
   listFunctionalTemplates,
   type FunctionalTemplate,
 } from "@/shared/templates/functional";
+import { listStyleTemplates } from "@/shared/templates/style";
 
 import { StyleTemplateGallery } from "./style-template-gallery";
 
 /** 展示共享 Registry 中的全部功能模板和 PagePlan 示例。 */
 export function TemplateGallery() {
   const templates = listFunctionalTemplates();
+  const styleTemplates = listStyleTemplates();
 
   return (
     <main className="keya-product-shell relative min-h-screen overflow-hidden text-[#203c2a]">
@@ -54,11 +56,11 @@ export function TemplateGallery() {
                 </span>
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-[#d8e5bd] bg-[#f2f6db] px-3 py-1.5 text-[#5d6f2e]">
                   <Palette aria-hidden="true" className="size-3.5" />
-                  8 个样式模板
+                  {styleTemplates.length} 个样式模板
                 </span>
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-[#eed89d] bg-[#fff1c9] px-3 py-1.5 text-[#7b6423]">
                   <Braces aria-hidden="true" className="size-3.5" />
-                  64 种组合已校验
+                  {templates.length * styleTemplates.length} 种组合已校验
                 </span>
               </div>
             </div>

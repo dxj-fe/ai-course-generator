@@ -35,6 +35,7 @@ import {
   type RuntimeAgentFactory,
 } from "@/server/agent/runtime";
 import { createCourseToolLedger } from "@/server/course/run/tool-ledger";
+import { buildCourseVisualReferences } from "@/server/course/page/visual-reference";
 import { isBrowserHarnessUnavailableError } from "@/server/infra/browser/error";
 import type { Submission } from "@/shared/course-schema";
 
@@ -446,6 +447,10 @@ function buildPageBuilderPrompt(
     ReturnType<typeof preloadPageBuilderWorkspace>
   >,
 ) {
+  const visualReferences = buildCourseVisualReferences({
+    architecture: execution.architecture,
+    creationBrief: execution.creationBrief,
+  });
   const sealedContext = {
     course: {
       title: execution.architecture.blueprint.title,
@@ -464,6 +469,7 @@ function buildPageBuilderPrompt(
       }),
     ),
     dependencySummaries: execution.dependencySummaries,
+    visualReferences,
     workspace: workspace
       ? {
           exists: workspace.exists,

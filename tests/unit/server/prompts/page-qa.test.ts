@@ -23,7 +23,7 @@ describe("Page QA prompts", () => {
     );
     expect(prompts.systemPrompt).toContain("styleConsistency 82");
     expect(prompts.systemPrompt).toContain(
-      "文档纵向溢出、根页面滚动、嵌套正文滚动",
+      "任何文档纵向或横向溢出、根页面滚动、嵌套正文滚动",
     );
     expect(prompts.systemPrompt).toContain("VISUAL_GENERIC_UI");
     expect(prompts.systemPrompt).toContain("VISUAL_NO_FOCAL_POINT");

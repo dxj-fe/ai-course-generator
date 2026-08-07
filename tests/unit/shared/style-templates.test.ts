@@ -16,13 +16,13 @@ import {
 } from "../../../src/shared/templates/style";
 
 describe("Style Template Registry", () => {
-  it("registers eight valid and unique core styles", () => {
+  it("registers twelve valid templates covering every core visual style", () => {
     const templates = listStyleTemplates();
 
-    expect(templates).toHaveLength(8);
-    expect(new Set(templates.map(({ id }) => id)).size).toBe(8);
-    expect(templates.map(({ visualStyle }) => visualStyle).sort()).toEqual(
-      [...CoreVisualStyleSchema.options].sort(),
+    expect(templates).toHaveLength(12);
+    expect(new Set(templates.map(({ id }) => id)).size).toBe(12);
+    expect(new Set(templates.map(({ visualStyle }) => visualStyle))).toEqual(
+      new Set(CoreVisualStyleSchema.options),
     );
 
     for (const template of templates) {
@@ -61,7 +61,7 @@ describe("Style Template Registry", () => {
     [{ query: "给 10 岁孩子讲太阳系，让他们探索行星" }, "kids-playful"],
     [{ query: "面向大学生推导轨道力学公式并安排练习" }, "blackboard"],
     [{ query: "管理层生成式 AI 风险、法规与合规培训" }, "minimal"],
-    [{ query: "中国古典文学赏析与作品叙事" }, "editorial-night"],
+    [{ query: "中国古典文学赏析与作品叙事" }, "soft-editorial"],
     [{ query: "英语词汇闯关，每关都有测验和反馈" }, "game-quest"],
     [{ query: "深夜编辑杂志风格的夜空与极光" }, "editorial-night"],
     [{ query: "火焰橙大字报式城市文化观点课程" }, "broadside"],
@@ -114,7 +114,7 @@ describe("Style Template Registry", () => {
     ).toBe(true);
   });
 
-  it("keeps all 64 functional and style combinations valid", () => {
+  it("keeps all 96 functional and style combinations valid", () => {
     let combinationCount = 0;
 
     for (const pagePlan of functionalTemplateExamples) {
@@ -130,13 +130,13 @@ describe("Style Template Registry", () => {
       }
     }
 
-    expect(combinationCount).toBe(64);
+    expect(combinationCount).toBe(96);
   });
 
   it("没有明确关键词时允许架构师看到全部主题，而不是固定前三种", () => {
     const matches = searchStyleTemplates({
       query: "面向成人讲解一个尚未收录关键词的主题",
-      limit: 8,
+      limit: 12,
     });
 
     expect(matches).toHaveLength(listStyleTemplates().length);

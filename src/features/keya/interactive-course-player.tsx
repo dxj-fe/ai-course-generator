@@ -84,7 +84,7 @@ export function InteractiveCoursePlayer({
   >({});
   const [mapOpen, setMapOpen] = useState(false);
   const [mapCollapsed, setMapCollapsed] = useState(true);
-  const [thumbnailsOpen, setThumbnailsOpen] = useState(true);
+  const [thumbnailsOpen, setThumbnailsOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const previousSectionRef = useRef(currentSectionId);
@@ -205,7 +205,7 @@ export function InteractiveCoursePlayer({
     const updateCanvasSize = () => {
       const bounds = slot.getBoundingClientRect();
       const width = Math.floor(
-        Math.min(1064, bounds.width, (bounds.height * 16) / 9),
+        Math.min(1280, bounds.width, (bounds.height * 16) / 9),
       );
       if (width <= 0) return;
       const height = Math.floor((width * 9) / 16);
@@ -424,7 +424,7 @@ export function InteractiveCoursePlayer({
         ) : null}
 
         <section
-          className={`relative min-w-0 flex-1 overflow-y-auto bg-transparent px-3 pt-[22px] sm:px-5 lg:overflow-hidden lg:px-6 ${
+          className={`relative min-w-0 flex-1 overflow-y-auto bg-transparent px-3 pt-3 sm:px-5 lg:overflow-hidden lg:px-6 ${
             thumbnailsOpen ? "pb-0" : "pb-6"
           }`}
         >
@@ -441,12 +441,12 @@ export function InteractiveCoursePlayer({
 
           <div className="mx-auto flex min-h-0 w-full max-w-[1920px] flex-col lg:h-full">
             <div
-              className="flex min-h-[240px] flex-1 items-center justify-center"
+              className="flex min-h-[220px] flex-1 items-center justify-center"
               ref={canvasSlotRef}
             >
               <div
                 aria-label="课程画布"
-                className={`relative aspect-video w-full max-w-[1064px] overflow-hidden rounded-[22px] border border-[#8fba92] bg-[#102c1b] shadow-[0_24px_60px_-34px_rgba(23,54,34,0.7),0_0_0_5px_rgba(255,255,255,0.56)] ${
+                className={`relative aspect-video w-full max-w-[1280px] overflow-hidden rounded-[22px] border border-[#8fba92] bg-[#102c1b] shadow-[0_24px_60px_-34px_rgba(23,54,34,0.7),0_0_0_5px_rgba(255,255,255,0.56)] ${
                   fullscreen ? "h-screen w-screen max-w-none rounded-none border-0" : ""
                 }`}
                 ref={canvasRef}
@@ -609,7 +609,7 @@ function PlayerControls({
   return (
     <div
       aria-label="页面播放控制"
-      className="mt-[33px] grid shrink-0 items-center gap-3 lg:grid-cols-[1fr_auto_1fr]"
+      className="mt-3.5 grid shrink-0 items-center gap-3 lg:grid-cols-[1fr_auto_1fr]"
       role="group"
     >
       <span className="hidden lg:block" />
@@ -787,7 +787,7 @@ function ThumbnailNavigation({
   return (
     <nav
       aria-label="页面缩略图"
-      className="mt-[29px] flex h-[60px] shrink-0 items-center gap-3 rounded-t-[20px] border-x border-t border-[#cfe3cb] bg-[#e8f4e4]/92 px-3 shadow-[0_-10px_28px_-26px_rgba(36,92,58,0.56)] backdrop-blur-sm"
+      className="mt-3 flex h-[60px] shrink-0 items-center gap-3 rounded-t-[20px] border-x border-t border-[#cfe3cb] bg-[#e8f4e4]/92 px-3 shadow-[0_-10px_28px_-26px_rgba(36,92,58,0.56)] backdrop-blur-sm"
     >
       <Button
         aria-label="向前浏览缩略图"

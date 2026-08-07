@@ -5,6 +5,7 @@ import { pageContentDsl } from "../../fixtures/course-design";
 import { buildValidGeneratedHtml } from "../../fixtures/generated-html";
 import {
   HtmlPreviewFrame,
+  HtmlThumbnailFrame,
   routeLessonRuntimeMessage,
 } from "../../../src/features/keya/html-preview-frame";
 
@@ -62,8 +63,26 @@ describe("HtmlPreviewFrame", () => {
     );
 
     expect(markup).toContain('sandbox="allow-scripts"');
+    expect(markup).toContain('scrolling="no"');
     expect(markup).toContain("keya-trusted-runtime");
+    expect(markup).toContain("keya-viewport-fit");
     expect(markup).not.toContain("allow-same-origin");
+  });
+
+  it("keeps thumbnail HTML inert and fitted to the 16:9 frame", () => {
+    const markup = renderToStaticMarkup(
+      <HtmlThumbnailFrame
+        html={buildValidGeneratedHtml(pageContentDsl)}
+        title="课程缩略图"
+      />,
+    );
+
+    expect(markup).toContain('aria-hidden="true"');
+    expect(markup).toContain('tabindex="-1"');
+    expect(markup).toContain('sandbox="allow-scripts"');
+    expect(markup).toContain('scrolling="no"');
+    expect(markup).toContain("keya-viewport-fit");
+    expect(markup).not.toContain("keya-trusted-runtime");
   });
 
   it("ignores delayed messages from the previous lesson document", () => {

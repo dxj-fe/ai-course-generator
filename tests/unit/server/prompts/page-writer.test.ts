@@ -85,7 +85,7 @@ describe("Page Writer prompts", () => {
       "body 用最短但可独立理解的表达",
     );
     expect(prompts.systemPrompt).toContain("不为凑字数扩写");
-    expect(prompts.systemPrompt).toContain("922×460 的教学画布");
+    expect(prompts.systemPrompt).toContain("无滚动的 16:9 教学舞台");
     expect(prompts.systemPrompt).toContain(
       "choice 只问一道最有诊断价值的问题",
     );

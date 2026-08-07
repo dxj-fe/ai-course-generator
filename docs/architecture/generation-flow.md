@@ -68,7 +68,7 @@ Harness 在第一次 Provider 调用前已经把 CourseContext、PageTask、已�
 
 workspace 以 WorkOrder 为稳定身份，不随 `executionAttempt` 换目录。Worker 或 Provider 中断后先复用本地未提交文件；若文件缺失，才从最新 `page_html` checkpoint 初始化。因此本地文件承担 Agent 工作区，SQLite Artifact 承担可靠 checkpoint，两者不会互相覆盖正在创作的新版本。
 
-学习器 iframe 使用自然纵向滚动，桌面、平板和手机都不再把整页 HTML contain-fit 压缩进固定短画布。QA 仍测量作者 HTML 的原始尺寸，但纵向长度与首屏后可达主操作只保留为 warning；横向溢出、真实正文/交互裁切、失效按钮、控制台错误和互动回放失败仍是确定性问题。`overflow:hidden/clip` 只有在真实文字 Range 或交互盒越过边界时才算裁切，装饰轨道、光晕与素材画框的几何越界不会误触返工。
+课程页统一在 1920×1080 的固定 16:9 舞台内创作，学习器和 Browser Harness 使用同一 contain-fit 运行时同比缩放到 1280×720、960×540 和 640×360，并禁止 iframe、根页面与嵌套内容区产生横向或纵向滚动。QA 同时保留缩放前的原始文档尺寸，防止长页面被缩小后伪装成“无溢出”；横向/纵向溢出、真实正文或互动裁切、失效按钮、控制台错误和互动回放失败均阻断交付。内容超出一页时由 Course Lead 拆分页面，Page Creator 重新排版或使用渐进互动，不通过缩小正文或滚动区硬塞。
 
 Worker 停止时关闭 Browser Pool。生产环境先执行 `npm run browser:install` 安装与 Playwright 包匹配的 Chromium 及系统依赖。
 
@@ -80,6 +80,7 @@ Browser 启动失败、进程被系统终止或连接断开统一抛出 `BROWSER
 - 新链路的 `edit_page_workspace` 自动把当前 HTML checkpoint 为 `page_html` 并生成 `page_quality`；显式 `render_page` 保留给受控互动点查和历史恢复。
 - `submit_page` 通过确定性 Page Gate 后，最终 HTML 仍以 Artifact payload 写入 `.data/keya.sqlite`，保持播放器、Manifest 和历史课程链路不变。
 - 生图二进制写入 `.data/generated-assets`；截图写入 `.data/quality-screenshots`；Artifact 只保存内部 URI 或证据 ID。
+- `pnpm data:purge-failed` 先审计 failed 课程；加 `-- --confirm` 后事务清理关系数据，并把独占 workspace、截图和素材移入 `.data/backups` 以便恢复。
 
 因此当前答案不是“只存文件”或“只存数据库”：创作过程用文件 workspace，可靠 checkpoint 与最终交付继续用 SQLite。
 

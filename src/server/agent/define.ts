@@ -20,6 +20,9 @@ export function defineAgent<const Definition extends AgentDefinition>(
     tools: Object.freeze([...definition.tools]),
     contexts: Object.freeze([...definition.contexts]),
     skills: Object.freeze([...definition.skills]),
+    ...(definition.resourceSkills
+      ? { resourceSkills: Object.freeze([...definition.resourceSkills]) }
+      : {}),
     runtime: Object.freeze({ ...definition.runtime }),
   }) as Definition;
 }

@@ -721,7 +721,7 @@ ${styleTemplateToCssText(styleTemplate)}
         padding: 3px 5px;
       }
     }
-    @media (max-width: 560px) {
+    @media (max-width: 640px) {
       main { padding: 9px; gap: 8px; }
       .course-header {
         grid-template-columns: minmax(0, .88fr) minmax(0, 1.12fr);
@@ -815,6 +815,9 @@ ${styleTemplateToCssText(styleTemplate)}
       main[data-template="interactive-quiz"] .interaction-panel button {
         min-height: 44px;
         padding: 4px 6px;
+      }
+      main[data-template="achievement-task"] .interaction-panel button {
+        min-height: 45px;
       }
       main[data-template="comparison-board"] .interaction-panel {
         padding: 5px;

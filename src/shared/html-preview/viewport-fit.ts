@@ -32,13 +32,6 @@ const VIEWPORT_FIT_STYLE = `<style id="keya-viewport-fit-style">
     box-sizing: border-box !important;
     overflow: visible !important;
   }
-  html[data-keya-viewport-fit="ready"] [data-keya-fit-expanded="true"] {
-    max-width: none !important;
-    max-height: none !important;
-    overflow: visible !important;
-    contain: none !important;
-    scrollbar-width: none;
-  }
 </style>`;
 
 const VIEWPORT_FIT_SCRIPT = `<script id="keya-viewport-fit">
@@ -101,22 +94,6 @@ const VIEWPORT_FIT_SCRIPT = `<script id="keya-viewport-fit">
       }
     };
 
-    const expandNestedScrollRegions = () => {
-      for (const node of body.querySelectorAll("*")) {
-        if (!(node instanceof HTMLElement)) continue;
-        const style = getComputedStyle(node);
-        const scrollsX = ["auto", "scroll"].includes(style.overflowX);
-        const scrollsY = ["auto", "scroll"].includes(style.overflowY);
-        if (scrollsX || scrollsY) {
-          node.dataset.keyaFitExpanded = "true";
-          node.style.setProperty("max-width", "none", "important");
-          node.style.setProperty("max-height", "none", "important");
-          node.style.setProperty("overflow", "visible", "important");
-          node.style.setProperty("contain", "none", "important");
-        }
-      }
-    };
-
     const measureContentBounds = (viewportWidth, viewportHeight) => {
       let left = 0;
       let top = 0;
@@ -151,8 +128,6 @@ const VIEWPORT_FIT_SCRIPT = `<script id="keya-viewport-fit">
         normalizeFluidCanvas();
         root.style.setProperty("overflow", "visible", "important");
         body.style.setProperty("overflow", "visible", "important");
-        expandNestedScrollRegions();
-
         const viewportWidth = Math.max(1, window.innerWidth || root.clientWidth);
         const viewportHeight = Math.max(
           1,

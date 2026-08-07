@@ -43,15 +43,7 @@ export function searchStyleTemplates(
 
 /** 在模块加载时校验样式 ID 与 visualStyle 均唯一。 */
 function validateRegistry() {
-  const visualStyles = new Set(
-    styleTemplates.map((template) => template.visualStyle),
-  );
-
   if (templatesById.size !== styleTemplates.length) {
     throw new Error("Style Template Registry 存在重复 ID。");
-  }
-
-  if (visualStyles.size !== styleTemplates.length) {
-    throw new Error("Style Template Registry 存在重复 visualStyle。");
   }
 }

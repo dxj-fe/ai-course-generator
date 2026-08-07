@@ -262,7 +262,7 @@ describe.runIf(process.env.KEYA_BROWSER_INTEGRATION === "true")(
     );
 
     it(
-      "低高度画布的过长内容保留为可滚动页面观测",
+      "低高度画布的过长内容被固定舞台门禁阻断",
       async () => {
         const blocks = Array.from(
           { length: 4 },
@@ -328,7 +328,7 @@ describe.runIf(process.env.KEYA_BROWSER_INTEGRATION === "true")(
           expect.arrayContaining([
             expect.objectContaining({
               code: "BROWSER_VERTICAL_OVERFLOW",
-              severity: "warning",
+              severity: "error",
             }),
           ]),
         );
@@ -337,7 +337,7 @@ describe.runIf(process.env.KEYA_BROWSER_INTEGRATION === "true")(
     );
 
     it(
-      "blocks 与 sort 嵌套过长时允许学习器自然滚动",
+      "blocks 与 sort 嵌套过长时要求重新排版或拆页",
       async () => {
         const blocks = Array.from(
           { length: 3 },
@@ -413,7 +413,7 @@ describe.runIf(process.env.KEYA_BROWSER_INTEGRATION === "true")(
           expect.arrayContaining([
             expect.objectContaining({
               code: "BROWSER_VERTICAL_OVERFLOW",
-              severity: "warning",
+              severity: "error",
             }),
           ]),
         );
@@ -422,7 +422,7 @@ describe.runIf(process.env.KEYA_BROWSER_INTEGRATION === "true")(
     );
 
     it(
-      "blocks 与 sort 直接堆叠过长时允许学习器自然滚动",
+      "blocks 与 sort 直接堆叠过长时要求重新排版或拆页",
       async () => {
         const blocks = Array.from(
           { length: 3 },
@@ -494,7 +494,7 @@ describe.runIf(process.env.KEYA_BROWSER_INTEGRATION === "true")(
           expect.arrayContaining([
             expect.objectContaining({
               code: "BROWSER_VERTICAL_OVERFLOW",
-              severity: "warning",
+              severity: "error",
             }),
           ]),
         );
@@ -503,7 +503,7 @@ describe.runIf(process.env.KEYA_BROWSER_INTEGRATION === "true")(
     );
 
     it(
-      "课程对比页长文本堆叠时允许学习器自然滚动",
+      "课程对比页长文本堆叠时要求重新排版或拆页",
       async () => {
         const blocks = ["颜色来源差异", "物理过程差异", "观测条件差异"]
           .map(
@@ -582,7 +582,7 @@ describe.runIf(process.env.KEYA_BROWSER_INTEGRATION === "true")(
           expect.arrayContaining([
             expect.objectContaining({
               code: "BROWSER_VERTICAL_OVERFLOW",
-              severity: "warning",
+              severity: "error",
             }),
           ]),
         );

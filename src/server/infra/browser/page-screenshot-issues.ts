@@ -12,6 +12,9 @@ type ScreenshotCapture = NonNullable<
 // 可出现 8px 文档高度差，但内容可见率仍为 100%，且没有裁切、嵌套滚动或折叠
 // 下操作。超过该范围仍按真实纵向溢出处理。
 const MAX_LAYOUT_ROUNDING_OVERFLOW_PX = 8;
+const SLIDE_DESIGN_WIDTH = 1920;
+const SLIDE_DESIGN_HEIGHT = 1080;
+const MIN_EXPECTED_STAGE_SCALE_RATIO = 0.96;
 
 export function collectBrowserIssues(
   pageId: string,
@@ -88,7 +91,28 @@ export function collectBrowserIssues(
       message: `页面产生 ${evidence.metrics.horizontalOverflowPx}px 横向溢出。`,
       location,
       repairHint:
-        "移除超出视口的固定宽度，使用响应式宽度后重新截图验证。",
+        "把全部内容限制在 16:9 舞台内，使用相对尺寸或同比例构图后重新截图验证。",
+    });
+  }
+  const expectedStageScale = Math.min(
+    1,
+    evidence.viewport.width / SLIDE_DESIGN_WIDTH,
+    evidence.viewport.height / SLIDE_DESIGN_HEIGHT,
+  );
+  if (
+    evidence.metrics.requiredViewportScale !== undefined &&
+    evidence.metrics.requiredViewportScale <
+      expectedStageScale * MIN_EXPECTED_STAGE_SCALE_RATIO
+  ) {
+    issues.push({
+      code: "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
+      dimension: "layoutQuality",
+      severity: "error",
+      source: "browser",
+      message: `页面内容超过 1920×1080 舞台，被额外缩放到预期比例的 ${Math.round((evidence.metrics.requiredViewportScale / Math.max(expectedStageScale, 0.001)) * 100)}%。`,
+      location,
+      repairHint:
+        "减少重复信息并重组二维构图；必要内容仍超载时要求 Course Lead 拆页，禁止继续缩字或依赖整体缩放。",
     });
   }
   const verticalOverflowPx =
@@ -98,15 +122,12 @@ export function collectBrowserIssues(
       evidence.metrics.documentHeight - evidence.viewport.height,
     );
   if (verticalOverflowPx > MAX_LAYOUT_ROUNDING_OVERFLOW_PX) {
-    const isNarrowViewport = evidence.viewport.width < 640;
     issues.push({
       code: "BROWSER_VERTICAL_OVERFLOW",
       dimension: "layoutQuality",
-      severity: "warning",
+      severity: "error",
       source: "browser",
-      message: isNarrowViewport
-        ? `移动端页面采用纵向阅读，文档比首屏长 ${verticalOverflowPx}px。`
-        : `页面内容比当前画布长 ${verticalOverflowPx}px，可在学习器内纵向滚动阅读。`,
+      message: `页面内容超出 16:9 舞台 ${verticalOverflowPx}px，学习器不会提供纵向滚动。`,
       location: {
         ...location,
         ...(evidence.metrics.largestVisualSelector
@@ -114,16 +135,14 @@ export function collectBrowserIssues(
           : {}),
       },
       repairHint:
-        "学习器允许页面自然纵向滚动；只在正文被裁切、横向溢出或核心操作不可达时返工。",
+        "重新组织为画布级网格、对照、叠层或渐进互动；仍超载时要求 Course Lead 拆页，禁止缩小正文、裁切或增加滚动条。",
     });
   }
   if ((evidence.metrics.nestedVerticalOverflowCount ?? 0) > 0) {
     issues.push({
       code: "BROWSER_NESTED_VERTICAL_OVERFLOW",
       dimension: "layoutQuality",
-      // 多栏证据台、时间线和表单工作区允许使用独立滚动面板。单凭 overflow-y
-      // 不能证明页面不可用；真实裁切、操作不可达和不可读缩放由独立指标拦截。
-      severity: "warning",
+      severity: "error",
       source: "browser",
       message: `${evidence.metrics.nestedVerticalOverflowCount} 个嵌套区域产生纵向滚动。`,
       location: {
@@ -131,7 +150,7 @@ export function collectBrowserIssues(
         description: "播放器画布中的嵌套滚动区域",
       },
       repairHint:
-        "若这是有意设计的多栏工作区可保留；仅在内容被裁切或核心操作不可达时改为页面自然滚动。",
+        "取消嵌套滚动并重新分配画布空间；若必要内容无法完整展示，拆分为更多页面。",
     });
   }
   if (evidence.metrics.clippedElementCount > 0) {
@@ -161,16 +180,16 @@ export function collectBrowserIssues(
     issues.push({
       code: "BROWSER_PRIMARY_ACTION_BELOW_FOLD",
       dimension: "layoutQuality",
-      severity: "warning",
+      severity: "error",
       source: "browser",
-      message: `${evidence.metrics.primaryActionBelowFoldCount} 个课程主操作位于首屏之后，可通过页面滚动到达。`,
+      message: `${evidence.metrics.primaryActionBelowFoldCount} 个课程主操作超出 16:9 舞台，学习器中不可达。`,
       location: {
         ...location,
         selector: '[data-interaction-type="navigate"]',
         description: "播放器首屏中的课程导航主操作",
       },
       repairHint:
-        "仅在操作不可达或被裁切时返工；自然纵向阅读允许主操作位于首屏之后。",
+        "把主要操作重新编排到舞台内；若页面职责过载则要求 Course Lead 拆页。",
     });
   }
   if (evidence.metrics.zeroSizeInteractiveCount > 0) {

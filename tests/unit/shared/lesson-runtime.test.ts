@@ -43,7 +43,7 @@ describe("trusted lesson runtime", () => {
     expect(srcDoc).toContain('image.addEventListener("load", scheduleFit');
     expect(srcDoc).toContain("new MutationObserver");
     expect(srcDoc).toContain("new ResizeObserver");
-    expect(srcDoc).toContain("data-keya-fit-expanded");
+    expect(srcDoc).not.toContain("data-keya-fit-expanded");
     expect(srcDoc).toContain('"translate("');
     expect(srcDoc).toContain('"px) scale("');
     expect(srcDoc).not.toContain("postMessage");

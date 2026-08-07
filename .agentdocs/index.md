@@ -34,6 +34,8 @@
 
 `workflow/done/260806-fix-course-generation-failures.md` - 生课高频失败的全局根因、Browser/Worker 责任分离、Doubao 2.0 Pro 统一路由与 5 页真实盲测结果。
 
+`workflow/done/260807-upgrade-slide-canvas-and-visual-system.md` - 固定 16:9 无滚动课件、播放器放大、frontend-slides 视觉参考接入与失败数据治理。
+
 ## 全局重要记忆
 
 - 产品 UI 只使用 `src/features/keya` 与当前产品路由。
@@ -43,7 +45,9 @@
 - 新页面使用按 WorkOrder 稳定存在的本地 workspace 反复编辑 HTML，并在 render/submit 时 checkpoint 到 SQLite Artifact；executionAttempt 不更换工作目录，文件缺失时才用数据库 checkpoint 初始化。历史 WorkOrder 仅在缺少新工具权限时使用旧 Model Step 恢复链路。
 - 浏览器证据统一由后台 Playwright Browser Pool 采集，每次渲染使用独立 BrowserContext，并向 Page Creator 与 Reviewer提供 PNG、DOM、Console、网络和受控互动结果。
 - Browser Harness 不再要求作者写 `data-page-id`；可信运行时在唯一 `main` 上补运行标识。三视口截图缺失、截图失败、失效按钮、不可读的整体缩放属于交付阻断证据。
-- 学习端 HTML 使用自然纵向滚动，不再把丰富网页压缩进固定幻灯片画布；纵向长度只做 warning，横向溢出、真实文字/交互裁切、失效互动和运行时错误仍是硬门禁。
+- 课程 HTML 统一在 1920×1080 固定 16:9 舞台内创作，学习器和 Browser Harness 同比缩放到三个 16:9 视口且不提供任何滚动；内容过载必须重新排版、渐进展示或由 Course Lead 拆页。
+- Page Creator 常驻加载 `course-page-design` 方法 Skill，并可按 Harness 给出的精确路径渐进读取 `frontend-slides` 配方；12 个生产参考和 34 个 bold 配方只提供视觉语言，不是 DSL 或固定布局。
+- 清理失败课程统一使用 `pnpm data:purge-failed` 审计并加 `-- --confirm` 执行；数据库和独占文件先进入 `.data/backups`，completed/cancelled 及共享素材必须保留。
 - Page Creator 拒绝无变化 workspace 写入，只保留最新一轮三视口 PNG，最多完成 3 轮有证据的质量修订；达到预算后由 Harness 直接执行唯一 submit/block 终态，不能再花一次模型调用机械封口。
 - Page Creator 使用 `page-writer` 强档模型路由；课程至少三页时 Architecture Gate 要求至少两个无生成依赖页面，Demo 默认三路并发，确保多 Agent 协作不是名义并行。
 - 新任务只使用同一个 `curriculum-architect` 身份作为 Course Lead：架构 Gate 后直接派发页面，独立 Reviewer 完成后再由同一 Lead 决策；`course-director` 只恢复旧 WorkOrder。

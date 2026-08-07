@@ -57,6 +57,7 @@ const ARCHITECT_SUBMISSION_CALIBRATION = `# 提交前校准
 
 你是 Course Lead 的课程规划阶段，不是模板选择器。提交前只检查这些关键点：
 - 页面共同形成清晰的学习路径，每页说明目标、核心概念、学习者动作和可观察证据；不要预先规定页面布局、组件树或图片槽位。
+- 每页最终是无滚动的 16:9 HTML PPT；auto 页数下宁可增加必要页面，也不要把多个完整认知动作和长解释塞进一页。
 - factual claim 有授权资料时附真实引用；没有资料时保持审慎，不伪造来源。
 - 不提交 pageType、interactionType、functionalTemplateId、styleTemplateId 或 assetNeeds；Harness 为旧投影补兼容默认值。
 - Page Creator 会在制作页面时自行决定表现方式、互动和是否调用生图工具。

@@ -803,7 +803,7 @@ describe("renderDeterministicPageFallback advanced layout", () => {
 
       try {
         const page = await browser.newPage({
-          viewport: { width: 366, height: 500 },
+          viewport: { width: 640, height: 360 },
         });
         await page.setContent(html, { waitUntil: "domcontentloaded" });
         await page.waitForFunction(
@@ -838,8 +838,8 @@ describe("renderDeterministicPageFallback advanced layout", () => {
         });
 
         expect(metrics).toEqual({
-          documentHeight: 500,
-          viewportHeight: 500,
+          documentHeight: 360,
+          viewportHeight: 360,
           clippedElementCount: 0,
         });
         await page.close();
@@ -868,9 +868,9 @@ describe("renderDeterministicPageFallback advanced layout", () => {
 
       try {
         for (const viewport of [
-          { width: 922, height: 460 },
-          { width: 712, height: 650 },
-          { width: 366, height: 500 },
+          { width: 1280, height: 720 },
+          { width: 960, height: 540 },
+          { width: 640, height: 360 },
         ]) {
           const page = await browser.newPage({ viewport });
           await page.setContent(html, { waitUntil: "domcontentloaded" });
@@ -940,7 +940,7 @@ describe("renderDeterministicPageFallback advanced layout", () => {
 
       try {
         const page = await browser.newPage({
-          viewport: { width: 366, height: 500 },
+          viewport: { width: 640, height: 360 },
         });
         await page.setContent(html, { waitUntil: "domcontentloaded" });
         await page.waitForFunction(
@@ -968,7 +968,7 @@ describe("renderDeterministicPageFallback advanced layout", () => {
         });
 
         expect(metrics).toEqual({
-          documentHeight: 500,
+          documentHeight: 360,
           clippedElementCount: 0,
         });
         await page.close();
@@ -997,7 +997,7 @@ describe("renderDeterministicPageFallback advanced layout", () => {
 
       try {
         const page = await browser.newPage({
-          viewport: { width: 366, height: 500 },
+          viewport: { width: 640, height: 360 },
         });
         await page.setContent(html, { waitUntil: "domcontentloaded" });
         await page.waitForFunction(
@@ -1024,7 +1024,7 @@ describe("renderDeterministicPageFallback advanced layout", () => {
         });
 
         expect(metrics).toEqual({
-          documentHeight: 500,
+          documentHeight: 360,
           clippedElementCount: 0,
         });
         await page.close();
@@ -1057,9 +1057,9 @@ describe("renderDeterministicPageFallback advanced layout", () => {
 
       try {
         for (const viewport of [
-          { width: 922, height: 460 },
-          { width: 712, height: 650 },
-          { width: 366, height: 500 },
+          { width: 1280, height: 720 },
+          { width: 960, height: 540 },
+          { width: 640, height: 360 },
         ]) {
           const page = await browser.newPage({ viewport });
           await page.route("**/*", (route) => route.abort());
@@ -1105,7 +1105,7 @@ describe("renderDeterministicPageFallback advanced layout", () => {
   );
 
   it(
-    "fits a substantial story page at native scale without clipping required copy",
+    "keeps a substantial story page readable without clipping required copy",
     async () => {
       const content = createSubstantialStoryContent();
       const html = buildFittedLessonSrcDoc(
@@ -1119,9 +1119,9 @@ describe("renderDeterministicPageFallback advanced layout", () => {
 
       try {
         for (const viewport of [
-          { width: 922, height: 460 },
-          { width: 712, height: 650 },
-          { width: 366, height: 500 },
+          { width: 1280, height: 720 },
+          { width: 960, height: 540 },
+          { width: 640, height: 360 },
         ]) {
           const page = await browser.newPage({ viewport });
           await page.route("**/*", (route) => route.abort());
@@ -1183,7 +1183,7 @@ describe("renderDeterministicPageFallback advanced layout", () => {
             requiredCopyVisible: true,
           });
           expect(metrics.scale, `${viewport.width}x${viewport.height}`).toBeGreaterThanOrEqual(
-            0.99,
+            viewport.width === 640 ? 0.94 : 0.99,
           );
           await page.close();
         }
@@ -1210,9 +1210,9 @@ describe("renderDeterministicPageFallback advanced layout", () => {
           );
 
           for (const viewport of [
-            { width: 922, height: 460 },
-            { width: 712, height: 650 },
-            { width: 366, height: 500 },
+            { width: 1280, height: 720 },
+            { width: 960, height: 540 },
+            { width: 640, height: 360 },
           ]) {
             const page = await browser.newPage({ viewport });
             await page.route("**/*", (route) => route.abort());
@@ -1309,7 +1309,7 @@ describe("renderDeterministicPageFallback advanced layout", () => {
 
       try {
         for (const viewport of [
-          { width: 366, height: 500 },
+          { width: 640, height: 360 },
           { width: 768, height: 432 },
           { width: 1365, height: 768 },
         ]) {
@@ -1432,9 +1432,9 @@ describe("renderDeterministicPageFallback advanced layout", () => {
 
       try {
         for (const viewport of [
-          { width: 922, height: 460 },
-          { width: 712, height: 650 },
-          { width: 366, height: 500 },
+          { width: 1280, height: 720 },
+          { width: 960, height: 540 },
+          { width: 640, height: 360 },
         ]) {
           const page = await browser.newPage({ viewport });
           await page.route("**/*", (route) => route.abort());

@@ -36,7 +36,7 @@ describe("项目 Agent Skill Registry", () => {
     );
     expect(skill.digest).toMatch(/^[a-f0-9]{64}$/);
     const pageDesign = registry.get(SkillIds.CoursePageDesign);
-    expect(pageDesign.description).toContain("多视口自然阅读");
+    expect(pageDesign.description).toContain("完整装入 16:9 舞台");
     expect(pageDesign.resourcePaths).toContain(
       "agent/skills/course-page-design/references/learning-interactions.md",
     );

@@ -525,7 +525,7 @@ describe("QA repair planning", () => {
           source: "browser",
           location: {
             ...baseReport.issues[0]!.location,
-            viewport: "922x460",
+            viewport: "1280x720",
           },
         },
         {
@@ -536,7 +536,7 @@ describe("QA repair planning", () => {
           message: "2 个元素存在可测量的内容裁切。",
           location: {
             pageId: pageContentDsl.pageId,
-            viewport: "922x460",
+            viewport: "1280x720",
             description: "Playwright 固定视口渲染结果",
           },
           repairHint: "检查 overflow 与固定高度。",

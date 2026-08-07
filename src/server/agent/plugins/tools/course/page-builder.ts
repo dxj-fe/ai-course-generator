@@ -28,6 +28,7 @@ import {
   MAX_PAGE_QUALITY_REVISIONS,
 } from "@/server/course/policy/page-block";
 import { classifyPublicAgentError } from "@/server/course/projection/public-error";
+import { buildCourseVisualReferences } from "@/server/course/page/visual-reference";
 import {
   defaultPageBuilderModelSteps,
   type PageBuilderModelSteps,
@@ -1725,6 +1726,10 @@ function fallbackAssetRole(
 }
 
 function buildPageWorkspaceTask(execution: PageBuilderExecution) {
+  const visualReferences = buildCourseVisualReferences({
+    architecture: execution.architecture,
+    creationBrief: execution.creationBrief,
+  });
   return `# Page Creator WorkOrder
 
 页面：${execution.pageTask.title}（${execution.pageId}）
@@ -1735,13 +1740,16 @@ function buildPageWorkspaceTask(execution: PageBuilderExecution) {
 
 验收：${execution.initialWorkOrder.acceptance.join("；")}
 
+视觉参考：${JSON.stringify(visualReferences)}
+
 ## 最小运行合同
 
 - 自主创作完整的 \`index.html\`，必须包含 doctype、viewport、内联 style 和唯一 main。
 - HTML 是页面内容真相，不需要同时填写内容 DSL，也不强制 data 标记或规划阶段的互动类型。
 - 简单探索优先使用 details/summary；普通 button 不会自动产生反馈，表单或平台互动必须能被 interactionSteps 回放证明。
 - 不写 script、内联事件、外链资源或远程 CSS。
-- 922×460 与 712×650 播放器不滚动；用画布级网格、叠层或环绕构图，并约束主视觉高度，不要纵向堆完后再缩字。
+- 唯一 main 是 1920×1080 的 16:9 设计舞台，宿主负责同比例缩放；不要复制多页 deck wrapper、导航控制器或作者脚本。页面在 1280×720、960×540、640×360 完整显示，根页面和任何正文区域都不能滚动。
+- 内容放不下时先重组为画布级网格、叠层、环绕或渐进互动；若仍超载，应明确阻塞并要求 Course Lead 拆页，不能缩小正文、裁切必要内容或制造滚动条。
 - 构图、色彩、字体层级、内容关系和素材数量不受模板约束。
 `;
 }

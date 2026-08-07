@@ -87,7 +87,7 @@ describe("page quality rules", () => {
           message: "3 个证据面板可独立滚动。",
           location: {
             pageId: "page-evidence-workbench",
-            viewport: "922x460",
+            viewport: "1280x720",
             description: "三栏证据工作台",
           },
           repairHint: "仅在裁切或操作不可达时改为自然滚动。",
@@ -172,7 +172,7 @@ describe("page quality rules", () => {
           location: {
             pageId: "page-visual-structure",
             selector: "main",
-            viewport: "922x460",
+            viewport: "1280x720",
             description: "桌面首屏整体构图",
           },
           repairHint:
@@ -244,7 +244,7 @@ describe("page quality rules", () => {
       source: "browser",
       location: {
         ...copiedBrowserIssue.location,
-        viewport: "922x460",
+        viewport: "1280x720",
         selector: '[data-asset-slot-id="asset-slot-01"]',
       },
     };
@@ -310,19 +310,19 @@ describe("page quality rules", () => {
           {
             status: "captured",
             artifactId: "desktop",
-            viewport: { width: 922, height: 460 },
+            viewport: { width: 1280, height: 720 },
             metrics,
             capturedAt,
           },
           {
             status: "failed",
-            viewport: { width: 712, height: 650 },
+            viewport: { width: 960, height: 540 },
             reason: "浏览器不可用",
           },
           {
             status: "captured",
             artifactId: "mobile",
-            viewport: { width: 366, height: 500 },
+            viewport: { width: 640, height: 360 },
             metrics: { ...metrics, documentWidth: 366, documentHeight: 500 },
             capturedAt,
           },

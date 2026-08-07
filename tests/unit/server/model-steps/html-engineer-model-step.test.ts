@@ -1100,7 +1100,7 @@ describe("HtmlEngineerModelStep", () => {
       );
 
     expect(() => validateHtmlEngineerOutput(html, input)).toThrow(
-      "不得复制 frontend-slides 的 deck 脚手架",
+      "不得复制 frontend-slides 的多页 deck 脚手架",
     );
   });
 

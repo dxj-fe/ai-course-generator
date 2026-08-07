@@ -58,13 +58,13 @@ describe("HTML Engineer prompts", () => {
       "位图只使用输入中的 ready 素材",
     );
     expect(prompts.systemPrompt).toContain(
-      "922×460 是首要画布",
+      "1280×720 是首要舞台",
     );
     expect(prompts.systemPrompt).toContain(
-      "712×650 也须完整单屏",
+      "960×540 与 640×360 必须保持同一 16:9 构图并完整单屏",
     );
     expect(prompts.systemPrompt).toContain(
-      "366×500 可自然纵向滚动",
+      "640×360 必须保持同一 16:9 构图并完整单屏",
     );
     expect(prompts.systemPrompt).toContain(
       "标题、核心证据和主要动作必须可见",

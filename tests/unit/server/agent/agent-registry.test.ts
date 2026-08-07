@@ -44,6 +44,9 @@ describe("Agent Registry", () => {
     expect(coursePageBuilderAgent.skills).toEqual([
       SkillIds.CoursePageDesign,
     ]);
+    expect(coursePageBuilderAgent.resourceSkills).toEqual([
+      SkillIds.FrontendSlides,
+    ]);
     expect(coursePageBuilderAgent.modelCapability).toBe("page-writer");
     expect(coursePageBuilderAgent.tools).toContain(
       ToolIds.ReadLocalResource,

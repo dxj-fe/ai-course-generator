@@ -395,7 +395,7 @@ Page Creator 调用 `edit_page_workspace` 后，工具自动渲染，下一轮�
 - Page Creator 曾把完全相同的 HTML 连续 checkpoint 七次。现在 workspace 拒绝无变化写入，Agent Loop 最多进行三轮有证据的质量修订；耗尽后由 Harness 直接执行唯一 `submit_page` / `block_page` 终态，不再消耗机械模型回合。
 - 原三张截图每轮累计进入消息，真实运行后期出现连续 `MODEL_ERROR` 工具参数失败。现在只保留最新一轮三视口 PNG，历史工具记录继续保留。
 - Demo 虽声明 parallel，却硬编码 `concurrency: 1`。现在 Demo 使用最多三路并发；Architecture Gate 对三页以上课程要求至少两个无生成依赖页面，防止 Lead 把学习顺序误写成串行构建链。
-- 原始“纵向溢出 8px 以上即阻断”以及后续 contain-fit 比例门槛都在迫使模型删内容和缩字，与丰富网页课程目标冲突。现在学习器允许桌面、平板、手机自然纵向滚动；页面高度只观测，横向溢出、真实文字/交互裁切、失效互动和运行时错误才阻断。
+- 该轮曾为避免旧短画布误杀而临时启用自然纵向滚动。2026-08-07 根据产品重新明确的 HTML PPT 语义，当前合同已升级为 1920×1080 固定 16:9 舞台：播放器同比缩放且无滚动，内容过载通过构图、渐进互动或拆页解决；参见 `260807-upgrade-slide-canvas-and-visual-system.md`。
 - Page Creator 原先使用 balanced `general` 路由。真实运行表明它容易退化为纵向白卡堆叠；现切换到 `page-writer` 强档，并保留 Browser Harness 证据闭环。
 
 早期最佳试跑 `2026-08-06T06-47-15-822Z` 是 4 页中 3 页通过、综合观测分 `92.42`，剩余页被失效按钮正确阻断。继续排查后又修复了机械资料检索、固定画布、装饰 overflow 误报、固定批次并发、15 分钟 stale lease 和预算末端机械终态调用。

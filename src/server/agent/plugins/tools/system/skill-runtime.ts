@@ -34,13 +34,19 @@ export async function prepareAgentSkillRuntime(input: {
   registry: SkillRegistry;
   workOrderId: string;
 }) {
+  const grantedSkillIds = [
+    ...new Set([
+      ...input.definition.skills,
+      ...(input.definition.resourceSkills ?? []),
+    ]),
+  ];
   const session = new LocalResourceSession({
     agentId: input.definition.id,
     workOrderId: input.workOrderId,
-    skillIds: input.definition.skills,
+    skillIds: grantedSkillIds,
     ...DEFAULT_SKILL_GRANT,
   });
-  const catalog = input.registry.catalog(input.definition.skills);
+  const catalog = input.registry.catalog(grantedSkillIds);
   const entries = await Promise.all(
     input.definition.skills.map(async (skillId) => {
       const skill = input.registry.get(skillId);

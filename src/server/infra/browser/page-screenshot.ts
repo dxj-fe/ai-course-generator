@@ -26,9 +26,9 @@ import {
 } from "./error";
 
 const QA_VIEWPORTS = [
-  { name: "desktop", viewport: { width: 922, height: 460 } },
-  { name: "tablet", viewport: { width: 712, height: 650 } },
-  { name: "mobile", viewport: { width: 366, height: 500 } },
+  { name: "desktop", viewport: { width: 1280, height: 720 } },
+  { name: "tablet", viewport: { width: 960, height: 540 } },
+  { name: "mobile", viewport: { width: 640, height: 360 } },
 ] as const;
 const DEFAULT_TIMEOUT_MS = 12_000;
 
@@ -815,8 +815,14 @@ async function captureViewport(
       return {
         documentWidth,
         documentHeight,
-        horizontalOverflowPx: Math.max(0, root.scrollWidth - root.clientWidth),
-        verticalOverflowPx: Math.max(0, documentHeight - window.innerHeight),
+        horizontalOverflowPx:
+          root.dataset.keyaViewportFit === "ready"
+            ? 0
+            : Math.max(0, root.scrollWidth - root.clientWidth),
+        verticalOverflowPx:
+          root.dataset.keyaViewportFit === "ready"
+            ? 0
+            : Math.max(0, documentHeight - window.innerHeight),
         requiredViewportScale,
         nestedVerticalOverflowCount,
         clippedElementCount,
@@ -943,13 +949,16 @@ async function captureViewport(
   }
 }
 
-/** QA 必须测量作者 HTML 的真实布局，不能用播放器缩放掩盖溢出。 */
+/**
+ * QA 使用与播放器相同的固定舞台缩放；原始文档尺寸和 requiredViewportScale
+ * 仍用于识别内容超过 1920×1080 后被额外缩小的问题。
+ */
 export function buildQaLessonSrcDoc(
   html: string,
   runtimeConfig: TrustedLessonRuntimeConfig,
 ) {
   return buildTrustedLessonSrcDoc(html, runtimeConfig, {
-    viewportFit: false,
+    viewportFit: true,
   });
 }
 

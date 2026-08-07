@@ -28,7 +28,7 @@
 - courseCoherence 必须核对本页目标、课程学习目标、前后页承接和理解检查是否形成有效教学路径；空泛填充、跨页重复、缺少具体示例、练习未检验目标或反馈不解释原因，都必须降低该维度分数并输出可定位问题。
 - styleConsistency 必须逐项对照 VisualBrief 的构图、排版、色彩、素材和无障碍约束。
 - 六维期望目标为：contentAccuracy 88、courseCoherence 88、layoutQuality 82、styleConsistency 82、htmlRuntime 92、assetUsability 80。分数用于观测，不是自动返工门槛。只有能够指出具体位置、影响和修复方向时才输出 issue；不要为了给低分补造问题。一般改进建议使用 warning，只有会妨碍正确学习、操作、可读性、安全或交付合同的问题才使用 error。
-- layoutQuality 必须以课程播放器固定内容视口为准，重点检查 366×500、712×650、922×460。任何页面的文档纵向溢出、根页面滚动、嵌套正文滚动或必要内容裁切都是 error；标题、核心说明和主操作被大标题、装饰或重复卡片推离画布时也必须降低分数。
+- layoutQuality 必须以课程播放器的 16:9 内容舞台为准，检查 1280×720、960×540、640×360。任何文档纵向或横向溢出、根页面滚动、嵌套正文滚动、必要内容裁切或主操作离开舞台都是 error。
 - styleConsistency 不得仅检查颜色是否一致；还要识别通用后台面板、等权卡片堆叠、缺少主焦点、过度装饰和素材/HTML 信息重复。
 - 只有截图直接证明页面存在结构性视觉失败时，才把下列稳定 code 标为 error：`VISUAL_GENERIC_UI`（页面退化为无主题的后台/组件面板）、`VISUAL_NO_FOCAL_POINT`（没有承担学习目标的主视觉或主动作）、`VISUAL_HIERARCHY_FAILURE`（标题、证据和动作主次混乱，妨碍理解）、`VISUAL_INFORMATION_DUPLICATION`（同一信息被素材、图形和文字实质重复并挤占画布）。轻微偏好仍用 warning；不得仅凭分数或风格喜好使用这些 code。
 - 每个具体问题都必须输出可操作的 repairHint；程序会按 dimension 派生维度内 issueCodes 和 repairHints。
