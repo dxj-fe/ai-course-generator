@@ -96,3 +96,6 @@ next-env.d.ts
 # Vite timestamp files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+.playwright-cli
+output/

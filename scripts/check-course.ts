@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 
 import { z } from "zod";
 
-import { validateHtmlEngineerOutput } from "@/server/agent/plugins/model-steps/course/html-engineer-model-step";
+import { validatePageHtmlEnvelope } from "@/server/course/gate/page-html";
 import {
   isDeterministicPageHtml,
   summarizeCourseQuality,
@@ -14,14 +14,6 @@ import {
   QualityDimensionNameSchema,
   type CourseGenerationState,
 } from "@/shared/course-schema";
-
-const ExpectedCourseRoleSchema = z
-  .object({
-    label: z.string().min(2).max(120),
-    allowedPageTypes: z.array(z.string().min(1)).min(1),
-    allowedInteractionTypes: z.array(z.string().min(1)).min(1),
-  })
-  .strict();
 
 const RequiredConceptSchema = z
   .object({
@@ -40,10 +32,6 @@ export const DemoBaselineSchema = z
     name: z.string().min(2).max(120),
     prompt: z.string().min(10).max(4_000),
     pageCount: z.union([z.literal(3), z.literal(4), z.literal(5)]),
-    expectedCourseRoles: z
-      .array(ExpectedCourseRoleSchema)
-      .min(2)
-      .max(8),
     requiredConcepts: z.array(RequiredConceptSchema).min(2).max(12),
     quality: z
       .object({
@@ -199,23 +187,6 @@ function checkOutline(
     });
   }
 
-  for (const role of baseline.expectedCourseRoles) {
-    const matchingPage = outline.pages.find(
-      (page) =>
-        role.allowedPageTypes.includes(page.pageType) &&
-        role.allowedInteractionTypes.includes(page.interactionType),
-    );
-    if (!matchingPage) {
-      issues.push({
-        code: "OUTLINE_ROLE_MISSING",
-        message:
-          `大纲缺少“${role.label}”这一课程能力；` +
-          `允许页型为 ${role.allowedPageTypes.join("/")}，` +
-          `允许交互为 ${role.allowedInteractionTypes.join("/")}。`,
-      });
-    }
-  }
-
   const searchableOutline = normalizeSearchText({
     overview: outline.overview,
     learningObjectives: outline.learningObjectives,
@@ -259,19 +230,13 @@ function checkPages(
         pageId: page.pageId,
         message: "页面缺少 PageContentDSL 或 HTML 输出。",
       });
-    } else if (course.briefs?.visual) {
-      try {
-        validateHtmlEngineerOutput(page.htmlOutput.html, {
-          content: page.content,
-          visualBrief: course.briefs.visual,
-          assets: page.assets,
-        });
-      } catch (error) {
+    } else {
+      const htmlIssues = validatePageHtmlEnvelope(page.htmlOutput.html);
+      if (htmlIssues.length > 0) {
         issues.push({
           code: "HTML_CONTRACT_FAILED",
           pageId: page.pageId,
-          message:
-            error instanceof Error ? error.message : "HTML 合同校验失败。",
+          message: htmlIssues.map(({ message }) => message).join("；"),
         });
       }
     }

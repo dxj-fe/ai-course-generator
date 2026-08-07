@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   CourseGenerationPublicEvent,
@@ -42,6 +42,8 @@ const mocks = vi.hoisted(() => {
 vi.mock("next/server", () => ({ after: mocks.after }));
 
 vi.mock("@/server/setup/web", () => ({
+  shouldExecuteCourseTasksInline: () =>
+    process.env.COURSE_TASK_INLINE_EXECUTION === "1",
   getWebServices: () => ({
     courseEvents: { subscribe: mocks.subscribe },
     coursePublicEvents: {
@@ -84,6 +86,7 @@ describe("course task Route Handlers", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.subscribers.clear();
+    vi.stubEnv("COURSE_TASK_INLINE_EXECUTION", "");
     mocks.listPublicEvents.mockImplementation(
       ({ traceId: requestedTraceId, afterSequence }) => ({
         traceId: requestedTraceId,
@@ -93,7 +96,12 @@ describe("course task Route Handlers", () => {
     );
   });
 
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("POST validates JSON, returns 202, and schedules the workflow after the response", async () => {
+    vi.stubEnv("COURSE_TASK_INLINE_EXECUTION", "1");
     mocks.create.mockResolvedValue({
       taskId,
       courseId,
@@ -138,6 +146,31 @@ describe("course task Route Handlers", () => {
     expect(scheduled).toBeTypeOf("function");
     await scheduled?.();
     expect(mocks.run).toHaveBeenCalledWith(taskId);
+  });
+
+  it("POST 默认只入队，由显式 Worker 领取 Agent Loop", async () => {
+    mocks.create.mockResolvedValue({
+      taskId,
+      courseId,
+      traceId,
+      status: "queued",
+    });
+
+    const response = await POST(
+      new Request("http://localhost/api/courses/tasks", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          userPrompt: "生成三页太阳系互动课程",
+          creationBrief,
+          pageCount: 3,
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(202);
+    expect(mocks.after).not.toHaveBeenCalled();
+    expect(mocks.run).not.toHaveBeenCalled();
   });
 
   it("POST rejects malformed JSON without creating a task", async () => {
@@ -811,6 +844,7 @@ describe("course task Route Handlers", () => {
   });
 
   it("PATCH pauses without scheduling work and resumes with a new trace", async () => {
+    vi.stubEnv("COURSE_TASK_INLINE_EXECUTION", "1");
     mocks.pause.mockResolvedValueOnce(taskRecord({ status: "paused" }));
 
     const paused = await PATCH(

@@ -38,25 +38,30 @@ import {
 } from "@/shared/course-schema";
 import {
   RetrieveReferenceInputSchema,
-  RetrieveTemplateCardsInputSchema,
   retrieveReferenceHits,
-  retrieveTemplateCards,
 } from "@/server/agent/plugins/tools/course/retrieval";
 import { getAgentSystem } from "@/server/setup/agent";
+import {
+  CoursePlanDraftSchema,
+  projectCoursePlanDraft,
+} from "./architect-draft";
 
 const ARCHITECT_TOOL_NAMES = AgentToolSets.CourseArchitect;
 
+const ARCHITECT_REFERENCE_MAX_CHUNKS = 12;
+const ARCHITECT_REFERENCE_MAX_KEY_FACTS_PER_PACK = 6;
+const ARCHITECT_REFERENCE_MAX_SUMMARY_CHARS = 600;
+const ARCHITECT_REFERENCE_MAX_CHUNK_CHARS = 900;
+
 const ARCHITECT_SUBMISSION_CALIBRATION = `# 提交前校准
 
-现在只构造 submit_course_architecture 的参数。提交前做一次短校准：
-- 没有授权资料或可复核推导时，删掉精确倍数、范围、阈值和“只有、全部、完全”等排他结论，保留适用条件、观察对象与相对关系。
-- 不把散射、反射、传递或重新分配写成“消耗、消失、变成另一类”；局部或特定观察方向的结果不能泛化成整个环境。
-- 每页只保留一个可观察的认知命题；后页负责应用或测验时，前页不要把同一应用完整讲完，也不要提前复制后页的整套证据图。例如后页专门判断高/低太阳路径时，前页的散射解释只保留散射拓扑，不再塞入完整双路径对比。视觉图必须让证据本身成立，不能只靠“更长、更强、更高”等标签宣告结论。
-- 样式按材料语言和知识表达选择。自然现象不自动等于植物色、标本手账或有机曲线；精确物理关系图优先比较真正支持清晰几何与信息图的候选。
-- 做一次路径拓扑测试：先判断观察者接收的是主路径还是散射、反射、折射等机制产生的支路。所有光路都从光源沿传播方向到达接收者；观察者只能是路径终点，绝不能写成路径起点。结论说支路进入观察者时，观察者必须位于该支路末端，主路继续到它的物理终点。比较状态必须各自提供从源头经同一介质到同一接收者的完整路径，共享尺度与基线；遮掉“长、短、强、弱”标签后，方向和差异仍必须成立。
-- 同一图同时表达波长与传播路径时必须分离视觉编码：波长用波峰间距、波形疏密或独立标尺，大气路径用完整光路的几何长度；不得用整条光路/线段长度表示波长。“光程”若保留，CoursePack 必须给出包含折射率的定义，并说明折射率近似不变时才可用几何路径比较；否则整份架构统一称“大气路径长度”，包括目标、标题、purpose 与验收字段。
-- 解释瑞利散射时明确写“空气分子”；太阳高度与大气路径长度是反向关系（太阳越低，路径越长），不得写成正相关。
-- 工具外壳始终同时传 architecture 与 patches。第一次提交使用 {"architecture":完整对象,"patches":null}。门禁失败或已有可恢复候选后，优先用 {"architecture":null,"patches":[{"path":"pageTasks.0.visualDesign.layout","value":"新值"}]} 修复反馈路径。跨模型层级若只保留了完整候选，也可把完整 architecture 作为兼容修复提案重新提交；工具只会采纳当前反馈路径内的安全差异并忽略无关改写。root 级或结构性修复仍需显式 patches。path 使用点路径，不要添加 revision、difficult 或其他 Schema 外字段。
+你是 Course Lead 的课程规划阶段，不是模板选择器。提交前只检查这些关键点：
+- 页面共同形成清晰的学习路径，每页说明目标、核心概念、学习者动作和可观察证据；不要预先规定页面布局、组件树或图片槽位。
+- factual claim 有授权资料时附真实引用；没有资料时保持审慎，不伪造来源。
+- 不提交 pageType、interactionType、functionalTemplateId、styleTemplateId 或 assetNeeds；Harness 为旧投影补兼容默认值。
+- Page Creator 会在制作页面时自行决定表现方式、互动和是否调用生图工具。
+- 第一次提交只填写轻量 draft：{"draft":规划草案,"architecture":null,"patches":null}。稳定 ID、Brief 已确认字段和兼容默认值由 Harness 投影。
+- 门禁失败或已有可恢复候选后，用 {"draft":null,"architecture":null,"patches":[{"path":"反馈字段路径","value":"新值"}]} 做最小修复。architecture 仅供历史恢复兼容，不要在新规划中使用。
 `;
 
 const ArchitectureCandidateInputSchema = z
@@ -115,10 +120,14 @@ type ArchitecturePatchOperation =
 // retryable feedback instead of an SDK-level terminal tool error.
 const ArchitectureSubmissionRuntimeInputSchema = z
   .object({
+    draft: z
+      .unknown()
+      .optional()
+      .describe("首次提交使用的轻量课程规划草案"),
     architecture: z
       .unknown()
       .optional()
-      .describe("仅首次提交使用的完整 CourseArchitecture"),
+      .describe("仅供历史恢复兼容的完整 CourseArchitecture"),
     patches: z
       .unknown()
       .optional()
@@ -134,9 +143,13 @@ const ArchitectureSubmissionRuntimeInputSchema = z
 // for missing path/value while exposing those fields in the real JSON Schema.
 const ArchitectureSubmissionInputSchema = z
   .object({
+    draft: z
+      .union([CoursePlanDraftSchema, z.null()])
+      .describe("新规划首次提交传轻量 draft；修复候选时传 null"),
     architecture: z
-      .union([CourseArchitectureSchema, z.null()])
-      .describe("首次提交传完整 CourseArchitecture；修复候选时传 null"),
+      .unknown()
+      .nullable()
+      .describe("仅供历史恢复兼容；新规划始终传 null"),
     patches: z
       .array(ArchitecturePatchEnvelopeItemSchema)
       .max(30)
@@ -185,7 +198,6 @@ type ArchitectToolContext = {
   workOrder: WorkOrder;
   workOrderLeaseOwner: string;
   readLocalResourceTool: ReadLocalResourceTool;
-  onTemplatesRetrieved?: () => void;
   workingCandidate?: CourseArchitecture;
 };
 
@@ -202,19 +214,6 @@ function createCurriculumArchitectTools(context: ArchitectToolContext) {
           result.hits.length > 0
             ? `找到 ${result.hits.length} 组相关资料。`
             : "没有找到相关资料；可以只使用通用知识，但不要伪造引用。",
-          result,
-        );
-      },
-    }),
-    [ToolIds.SearchTemplates]: tool({
-      description:
-        "按整课的一组页面需求、受众和视觉方向一次查询真实可用的功能模板与样式模板。可在 pageNeeds 中传入目标及预期 pageType；最终必须使用返回的稳定 ID。",
-      inputSchema: RetrieveTemplateCardsInputSchema,
-      execute: (input) => {
-        const result = retrieveTemplateCards(input, context.creationBrief);
-        context.onTemplatesRetrieved?.();
-        return successResult(
-          `返回 ${result.functional.length} 个功能模板和 ${result.style.length} 个样式模板候选。`,
           result,
         );
       },
@@ -249,7 +248,7 @@ function createCurriculumArchitectTools(context: ArchitectToolContext) {
     }),
     [ToolIds.SubmitCourseArchitecture]: tool({
       description:
-        "提交 CourseArchitecture。固定外壳必须同时包含 architecture 与 patches：首次提交传 {architecture: 完整对象, patches: null}；已有候选后优先传 {architecture: null, patches: [{path: 点路径, value: 新值}]}。跨模型层级也可把完整 architecture 作为兼容修复提案提交，工具只采纳当前反馈路径内的安全差异并忽略无关改写。兼容 replace JSON Patch 与 /pageTasks/0/... 路径；add/remove 只用于修复 pageTasks 页数，另允许补上缺失的 visualDesign。工具会再次执行确定性检查；通过后才原子保存并结束 WorkOrder。",
+        "提交轻量课程规划。新规划传 {draft: 规划草案, architecture: null, patches: null}，Harness 自动补稳定 ID、Brief 字段和兼容默认值；已有候选后传 {draft: null, architecture: null, patches: [{path: 点路径, value: 新值}]}。architecture 只供历史恢复兼容。工具会执行确定性检查，通过后才原子保存并结束 WorkOrder。",
       inputSchema: ArchitectureSubmissionInputSchema,
       execute: (input) => {
         const resolved = resolveArchitectureSubmission(context, input);
@@ -280,7 +279,7 @@ function createCurriculumArchitectTools(context: ArchitectToolContext) {
             traceId: context.traceId,
             architecture: gate.architecture,
             evidence: [
-              "CourseArchitecture Schema、资料引用、模板和目标覆盖检查已通过",
+              "CourseArchitecture Schema、资料引用、目标覆盖和依赖检查已通过",
             ],
             now: context.now(),
           });
@@ -343,7 +342,6 @@ export async function runCurriculumArchitectAgent(
     skillRuntime.promptContext,
   );
   const resumableCandidate = loadResumableArchitectureCandidate(input);
-  let templatesRetrieved = Boolean(resumableCandidate);
   const tools = createCurriculumArchitectTools({
     creationBrief: input.creationBrief,
     expectedCourseId: input.workOrder.courseId,
@@ -356,9 +354,6 @@ export async function runCurriculumArchitectAgent(
     workOrderLeaseOwner: input.workOrderLeaseOwner,
     readLocalResourceTool: skillRuntime.readLocalResourceTool,
     workingCandidate: resumableCandidate?.architecture,
-    onTemplatesRetrieved: () => {
-      templatesRetrieved = true;
-    },
   });
   const runner = new AgentRunner<CurriculumArchitectTools, Submission>({
     createAgent: dependencies.createAgent,
@@ -367,8 +362,13 @@ export async function runCurriculumArchitectAgent(
   const configuredToolNames = Object.keys(
     tools,
   ) as Array<keyof CurriculumArchitectTools & string>;
-  const activeTools = configuredToolNames.filter((toolName) =>
-    input.workOrder.allowedTools.includes(toolName),
+  const activeTools = configuredToolNames.filter(
+    (toolName) =>
+      input.workOrder.allowedTools.includes(toolName) &&
+      // 规划所需的 Skill 核心说明和资料证据都已由 Harness 预加载。
+      // Provider 只负责一次性完成高价值规划，避免先检索、再读取、再提交的
+      // 机械模型回合把一次 30 秒规划放大成多次长尾请求。
+      toolName === ToolIds.SubmitCourseArchitecture,
   );
   return runner.run({
     abortSignal: input.abortSignal,
@@ -394,18 +394,10 @@ export async function runCurriculumArchitectAgent(
         resolveModelRoute(agentDefinition.modelCapability).primary,
       ),
     prompt: buildCurriculumArchitectPrompt(input, resumableCandidate),
-    prepareStep: () =>
-      templatesRetrieved &&
-      activeTools.includes(ToolIds.SubmitCourseArchitecture)
-        ? {
-            activeTools: [ToolIds.SubmitCourseArchitecture],
-            instructions: `${instructions}\n\n${ARCHITECT_SUBMISSION_CALIBRATION}`,
-            toolChoice: {
-              type: "tool" as const,
-              toolName: ToolIds.SubmitCourseArchitecture,
-            },
-          }
-        : { activeTools },
+    prepareStep: () => ({
+      activeTools,
+      instructions: `${instructions}\n\n${ARCHITECT_SUBMISSION_CALIBRATION}`,
+    }),
     temperature: 0.4,
     terminalToolNames: [ToolIds.SubmitCourseArchitecture],
     toolLedger: createCourseToolLedger(
@@ -612,30 +604,85 @@ function buildCurriculumArchitectPrompt(
     typeof loadResumableArchitectureCandidate
   >,
 ) {
-  const referenceIndex = input.referencePacks.map((pack) => ({
-    id: pack.id,
-    sourceName: pack.sourceName,
-    sourceType: pack.sourceType,
-    summary: pack.summary,
-    chunkCount: pack.chunks.length,
-    truncated: pack.truncated,
-  }));
+  const referenceEvidence = buildArchitectReferenceEvidence(
+    input.referencePacks,
+  );
   const revisionContext = buildRevisionContext(input);
 
-  return `请为本 WorkOrder 完成课程架构。
+  return `请为本 WorkOrder 完成轻量课程规划。
 
 courseId：${input.workOrder.courseId}
 revision：${input.workOrder.revision}
 验收要求：${JSON.stringify(input.workOrder.acceptance)}
 用户 brief：${JSON.stringify(input.creationBrief)}
-可检索资料索引：${JSON.stringify(referenceIndex)}
+Harness 预加载的资料证据：${JSON.stringify(referenceEvidence)}
 返工上下文：${JSON.stringify(revisionContext)}
 上一档模型留下的最新可恢复候选：${JSON.stringify(resumableCandidate?.architecture ?? null)}
 该候选的确定性门禁反馈：${JSON.stringify(resumableCandidate?.issues ?? [])}
 
 如果有可恢复候选，不要从头重写；仅修复列出的确定性问题，保留已通过的页面职责、样式与事实。
-submit_course_architecture 的固定外壳必须同时包含两个键：首次提交用 {"architecture":完整对象,"patches":null}；修复可恢复候选时优先用 {"architecture":null,"patches":[{"path":"点路径","value":"新值"}]}，只替换反馈字段。跨模型层级若只保留了完整候选，也可将完整 architecture 作为兼容修复提案提交；工具只提取当前反馈路径内的安全差异并忽略无关改写。root 级或结构性修改请继续使用显式 patches。
+新规划调用 submit_course_architecture 时使用 {"draft":轻量规划,"architecture":null,"patches":null}。不要生成 courseId、pageId、objectiveId、兼容模板字段或重复 Brief；Harness 会投影为完整执行合同。
+修复可恢复候选时使用 {"draft":null,"architecture":null,"patches":[{"path":"点路径","value":"新值"}]}，只替换反馈字段。
 如果 brief 的 sectionCount 是数字，必须严格生成该页数；如果是 auto 或没填，用满足目标所需的最少页面。`;
+}
+
+/**
+ * 课程规划只需要资料事实边界，不需要把整份原文再次交给模型检索。
+ * 这里按资料包公平分配摘录额度，并优先携带关键事实引用的 chunk；既让
+ * Course Lead 首轮就能正确引用，也限制上下文体积，避免大文档拖慢 Provider。
+ */
+function buildArchitectReferenceEvidence(
+  packs: readonly ReferencePack[],
+) {
+  if (packs.length === 0) return [];
+
+  const chunksPerPack = Math.max(
+    1,
+    Math.floor(ARCHITECT_REFERENCE_MAX_CHUNKS / packs.length),
+  );
+
+  return packs.map((pack) => {
+    const keyFacts = pack.keyFacts.slice(
+      0,
+      ARCHITECT_REFERENCE_MAX_KEY_FACTS_PER_PACK,
+    );
+    const prioritizedChunkIds = [
+      ...new Set([
+        ...keyFacts.flatMap((fact) => fact.chunkIds),
+        ...pack.chunks.map((chunk) => chunk.id),
+      ]),
+    ].slice(0, chunksPerPack);
+    const chunksById = new Map(
+      pack.chunks.map((chunk) => [chunk.id, chunk]),
+    );
+
+    return {
+      id: pack.id,
+      sourceName: pack.sourceName,
+      sourceType: pack.sourceType,
+      summary: pack.summary.slice(
+        0,
+        ARCHITECT_REFERENCE_MAX_SUMMARY_CHARS,
+      ),
+      keyFacts,
+      excerpts: prioritizedChunkIds.flatMap((chunkId) => {
+        const chunk = chunksById.get(chunkId);
+        return chunk
+          ? [
+              {
+                id: chunk.id,
+                index: chunk.index,
+                text: chunk.text.slice(
+                  0,
+                  ARCHITECT_REFERENCE_MAX_CHUNK_CHARS,
+                ),
+              },
+            ]
+          : [];
+      }),
+      truncated: pack.truncated,
+    };
+  });
 }
 
 function resolveArchitectureSubmission(
@@ -652,7 +699,7 @@ function resolveArchitectureSubmission(
     return {
       ok: false,
       result: architecturePatchFailureResult(
-        `提交参数不符合 architecture/patches 合同：${parsed.error.issues
+        `提交参数不符合 draft/architecture/patches 合同：${parsed.error.issues
           .slice(0, 4)
           .map((issue) => `${issue.path.join(".") || "root"}: ${issue.message}`)
           .join("；")}`,
@@ -660,28 +707,62 @@ function resolveArchitectureSubmission(
     };
   }
 
+  const hasDraft =
+    Object.hasOwn(parsed.data, "draft") &&
+    parsed.data.draft !== null &&
+    parsed.data.draft !== undefined;
   const hasArchitecture =
     Object.hasOwn(parsed.data, "architecture") &&
     parsed.data.architecture !== null &&
     parsed.data.architecture !== undefined;
+  const hasProposal = hasDraft || hasArchitecture;
   const hasPatches =
     Object.hasOwn(parsed.data, "patches") &&
     (!isEmptyArchitecturePatchEnvelope(parsed.data.patches) ||
-      !hasArchitecture);
-  if (hasArchitecture === hasPatches) {
+      !hasProposal);
+  if (Number(hasDraft) + Number(hasArchitecture) + Number(hasPatches) !== 1) {
     return {
       ok: false,
       result: architecturePatchFailureResult(
-        "architecture 与 patches 的有效值必须二选一：首次提交传完整 architecture 且 patches=null；已有候选后传 architecture=null 与 patches 数组。",
+        "draft、architecture 与 patches 的有效值必须三选一：新规划传轻量 draft；历史恢复可传 architecture；已有候选后传 patches 数组。",
       ),
     };
   }
 
   const base =
     context.workingCandidate ?? loadLatestArchitectureCandidate(context);
-  if (hasArchitecture) {
+  if (hasProposal) {
+    let proposedArchitecture: unknown = parsed.data.architecture;
+    if (hasDraft) {
+      try {
+        proposedArchitecture = projectCoursePlanDraft({
+          courseId: context.expectedCourseId,
+          creationBrief: context.creationBrief,
+          draft: parsed.data.draft,
+        });
+      } catch (error) {
+        const feedback =
+          error instanceof z.ZodError
+            ? error.issues
+                .slice(0, 6)
+                .map(
+                  (issue) =>
+                    `${issue.path.join(".") || "draft"}: ${issue.message}`,
+                )
+                .join("；")
+            : error instanceof Error
+              ? error.message
+              : "轻量规划无法投影为课程架构";
+        return {
+          ok: false,
+          result: architecturePatchFailureResult(
+            `draft 投影失败：${feedback}`,
+          ),
+        };
+      }
+    }
     if (!base) {
-      return { ok: true, architecture: parsed.data.architecture };
+      return { ok: true, architecture: proposedArchitecture };
     }
     const baseGate = runArchitectureGate({
       candidate: base,
@@ -693,7 +774,7 @@ function resolveArchitectureSubmission(
       return { ok: true, architecture: base };
     }
     const proposed = CourseArchitectureSchema.safeParse(
-      parsed.data.architecture,
+      proposedArchitecture,
     );
     if (!proposed.success) {
       return {

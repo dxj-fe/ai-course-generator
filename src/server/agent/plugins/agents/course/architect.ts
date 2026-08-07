@@ -9,8 +9,8 @@ import {
 } from "@/server/agent/ids";
 
 export const courseArchitectAgent = defineAgent({
-  id: AgentIds.CourseArchitect,
-  description: "根据用户学习需求、课程资料和教学约束设计课程架构。",
+  id: AgentIds.CourseLead,
+  description: "负责课程规划，并在独立审查后决定返工、重规划或发布。",
   input: SchemaIds.CourseArchitectInput,
   output: SchemaIds.CourseArchitecture,
   prompt: PromptIds.CourseArchitectSystem,
@@ -19,12 +19,10 @@ export const courseArchitectAgent = defineAgent({
   skills: [SkillIds.CourseDesign],
   modelCapability: "course-architecture",
   runtime: {
-    // Leave one short repair turn after the first gate-guided patch. Eight
-    // steps was enough to diagnose a candidate but could end immediately
-    // before the model submitted the corrected architecture.
-    maxSteps: 10,
-    maxToolCalls: 10,
-    timeoutMs: 300_000,
-    maxOutputTokens: 32_000,
+    // Lead 只产出轻量 draft；Harness 负责稳定 ID 与完整执行合同投影。
+    maxSteps: 8,
+    maxToolCalls: 8,
+    timeoutMs: 120_000,
+    maxOutputTokens: 6_000,
   },
 });

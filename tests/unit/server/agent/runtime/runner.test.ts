@@ -200,7 +200,7 @@ describe("AgentRunner", () => {
     expect(load).not.toHaveBeenCalled();
   });
 
-  it("把 abort 和总超时原样交给 generate，并读取刚提交的终态", async () => {
+  it("把 abort 和显式超时交给 generate，并读取刚提交的终态", async () => {
     const abortController = new AbortController();
     let persisted: PersistedAgentTerminal<TestSubmission> | null = null;
     const generate = vi.fn(async (input: unknown) => {
@@ -246,6 +246,45 @@ describe("AgentRunner", () => {
       status: "submitted",
       submission: { artifactId: "artifact-after-generate" },
     });
+  });
+
+  it("为只有总预算的 Agent Loop 补充单步 Provider 超时", async () => {
+    let persisted: PersistedAgentTerminal<TestSubmission> | null = null;
+    const generate = vi.fn(async () => {
+      persisted = {
+        status: "submitted",
+        submission: { artifactId: "artifact-timeout-guarded" },
+      };
+      return {};
+    });
+    const runner = new AgentRunner<TestTools, TestSubmission>({
+      createAgent: createFakeFactory((_settings, input) => generate(input)),
+      terminalStateLoader: {
+        load: async () => persisted,
+        parse: (value) =>
+          isPersistedTerminal(value) ? value : null,
+      },
+    });
+
+    await runner.run(
+      createRequest({
+        budget: {
+          maxOutputTokens: 1_000,
+          maxSteps: 5,
+          maxToolCalls: 8,
+          timeout: 900_000,
+        },
+      }),
+    );
+
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        timeout: {
+          stepMs: 240_000,
+          totalMs: 900_000,
+        },
+      }),
+    );
   });
 
   it("内存 ToolResult 即使声称 terminal，也不能代替 Repository 终态", async () => {

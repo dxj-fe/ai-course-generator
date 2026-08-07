@@ -6,6 +6,7 @@ export type AiErrorCode =
   | "QUOTA_ERROR"
   | "RATE_LIMIT_ERROR"
   | "REQUEST_ERROR"
+  | "RUNTIME_ERROR"
   | "SCHEMA_ERROR"
   | "TIMEOUT_ERROR"
   | "UNKNOWN_ERROR";
@@ -116,11 +117,25 @@ function classifyAiError(error: unknown): ClassifiedAiError {
   }
 
   if (error instanceof Error || isRecord(error)) {
+    if (
+      [
+        "BROWSER_HARNESS_UNAVAILABLE",
+        "SCREENSHOT_BROWSER_LAUNCH_FAILED",
+        "SCREENSHOT_BROWSER_RUNTIME_FAILED",
+      ].includes(readErrorCode(error) ?? "")
+    ) {
+      return {
+        code: "RUNTIME_ERROR",
+        message: "生课运行环境暂时不可用，任务已保留并等待恢复。",
+        status: 503,
+      };
+    }
+
     if (error instanceof Error && isConfigError(error)) {
       return {
         code: "CONFIG_ERROR",
         message:
-          "模型配置缺失，请优先检查 ARK_API_KEY、ARK_MODEL_ID 和可选 ARK_BASE_URL；或检查通用 MODEL_API_KEY、MODEL_BASE_URL、MODEL_NAME。",
+          "模型配置缺失，请检查 ARK_API_KEY 和可选 ARK_BASE_URL。",
         status: 500,
       };
     }
@@ -184,10 +199,12 @@ function classifyAiError(error: unknown): ClassifiedAiError {
 }
 
 function isConfigError(error: Error) {
-  return (
-    error.message.startsWith("Missing required environment variable:") ||
-    /^MODEL_PROVIDER_(?:CHEAP|BALANCED|STRONG) must be/.test(error.message)
-  );
+  return error.message.startsWith("Missing required environment variable:");
+}
+
+function readErrorCode(error: Error | Record<string, unknown>) {
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
 }
 
 function isQuotaError(status: number | undefined, signature: string) {

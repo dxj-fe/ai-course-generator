@@ -28,23 +28,6 @@ const baseline = DemoBaselineSchema.parse({
   name: "太阳系测试",
   prompt: "为儿童生成一门三页太阳系测试课程。",
   pageCount: 3,
-  expectedCourseRoles: [
-    {
-      label: "建立目标",
-      allowedPageTypes: ["cover"],
-      allowedInteractionTypes: ["navigate"],
-    },
-    {
-      label: "解释知识",
-      allowedPageTypes: ["knowledge_card"],
-      allowedInteractionTypes: ["reveal"],
-    },
-    {
-      label: "完成总结",
-      allowedPageTypes: ["summary"],
-      allowedInteractionTypes: ["navigate"],
-    },
-  ],
   requiredConcepts: [
     { label: "太阳系", anyOf: ["太阳系"] },
     { label: "恒星与行星", anyOf: ["恒星", "行星"] },
@@ -170,22 +153,10 @@ describe("course checker", () => {
     ).toBe("page-02-knowledge");
   });
 
-  it("按整课能力验收，不把 Agent 的页序和单页职责固化成 workflow", () => {
+  it("不按固定页型和互动模板验收课程", () => {
     const course = completedCourse();
     const flexibleBaseline = DemoBaselineSchema.parse({
       ...baseline,
-      expectedCourseRoles: [
-        {
-          label: "解释或组织知识",
-          allowedPageTypes: ["knowledge_card", "summary"],
-          allowedInteractionTypes: ["reveal", "navigate"],
-        },
-        {
-          label: "形成收束",
-          allowedPageTypes: ["summary"],
-          allowedInteractionTypes: ["navigate"],
-        },
-      ],
     });
 
     const report = checkDemoCourse({
@@ -194,11 +165,7 @@ describe("course checker", () => {
       archiveBytes: archiveFor(course),
     });
 
-    expect(report.issues).not.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ code: "OUTLINE_ROLE_MISSING" }),
-      ]),
-    );
+    expect(report.passed).toBe(true);
   });
 
   it("reports invalid course payloads without throwing", () => {

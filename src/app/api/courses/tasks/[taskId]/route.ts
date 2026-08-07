@@ -6,7 +6,10 @@ import {
   createTraceId,
   toAiErrorPayload,
 } from "@/server/infra/ai/error";
-import { getWebServices } from "@/server/setup/web";
+import {
+  getWebServices,
+  shouldExecuteCourseTasksInline,
+} from "@/server/setup/web";
 import {
   CourseTaskControlRequestSchema,
   CourseTaskControlResponseSchema,
@@ -46,7 +49,11 @@ export async function PATCH(
       );
     }
 
-    if (control.action === "resume" && record.status === "queued") {
+    if (
+      control.action === "resume" &&
+      record.status === "queued" &&
+      shouldExecuteCourseTasksInline()
+    ) {
       after(async () => {
         try {
           await courseTasks.run(record.taskId);

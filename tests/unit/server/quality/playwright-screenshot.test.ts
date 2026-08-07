@@ -68,6 +68,7 @@ describe("Playwright screenshot QA evidence", () => {
               documentWidth: 1100,
               horizontalOverflowPx: 20,
               clippedElementCount: 1,
+              clippedElementSelectors: ["main > section"],
               zeroSizeInteractiveCount: 1,
               touchTargetUnder24Count: 1,
               touchTargetUnder44Count: 2,
@@ -115,6 +116,11 @@ describe("Playwright screenshot QA evidence", () => {
     ).toBe(true);
     expect(
       result.issues.find(
+        ({ code }) => code === "BROWSER_CONTENT_CLIPPED",
+      )?.location.selector,
+    ).toBe("main > section");
+    expect(
+      result.issues.find(
         ({ code }) => code === "BROWSER_TOUCH_TARGET_UNDER_44",
       )?.severity,
     ).toBe("info");
@@ -139,7 +145,88 @@ describe("Playwright screenshot QA evidence", () => {
     expect(JSON.stringify(result.evidence)).not.toContain("modelImages");
   });
 
-  it("rejects document and nested vertical overflow on a balanced lesson", async () => {
+  it("persists console, DOM, network and controlled interaction diagnostics", async () => {
+    const diagnostics = {
+      console: [{ type: "error", text: "runtime failed" }],
+      pageErrors: ["uncaught page error"],
+      requestFailures: [
+        {
+          method: "GET",
+          url: "http://keya.local/api/assets/missing",
+          error: "net::ERR_FAILED",
+        },
+      ],
+      dom: {
+        elementCount: 24,
+        interactiveCount: 2,
+        landmarkCount: 1,
+        visibleTextChars: 180,
+      },
+      interaction: [
+        {
+          action: "expectText",
+          status: "failed" as const,
+          detail: "文本未包含预期反馈",
+        },
+      ],
+    };
+    const result = await capturePageScreenshot(
+      { pageId: "page-browser-diagnostics", html },
+      {
+        enabled: true,
+        rootDir: "/tmp/ai-course-generator-browser-diagnostics",
+        captureBrowser: vi.fn().mockImplementation(async ({ viewport }) => ({
+          png: new Uint8Array([137, 80, 78, 71]),
+          metrics: {
+            ...cleanMetrics,
+            documentWidth: viewport.width,
+            documentHeight: viewport.height,
+          },
+          diagnostics,
+        })),
+      },
+    );
+
+    expect(result.evidence.captures[0]?.diagnostics).toEqual(diagnostics);
+    expect(new Set(result.issues.map(({ code }) => code))).toEqual(
+      new Set([
+        "BROWSER_PAGE_ERROR",
+        "BROWSER_CONSOLE_ERROR",
+        "BROWSER_REQUEST_FAILED",
+        "BROWSER_INTERACTION_STEP_FAILED",
+      ]),
+    );
+  });
+
+  it("rejects buttons that have neither trusted runtime nor native form behavior", async () => {
+    const result = await capturePageScreenshot(
+      { pageId: "page-inert-button", html },
+      {
+        enabled: true,
+        rootDir: "/tmp/ai-course-generator-inert-button",
+        captureBrowser: vi.fn().mockImplementation(async ({ viewport }) => ({
+          png: new Uint8Array([137, 80, 78, 71]),
+          metrics: {
+            ...cleanMetrics,
+            documentWidth: viewport.width,
+            documentHeight: viewport.height,
+            inertButtonCount: 1,
+          },
+        })),
+      },
+    );
+
+    expect(new Set(result.issues.map(({ code }) => code))).toEqual(
+      new Set(["BROWSER_INERT_BUTTON"]),
+    );
+    expect(result.issues[0]).toMatchObject({
+      dimension: "htmlRuntime",
+      severity: "error",
+      source: "browser",
+    });
+  });
+
+  it("rejects unreadable documents while keeping nested panel scrolling observational", async () => {
     const content = {
       ...pageContentDsl,
       interaction: {
@@ -186,20 +273,95 @@ describe("Playwright screenshot QA evidence", () => {
       expect.arrayContaining([
         expect.objectContaining({
           code: "BROWSER_VERTICAL_OVERFLOW",
-          severity: "error",
+          severity: "warning",
           location: expect.objectContaining({ viewport: "922x460" }),
         }),
         expect.objectContaining({
           code: "BROWSER_NESTED_VERTICAL_OVERFLOW",
-          severity: "error",
+          severity: "warning",
         }),
         expect.objectContaining({
           code: "BROWSER_VERTICAL_OVERFLOW",
           severity: "warning",
           location: expect.objectContaining({ viewport: "366x500" }),
         }),
+        expect.objectContaining({
+          code: "BROWSER_PRIMARY_ACTION_BELOW_FOLD",
+          severity: "warning",
+        }),
       ]),
     );
+  });
+
+  it("keeps moderate contain-fit scaling observational instead of deleting useful content", async () => {
+    const result = await capturePageScreenshot(
+      { pageId: "page-readable-scale", html },
+      {
+        enabled: true,
+        rootDir: "/tmp/ai-course-generator-readable-scale",
+        captureBrowser: vi.fn().mockImplementation(async ({ viewport }) => ({
+          png: new Uint8Array([137, 80, 78, 71]),
+          metrics: {
+            ...cleanMetrics,
+            documentWidth: viewport.width,
+            documentHeight:
+              viewport.width < 640
+                ? viewport.height * 2
+                : Math.round(viewport.height / 0.78),
+            verticalOverflowPx:
+              viewport.width < 640
+                ? viewport.height
+                : Math.round(viewport.height / 0.78) - viewport.height,
+            requiredViewportScale:
+              viewport.width < 640 ? 0.5 : 0.78,
+          },
+        })),
+      },
+    );
+
+    expect(
+      result.issues.some(
+        ({ code }) => code === "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
+      ),
+    ).toBe(false);
+    expect(
+      result.issues.filter(
+        ({ code }) => code === "BROWSER_VERTICAL_OVERFLOW",
+      ),
+    ).toHaveLength(3);
+    expect(
+      result.issues
+        .filter(({ code }) => code === "BROWSER_VERTICAL_OVERFLOW")
+        .every(({ severity }) => severity === "warning"),
+    ).toBe(true);
+  });
+
+  it("tolerates one-percent browser measurement drift at the readable scale boundary", async () => {
+    const result = await capturePageScreenshot(
+      { pageId: "page-readable-boundary", html },
+      {
+        enabled: true,
+        rootDir: "/tmp/ai-course-generator-readable-boundary",
+        captureBrowser: vi.fn().mockImplementation(async ({ viewport }) => ({
+          png: new Uint8Array([137, 80, 78, 71]),
+          metrics: {
+            ...cleanMetrics,
+            documentWidth: viewport.width,
+            documentHeight: Math.round(viewport.height / 0.716),
+            verticalOverflowPx:
+              Math.round(viewport.height / 0.716) - viewport.height,
+            requiredViewportScale:
+              viewport.width < 640 ? 0.5 : 0.716,
+          },
+        })),
+      },
+    );
+
+    expect(
+      result.issues.some(
+        ({ code }) => code === "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
+      ),
+    ).toBe(false);
   });
 
   it("ignores at most eight pixels of line-box rounding overflow", async () => {
@@ -266,46 +428,38 @@ describe("Playwright screenshot QA evidence", () => {
     expect(disabled.evidence.captures).toHaveLength(3);
   });
 
-  it("keeps successful viewport evidence when another viewport fails", async () => {
-    const result = await capturePageScreenshot(
-      {
-        pageId: "page-partial",
-        html,
-        traceId: "trace-screenshot-partial",
-        attempt: 2,
-      },
-      {
-        enabled: true,
-        rootDir: "/tmp/ai-course-generator-partial-screenshots",
-        captureBrowser: vi.fn().mockImplementation(async ({ viewport }) => {
-          if (viewport.width === 712) {
-            throw new Error("tablet rendering failed");
-          }
-          return {
-            png: new Uint8Array([137, 80, 78, 71]),
-            metrics: {
-              ...cleanMetrics,
-              documentWidth: viewport.width,
-              documentHeight: viewport.height,
-              horizontalOverflowPx: viewport.width === 366 ? 8 : 0,
-            },
-          };
-        }),
-      },
-    );
-
-    expect(result.evidence.captures[0]!.status).toBe("captured");
-    expect(result.evidence.captures?.map(({ status }) => status)).toEqual([
-      "captured",
-      "failed",
-      "captured",
-    ]);
-    expect(result.issues).toMatchObject([
-      {
-        code: "BROWSER_HORIZONTAL_OVERFLOW",
-        location: { viewport: "366x500" },
-      },
-    ]);
+  it("任一视口取证失败都会作为 Browser Harness 瞬态故障重试", async () => {
+    await expect(
+      capturePageScreenshot(
+        {
+          pageId: "page-partial",
+          html,
+          traceId: "trace-screenshot-partial",
+          attempt: 2,
+        },
+        {
+          enabled: true,
+          rootDir: "/tmp/ai-course-generator-partial-screenshots",
+          captureBrowser: vi.fn().mockImplementation(async ({ viewport }) => {
+            if (viewport.width === 712) {
+              throw new Error("tablet rendering failed");
+            }
+            return {
+              png: new Uint8Array([137, 80, 78, 71]),
+              metrics: {
+                ...cleanMetrics,
+                documentWidth: viewport.width,
+                documentHeight: viewport.height,
+                horizontalOverflowPx: viewport.width === 366 ? 8 : 0,
+              },
+            };
+          }),
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: "BROWSER_HARNESS_UNAVAILABLE",
+      retryable: true,
+    });
     expect(consoleError).toHaveBeenCalledWith(
       "[page-qa-browser]",
       expect.objectContaining({
@@ -367,39 +521,34 @@ describe("Playwright screenshot QA evidence", () => {
     );
   });
 
-  it("records timeout and unavailable browser states without throwing", async () => {
-    const timeout = await capturePageScreenshot(
-      { pageId: "page-timeout", html },
-      {
-        enabled: true,
-        timeoutMs: 5,
-        captureBrowser: () => new Promise<never>(() => undefined),
-      },
-    );
-    const unavailable = await capturePageScreenshot(
-      { pageId: "page-unavailable", html },
-      {
-        enabled: true,
-        captureBrowser: async () => {
-          throw new Error("browserType.launch: Executable doesn't exist");
+  it("截图超时和浏览器不可用都会抛出可重试的 Harness 故障", async () => {
+    await expect(
+      capturePageScreenshot(
+        { pageId: "page-timeout", html },
+        {
+          enabled: true,
+          timeoutMs: 5,
+          captureBrowser: () => new Promise<never>(() => undefined),
         },
-      },
-    );
-
-    expect(timeout.evidence.captures[0]!.status).toBe("failed");
-    expect(timeout.evidence.captures?.map(({ status }) => status)).toEqual([
-      "failed",
-      "failed",
-      "failed",
-    ]);
-    expect(timeout.issues).toEqual([]);
-    expect(unavailable.evidence.captures[0]!.status).toBe("skipped");
-    expect(unavailable.evidence.captures?.map(({ status }) => status)).toEqual([
-      "skipped",
-      "skipped",
-      "skipped",
-    ]);
-    expect(unavailable.issues).toEqual([]);
+      ),
+    ).rejects.toMatchObject({
+      code: "BROWSER_HARNESS_UNAVAILABLE",
+      retryable: true,
+    });
+    await expect(
+      capturePageScreenshot(
+        { pageId: "page-unavailable", html },
+        {
+          enabled: true,
+          captureBrowser: async () => {
+            throw new Error("browserType.launch: Executable doesn't exist");
+          },
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: "BROWSER_HARNESS_UNAVAILABLE",
+      retryable: true,
+    });
   });
 
   it("turns weak first-screen and broken interaction metrics into repair issues", async () => {

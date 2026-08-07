@@ -19,6 +19,10 @@ export const ToolIds = {
   FailCourse: "fail_course",
 
   ReadPageContext: "read_page_context",
+  ReadPageWorkspace: "read_page_workspace",
+  EditPageWorkspace: "edit_page_workspace",
+  GeneratePageImage: "generate_page_image",
+  RenderPage: "render_page",
   GeneratePageContent: "generate_page_content",
   ResolvePageAssets: "resolve_page_assets",
   GeneratePageHtml: "generate_page_html",
@@ -39,11 +43,31 @@ export const ToolIds = {
 
 export type ToolId = (typeof ToolIds)[keyof typeof ToolIds];
 
+const CoursePageCreatorTools = [
+  ToolIds.ReadLocalResource,
+  ToolIds.ReadPageContext,
+  ToolIds.ReadPageWorkspace,
+  ToolIds.EditPageWorkspace,
+  ToolIds.GeneratePageImage,
+  ToolIds.RenderPage,
+  ToolIds.SearchReferences,
+  ToolIds.InspectPage,
+  ToolIds.SubmitPage,
+  ToolIds.BlockPage,
+] as const;
+
+const LegacyCoursePageBuilderTools = [
+  ToolIds.GeneratePageContent,
+  ToolIds.ResolvePageAssets,
+  ToolIds.GeneratePageHtml,
+  ToolIds.RepairPageContent,
+  ToolIds.RepairPageHtml,
+] as const;
+
 export const AgentToolSets = {
   CourseArchitect: [
     ToolIds.ReadLocalResource,
     ToolIds.SearchReferences,
-    ToolIds.SearchTemplates,
     ToolIds.ValidateCourseArchitecture,
     ToolIds.SubmitCourseArchitecture,
   ],
@@ -66,18 +90,10 @@ export const AgentToolSets = {
     ToolIds.AcceptCourseReviewAndPublish,
     ToolIds.FailCourse,
   ],
-  CoursePageBuilder: [
-    ToolIds.ReadLocalResource,
-    ToolIds.ReadPageContext,
-    ToolIds.SearchReferences,
-    ToolIds.GeneratePageContent,
-    ToolIds.ResolvePageAssets,
-    ToolIds.GeneratePageHtml,
-    ToolIds.InspectPage,
-    ToolIds.RepairPageContent,
-    ToolIds.RepairPageHtml,
-    ToolIds.SubmitPage,
-    ToolIds.BlockPage,
+  CoursePageBuilder: CoursePageCreatorTools,
+  CoursePageBuilderRuntime: [
+    ...CoursePageCreatorTools,
+    ...LegacyCoursePageBuilderTools,
   ],
   CourseReviewer: [
     ToolIds.ReadCourseMatrix,

@@ -1,9 +1,7 @@
 import { z } from "zod";
 
-import { validateHtmlEngineerOutput } from "@/server/agent/plugins/model-steps/course/html-engineer-model-step";
-import { validatePageWriterOutput } from "@/server/agent/plugins/model-steps/course/page-writer-model-step";
 import { isDeliveryBlockingQualityIssue } from "@/server/course/page/quality/report";
-import { projectCourseArchitecture } from "@/server/course/projection/architecture";
+import { validatePageHtmlEnvelope } from "@/server/course/gate/page-html";
 import {
   AssetGenerationResultSchema,
   CourseArchitectureSchema,
@@ -11,6 +9,7 @@ import {
   PageContentDSLSchema,
   PageSummarySchema,
   QualityReportSchema,
+  validateReferenceUsages,
   type AssetGenerationResult,
   type CourseArchitecture,
   type CourseCreationBrief,
@@ -86,36 +85,12 @@ export function runPageGate(input: {
     return { ok: false, issues };
   }
 
-  const projection = projectCourseArchitecture(
-    architecture,
-    input.creationBrief,
+  validateAgentAuthoredContent(
+    parsedContent.data,
+    pageTask,
+    input.referencePacks,
+    issues,
   );
-  const page = projection.outline.pages.find(({ id }) => id === input.pageId);
-  const brief = projection.pageWorkerBriefs.find(
-    ({ pageId }) => pageId === input.pageId,
-  );
-  if (!page || !brief) {
-    return failure(
-      "PAGE_PROJECTION_MISSING",
-      "pageId",
-      "当前页面无法投影为 Page Builder 执行合同",
-    );
-  }
-
-  try {
-    validatePageWriterOutput(parsedContent.data, {
-      intent: projection.intent,
-      page,
-      brief,
-      referencePacks: [...input.referencePacks],
-    });
-  } catch (error) {
-    issues.push({
-      code: "PAGE_CONTENT_CONTRACT_FAILED",
-      path: "content",
-      message: errorMessage(error),
-    });
-  }
 
   validateAssetCoverage(
     parsedContent.data,
@@ -123,17 +98,11 @@ export function runPageGate(input: {
     issues,
   );
 
-  try {
-    validateHtmlEngineerOutput(parsedHtml.data.html, {
-      content: parsedContent.data,
-      visualBrief: projection.briefs.visual,
-      assets: parsedAssets.data,
-    });
-  } catch (error) {
+  for (const issue of validatePageHtmlEnvelope(parsedHtml.data.html)) {
     issues.push({
       code: "PAGE_HTML_CONTRACT_FAILED",
       path: "html.html",
-      message: errorMessage(error),
+      message: issue.message,
     });
   }
 
@@ -153,13 +122,55 @@ export function runPageGate(input: {
       html: parsedHtml.data,
       quality: parsedQuality.data,
       summary: buildPageSummary({
-        architecture,
-        pageId: input.pageId,
-        content: parsedContent.data,
-        quality: parsedQuality.data,
+    architecture,
+    pageId: input.pageId,
+    content: parsedContent.data,
+    html: parsedHtml.data.html,
+    quality: parsedQuality.data,
       }),
     },
   };
+}
+
+function validateAgentAuthoredContent(
+  content: PageContentDSL,
+  pageTask: CourseArchitecture["pageTasks"][number],
+  referencePacks: readonly ReferencePack[],
+  issues: PageGateIssue[],
+) {
+  if (content.pageId !== pageTask.pageId) {
+    issues.push({
+      code: "PAGE_CONTENT_SCOPE_MISMATCH",
+      path: "content.pageId",
+      message: `页面内容必须属于 ${pageTask.pageId}`,
+    });
+  }
+  const allowedByPack = new Map(
+    pageTask.referenceUsages.map((usage) => [
+      usage.referencePackId,
+      new Set(usage.chunkIds),
+    ]),
+  );
+  for (const message of validateReferenceUsages(
+    content.usedReferences ?? [],
+    [...referencePacks],
+  )) {
+    issues.push({
+      code: "PAGE_REFERENCE_INVALID",
+      path: "content.usedReferences",
+      message,
+    });
+  }
+  for (const usage of content.usedReferences ?? []) {
+    const allowed = allowedByPack.get(usage.referencePackId);
+    if (!allowed || usage.chunkIds.some((chunkId) => !allowed.has(chunkId))) {
+      issues.push({
+        code: "PAGE_REFERENCE_OUT_OF_SCOPE",
+        path: "content.usedReferences",
+        message: "页面只能引用当前 WorkOrder 已授权的资料片段。",
+      });
+    }
+  }
 }
 
 function validateAssetCoverage(
@@ -210,23 +221,15 @@ function buildPageSummary(input: {
   architecture: CourseArchitecture;
   pageId: string;
   content: PageContentDSL;
+  html: string;
   quality: QualityReport;
 }) {
   const pageTask = input.architecture.pageTasks.find(
     ({ pageId }) => pageId === input.pageId,
   )!;
-  const contentDigest = [
-    input.content.title,
-    ...input.content.narration,
-    ...input.content.blocks.flatMap(({ heading, body, supportingPoints }) => [
-      heading,
-      body,
-      ...supportingPoints,
-    ]),
-    ...summarizeInteraction(input.content.interaction),
-  ]
-    .join("；")
-    .slice(0, 2_000);
+  const contentDigest = (
+    summarizeVisibleHtml(input.html) || pageTask.purpose
+  ).slice(0, 2_000);
   return PageSummarySchema.parse({
     courseId: input.architecture.courseId,
     pageId: pageTask.pageId,
@@ -239,7 +242,7 @@ function buildPageSummary(input: {
     contentDigest,
     learnerAction: pageTask.learnerAction,
     assessment: pageTask.assessment,
-    interactionType: pageTask.interactionType,
+    interactionType: input.content.interaction.type,
     usedReferences: input.content.usedReferences ?? [],
     quality: {
       overallScore: input.quality.overallScore,
@@ -249,44 +252,21 @@ function buildPageSummary(input: {
   });
 }
 
-function summarizeInteraction(
-  interaction: PageContentDSL["interaction"],
-): string[] {
-  switch (interaction.type) {
-    case "none":
-      return [];
-    case "navigate":
-      return [interaction.actionLabel];
-    case "reveal":
-    case "explore":
-      return [
-        interaction.prompt,
-        ...interaction.items.flatMap(({ label, content }) => [label, content]),
-      ];
-    case "choice":
-      return interaction.questions.flatMap((question) => {
-        const correct = question.options.find(
-          ({ id }) => id === question.correctOptionId,
-        );
-        return [
-          question.prompt,
-          ...(correct ? [correct.label] : []),
-          question.feedback.success,
-        ];
-      });
-    case "sort":
-      return [
-        interaction.prompt,
-        ...interaction.items.flatMap(({ label, content }) => [label, content]),
-        interaction.feedback.success,
-      ];
-    case "input":
-      return [
-        interaction.prompt,
-        ...interaction.evaluationCriteria,
-        interaction.feedback.success,
-      ];
-  }
+function summarizeVisibleHtml(html: string) {
+  const visible = html
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, " ")
+    .replace(/<template\b[^>]*>[\s\S]*?<\/template\s*>/gi, " ")
+    .replace(/<!--[^]*?-->/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&(?:nbsp|ensp|emsp);/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+  return visible;
 }
 
 function schemaIssues(
@@ -308,8 +288,4 @@ function failure(
   message: string,
 ): PageGateResult {
   return { ok: false, issues: [{ code, path, message }] };
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "页面合同校验失败";
 }

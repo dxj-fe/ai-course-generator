@@ -14,8 +14,6 @@ import {
   toAiErrorPayload,
 } from "./error";
 import {
-  getHtmlLanguageModel,
-  getHtmlLanguageModelIdentity,
   getLanguageModel,
   getLanguageModelIdentity,
 } from "./model-provider";
@@ -319,21 +317,6 @@ function resolveModelCandidates(
     model: getLanguageModel(tier),
     tier,
   }));
-
-  if (request.capability === "html") {
-    const htmlModel = getHtmlLanguageModel();
-    const htmlIdentity = htmlModel
-      ? getHtmlLanguageModelIdentity()
-      : undefined;
-
-    if (htmlModel && htmlIdentity) {
-      candidates.unshift({
-        identity: htmlIdentity,
-        model: htmlModel,
-        tier: "custom",
-      });
-    }
-  }
 
   return candidates.filter(
     ({ identity }, index) =>

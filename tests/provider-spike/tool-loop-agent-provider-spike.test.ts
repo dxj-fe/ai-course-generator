@@ -8,14 +8,7 @@ import {
   type PersistedAgentTerminal,
 } from "../../src/server/agent/runtime/runner";
 
-const providerConfigured =
-  (Boolean(process.env.ARK_API_KEY) &&
-    Boolean(
-      process.env.ARK_MODEL_ID_STRONG ??
-        process.env.ARK_MODEL_ID,
-    )) ||
-  (Boolean(process.env.MODEL_API_KEY) &&
-    Boolean(process.env.MODEL_BASE_URL));
+const providerConfigured = Boolean(process.env.ARK_API_KEY);
 const spikeEnabled =
   process.env.RUN_AGENT_PROVIDER_SPIKE === "1" &&
   providerConfigured;

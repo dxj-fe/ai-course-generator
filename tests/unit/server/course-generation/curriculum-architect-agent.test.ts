@@ -32,6 +32,17 @@ const TRACE_ID = "trace-architect-test";
 const TASK_ID = "task-architect-test";
 const NOW = "2026-07-29T09:00:01.000Z";
 
+function createReferenceInvalidArchitecture() {
+  const architecture = structuredClone(createArchitecture());
+  architecture.coursePack.facts[0]!.sourceUsages = [
+    {
+      referencePackId: "ref-000000000000000000000000",
+      chunkIds: ["chunk-99"],
+    },
+  ];
+  return architecture;
+}
+
 afterEach(async () => {
   await Promise.all(
     directories.splice(0).map((directory) =>
@@ -41,23 +52,15 @@ afterEach(async () => {
 });
 
 describe("Curriculum Architect Agent", () => {
-  it("检索模板后由 Harness 直接引导提交，避免反复检索却没有终态", async () => {
+  it("不检索模板，并把开放式课程规划交给 Agent 自主完成", async () => {
     const prepared = await prepareArchitectWorkOrder();
     const architecture = createArchitecture();
     const createAgent = createFakeFactory(async (settings) => {
       await expect(
         settings.prepareStep({ messages: [], stepNumber: 0, steps: [] }),
       ).resolves.toMatchObject({
-        activeTools: expect.arrayContaining(["search_templates"]),
+        activeTools: ["submit_course_architecture"],
         toolChoice: "required",
-      });
-
-      await executeTool(settings.tools, "search_templates", {
-        pageNeeds: [
-          { goal: "解释核心概念", pageType: "knowledge_card" },
-          { goal: "完成一道选择题", pageType: "quiz" },
-        ],
-        audience: "初学者",
       });
 
       const submitStep = await settings.prepareStep({
@@ -66,40 +69,29 @@ describe("Curriculum Architect Agent", () => {
         steps: [],
       });
       expect(submitStep).toMatchObject({
-        activeTools: ["submit_course_architecture"],
-        toolChoice: {
-          type: "tool",
-          toolName: "submit_course_architecture",
-        },
+        toolChoice: "required",
       });
+      expect(submitStep.activeTools).not.toContain("search_templates");
+      expect(submitStep.activeTools).not.toContain("search_references");
+      expect(submitStep.activeTools).not.toContain("read_local_resource");
       expect(submitStep.instructions).toContain("# 提交前校准");
       expect(submitStep.instructions).toContain(
-        "删掉精确倍数、范围、阈值",
+        "不是模板选择器",
       );
       expect(submitStep.instructions).toContain(
-        "自然现象不自动等于植物色",
-      );
-      expect(submitStep.instructions).toContain("路径拓扑测试");
-      expect(submitStep.instructions).toContain(
-        "观察者必须位于该支路末端",
+        "不要预先规定页面布局、组件树或图片槽位",
       );
       expect(submitStep.instructions).toContain(
-        "已有可恢复候选后，优先用",
+        "Harness 为旧投影补兼容默认值",
       );
       expect(submitStep.instructions).toContain(
-        "完整 architecture 作为兼容修复提案",
-      );
-      expect(submitStep.instructions).not.toContain(
-        "不要再次发送完整 architecture",
-      );
-      expect(submitStep.instructions).toContain(
-        "不要添加 revision、difficult",
+        "Page Creator 会在制作页面时自行决定表现方式、互动和是否调用生图工具",
       );
       const submitTool = settings.tools[
         "submit_course_architecture"
       ] as unknown as { description?: string };
       expect(submitTool.description).toContain(
-        "完整 architecture 作为兼容修复提案",
+        "Harness 自动补稳定 ID",
       );
       await executeTool(
         settings.tools,
@@ -107,11 +99,6 @@ describe("Curriculum Architect Agent", () => {
         { architecture },
       );
       return {};
-    }, (prompt) => {
-      expect(prompt).toContain(
-        "完整 architecture 作为兼容修复提案",
-      );
-      expect(prompt).not.toContain("不要再次发送完整 architecture");
     });
 
     await expect(
@@ -119,11 +106,11 @@ describe("Curriculum Architect Agent", () => {
     ).resolves.toMatchObject({ status: "submitted" });
   });
 
-  it("统一 Harness 加载 Skill 核心说明，并允许渐进读取 reference 后提交架构", async () => {
+  it("统一 Harness 加载 Skill 核心说明，资料工具不占用 Provider 的规划回合", async () => {
     const prepared = await prepareArchitectWorkOrder();
     const architecture = createArchitecture();
     const createAgent = createFakeFactory(async (settings) => {
-      expect(settings.activeTools).toContain("read_local_resource");
+      expect(settings.activeTools).toEqual(["submit_course_architecture"]);
       expect(settings.instructions).toContain("<available_skills>");
       expect(settings.instructions).toContain(
         "agent/skills/course-design/SKILL.md",
@@ -159,9 +146,35 @@ describe("Curriculum Architect Agent", () => {
     expect(result.status).toBe("submitted");
   });
 
+  it("把有界资料事实与原文摘录预加载进首轮 Prompt", async () => {
+    const prepared = await prepareArchitectWorkOrder();
+    let inspectedPrompt = "";
+    const createAgent = createFakeFactory(
+      async (settings) => {
+        await executeTool(
+          settings.tools,
+          "submit_course_architecture",
+          { architecture: createArchitecture() },
+        );
+        return {};
+      },
+      (prompt) => {
+        inspectedPrompt = prompt;
+      },
+    );
+
+    await expect(
+      runPreparedAgent(prepared, createAgent),
+    ).resolves.toMatchObject({ status: "submitted" });
+    expect(inspectedPrompt).toContain("Harness 预加载的资料证据");
+    expect(inspectedPrompt).toContain("太阳系入门资料.md");
+    expect(inspectedPrompt).toContain("太阳是太阳系的恒星");
+    expect(inspectedPrompt).toContain("chunk-01");
+    expect(inspectedPrompt).not.toContain("可检索资料索引");
+  });
+
   it("即使模型直接点名隐藏工具，execute 仍按 WorkOrder 权限拒绝", async () => {
     const prepared = await prepareArchitectWorkOrder([
-      "search_templates",
       "validate_course_architecture",
       "submit_course_architecture",
     ]);
@@ -186,8 +199,7 @@ describe("Curriculum Architect Agent", () => {
 
   it("submit 的确定性 Gate 失败时不写终态架构，只保存可恢复候选", async () => {
     const prepared = await prepareArchitectWorkOrder();
-    const invalid = structuredClone(createArchitecture());
-    invalid.pageTasks[0]!.functionalTemplateId = "missing-template";
+    const invalid = createReferenceInvalidArchitecture();
     let toolOutput: unknown;
     const createAgent = createFakeFactory(async (settings) => {
       toolOutput = await executeTool(
@@ -209,7 +221,7 @@ describe("Curriculum Architect Agent", () => {
       retryable: true,
     });
     expect(readFeedback(toolOutput).join(" ")).toContain(
-      "FUNCTIONAL_TEMPLATE_NOT_FOUND",
+      "REFERENCE_USAGE_INVALID",
     );
     expect(
       prepared.repository.artifacts.listByTask(
@@ -274,8 +286,7 @@ describe("Curriculum Architect Agent", () => {
 
   it("跨模型 tier 重启时只采纳完整重投中命中门禁路径的修复", async () => {
     const prepared = await prepareArchitectWorkOrder();
-    const rejected = structuredClone(createArchitecture());
-    rejected.pageTasks[0]!.functionalTemplateId = "missing-template";
+    const rejected = createReferenceInvalidArchitecture();
     let scopedRepair: unknown;
 
     await expect(
@@ -298,11 +309,8 @@ describe("Curriculum Architect Agent", () => {
         await expect(
           settings.prepareStep({ messages: [], stepNumber: 0, steps: [] }),
         ).resolves.toMatchObject({
-          activeTools: ["submit_course_architecture"],
-          toolChoice: {
-            type: "tool",
-            toolName: "submit_course_architecture",
-          },
+          activeTools: expect.arrayContaining(["submit_course_architecture"]),
+          toolChoice: "required",
         });
         const proposed = createArchitecture();
         proposed.blueprint.title = "不应被完整重投顺带覆盖的标题";
@@ -347,8 +355,7 @@ describe("Curriculum Architect Agent", () => {
 
   it("完整重投只有未报错字段变化时不会覆盖或晋升候选", async () => {
     const prepared = await prepareArchitectWorkOrder();
-    const rejected = structuredClone(createArchitecture());
-    rejected.pageTasks[0]!.functionalTemplateId = "missing-template";
+    const rejected = createReferenceInvalidArchitecture();
     let unchangedGate: unknown;
 
     const createAgent = createFakeFactory(async (settings) => {
@@ -375,7 +382,7 @@ describe("Curriculum Architect Agent", () => {
       code: "ARCHITECTURE_GATE_FAILED",
     });
     expect(readFeedback(unchangedGate).join(" ")).toContain(
-      "FUNCTIONAL_TEMPLATE_NOT_FOUND",
+      "REFERENCE_USAGE_INVALID",
     );
     expect(
       prepared.repository.artifacts.listByTask(
@@ -393,8 +400,7 @@ describe("Curriculum Architect Agent", () => {
 
   it("patches 只能修改当前门禁反馈范围内的安全路径", async () => {
     const prepared = await prepareArchitectWorkOrder();
-    const rejected = structuredClone(createArchitecture());
-    rejected.pageTasks[0]!.functionalTemplateId = "missing-template";
+    const rejected = createReferenceInvalidArchitecture();
     const outputs: unknown[] = [];
     const createAgent = createFakeFactory(async (settings) => {
       outputs.push(
@@ -450,8 +456,7 @@ describe("Curriculum Architect Agent", () => {
 
   it("宽松工具外壳让 malformed patch 进入 execute 并返回可重试反馈", async () => {
     const prepared = await prepareArchitectWorkOrder();
-    const rejected = structuredClone(createArchitecture());
-    rejected.pageTasks[0]!.functionalTemplateId = "missing-template";
+    const rejected = createReferenceInvalidArchitecture();
     let malformedOutput: unknown;
     const createAgent = createFakeFactory(async (settings) => {
       await executeTool(
@@ -466,8 +471,9 @@ describe("Curriculum Architect Agent", () => {
       };
       expect(
         submitTool.inputSchema.safeParse({
+          draft: null,
           architecture: null,
-          patches: [{ path: "pageTasks.0.functionalTemplateId" }],
+          patches: [{ path: "courseId" }],
         }).success,
       ).toBe(true);
       expect(submitTool.inputSchema.safeParse({}).success).toBe(false);
@@ -475,11 +481,15 @@ describe("Curriculum Architect Agent", () => {
         submitTool.inputSchema as Parameters<typeof asSchema>[0],
       ).jsonSchema as {
         properties?: {
+          draft?: unknown;
           architecture?: unknown;
           patches?: unknown;
         };
       };
-      expect(JSON.stringify(jsonSchema.properties?.architecture)).toContain(
+      expect(JSON.stringify(jsonSchema.properties?.draft)).toContain(
+        '"pages"',
+      );
+      expect(JSON.stringify(jsonSchema.properties?.architecture)).not.toContain(
         '"courseId"',
       );
       const serializedPatchSchema = JSON.stringify(
@@ -491,7 +501,7 @@ describe("Curriculum Architect Agent", () => {
       malformedOutput = await executeTool(
         settings.tools,
         "submit_course_architecture",
-        { patches: [{ path: "pageTasks.0.functionalTemplateId" }] },
+        { patches: [{ path: "courseId" }] },
       );
       return {};
     });
@@ -505,41 +515,6 @@ describe("Curriculum Architect Agent", () => {
       retryable: true,
     });
     expect(readFeedback(malformedOutput).join(" ")).toContain("必须包含 value");
-  });
-
-  it("允许 patches 补上 Gate 要求但候选中缺失的 visualDesign", async () => {
-    const prepared = await prepareArchitectWorkOrder();
-    const rejected = structuredClone(createArchitecture());
-    const expectedVisual = rejected.pageTasks[1]!.visualDesign;
-    delete rejected.pageTasks[1]!.visualDesign;
-    const createAgent = createFakeFactory(async (settings) => {
-      const first = await executeTool(
-        settings.tools,
-        "submit_course_architecture",
-        { architecture: rejected },
-      );
-      expect(first).toMatchObject({
-        ok: false,
-        code: "ARCHITECTURE_GATE_FAILED",
-      });
-      await executeTool(
-        settings.tools,
-        "submit_course_architecture",
-        {
-          patches: [
-            {
-              path: "pageTasks.1.visualDesign",
-              value: expectedVisual,
-            },
-          ],
-        },
-      );
-      return {};
-    });
-
-    await expect(
-      runPreparedAgent(prepared, createAgent),
-    ).resolves.toMatchObject({ status: "submitted" });
   });
 
   it("页数门禁候选允许用 JSON Patch 补回缺失页面", async () => {
@@ -685,187 +660,10 @@ describe("Curriculum Architect Agent", () => {
     ).toEqual(createArchitecture());
   });
 
-  it("同一门禁问题的多步局部修复会在当前 ToolLoop 内累积", async () => {
-    const prepared = await prepareArchitectWorkOrder();
-    const rejected = structuredClone(createArchitecture());
-    rejected.pageTasks[2]!.purpose =
-      "检验太阳高度与大气路径长度的关系";
-    rejected.pageTasks[2]!.visualDesign = {
-      theme: "太阳高度与大气路径长度对比",
-      layout: "先显示正午高太阳的一条路径。",
-      graphicMotif: "等待补充完整对比。",
-    };
-    const outputs: unknown[] = [];
-
-    const createAgent = createFakeFactory(async (settings) => {
-      outputs.push(
-        await executeTool(
-          settings.tools,
-          "submit_course_architecture",
-          { architecture: rejected },
-        ),
-      );
-      outputs.push(
-        await executeTool(
-          settings.tools,
-          "submit_course_architecture",
-          {
-            patches: [
-              {
-                path: "pageTasks.2.visualDesign.layout",
-                value:
-                  "同一坐标场同时显示正午高太阳与日落低太阳。",
-              },
-            ],
-          },
-        ),
-      );
-      outputs.push(
-        await executeTool(
-          settings.tools,
-          "submit_course_architecture",
-          {
-            patches: [
-              {
-                path: "pageTasks.2.visualDesign.graphicMotif",
-                value:
-                  "两条完整路径各自到达同一观察者；太阳越低大气路径越长，太阳越高大气路径越短。",
-              },
-            ],
-          },
-        ),
-      );
-      return {};
-    });
-
-    await expect(
-      runPreparedAgent(prepared, createAgent),
-    ).resolves.toMatchObject({ status: "submitted" });
-    expect(outputs[0]).toMatchObject({
-      ok: false,
-      code: "ARCHITECTURE_GATE_FAILED",
-    });
-    expect(outputs[1]).toMatchObject({
-      ok: false,
-      code: "ARCHITECTURE_GATE_FAILED",
-    });
-    expect(readFeedback(outputs[1]).join(" ")).toContain(
-      "确定性问题数量没有减少",
-    );
-    expect(outputs[2]).toMatchObject({ ok: true, committed: true });
-  });
-
-  it("问题数量减少时即使出现新 code 也会晋升可恢复候选", async () => {
-    const prepared = await prepareArchitectWorkOrder();
-    const rejected = structuredClone(createArchitecture());
-    rejected.pageTasks[0]!.functionalTemplateId = "missing-cover";
-    rejected.pageTasks[0]!.styleTemplateId = "nature";
-    rejected.pageTasks[1]!.functionalTemplateId = "missing-concept";
-    const improved = structuredClone(rejected);
-    improved.pageTasks[0]!.functionalTemplateId = "interactive-quiz";
-    improved.pageTasks[0]!.styleTemplateId = "minimal";
-    improved.pageTasks[1]!.functionalTemplateId = "knowledge-card-grid";
-    let second: unknown;
-
-    const createAgent = createFakeFactory(async (settings) => {
-      const first = await executeTool(
-        settings.tools,
-        "submit_course_architecture",
-        { architecture: rejected },
-      );
-      expect(readFeedback(first).join(" ")).toContain(
-        "FUNCTIONAL_TEMPLATE_NOT_FOUND",
-      );
-
-      second = await executeTool(
-        settings.tools,
-        "submit_course_architecture",
-        {
-          patches: [
-            {
-              path: "pageTasks.0.functionalTemplateId",
-              value: improved.pageTasks[0]!.functionalTemplateId,
-            },
-            {
-              path: "pageTasks.0.styleTemplateId",
-              value: improved.pageTasks[0]!.styleTemplateId,
-            },
-            {
-              path: "pageTasks.1.functionalTemplateId",
-              value: improved.pageTasks[1]!.functionalTemplateId,
-            },
-          ],
-        },
-      );
-      return {};
-    });
-
-    await expect(
-      runPreparedAgent(prepared, createAgent),
-    ).rejects.toBeInstanceOf(AgentTerminalNotCommittedError);
-    expect(readFeedback(second).join(" ")).toContain(
-      "FUNCTIONAL_TEMPLATE_MISMATCH",
-    );
-    expect(readFeedback(second).join(" ")).not.toContain(
-      "确定性问题数量没有减少",
-    );
-    const candidates = prepared.repository.artifacts
-      .listByTask(TASK_ID, "course_architecture_candidate")
-      .sort((left, right) => left.revision - right.revision);
-    expect(candidates).toHaveLength(2);
-    expect(candidates.at(-1)?.payload).toEqual(improved);
-  });
-
-  it("问题数量增加时不会覆盖更好的可恢复候选", async () => {
-    const prepared = await prepareArchitectWorkOrder();
-    const rejected = structuredClone(createArchitecture());
-    delete rejected.pageTasks[0]!.visualDesign;
-    let regression: unknown;
-
-    const createAgent = createFakeFactory(async (settings) => {
-      await executeTool(
-        settings.tools,
-        "submit_course_architecture",
-        { architecture: rejected },
-      );
-      regression = await executeTool(
-        settings.tools,
-        "submit_course_architecture",
-        {
-          patches: [
-            {
-              path: "pageTasks.0.visualDesign",
-              value: {
-                theme: "从观察者作为光路起点观察太阳高度",
-                layout: "观察者作为光路起点，太阳高度越高，大气路径越长。",
-                graphicMotif: "用反向箭头表示传播路径。",
-              },
-            },
-          ],
-        },
-      );
-      return {};
-    });
-
-    await expect(
-      runPreparedAgent(prepared, createAgent),
-    ).rejects.toBeInstanceOf(AgentTerminalNotCommittedError);
-    expect(readFeedback(regression).join(" ")).toContain(
-      "确定性问题数量没有减少",
-    );
-    expect(
-      prepared.repository.artifacts.listByTask(
-        TASK_ID,
-        "course_architecture_candidate",
-      ),
-    ).toHaveLength(1);
-  });
-
   it("拒绝在修复问题时顺带修改未报错字段", async () => {
     const prepared = await prepareArchitectWorkOrder();
     const expected = createArchitecture();
-    const rejected = structuredClone(expected);
-    rejected.pageTasks[0]!.functionalTemplateId = "missing-template";
+    const rejected = createReferenceInvalidArchitecture();
     let lateralFeedback: unknown;
     const createAgent = createFakeFactory(async (settings) => {
       await executeTool(
@@ -879,12 +677,12 @@ describe("Curriculum Architect Agent", () => {
         {
           patches: [
             {
-              path: "pageTasks.0.functionalTemplateId",
-              value: expected.pageTasks[0]!.functionalTemplateId,
+              path: "coursePack.facts.0.sourceUsages",
+              value: expected.coursePack.facts[0]!.sourceUsages,
             },
             {
-              path: "pageTasks.0.styleTemplateId",
-              value: "nature",
+              path: "pageTasks.0.title",
+              value: "不应顺带改写的标题",
             },
           ],
         },
@@ -895,8 +693,8 @@ describe("Curriculum Architect Agent", () => {
         {
           patches: [
             {
-              path: "pageTasks.0.functionalTemplateId",
-              value: expected.pageTasks[0]!.functionalTemplateId,
+              path: "coursePack.facts.0.sourceUsages",
+              value: expected.coursePack.facts[0]!.sourceUsages,
             },
           ],
         },

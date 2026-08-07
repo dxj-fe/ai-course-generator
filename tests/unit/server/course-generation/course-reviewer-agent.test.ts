@@ -53,8 +53,8 @@ describe("Course Reviewer Agent", () => {
       const budget = createCourseReviewerBudget(pageCount);
 
       expect(budget).toMatchObject({
-        maxToolCalls: 4,
-        maxSteps: 4,
+        maxToolCalls: 8,
+        maxSteps: 8,
         timeoutMs: 120_000,
       });
     },
@@ -66,7 +66,10 @@ describe("Course Reviewer Agent", () => {
     });
     let toolOutput: unknown;
     const createAgent = createFakeFactory(async (settings) => {
-      expect(settings.activeTools).toEqual(["submit_course_review"]);
+      expect(settings.activeTools).toEqual([
+        "inspect_page_evidence",
+        "submit_course_review",
+      ]);
       toolOutput = await executeTool(
         settings.tools,
         "submit_course_review",
@@ -98,11 +101,14 @@ describe("Course Reviewer Agent", () => {
     ).toBe("running");
   });
 
-  it("Harness 预加载全部封口证据后直接强制终态提交", async () => {
+  it("Harness 预加载全部封口证据，并允许 Reviewer 点查截图后提交", async () => {
     const prepared = await prepareReviewer();
     const candidate = passReview(prepared.run.currentManifestHash!);
     const createAgent = createFakeFactory(async (settings) => {
-      expect(settings.activeTools).toEqual(["submit_course_review"]);
+      expect(settings.activeTools).toEqual([
+        "inspect_page_evidence",
+        "submit_course_review",
+      ]);
       expect(settings.prompt).toContain("已封口的全部决策证据");
       expect(settings.prompt).toContain("page-001");
       expect(settings.prompt).toContain("page-002");
@@ -119,11 +125,10 @@ describe("Course Reviewer Agent", () => {
           steps: [],
         }),
       ).resolves.toMatchObject({
-        activeTools: ["submit_course_review"],
-        toolChoice: {
-          type: "tool",
-          toolName: "submit_course_review",
-        },
+        activeTools: [
+          "inspect_page_evidence",
+          "submit_course_review",
+        ],
       });
       return executeTool(
         settings.tools,
@@ -136,9 +141,9 @@ describe("Course Reviewer Agent", () => {
 
     expect(result.status).toBe("submitted");
     expect(result.budget).toMatchObject({
-      maxToolCalls: 4,
+      maxToolCalls: 8,
       reservedToolCalls: 1,
-      remainingToolCalls: 3,
+      remainingToolCalls: 7,
     });
   });
 
@@ -293,7 +298,10 @@ describe("Course Reviewer Agent", () => {
         pageCount,
       );
       const createAgent = createFakeFactory(async (settings) => {
-        expect(settings.activeTools).toEqual(["submit_course_review"]);
+        expect(settings.activeTools).toEqual([
+          "inspect_page_evidence",
+          "submit_course_review",
+        ]);
         expect(settings.prompt).toContain("page-200");
         expect(settings.prompt.length).toBeLessThan(500_000);
         return executeTool(settings.tools, "submit_course_review", {
@@ -303,22 +311,25 @@ describe("Course Reviewer Agent", () => {
 
       const result = await runPreparedReviewer(prepared, createAgent);
 
-      expect(prepared.workOrder.budget.maxToolCalls).toBe(4);
+      expect(prepared.workOrder.budget.maxToolCalls).toBe(8);
       expect(prepared.workOrder.inputArtifactRefs).toHaveLength(2);
       expect(result.status).toBe("submitted");
       expect(result.budget).toMatchObject({
-        maxToolCalls: 4,
+        maxToolCalls: 8,
         reservedToolCalls: 1,
-        remainingToolCalls: 3,
+        remainingToolCalls: 7,
       });
     },
     60_000,
   );
 
-  it("健康封口只开放 submit_course_review", async () => {
+  it("健康封口开放证据点查和 submit，但不开放 block", async () => {
     const prepared = await prepareReviewer();
     const createAgent = createFakeFactory(async (settings) => {
-      expect(settings.activeTools).toEqual(["submit_course_review"]);
+      expect(settings.activeTools).toEqual([
+        "inspect_page_evidence",
+        "submit_course_review",
+      ]);
       await expect(
         settings.prepareStep({
           messages: [],
@@ -326,11 +337,10 @@ describe("Course Reviewer Agent", () => {
           steps: [],
         }),
       ).resolves.toMatchObject({
-        activeTools: ["submit_course_review"],
-        toolChoice: {
-          type: "tool",
-          toolName: "submit_course_review",
-        },
+        activeTools: [
+          "inspect_page_evidence",
+          "submit_course_review",
+        ],
       });
       return executeTool(
         settings.tools,

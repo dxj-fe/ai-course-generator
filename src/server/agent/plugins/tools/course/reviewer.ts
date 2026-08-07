@@ -8,6 +8,7 @@ import {
 } from "@/server/course/gate/review";
 import { classifyPublicAgentError } from "@/server/course/projection/public-error";
 import { createCourseRunCommands } from "@/server/course/run/commands";
+import { loadStoredScreenshotImages } from "@/server/infra/browser/screenshot-evidence";
 import {
   collectCourseReviewerEvidenceContractConflicts,
   collectUnreadCourseReviewerEvidenceIssues,
@@ -219,7 +220,7 @@ export function createCourseReviewerTools(
       description:
         "针对当前 manifest 中的一个页面核对目标、跨页衔接、事实、互动或视觉证据。只返回受控摘要与截图指标，不返回原始 HTML。",
       inputSchema: PageEvidenceInputSchema,
-      execute: ({ pageId, focus }) => {
+      execute: async ({ pageId, focus }) => {
         const snapshot = loadCourseReviewerSnapshot(execution);
         const pageTask = snapshot.architecture.pageTasks.find(
           (page) => page.pageId === pageId,
@@ -241,6 +242,12 @@ export function createCourseReviewerTools(
           snapshot.pageQualities,
           pageId,
         );
+        execution.pendingPageImages = await loadStoredScreenshotImages({
+          pageId,
+          quality,
+          viewport: "all",
+        });
+        execution.visualEvidenceVersion += 1;
         return success(`已核对页面 ${pageId} 的${focusLabel(focus)}证据。`, {
           focus,
           pageTask: {
@@ -269,6 +276,7 @@ export function createCourseReviewerTools(
             manifestPage.summaryRef,
             manifestPage.qualityRef,
           ],
+          screenshotCount: execution.pendingPageImages.length,
         });
       },
     }),
@@ -547,9 +555,9 @@ function normalizeCourseReviewerIssue(
     ...(scope === "page"
       ? {
           targetArtifact:
-            issue.targetArtifact === "page_html"
-              ? ("page_html" as const)
-              : ("page_content" as const),
+            issue.targetArtifact === "page_content"
+              ? ("page_content" as const)
+              : ("page_html" as const),
         }
       : {}),
     evidenceArtifactRefs:
@@ -641,7 +649,7 @@ export function collectDeterministicReviewerFindings(
         scope: "page",
         severity: "error",
         suggestedAction: "先定向修复该页并重新执行 Page Gate",
-        targetArtifact: qualityRepairTarget(quality),
+        targetArtifact: "page_html",
       });
     }
     if (
@@ -660,7 +668,7 @@ export function collectDeterministicReviewerFindings(
         scope: "page",
         severity: "error",
         suggestedAction: "按当前 PageTask 重建该页，不要修改整课计划",
-        targetArtifact: "page_content",
+        targetArtifact: "page_html",
       });
     }
     if (pageTask.assessment && !summary.assessment) {
@@ -672,7 +680,7 @@ export function collectDeterministicReviewerFindings(
         scope: "page",
         severity: "error",
         suggestedAction: "补齐可观察的学习结果检查",
-        targetArtifact: "page_content",
+        targetArtifact: "page_html",
       });
     }
 
@@ -692,7 +700,7 @@ export function collectDeterministicReviewerFindings(
         scope: "page",
         severity: "error",
         suggestedAction: `保留 ${owner} 的职责，重写 ${pageTask.pageId} 使其完成自己的页面目标`,
-        targetArtifact: "page_content",
+        targetArtifact: "page_html",
       });
     } else {
       digestOwner.set(normalizedDigest, pageTask.pageId);
@@ -744,6 +752,15 @@ export function compactCourseReviewerQuality(
               capture.metrics?.interactionSubmitTested,
             interactionFeedbackVisible:
               capture.metrics?.interactionFeedbackVisible,
+            diagnostics: capture.diagnostics
+              ? {
+                  console: capture.diagnostics.console,
+                  pageErrors: capture.diagnostics.pageErrors,
+                  requestFailures: capture.diagnostics.requestFailures,
+                  dom: capture.diagnostics.dom,
+                  interaction: capture.diagnostics.interaction,
+                }
+              : undefined,
             ...(capture.status === "failed"
               ? { reason: capture.reason }
               : {}),
@@ -751,18 +768,6 @@ export function compactCourseReviewerQuality(
         }
       : undefined,
   };
-}
-
-function qualityRepairTarget(
-  quality: QualityReport,
-): "page_content" | "page_html" {
-  return quality.issues.some(
-    ({ dimension }) =>
-      dimension === "contentAccuracy" ||
-      dimension === "courseCoherence",
-  )
-    ? "page_content"
-    : "page_html";
 }
 
 function truncateEvidenceText(value: string, maxLength: number) {

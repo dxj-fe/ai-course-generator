@@ -10,7 +10,8 @@ import {
 
 export const coursePageBuilderAgent = defineAgent({
   id: AgentIds.CoursePageBuilder,
-  description: "依据页面职责和完整课程上下文生成可交付的课程页面。",
+  description:
+    "像网页开发 Agent 一样在独立 workspace 中多轮创作、渲染和修订单个课程页面。",
   input: SchemaIds.CoursePageBuilderInput,
   output: SchemaIds.CoursePageSubmission,
   prompt: PromptIds.CoursePageBuilderSystem,
@@ -21,11 +22,14 @@ export const coursePageBuilderAgent = defineAgent({
     ContextIds.CourseReferences,
   ],
   skills: [SkillIds.CoursePageDesign],
-  modelCapability: "general",
+  // Page Creator 同时承担教学构图、HTML/CSS 实现和浏览器证据修订，必须走
+  // page-writer 强档；balanced general 在真实盲测中会退化为纵向卡片堆叠。
+  modelCapability: "page-writer",
   runtime: {
-    maxSteps: 24,
-    maxToolCalls: 36,
-    timeoutMs: 900_000,
+    maxSteps: 20,
+    maxToolCalls: 28,
+    // 单页完整 Agent Loop 共享该总预算，续跑不会重新获得 5 分钟。
+    timeoutMs: 300_000,
     maxOutputTokens: 8_000,
   },
 });

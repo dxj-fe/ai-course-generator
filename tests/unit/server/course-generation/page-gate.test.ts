@@ -116,7 +116,44 @@ describe("页面确定性 Gate", () => {
     }
   });
 
-  it("拒绝与课程语言不一致的整页学习内容", () => {
+  it("允许没有模板类名和 DSL data 标记的 Agent 原生构图", () => {
+    const candidate = validCandidate();
+    const html = `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { margin: 0; font-family: system-ui; background: #07111f; color: #f8fafc; }
+    main { min-height: 100vh; display: grid; place-items: center; padding: 8vw; box-sizing: border-box; }
+    details { max-width: 46rem; padding: 2rem; border: 1px solid #38bdf8; border-radius: 1.5rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <details>
+      <summary>恒星与行星怎样区分？</summary>
+      <p>恒星能够自身发光，行星主要反射恒星的光。</p>
+    </details>
+  </main>
+</body>
+</html>`;
+    const result = runPageGate({
+      architecture: architecture(),
+      creationBrief: creationBrief(),
+      referencePacks: [],
+      pageId: PAGE_ID,
+      ...candidate,
+      html: { ...candidate.html, html },
+    });
+
+    expect(
+      result.ok,
+      result.ok ? undefined : JSON.stringify(result.issues),
+    ).toBe(true);
+  });
+
+  it("不再用中英文字符比例正则拒绝术语密集页面", () => {
     const candidate = validCandidate();
     const content: PageContentDSL = {
       ...candidate.content,
@@ -172,19 +209,10 @@ describe("页面确定性 Gate", () => {
       html,
     });
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.issues).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            code: "PAGE_CONTENT_CONTRACT_FAILED",
-            message: expect.stringContaining(
-              "课程语言为中文，但页面正文以英文为主",
-            ),
-          }),
-        ]),
-      );
-    }
+    expect(
+      result.ok,
+      result.ok ? undefined : JSON.stringify(result.issues),
+    ).toBe(true);
   });
 
   it("低主观分数和截图基础设施状态都不替代交付故障判断", () => {

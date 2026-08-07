@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { capturePageScreenshot } from "../../../src/server/infra/browser/page-screenshot";
+import { closeCourseBrowser } from "../../../src/server/infra/browser/browser-pool";
 import { normalizeTrustedPlayerLayout } from "../../../src/server/agent/plugins/model-steps/course/html-engineer-normalizers";
 import {
   PageContentDSLSchema,
@@ -24,6 +25,7 @@ describe.runIf(process.env.KEYA_BROWSER_INTEGRATION === "true")(
     });
 
     afterAll(async () => {
+      await closeCourseBrowser();
       if (rootDir) {
         await rm(rootDir, { recursive: true, force: true });
       }
@@ -116,14 +118,151 @@ describe.runIf(process.env.KEYA_BROWSER_INTEGRATION === "true")(
           expect(capture.status).toBe("captured");
           expect(capture.metrics?.horizontalOverflowPx).toBe(0);
           expect(capture.metrics?.touchTargetUnder44Count).toBe(0);
-          expect(capture.metrics?.mainViewportCoverageRatio).toBe(1);
         }
       },
       30_000,
     );
 
     it(
-      "低高度画布中的折叠知识块不因 wrapper 与 details 双重内边距溢出",
+      "整页 overflow hidden 只交给 contain-fit 比例判断，不重复误报根节点裁切",
+      async () => {
+        const result = await capturePageScreenshot(
+          {
+            pageId: "page-root-overflow",
+            traceId: "trace-browser-root-overflow",
+            html: `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>根节点缩放检查</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    main { min-height: 130vh; padding: 24px; display: grid; gap: 16px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>太阳系的尺度</h1>
+    <p>整页画布由播放器统一缩放；根节点 overflow hidden 不是内部正文裁切证据。</p>
+  </main>
+</body>
+</html>`,
+          },
+          {
+            enabled: true,
+            rootDir,
+            timeoutMs: 12_000,
+          },
+        );
+
+        expect(result.evidence.captures).toHaveLength(3);
+        expect(result.issues.map(({ code }) => code)).not.toContain(
+          "BROWSER_CONTENT_CLIPPED",
+        );
+        for (const capture of result.evidence.captures ?? []) {
+          expect(capture.metrics?.clippedElementSelectors).not.toEqual(
+            expect.arrayContaining(["html", "body"]),
+          );
+        }
+      },
+      30_000,
+    );
+
+    it(
+      "装饰几何越出 overflow hidden 舞台时不误报正文裁切",
+      async () => {
+        const result = await capturePageScreenshot(
+          {
+            pageId: "page-decorative-overflow",
+            traceId: "trace-browser-decorative-overflow",
+            html: `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>装饰舞台</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px; }
+    .stage { position: relative; width: min(100%, 600px); height: 320px; overflow: hidden; }
+    .orbit { position: absolute; width: 520px; height: 520px; left: 50%; top: 50%; transform: translate(-50%, -50%); border: 2px solid #888; border-radius: 50%; }
+    .label { position: absolute; left: 24px; top: 24px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>太阳系舞台</h1>
+    <div class="stage"><div class="orbit" aria-hidden="true"></div><p class="label">轨道关系示意</p></div>
+  </main>
+</body>
+</html>`,
+          },
+          {
+            enabled: true,
+            rootDir,
+            timeoutMs: 12_000,
+          },
+        );
+
+        expect(result.issues.map(({ code }) => code)).not.toContain(
+          "BROWSER_CONTENT_CLIPPED",
+        );
+        for (const capture of result.evidence.captures ?? []) {
+          expect(capture.metrics?.clippedElementCount).toBe(0);
+        }
+      },
+      30_000,
+    );
+
+    it(
+      "overflow hidden 真正截断正文时仍报告精确元素",
+      async () => {
+        const result = await capturePageScreenshot(
+          {
+            pageId: "page-text-clipped",
+            traceId: "trace-browser-text-clipped",
+            html: `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>正文裁切</title>
+  <style>
+    body { margin: 0; padding: 24px; }
+    #clipped-copy { width: 240px; height: 22px; line-height: 22px; overflow: hidden; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>知识解释</h1>
+    <div id="clipped-copy">第一行仍可见<br>第二行会被固定高度真实截断</div>
+  </main>
+</body>
+</html>`,
+          },
+          {
+            enabled: true,
+            rootDir,
+            timeoutMs: 12_000,
+          },
+        );
+
+        expect(result.issues).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              code: "BROWSER_CONTENT_CLIPPED",
+              location: expect.objectContaining({ selector: "#clipped-copy" }),
+            }),
+          ]),
+        );
+      },
+      30_000,
+    );
+
+    it(
+      "低高度画布的过长内容保留为可滚动页面观测",
       async () => {
         const blocks = Array.from(
           { length: 4 },
@@ -183,14 +322,22 @@ describe.runIf(process.env.KEYA_BROWSER_INTEGRATION === "true")(
         for (const capture of result.evidence.captures ?? []) {
           expect(capture.status).toBe("captured");
           expect(capture.metrics?.horizontalOverflowPx).toBe(0);
-          expect(capture.metrics?.verticalOverflowPx).toBe(0);
+          expect(capture.metrics?.requiredViewportScale).toBeGreaterThan(0);
         }
+        expect(result.issues).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              code: "BROWSER_VERTICAL_OVERFLOW",
+              severity: "warning",
+            }),
+          ]),
+        );
       },
       30_000,
     );
 
     it(
-      "blocks 与 sort 由嵌套分组承载时在低高度画布切为依据列和任务列",
+      "blocks 与 sort 嵌套过长时允许学习器自然滚动",
       async () => {
         const blocks = Array.from(
           { length: 3 },
@@ -260,14 +407,22 @@ describe.runIf(process.env.KEYA_BROWSER_INTEGRATION === "true")(
         for (const capture of result.evidence.captures ?? []) {
           expect(capture.status).toBe("captured");
           expect(capture.metrics?.horizontalOverflowPx).toBe(0);
-          expect(capture.metrics?.verticalOverflowPx).toBe(0);
+          expect(capture.metrics?.requiredViewportScale).toBeGreaterThan(0);
         }
+        expect(result.issues).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              code: "BROWSER_VERTICAL_OVERFLOW",
+              severity: "warning",
+            }),
+          ]),
+        );
       },
       30_000,
     );
 
     it(
-      "blocks 与 sort 都是 main 直接子节点时在低高度画布保持双栏且无溢出",
+      "blocks 与 sort 直接堆叠过长时允许学习器自然滚动",
       async () => {
         const blocks = Array.from(
           { length: 3 },
@@ -333,14 +488,22 @@ describe.runIf(process.env.KEYA_BROWSER_INTEGRATION === "true")(
         for (const capture of result.evidence.captures ?? []) {
           expect(capture.status).toBe("captured");
           expect(capture.metrics?.horizontalOverflowPx).toBe(0);
-          expect(capture.metrics?.verticalOverflowPx).toBe(0);
+          expect(capture.metrics?.requiredViewportScale).toBeGreaterThan(0);
         }
+        expect(result.issues).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              code: "BROWSER_VERTICAL_OVERFLOW",
+              severity: "warning",
+            }),
+          ]),
+        );
       },
       30_000,
     );
 
     it(
-      "课程对比页使用两个类别和六个长文本排序项时在全部固定画布无溢出",
+      "课程对比页长文本堆叠时允许学习器自然滚动",
       async () => {
         const blocks = ["颜色来源差异", "物理过程差异", "观测条件差异"]
           .map(
@@ -413,8 +576,16 @@ describe.runIf(process.env.KEYA_BROWSER_INTEGRATION === "true")(
         for (const capture of result.evidence.captures ?? []) {
           expect(capture.status).toBe("captured");
           expect(capture.metrics?.horizontalOverflowPx).toBe(0);
-          expect(capture.metrics?.verticalOverflowPx).toBe(0);
+          expect(capture.metrics?.requiredViewportScale).toBeGreaterThan(0);
         }
+        expect(result.issues).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              code: "BROWSER_VERTICAL_OVERFLOW",
+              severity: "warning",
+            }),
+          ]),
+        );
       },
       30_000,
     );

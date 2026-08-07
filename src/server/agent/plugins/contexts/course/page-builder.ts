@@ -5,6 +5,10 @@ import {
   ToolIds,
 } from "@/server/agent/ids";
 import type { LocalResourceSession } from "@/server/agent/skill";
+import {
+  resolvePageWorkspace,
+  type PageWorkspace,
+} from "@/server/agent/workspace/page-workspace";
 import { projectCourseArchitecture } from "@/server/course/projection/architecture";
 import {
   FatalAgentRuntimeError,
@@ -29,6 +33,8 @@ import {
   type CourseCreationBrief,
   type PageContentDSL,
   type QualityReport,
+  type QualityIssue,
+  type QualityScreenshotEvidence,
   type ReferencePack,
   type Submission,
   type WorkOrder,
@@ -38,7 +44,7 @@ import { transitiveDependentPageIds } from "@/server/course/policy/run";
 const PageAssetsSchema = z.array(AssetGenerationResultSchema).max(12);
 
 export const PAGE_BUILDER_TOOL_NAMES =
-  AgentToolSets.CoursePageBuilder;
+  AgentToolSets.CoursePageBuilderRuntime;
 
 export type PageBuilderToolName =
   (typeof PAGE_BUILDER_TOOL_NAMES)[number];
@@ -53,6 +59,7 @@ export type PageBuilderExecutionInput = {
   referencePacks: ReferencePack[];
   abortSignal?: AbortSignal;
   beforeToolCall?: () => void | PromiseLike<void>;
+  workspaceRoot?: string;
 };
 
 export type PageBuilderExecution = {
@@ -79,12 +86,26 @@ export type PageBuilderExecution = {
   abortSignal?: AbortSignal;
   beforeToolCall?: () => void | PromiseLike<void>;
   localResourceSession?: LocalResourceSession;
+  workspace: PageWorkspace;
+  latestRenderEvidence?: {
+    htmlRevision: number;
+    evidence: QualityScreenshotEvidence;
+    issues: QualityIssue[];
+    images: Array<{
+      viewport: { width: number; height: number };
+      png: Uint8Array;
+    }>;
+  };
+  injectedRenderRevision?: number;
+  legacyModelPipeline: boolean;
   currentLockVersion: number;
   progress: {
     contentGenerationFailures: number;
     contextRead: boolean;
     repairGenerationFailures: number;
     repairDeclinedTools: Set<string>;
+    workspaceDirty: boolean;
+    workspaceRead: boolean;
   };
 };
 
@@ -237,6 +258,12 @@ export function createPageBuilderExecution(
     runLeaseOwner: input.runLeaseOwner,
     abortSignal: input.abortSignal,
     beforeToolCall: input.beforeToolCall,
+    workspace: resolvePageWorkspace({
+      taskId: workOrder.taskId,
+      workOrderId: workOrder.id,
+      rootDir: input.workspaceRoot,
+    }),
+    legacyModelPipeline: false,
     currentLockVersion: workOrder.lockVersion,
     progress: loadPageBuilderProgress(input.repository, workOrder),
   };
@@ -319,6 +346,7 @@ export function assertPageBuilderToolCall(
     ([
       ToolIds.GeneratePageContent,
       ToolIds.ResolvePageAssets,
+      ToolIds.GeneratePageImage,
       ToolIds.RepairPageContent,
     ] as string[]).includes(input.toolName)
   ) {
@@ -461,26 +489,39 @@ export function parsePageBuilderTerminal(
 export function countPageBuilderRepairs(
   execution: PageBuilderExecution,
 ) {
-  return execution.repository.events
+  const checkpointTools = execution.repository.events
     .list(execution.initialWorkOrder.taskId)
-    .filter((event) => {
+    .flatMap((event): string[] => {
       if (
         event.type !== "page_checkpoint_saved" ||
         typeof event.payload !== "object" ||
         event.payload === null
       ) {
-        return false;
+        return [];
       }
       const payload = event.payload as {
         workOrderId?: unknown;
         toolName?: unknown;
       };
-      return (
-        payload.workOrderId === execution.initialWorkOrder.id &&
-        (payload.toolName === ToolIds.RepairPageContent ||
-          payload.toolName === ToolIds.RepairPageHtml)
-      );
-    }).length;
+      return payload.workOrderId === execution.initialWorkOrder.id &&
+        typeof payload.toolName === "string"
+        ? [payload.toolName]
+        : [];
+    });
+  if (!execution.legacyModelPipeline) {
+    // 第一次 inspect 是初稿观测；之后每个 page_quality checkpoint 才代表
+    // 一轮基于 Browser Harness 证据的 Agent 自主修订。
+    return Math.max(
+      0,
+      checkpointTools.filter((toolName) => toolName === ToolIds.InspectPage)
+        .length - 1,
+    );
+  }
+  return checkpointTools.filter(
+    (toolName) =>
+      toolName === ToolIds.RepairPageContent ||
+      toolName === ToolIds.RepairPageHtml,
+  ).length;
 }
 
 export function recordPageBuilderRepairDeclined(
@@ -560,6 +601,8 @@ function loadPageBuilderProgress(
     contextRead,
     repairGenerationFailures,
     repairDeclinedTools,
+    workspaceDirty: false,
+    workspaceRead: false,
   };
 }
 

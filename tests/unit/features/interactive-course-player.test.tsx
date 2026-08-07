@@ -30,8 +30,10 @@ describe("InteractiveCoursePlayer", () => {
     expect(markup).toContain("下一页");
     expect(interactiveFrames).toHaveLength(1);
     expect(interactiveFrames[0]).toContain('sandbox="allow-scripts"');
-    expect(interactiveFrames[0]).toContain('scrolling="no"');
+    expect(interactiveFrames[0]).toContain('scrolling="auto"');
     expect(interactiveFrames[0]).toContain("keya-trusted-runtime");
+    expect(interactiveFrames[0]).toContain("keya-scrollable-lesson-style");
+    expect(interactiveFrames[0]).not.toContain("keya-viewport-fit");
     expect(markup).toContain("keya-trusted-runtime");
     expect(markup).not.toContain("allow-same-origin");
     expect(markup).not.toContain('role="progressbar"');

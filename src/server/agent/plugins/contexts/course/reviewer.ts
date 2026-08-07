@@ -29,6 +29,7 @@ import {
 } from "@/server/agent/ids";
 import { getAgentWorkOrderDefaults } from "@/server/agent/plugins/agents/catalog";
 import type { CourseRunRepository } from "@/server/course/store/repository";
+import type { StoredScreenshotImage } from "@/server/infra/browser/screenshot-evidence";
 
 const REVIEWER_DEFAULTS = getAgentWorkOrderDefaults(
   AgentIds.CourseReviewer,
@@ -49,11 +50,11 @@ export function createCourseReviewerBudget(
 
   return {
     maxSteps: Math.min(
-      4,
+      8,
       REVIEWER_DEFAULTS.budget.maxSteps,
     ),
     maxToolCalls: Math.min(
-      4,
+      8,
       REVIEWER_DEFAULTS.budget.maxToolCalls,
     ),
     timeoutMs: Math.min(
@@ -98,6 +99,10 @@ export type CourseReviewerExecution = {
   runLeaseOwner: string;
   traceId: string;
   workOrderLeaseOwner: string;
+  overviewImages: StoredScreenshotImage[];
+  pendingPageImages: StoredScreenshotImage[];
+  visualEvidenceVersion: number;
+  injectedVisualEvidenceVersion: number;
 };
 
 export type CourseReviewerSnapshot = {
@@ -174,6 +179,10 @@ export function createCourseReviewerExecution(
     runLeaseOwner: input.runLeaseOwner,
     traceId: input.traceId,
     workOrderLeaseOwner: input.workOrderLeaseOwner,
+    overviewImages: [],
+    pendingPageImages: [],
+    visualEvidenceVersion: 0,
+    injectedVisualEvidenceVersion: -1,
   };
   loadCourseReviewerSnapshot(execution);
   return execution;
@@ -423,6 +432,12 @@ export function resolveCourseReviewerTerminalTools(
       "REVIEWER_TERMINAL_TOOL_MISSING",
       `Reviewer 当前终态 ${terminalTool} 未被 WorkOrder 授权。`,
     );
+  }
+  if (
+    terminalTool === ToolIds.SubmitCourseReview &&
+    current.allowedTools.includes(ToolIds.InspectPageEvidence)
+  ) {
+    return [ToolIds.InspectPageEvidence, terminalTool];
   }
   return [terminalTool];
 }

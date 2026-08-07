@@ -8,7 +8,7 @@ import { courseReviewerAgent } from "./reviewer";
 
 /** 课程域的声明式 Agent 插件；执行 Handler 由独立目录装配。 */
 export const courseAgentDefinitionsById = Object.freeze({
-  [AgentIds.CourseArchitect]: courseArchitectAgent,
+  [AgentIds.CourseLead]: courseArchitectAgent,
   [AgentIds.CourseDirector]: courseDirectorAgent,
   [AgentIds.CoursePageBuilder]: coursePageBuilderAgent,
   [AgentIds.CourseReviewer]: courseReviewerAgent,

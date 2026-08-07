@@ -28,6 +28,7 @@ import {
   type RuntimeAgentFactory,
 } from "@/server/agent/runtime";
 import { createCourseToolLedger } from "@/server/course/run/tool-ledger";
+import { loadStoredScreenshotImages } from "@/server/infra/browser/screenshot-evidence";
 import type {
   PageSummary,
   PageTask,
@@ -59,6 +60,17 @@ export async function runCourseReviewerAgent(
   );
   const execution = createCourseReviewerExecution(input);
   const decisionEvidence = preloadCourseReviewerEvidence(execution);
+  execution.overviewImages = (
+    await Promise.all(
+      decisionEvidence.manifest.pages.slice(0, 20).map(({ pageId }) =>
+        loadStoredScreenshotImages({
+          pageId,
+          quality: decisionEvidence.pageQualities.get(pageId)!,
+          viewport: "desktop",
+        }),
+      ),
+    )
+  ).flat();
   const tools = createCourseReviewerTools(execution, { now });
   const runner = new AgentRunner<CourseReviewerTools, Submission>({
     createAgent: dependencies.createAgent,
@@ -91,10 +103,52 @@ export async function runCourseReviewerAgent(
         resolveModelRoute(agentDefinition.modelCapability).primary,
       ),
     prompt: buildCourseReviewerPrompt(execution, decisionEvidence),
-    prepareStep: () => {
+    prepareStep: (step) => {
       const activeTools = resolveCourseReviewerTerminalTools(execution);
+      const shouldInject =
+        execution.visualEvidenceVersion >
+        execution.injectedVisualEvidenceVersion;
+      const images =
+        execution.visualEvidenceVersion === 0
+          ? execution.overviewImages
+          : execution.pendingPageImages;
+      if (shouldInject) {
+        execution.injectedVisualEvidenceVersion =
+          execution.visualEvidenceVersion;
+      }
       return {
         activeTools,
+        ...(shouldInject && images.length > 0
+          ? {
+              messages: [
+                ...step.messages,
+                {
+                  role: "user",
+                  content: [
+                    {
+                      type: "text",
+                      text:
+                        execution.visualEvidenceVersion === 0
+                          ? "下面是按课程顺序排列的页面桌面截图。请结合结构化证据审查真实课程，不要只看摘要。"
+                          : "下面是刚刚点查页面的桌面、平板和手机原图。请根据真实视觉结果继续审查。",
+                    },
+                    ...images.flatMap((image) => [
+                      {
+                        type: "text" as const,
+                        text: `${image.pageId} · ${image.viewport.width}x${image.viewport.height}`,
+                      },
+                      {
+                        type: "file" as const,
+                        data: image.png,
+                        mediaType: "image/png",
+                        filename: `review-${image.pageId}-${image.viewport.width}x${image.viewport.height}.png`,
+                      },
+                    ]),
+                  ],
+                },
+              ],
+            }
+          : {}),
         ...(activeTools.length === 1
           ? {
               toolChoice: {
@@ -134,7 +188,7 @@ manifestHash：${execution.frozenManifestHash}
     buildCourseReviewerDecisionEvidence(execution, snapshot),
   )}
 
-证据已经由 Harness 一次性完整加载。请直接调用当前唯一开放的终态工具，不要先读取或校验。必须基于这个 manifestHash 提交；任何页面版本变化都应停止旧审查。`;
+结构化证据已经由 Harness 一次性完整加载，桌面截图会作为视觉输入附在本轮消息中。通常可直接提交；如果某页视觉、互动或浏览器诊断可疑，可调用 inspect_page_evidence 点查该页三视口原图，再提交结论。必须基于这个 manifestHash 提交；任何页面版本变化都应停止旧审查。`;
 }
 
 function buildCourseReviewerDecisionEvidence(

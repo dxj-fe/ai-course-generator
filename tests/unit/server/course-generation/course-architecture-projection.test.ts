@@ -43,16 +43,16 @@ describe("CourseArchitecture 当前投影", () => {
     expect(projected.pageWorkerBriefs).toHaveLength(3);
   });
 
-  it("拒绝页面私自偏离整课样式版本", () => {
+  it("不再用整课模板 ID 阻断页面投影", () => {
     const architecture = architectureFixture();
     architecture.pageTasks[1]!.styleTemplateId = "nature";
 
-    expect(() =>
-      projectCourseArchitecture(
-        architecture,
-        creationBriefFixture(),
-      ),
-    ).toThrow("未使用整课样式模板 minimal");
+    const projected = projectCourseArchitecture(
+      architecture,
+      creationBriefFixture(),
+    );
+
+    expect(projected.outline.pages[1]?.styleTemplateId).toBe("nature");
   });
 
   it("允许最终选择题在反馈中承担紧凑课程回扣", () => {

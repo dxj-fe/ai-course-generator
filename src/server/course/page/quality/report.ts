@@ -47,14 +47,19 @@ const SEVERITY_PRIORITY = { error: 0, warning: 1, info: 2 } as const;
 
 const DELIVERY_BLOCKING_BROWSER_CODES = new Set([
   "BROWSER_HORIZONTAL_OVERFLOW",
-  "BROWSER_VERTICAL_OVERFLOW",
-  "BROWSER_NESTED_VERTICAL_OVERFLOW",
+  "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
   "BROWSER_CONTENT_CLIPPED",
   "BROWSER_PRIMARY_ACTION_BELOW_FOLD",
   "BROWSER_TOUCH_TARGET_UNDER_24",
   "BROWSER_FEEDBACK_VISIBLE_BY_DEFAULT",
   "BROWSER_INTERACTION_SUBMIT_UNTESTED",
   "BROWSER_INTERACTION_FEEDBACK_MISSING",
+  "BROWSER_INERT_BUTTON",
+]);
+const DELIVERY_BLOCKING_SCREENSHOT_CODES = new Set([
+  "SCREENSHOT_EVIDENCE_MISSING",
+  "SCREENSHOT_CAPTURE_SKIPPED",
+  "SCREENSHOT_CAPTURE_FAILED",
 ]);
 const DELIVERY_BLOCKING_VISUAL_CODES = new Set([
   "VISUAL_GENERIC_UI",
@@ -126,8 +131,8 @@ export function buildPageQualityReport(input: {
 }
 
 /**
- * 生产修订只由内容、安全、运行时和真实不可用布局触发。审美评分、截图服务
- * 状态与面积启发式继续作为观测数据，不再伪装成发布门禁。
+ * 生产修订只由内容、安全、运行时、截图证据和真实不可用布局触发。审美评分与
+ * 面积启发式继续作为观测数据，不再伪装成发布门禁。
  */
 export function isDeliveryBlockingQualityIssue(issue: QualityIssue) {
   return issue.severity === "error" && isDeliveryBlockingIssueKind(issue);
@@ -145,6 +150,9 @@ function isDeliveryBlockingIssueKind(issue: QualityIssue) {
   }
   if (issue.code.startsWith("BROWSER_")) {
     return DELIVERY_BLOCKING_BROWSER_CODES.has(issue.code);
+  }
+  if (issue.code.startsWith("SCREENSHOT_")) {
+    return DELIVERY_BLOCKING_SCREENSHOT_CODES.has(issue.code);
   }
   return (
     issue.dimension === "contentAccuracy" ||
@@ -185,14 +193,14 @@ function screenshotGateIssues(input: {
       {
         code: "SCREENSHOT_EVIDENCE_MISSING",
         dimension: "layoutQuality",
-        severity: "warning",
+        severity: "error",
         source: "browser",
         message: "页面缺少截图观测证据。",
         location: {
           pageId: input.pageId,
           description: "页面视觉质量闸门",
         },
-        repairHint: "恢复截图能力后补充观测；不替代页面安全与运行时检查。",
+        repairHint: "恢复 Browser Harness 并取得三档视口证据后再交付页面。",
       },
     ];
   }
@@ -207,7 +215,7 @@ function screenshotGateIssues(input: {
                 ? "SCREENSHOT_CAPTURE_SKIPPED"
                 : "SCREENSHOT_CAPTURE_FAILED",
             dimension: "layoutQuality" as const,
-            severity: "warning" as const,
+            severity: "error" as const,
             source: "browser" as const,
             message: `截图证据${capture.status === "skipped" ? "被跳过" : "采集失败"}。`,
             location: {
@@ -215,8 +223,7 @@ function screenshotGateIssues(input: {
               viewport: `${capture.viewport.width}x${capture.viewport.height}`,
               description: "强制截图质量证据",
             },
-            repairHint:
-              "恢复截图与存储后补充观测，不将基础设施故障归因于页面设计。",
+            repairHint: "恢复截图与存储并取得当前视口证据后再交付页面。",
           },
         ],
   );

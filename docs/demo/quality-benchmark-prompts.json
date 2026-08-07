@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "purpose": "用跨学科、跨受众和跨教学目标的提示词比较课程质量，不规定页面模板、布局或互动类型。",
+  "cases": [
+    {
+      "id": "science-mars-evidence",
+      "category": "science",
+      "prompt": "为初中生制作一门 4 页火星探索课程，让学习者根据真实观测证据判断火星过去是否可能存在液态水。"
+    },
+    {
+      "id": "science-cell-membrane",
+      "category": "science",
+      "prompt": "为高中生制作一门 4 页细胞膜运输课程，通过生活类比解释扩散、渗透和主动运输，并安排一次可观察的判断任务。"
+    },
+    {
+      "id": "history-silk-road-perspectives",
+      "category": "history",
+      "prompt": "用 5 页课程帮助大学新生从商人、地方居民和统治者三种视角理解丝绸之路，不要把历史讲成单一路线年表。"
+    },
+    {
+      "id": "history-industrial-revolution",
+      "category": "history",
+      "prompt": "为高中生制作一门 4 页工业革命课程，重点讨论技术、劳动与城市生活如何互相影响，并引导学习者评价一项代价。"
+    },
+    {
+      "id": "math-probability-intuition",
+      "category": "math",
+      "prompt": "为害怕数学的成年人制作一门 3 页概率直觉课程，用具体情境讲清独立事件与条件概率的区别。"
+    },
+    {
+      "id": "math-derivative-motion",
+      "category": "math",
+      "prompt": "为高中生制作一门 4 页导数入门课，从运动和变化率出发，让学习者能解释导数而不只是套公式。"
+    },
+    {
+      "id": "language-argument-writing",
+      "category": "language",
+      "prompt": "为中文写作学习者制作一门 4 页论证写作课程，帮助他们区分主张、证据和推理，并修改一个薄弱论证。"
+    },
+    {
+      "id": "language-english-tone",
+      "category": "language",
+      "prompt": "为中级英语学习者制作一门 3 页英文邮件语气课程，让学习者能把过于生硬的请求改得清晰而礼貌。"
+    },
+    {
+      "id": "programming-event-loop",
+      "category": "programming",
+      "prompt": "为有同步编程经验的开发者制作一门 4 页 JavaScript Event Loop 课程，重点建立调用栈、任务队列和异步回调的可运行心智模型。"
+    },
+    {
+      "id": "programming-sql-index",
+      "category": "programming",
+      "prompt": "为后端初学者制作一门 4 页 SQL 索引课程，通过查询场景解释索引为何加速读取、为何也会带来写入代价。"
+    },
+    {
+      "id": "design-visual-hierarchy",
+      "category": "design",
+      "prompt": "为产品经理制作一门 3 页视觉层级课程，让他们能从真实界面中识别主次混乱，并提出有依据的改版建议。"
+    },
+    {
+      "id": "design-color-accessibility",
+      "category": "design",
+      "prompt": "制作一门 4 页无障碍配色课程，面向刚入行的设计师，讲清对比度、非颜色线索和常见色觉差异。"
+    },
+    {
+      "id": "business-unit-economics",
+      "category": "business",
+      "prompt": "为创业团队制作一门 4 页单位经济模型课程，让学习者能用获客成本、毛利和留存判断增长是否健康。"
+    },
+    {
+      "id": "business-feedback-conversation",
+      "category": "business",
+      "prompt": "为新任管理者制作一门 3 页反馈对话课程，帮助他们把模糊评价改写为具体、可行动且尊重人的反馈。"
+    },
+    {
+      "id": "health-sleep-literacy",
+      "category": "health",
+      "prompt": "为普通成年人制作一门 4 页睡眠科学素养课程，解释昼夜节律、睡眠压力与咖啡因，并避免给出医疗诊断。"
+    },
+    {
+      "id": "health-nutrition-label",
+      "category": "health",
+      "prompt": "为青少年制作一门 3 页营养标签阅读课程，让他们能比较两种食品，而不是把单个成分简单分成好或坏。"
+    },
+    {
+      "id": "finance-compound-interest",
+      "category": "finance",
+      "prompt": "为刚工作的年轻人制作一门 4 页复利与债务成本课程，通过对比情境理解时间、利率和持续投入的影响。"
+    },
+    {
+      "id": "finance-risk-diversification",
+      "category": "finance",
+      "prompt": "制作一门 3 页投资风险与分散课程，面向零基础学习者，强调不确定性和权衡，不推荐具体产品。"
+    },
+    {
+      "id": "art-perspective-seeing",
+      "category": "art",
+      "prompt": "为绘画初学者制作一门 4 页透视观察课程，让学习者通过空间线索理解消失点，而不是机械背步骤。"
+    },
+    {
+      "id": "civics-source-evaluation",
+      "category": "civics",
+      "prompt": "为高中生制作一门 4 页信息来源评估课程，让他们能区分原始证据、二手解释和未经证实的社交媒体说法。"
+    }
+  ]
+}

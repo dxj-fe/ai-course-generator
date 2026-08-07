@@ -30,7 +30,6 @@ export function projectCourseArchitecture(
   const pageTasks = [...architecture.pageTasks].sort(
     (left, right) => left.order - right.order,
   );
-  assertSingleStyleTemplate(architecture, pageTasks);
 
   const intent = CourseIntentSchema.parse({
     topic: architecture.coursePack.topic,
@@ -274,21 +273,6 @@ export function projectCourseArchitecture(
   );
 
   return { intent, outline, briefs, pageWorkerBriefs };
-}
-
-function assertSingleStyleTemplate(
-  architecture: CourseArchitecture,
-  pageTasks: PageTask[],
-) {
-  const expected = architecture.blueprint.courseRules.styleTemplateId;
-  const mismatched = pageTasks.filter(
-    ({ styleTemplateId }) => styleTemplateId !== expected,
-  );
-  if (mismatched.length > 0) {
-    throw new Error(
-      `页面 ${mismatched.map(({ pageId }) => pageId).join("、")} 未使用整课样式模板 ${expected}`,
-    );
-  }
 }
 
 function cognitiveLevelFor(

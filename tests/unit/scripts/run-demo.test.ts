@@ -55,33 +55,6 @@ describe("Demo SSE parser", () => {
       name: "太阳系入门",
       prompt: "为 8–10 岁学生生成一门 5 页太阳系入门课程，并安排一次可观察练习。",
       pageCount: 5,
-      expectedCourseRoles: [
-        {
-          label: "建立目标",
-          allowedPageTypes: ["cover"],
-          allowedInteractionTypes: ["navigate"],
-        },
-        {
-          label: "解释概念",
-          allowedPageTypes: ["knowledge_card"],
-          allowedInteractionTypes: ["reveal"],
-        },
-        {
-          label: "组织关系",
-          allowedPageTypes: ["comparison"],
-          allowedInteractionTypes: ["explore"],
-        },
-        {
-          label: "检查理解",
-          allowedPageTypes: ["quiz"],
-          allowedInteractionTypes: ["choice"],
-        },
-        {
-          label: "总结迁移",
-          allowedPageTypes: ["summary"],
-          allowedInteractionTypes: ["input"],
-        },
-      ],
       requiredConcepts: [
         { label: "太阳", anyOf: ["太阳"] },
         { label: "行星", anyOf: ["行星"] },
@@ -99,7 +72,7 @@ describe("Demo SSE parser", () => {
 
     expect(input).toMatchObject({
       executionMode: "parallel",
-      concurrency: 1,
+      concurrency: 3,
       creationBrief: {
         topic: "太阳系入门",
         sectionCount: 5,
@@ -152,6 +125,7 @@ describe("Demo SSE parser", () => {
     ).toMatchObject({
       EXISTING_VALUE: "kept",
       COURSE_TASK_STARTUP_RECOVERY: "0",
+      COURSE_TASK_INLINE_EXECUTION: "1",
       NEXT_DIST_DIR: ".data/demo-next",
       PAGE_QA_SCREENSHOTS_ENABLED: "true",
       WATCHPACK_POLLING: "true",

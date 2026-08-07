@@ -186,6 +186,15 @@ export function sanitizePublicCourseTaskStreamMessage(
 export function toCourseGenerationCauseCode(
   value: unknown,
 ): CourseGenerationCauseCode | undefined {
+  if (
+    [
+      "BROWSER_HARNESS_UNAVAILABLE",
+      "SCREENSHOT_BROWSER_LAUNCH_FAILED",
+      "SCREENSHOT_BROWSER_RUNTIME_FAILED",
+    ].includes(String(value))
+  ) {
+    return "RUNTIME_ERROR";
+  }
   return [
     "SCHEMA_ERROR",
     "TIMEOUT_ERROR",
@@ -194,6 +203,7 @@ export function toCourseGenerationCauseCode(
     "AUTH_ERROR",
     "CONFIG_ERROR",
     "MODEL_ERROR",
+    "RUNTIME_ERROR",
   ].includes(String(value))
     ? (value as CourseGenerationCauseCode)
     : undefined;
@@ -236,6 +246,8 @@ function publicMessageFor(
       return "Agent 输入不符合执行要求。";
     case "MODEL_ERROR":
       return "模型服务未返回有效结果，请稍后重试。";
+    case "RUNTIME_ERROR":
+      return "生课运行环境暂时不可用，任务将保留检查点并等待恢复。";
     default:
       return diagnosticCode.includes("BUDGET")
         ? "Agent 已达到执行预算，未能完成当前任务。"

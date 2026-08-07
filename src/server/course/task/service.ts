@@ -5,6 +5,7 @@ import {
 } from "@/server/infra/ai/error";
 import {
   cancelCourseGenerationRun,
+  isCourseRunTransientExecutionError,
   isCourseRunLeaseUnavailableError,
   runCourseGeneration,
 } from "@/server/course/run/engine";
@@ -51,6 +52,7 @@ import {
   type CourseGenerationState,
   type CourseTaskRecord,
 } from "@/shared/course-schema";
+import { isBrowserHarnessUnavailableError } from "@/server/infra/browser/error";
 
 export type { CourseGenerationTaskService };
 
@@ -71,6 +73,7 @@ type CourseGenerationTaskServiceDependencies = {
   createCourseId(): string;
   createTraceId(): string;
   logSink: CourseGenerationLogSink;
+  ensureRuntimeReady(): PromiseLike<unknown>;
 };
 
 type ActiveTask = {
@@ -91,6 +94,7 @@ const defaultDependencies: CourseGenerationTaskServiceDependencies = {
   createCourseId: () => `course-${crypto.randomUUID()}`,
   createTraceId,
   logSink: defaultCourseGenerationLogSink,
+  ensureRuntimeReady: async () => undefined,
 };
 
 /**
@@ -487,6 +491,10 @@ async function executeTask(
       : undefined;
   }
 
+  // 放在 running 状态写入之前：平台环境不可用时任务仍
+  // 保持 queued，不会被误记为课程或页面生成失败。
+  await dependencies.ensureRuntimeReady();
+
   const running = CourseTaskRecordSchema.parse({
     ...queued,
     status: "running",
@@ -785,6 +793,58 @@ async function executeTask(
       return currentState;
     }
     if (!currentTask || isTerminalStatus(currentTask.status)) {
+      return currentState;
+    }
+    if (
+      isBrowserHarnessUnavailableError(error) &&
+      currentTask.status === "running" &&
+      currentTask.traceId === running.traceId
+    ) {
+      const queuedForRetry = CourseTaskRecordSchema.parse({
+        ...currentTask,
+        status: "queued",
+        updatedAt: dependencies.now(),
+        completedAt: undefined,
+        error: undefined,
+      });
+      await dependencies.taskStore.save(queuedForRetry, {
+        expected: currentTask,
+      });
+      console.error("[course-task]", {
+        event: "runtime:unavailable",
+        traceId: running.traceId,
+        taskId: running.taskId,
+        courseId: running.courseId,
+        code: error.code,
+        message: error.message,
+        nextStatus: "queued",
+      });
+      return currentState;
+    }
+    if (
+      isCourseRunTransientExecutionError(error) &&
+      currentTask.status === "running" &&
+      currentTask.traceId === running.traceId
+    ) {
+      const queuedForRetry = CourseTaskRecordSchema.parse({
+        ...currentTask,
+        status: "queued",
+        updatedAt: dependencies.now(),
+        completedAt: undefined,
+        error: undefined,
+      });
+      await dependencies.taskStore.save(queuedForRetry, {
+        expected: currentTask,
+      });
+      console.warn("[course-task]", {
+        event: "task:retry-queued",
+        traceId: running.traceId,
+        taskId: running.taskId,
+        courseId: running.courseId,
+        code: error.code,
+        message: error.message,
+        nextStatus: "queued",
+      });
       return currentState;
     }
     dependencies.logSink.error({

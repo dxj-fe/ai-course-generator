@@ -601,6 +601,13 @@ export function publishTaskSnapshot(
 export function toCourseGenerationCauseCode(
   code: string,
 ): CourseGenerationCauseCode | undefined {
+  if (
+    code === "BROWSER_HARNESS_UNAVAILABLE" ||
+    code === "SCREENSHOT_BROWSER_LAUNCH_FAILED" ||
+    code === "SCREENSHOT_BROWSER_RUNTIME_FAILED"
+  ) {
+    return "RUNTIME_ERROR";
+  }
   switch (code) {
     case "SCHEMA_ERROR":
     case "TIMEOUT_ERROR":
@@ -609,6 +616,7 @@ export function toCourseGenerationCauseCode(
     case "AUTH_ERROR":
     case "CONFIG_ERROR":
     case "MODEL_ERROR":
+    case "RUNTIME_ERROR":
       return code;
     default:
       return undefined;

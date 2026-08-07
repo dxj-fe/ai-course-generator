@@ -14,9 +14,25 @@ export type TrustedLessonRuntimeConfig = {
 };
 
 export type TrustedLessonRuntimeOptions = {
-  /** 学习端默认启用；QA 可关闭，以测量模型 HTML 的真实布局而不是缩放结果。 */
+  /** 缩略图可启用 contain-fit；学习端与 QA 关闭后使用平台纵向滚动边界。 */
   viewportFit?: boolean;
 };
+
+const SCROLLABLE_LESSON_STYLE = `<style id="keya-scrollable-lesson-style">
+  html {
+    width: 100% !important;
+    min-height: 100% !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+  }
+  body {
+    width: 100% !important;
+    min-height: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+</style>`;
 
 /**
  * 只在生成 HTML 通过合同与安全预检后调用。生成内容仍无脚本；这里注入的是
@@ -52,7 +68,9 @@ export function buildTrustedLessonSrcDoc(
     "use strict";
     const config = ${configJson};
     const channel = ${JSON.stringify(TRUSTED_LESSON_RUNTIME_CHANNEL)};
-    const root = document.querySelector('main[data-page-id="' + cssEscape(config.pageId) + '"]');
+    const markedRoot = document.querySelector('main[data-page-id="' + cssEscape(config.pageId) + '"]');
+    const mainRoots = document.querySelectorAll("main");
+    const root = markedRoot || (mainRoots.length === 1 ? mainRoots[0] : null);
     const post = (type, detail = {}) => {
       window.parent.postMessage({ channel, type, pageId: config.pageId, ...detail }, "*");
     };
@@ -76,6 +94,9 @@ export function buildTrustedLessonSrcDoc(
     if (!root) {
       fail("RUNTIME_PAGE_ROOT_MISSING");
       return;
+    }
+    if (!root.hasAttribute("data-page-id")) {
+      root.setAttribute("data-page-id", config.pageId);
     }
 
     document.documentElement.dataset.keyaRuntime = "ready";
@@ -325,11 +346,22 @@ export function buildTrustedLessonSrcDoc(
   </script>`;
 
   const runtimeHtml =
-    options.viewportFit === false ? html : buildFittedLessonSrcDoc(html);
+    options.viewportFit === false
+      ? injectScrollableLessonStyle(html)
+      : buildFittedLessonSrcDoc(html);
   const withStyle = /<\/head\s*>/i.test(runtimeHtml)
     ? runtimeHtml.replace(/<\/head\s*>/i, () => `${style}</head>`)
     : runtimeHtml;
   return /<\/body\s*>/i.test(withStyle)
     ? withStyle.replace(/<\/body\s*>/i, () => `${script}</body>`)
     : withStyle;
+}
+
+function injectScrollableLessonStyle(html: string) {
+  return /<\/head\s*>/i.test(html)
+    ? html.replace(
+        /<\/head\s*>/i,
+        () => `${SCROLLABLE_LESSON_STYLE}</head>`,
+      )
+    : html;
 }

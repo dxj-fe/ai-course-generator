@@ -8,31 +8,13 @@ import { AiSchemaValidationError } from "../../../../src/server/infra/ai/error";
 
 describe("model router", () => {
   it("routes course-content capabilities through the quality-first tier", () => {
-    expect(resolveModelRoute("page-writer")).toEqual({
-      primary: "strong",
-      fallback: "balanced",
-    });
-    expect(resolveModelRoute("planner")).toEqual({
-      primary: "strong",
-      fallback: "balanced",
-    });
-    expect(resolveModelRoute("course-architecture")).toEqual({
-      primary: "balanced",
-      fallback: "strong",
-    });
+    expect(resolveModelRoute("page-writer")).toEqual({ primary: "strong" });
+    expect(resolveModelRoute("planner")).toEqual({ primary: "strong" });
+    expect(resolveModelRoute("course-architecture")).toEqual({ primary: "strong" });
     expect(resolveModelRoute("page-qa").primary).toBe("strong");
-    expect(resolveModelRoute("course-review")).toEqual({
-      primary: "strong",
-      fallback: "balanced",
-    });
-    expect(resolveModelRoute("html")).toEqual({
-      primary: "strong",
-      fallback: undefined,
-    });
-    expect(resolveModelRoute("html-repair")).toEqual({
-      primary: "strong",
-      fallback: undefined,
-    });
+    expect(resolveModelRoute("course-review")).toEqual({ primary: "strong" });
+    expect(resolveModelRoute("html")).toEqual({ primary: "strong" });
+    expect(resolveModelRoute("html-repair")).toEqual({ primary: "strong" });
   });
 
   it("retries only transient provider failures and never user cancellation", () => {

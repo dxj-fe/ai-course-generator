@@ -4,6 +4,15 @@ import { z } from "zod";
 import { ToolIds } from "@/server/agent/ids";
 import { FatalAgentRuntimeError } from "@/server/agent/runtime";
 import {
+  initializePageWorkspace,
+  PageWorkspaceMetadataSchema,
+  readPageWorkspace,
+  readPageWorkspaceSlice,
+  replacePageWorkspaceText,
+  writePageWorkspace,
+  type PageWorkspaceMetadata,
+} from "@/server/agent/workspace/page-workspace";
+import {
   clearPageBuilderRepairDeclined,
   countPageBuilderRepairs,
   hasPageBuilderSubstantiveFix,
@@ -23,6 +32,9 @@ import {
   defaultPageBuilderModelSteps,
   type PageBuilderModelSteps,
 } from "@/server/agent/plugins/tools/course/page-builder-model-steps";
+import { generateImageTool } from "@/server/agent/plugins/tools/course/generate-image";
+import { normalizeWideSingleColumnBreakpoints } from "@/server/agent/plugins/model-steps/course/html-engineer-normalizers";
+import { buildLessonRuntime } from "@/server/agent/plugins/model-steps/course/page-writer-runtime";
 import {
   checkpointSummary,
   createExclusiveRunner,
@@ -38,13 +50,19 @@ import {
   runPageGate,
   type PageGateResult,
 } from "@/server/course/gate/page";
+import { validatePageHtmlEnvelope } from "@/server/course/gate/page-html";
 import { planRepairRound } from "@/server/course/page/repair-plan";
+import { basicLayoutHeuristics } from "@/server/course/page/quality/basic-layout";
+import { buildPageQualityReport } from "@/server/course/page/quality/report";
+import { capturePageScreenshot } from "@/server/infra/browser/page-screenshot";
 import {
   AssetGenerationResultSchema,
   HtmlOutputSchema,
   PageContentDSLSchema,
   QualityReportSchema,
   type ArtifactRef,
+  type AssetGenerationResult,
+  type PageContentDSL,
 } from "@/shared/course-schema";
 
 const ScopeInputSchema = z
@@ -57,6 +75,71 @@ const SearchReferencesInputSchema = ScopeInputSchema.extend({
   query: z.string().trim().min(1).max(200).optional(),
   referencePackId: z.string().min(1).max(80).optional(),
   chunkIds: z.array(z.string().min(1).max(80)).max(8).optional(),
+}).strict();
+
+const ReadWorkspaceInputSchema = ScopeInputSchema.extend({
+  offset: z.number().int().nonnegative().default(0),
+  maxChars: z.number().int().min(1).max(24_000).default(12_000),
+}).strict();
+
+const EditWorkspaceInputSchema = z.discriminatedUnion("mode", [
+  ScopeInputSchema.extend({
+    mode: z.literal("write"),
+    html: z.string().min(1).max(200_000),
+    metadata: PageWorkspaceMetadataSchema.optional(),
+  }).strict(),
+  ScopeInputSchema.extend({
+    mode: z.literal("replace"),
+    oldText: z.string().min(1).max(60_000),
+    newText: z.string().max(120_000),
+    metadata: PageWorkspaceMetadataSchema.optional(),
+  }).strict(),
+]);
+
+const GeneratePageImageInputSchema = ScopeInputSchema.extend({
+  purpose: z.string().trim().min(2).max(300),
+  prompt: z.string().trim().min(20).max(3_000),
+  altText: z.string().max(300),
+  assetType: z.enum([
+    "background",
+    "character_sticker",
+    "icon",
+    "texture",
+  ]),
+  aspectRatio: z.enum(["1:1", "4:3", "3:4", "16:9"]),
+  safeAreaPosition: z
+    .enum(["left", "right", "top", "bottom", "center", "none"])
+    .default("none"),
+  safeAreaCoveragePercent: z.number().int().min(0).max(80).default(0),
+  safeAreaDescription: z.string().trim().min(2).max(240).default("无需预留文字区"),
+}).strict();
+
+const BrowserInteractionStepSchema = z.discriminatedUnion("action", [
+  z
+    .object({
+      action: z.enum(["click", "check", "expectVisible"]),
+      selector: z.string().trim().min(1).max(300),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.enum(["fill", "expectText"]),
+      selector: z.string().trim().min(1).max(300),
+      value: z.string().max(500),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("expectAttribute"),
+      selector: z.string().trim().min(1).max(300),
+      attribute: z.string().regex(/^[a-zA-Z_:][a-zA-Z0-9_.:-]*$/).max(80),
+      value: z.string().max(500),
+    })
+    .strict(),
+]);
+
+const RenderPageInputSchema = ScopeInputSchema.extend({
+  interactionSteps: z.array(BrowserInteractionStepSchema).max(20).default([]),
 }).strict();
 
 const GenerateContentInputSchema = ScopeInputSchema.extend({
@@ -79,12 +162,41 @@ const STRUCTURAL_HTML_REGENERATION_CODES = new Set([
   "BROWSER_VERTICAL_OVERFLOW",
   "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
 ]);
+const STATE_GUARDED_PAGE_TOOL_IDS = new Set<string>([
+  ToolIds.EditPageWorkspace,
+  ToolIds.GeneratePageImage,
+  ToolIds.RenderPage,
+  ToolIds.InspectPage,
+]);
 
 export type PageBuilderToolDependencies = {
   modelSteps?: PageBuilderModelSteps;
   pageGate?: (input: Parameters<typeof runPageGate>[0]) => PageGateResult;
   readLocalResourceTool?: ReadLocalResourceTool;
+  captureScreenshot?: typeof capturePageScreenshot;
+  imageTool?: typeof generateImageTool;
 };
+
+/**
+ * 新 Page Creator 在模型启动前由 Harness 读取封口上下文和 workspace。
+ * 这两个机械步骤不值得各消耗一次外部模型往返；工具仍保留给 Agent 按需复查。
+ */
+export async function preloadPageBuilderWorkspace(
+  execution: PageBuilderExecution,
+) {
+  await initializePageWorkspace(
+    execution.workspace,
+    buildPageWorkspaceTask(execution),
+    buildPageWorkspaceInitialState(execution),
+  );
+  const workspace = await readPageWorkspace(execution.workspace);
+  const snapshot = loadPageBuilderWorkingSnapshot(execution);
+  execution.progress.contextRead = true;
+  execution.progress.workspaceRead = true;
+  execution.progress.workspaceDirty =
+    workspace.exists && workspace.html !== snapshot.html?.html;
+  return workspace;
+}
 
 export function createPageBuilderTools(
   execution: PageBuilderExecution,
@@ -93,6 +205,9 @@ export function createPageBuilderTools(
   const modelSteps =
     dependencies.modelSteps ?? defaultPageBuilderModelSteps;
   const pageGate = dependencies.pageGate ?? runPageGate;
+  const captureScreenshot =
+    dependencies.captureScreenshot ?? capturePageScreenshot;
+  const imageTool = dependencies.imageTool ?? generateImageTool;
   const runExclusive = createExclusiveRunner();
 
   const checkpoint = (
@@ -124,7 +239,166 @@ export function createPageBuilderTools(
     return saved.artifact;
   };
 
-  return {
+  type RenderWorkspaceOptions = {
+    abortSignal?: AbortSignal;
+    toolCallId?: string;
+  };
+  const renderWorkspace = async (
+    interactionSteps: z.infer<typeof BrowserInteractionStepSchema>[],
+    options: RenderWorkspaceOptions,
+  ) => {
+    await initializePageWorkspace(
+      execution.workspace,
+      buildPageWorkspaceTask(execution),
+      buildPageWorkspaceInitialState(execution),
+    );
+    const workspace = await readPageWorkspace(execution.workspace);
+    if (!workspace.exists) {
+      execution.progress.workspaceDirty = false;
+      return failure(
+        "PAGE_WORKSPACE_EMPTY",
+        "workspace 中还没有可渲染的 index.html。",
+        ["先调用 edit_page_workspace 写入完整初稿。"],
+      );
+    }
+    const before = loadPageBuilderSnapshot(execution);
+    const assets = before.assets ?? [];
+    const content =
+      execution.fixPlan?.targetArtifact === "page_html" && execution.baseline
+        ? execution.baseline.content
+        : buildAgentAuthoredPageContent(
+            execution,
+            workspace.metadata ?? { usedReferences: [] },
+            assets,
+          );
+    const htmlIssues = validatePageHtmlEnvelope(workspace.html);
+    if (htmlIssues.length > 0) {
+      // 合同错误必须交回创作 Agent 修稿，不能把状态锁死在重复 render。
+      execution.progress.workspaceDirty = false;
+      return failure(
+        "PAGE_WORKSPACE_CONTRACT_FAILED",
+        "当前 index.html 尚不能进入浏览器 Harness。",
+        htmlIssues.map(({ message }) => message),
+      );
+    }
+
+    if (
+      !before.content ||
+      JSON.stringify(before.content) !== JSON.stringify(content)
+    ) {
+      checkpoint(
+        ToolIds.RenderPage,
+        "page_content",
+        content,
+        ["page_html", "page_quality"],
+        options.toolCallId,
+      );
+    }
+    const refreshed = loadPageBuilderSnapshot(execution);
+    const html = HtmlOutputSchema.parse({
+      html: workspace.html,
+      generatedAt: new Date().toISOString(),
+      revision: (refreshed.html?.revision ?? before.html?.revision ?? 0) + 1,
+    });
+    const htmlArtifact = checkpoint(
+      ToolIds.RenderPage,
+      "page_html",
+      html,
+      ["page_quality"],
+      options.toolCallId,
+    );
+    const rendered = await captureScreenshot({
+      pageId: execution.pageId,
+      html: html.html,
+      content,
+      abortSignal: options.abortSignal ?? execution.abortSignal,
+      traceId: execution.traceId,
+      attempt: html.revision,
+      interactionSteps,
+    });
+    execution.latestRenderEvidence = {
+      htmlRevision: html.revision,
+      evidence: rendered.evidence,
+      issues: rendered.issues,
+      images: rendered.modelImages ?? [],
+    };
+    execution.progress.workspaceDirty = false;
+
+    if (execution.legacyModelPipeline) {
+      return success({
+        committed: true,
+        summary: rendered.issues.length
+          ? `页面已渲染，发现 ${rendered.issues.length} 个可观察问题；请看截图后继续修改。`
+          : "页面已完成三视口渲染；请根据下一轮截图判断是否继续修改。",
+        data: {
+          artifactRef: toArtifactRef(htmlArtifact),
+          htmlRevision: html.revision,
+          captures: rendered.evidence.captures,
+          issues: rendered.issues.slice(0, 20).map(
+            ({ code, severity, message, location, repairHint }) => ({
+              code,
+              severity,
+              message,
+              location,
+              repairHint,
+            }),
+          ),
+          screenshotCount: rendered.modelImages?.length ?? 0,
+        },
+        artifactRefs: [toArtifactRef(htmlArtifact)],
+      });
+    }
+
+    const quality = buildAgentLoopQualityReport({
+      pageId: execution.pageId,
+      content,
+      html: html.html,
+      assets,
+      browserIssues: rendered.issues,
+      screenshotEvidence: rendered.evidence,
+    });
+    const qualityArtifact = checkpoint(
+      ToolIds.InspectPage,
+      "page_quality",
+      quality,
+      [],
+      options.toolCallId,
+    );
+    const qualityPassed =
+      quality.decision === "pass" && !quality.shouldRepair;
+
+    return success({
+      committed: true,
+      summary: qualityPassed
+        ? `页面已完成三视口渲染并通过质量检查：${quality.overallScore} 分。`
+        : `页面已完成三视口渲染，需要返工：${quality.issues.length} 个问题。`,
+      data: {
+        artifactRef: toArtifactRef(htmlArtifact),
+        qualityArtifactRef: toArtifactRef(qualityArtifact),
+        htmlRevision: html.revision,
+        captures: rendered.evidence.captures,
+        issues: rendered.issues.slice(0, 20).map(
+          ({ code, severity, message, location, repairHint }) => ({
+            code,
+            severity,
+            message,
+            location,
+            repairHint,
+          }),
+        ),
+        decision: quality.decision,
+        overallScore: quality.overallScore,
+        shouldRepair: quality.shouldRepair,
+        screenshotCount: rendered.modelImages?.length ?? 0,
+      },
+      artifactRefs: [
+        toArtifactRef(htmlArtifact),
+        toArtifactRef(qualityArtifact),
+      ],
+    });
+  };
+
+  const tools = {
     ...(dependencies.readLocalResourceTool
       ? {
           [ToolIds.ReadLocalResource]:
@@ -149,7 +423,28 @@ export function createPageBuilderTools(
               rules:
                 execution.architecture.blueprint.courseRules,
             },
-            pageTask: execution.pageTask,
+            coursePack: {
+              topic: execution.architecture.coursePack.topic,
+              facts: execution.architecture.coursePack.facts,
+              terms: execution.architecture.coursePack.terms,
+              examples: execution.architecture.coursePack.examples,
+              constraints: execution.architecture.coursePack.constraints,
+            },
+            pageTask: {
+              pageId: execution.pageTask.pageId,
+              order: execution.pageTask.order,
+              title: execution.pageTask.title,
+              purpose: execution.pageTask.purpose,
+              objectiveIds: execution.pageTask.objectiveIds,
+              buildDependsOnPageIds:
+                execution.pageTask.buildDependsOnPageIds,
+              teachingPoints: execution.pageTask.teachingPoints,
+              learnerAction: execution.pageTask.learnerAction,
+              assessment: execution.pageTask.assessment,
+              referenceUsages: execution.pageTask.referenceUsages,
+              visualDesign: execution.pageTask.visualDesign,
+              acceptance: execution.pageTask.acceptance,
+            },
             courseMap: execution.architecture.pageTasks.map(
               ({ pageId, order, title, purpose, objectiveIds }) => ({
                 pageId,
@@ -177,6 +472,193 @@ export function createPageBuilderTools(
           },
         });
       },
+    }),
+
+    [ToolIds.ReadPageWorkspace]: tool({
+      description:
+        "读取当前页面的可写 workspace。HTML 较长时用 offset 分段读取；workspace 只属于当前 WorkOrder。",
+      inputSchema: ReadWorkspaceInputSchema,
+      execute: async ({ offset, maxChars }) => {
+        await initializePageWorkspace(
+          execution.workspace,
+          buildPageWorkspaceTask(execution),
+          buildPageWorkspaceInitialState(execution),
+        );
+        const workspace = await readPageWorkspaceSlice(
+          execution.workspace,
+          { offset, maxChars },
+        );
+        const snapshot = loadPageBuilderWorkingSnapshot(execution);
+        execution.progress.workspaceDirty =
+          workspace.exists && workspace.html !== snapshot.html?.html;
+        execution.progress.workspaceRead = true;
+        return success({
+          committed: false,
+          summary: workspace.exists
+            ? `已读取 index.html 的 ${workspace.html.length} 个字符。`
+            : "workspace 已初始化，尚无 index.html。",
+          data: {
+            workspaceRef: execution.workspace.directory,
+            exists: workspace.exists,
+            html: workspace.html,
+            offset: workspace.offset,
+            nextOffset: workspace.nextOffset,
+            totalChars: workspace.totalChars,
+            metadata: workspace.metadata,
+            updatedAt: workspace.updatedAt,
+          },
+        });
+      },
+    }),
+
+    [ToolIds.EditPageWorkspace]: tool({
+      description:
+        "直接创建或修改页面 workspace。write 用于完整初稿；replace 用精确 oldText/newText 做小步修订。这里不套页面模板，HTML 构图由你决定。",
+      inputSchema: EditWorkspaceInputSchema,
+      execute: (input, options) =>
+        runExclusive(async () => {
+          await initializePageWorkspace(
+            execution.workspace,
+            buildPageWorkspaceTask(execution),
+            buildPageWorkspaceInitialState(execution),
+          );
+          let workspace =
+            input.mode === "write"
+              ? await writePageWorkspace({
+                  workspace: execution.workspace,
+                  html: normalizePageCreatorHtml(input.html),
+                  metadata: input.metadata,
+                })
+              : await replacePageWorkspaceText({
+                  workspace: execution.workspace,
+                  oldText: input.oldText,
+                  newText: input.newText,
+                  metadata: input.metadata,
+                });
+          const normalizedHtml = normalizePageCreatorHtml(workspace.html);
+          if (normalizedHtml !== workspace.html) {
+            workspace = await writePageWorkspace({
+              workspace: execution.workspace,
+              html: normalizedHtml,
+              metadata: workspace.metadata,
+            });
+          }
+          execution.latestRenderEvidence = undefined;
+          execution.progress.workspaceDirty = true;
+          execution.progress.workspaceRead = true;
+          if (!execution.legacyModelPipeline) {
+            return renderWorkspace([], {
+              abortSignal:
+                options.abortSignal ?? execution.abortSignal,
+              toolCallId: options.toolCallId,
+            });
+          }
+          return success({
+            committed: false,
+            summary: `workspace 已更新，共 ${workspace.htmlBytes} 字节；下一步应渲染观察真实页面。`,
+            data: {
+              workspaceRef: execution.workspace.directory,
+              htmlBytes: workspace.htmlBytes,
+              updatedAt: workspace.updatedAt,
+              next: ToolIds.RenderPage,
+            },
+          });
+        }),
+    }),
+
+    [ToolIds.GeneratePageImage]: tool({
+      description:
+        "按需生成一张页面素材并返回内部 asset URI。图片不是独立 Agent；不需要图片时不要调用。",
+      inputSchema: GeneratePageImageInputSchema,
+      execute: (input, options) =>
+        runExclusive(async () => {
+          const snapshot = loadPageBuilderSnapshot(execution);
+          const assets = snapshot.assets ?? [];
+          if (assets.length >= 12) {
+            return failure(
+              "PAGE_IMAGE_LIMIT_REACHED",
+              "当前页面已经达到 12 张素材上限。",
+              ["复用已有素材或删除无解释价值的图片。"],
+            );
+          }
+          if (
+            input.assetType === "background" &&
+            input.safeAreaPosition === "none"
+          ) {
+            return failure(
+              "BACKGROUND_SAFE_AREA_REQUIRED",
+              "背景图必须声明 HTML 文字安全区。",
+              ["选择 left/right/top/bottom/center 之一。"],
+            );
+          }
+          const assetSlotId = `asset-slot-${String(assets.length + 1).padStart(2, "0")}`;
+          const result = await imageTool.execute(
+            {
+              pageId: execution.pageId,
+              altText: input.altText,
+              request: {
+                assetSlotId,
+                assetType: input.assetType,
+                usage: input.purpose,
+                prompt: input.prompt,
+                transparentBackground: [
+                  "character_sticker",
+                  "icon",
+                ].includes(input.assetType),
+                safeArea: {
+                  position: input.safeAreaPosition,
+                  coveragePercent: input.safeAreaCoveragePercent,
+                  description: input.safeAreaDescription,
+                },
+                aspectRatio: input.aspectRatio,
+              },
+            },
+            {
+              traceId: execution.traceId,
+              abortSignal:
+                options.abortSignal ?? execution.abortSignal,
+            },
+          );
+          const nextAssets = [...assets, result];
+          const artifact = checkpoint(
+            ToolIds.GeneratePageImage,
+            "page_assets",
+            nextAssets,
+            ["page_html", "page_quality"],
+            options.toolCallId,
+          );
+          execution.latestRenderEvidence = undefined;
+          return success({
+            committed: true,
+            summary:
+              result.status === "ready"
+                ? `图片已生成，可在 HTML 中使用 ${result.asset!.uri}。`
+                : `图片生成失败，已返回 ${result.fallback!.kind} 降级建议。`,
+            data: {
+              artifactRef: toArtifactRef(artifact),
+              assetSlotId,
+              status: result.status,
+              uri: result.asset?.uri,
+              altText: result.asset?.altText,
+              fallback: result.fallback,
+            },
+            artifactRefs: [toArtifactRef(artifact)],
+          });
+        }),
+    }),
+
+    [ToolIds.RenderPage]: tool({
+      description:
+        "渲染 workspace 中的真实 index.html，保存当前 HTML checkpoint，并返回三视口布局、互动和浏览器证据；下一轮会把截图直接交给你观察。",
+      inputSchema: RenderPageInputSchema,
+      execute: ({ interactionSteps }, options) =>
+        runExclusive(() =>
+          renderWorkspace(interactionSteps, {
+            abortSignal:
+              options.abortSignal ?? execution.abortSignal,
+            toolCallId: options.toolCallId,
+          }),
+        ),
     }),
 
     [ToolIds.SearchReferences]: tool({
@@ -415,7 +897,7 @@ export function createPageBuilderTools(
 
     [ToolIds.InspectPage]: tool({
       description:
-        "对当前 HTML 执行静态检查、真实浏览器截图和语义 QA；报告只读并立即保存。",
+        "把刚才的浏览器证据与静态检查封装成只读质量报告。课程语义与审美由当前 Agent 和整课 Reviewer 判断，不再启动一次性 QA 模型。",
       inputSchema: ScopeInputSchema,
       execute: (_input, options) =>
         runExclusive(async () => {
@@ -435,22 +917,45 @@ export function createPageBuilderTools(
               "已复用保存的质量报告。",
             );
           }
-          const inspected = await recoverableModelStep(
-            () =>
-              modelSteps.inspectPage({
-                execution,
-                content: snapshot.content!,
-                assets: snapshot.assets ?? [],
-                html: snapshot.html!,
-                abortSignal:
-                  options.abortSignal ?? execution.abortSignal,
-              }),
-            options.abortSignal ?? execution.abortSignal,
-            "PAGE_INSPECTION_FAILED",
-            "页面质量检查失败，可以重试。",
-          );
-          if (!inspected.ok) return inspected;
-          const quality = QualityReportSchema.parse(inspected.data);
+          let quality;
+          if (execution.legacyModelPipeline) {
+            const inspected = await recoverableModelStep(
+              () =>
+                modelSteps.inspectPage({
+                  execution,
+                  content: snapshot.content!,
+                  assets: snapshot.assets ?? [],
+                  html: snapshot.html!,
+                  abortSignal:
+                    options.abortSignal ?? execution.abortSignal,
+                }),
+              options.abortSignal ?? execution.abortSignal,
+              "PAGE_INSPECTION_FAILED",
+              "页面质量检查失败，可以重试。",
+            );
+            if (!inspected.ok) return inspected;
+            quality = QualityReportSchema.parse(inspected.data);
+          } else {
+            const render = execution.latestRenderEvidence;
+            if (
+              !render ||
+              render.htmlRevision !== snapshot.html.revision
+            ) {
+              return failure(
+                "PAGE_RENDER_EVIDENCE_STALE",
+                "当前 HTML 没有对应的最新浏览器证据。",
+                ["先调用 render_page，再封装质量报告。"],
+              );
+            }
+            quality = buildAgentLoopQualityReport({
+              pageId: execution.pageId,
+              content: snapshot.content,
+              html: snapshot.html.html,
+              assets: snapshot.assets ?? [],
+              browserIssues: render.issues,
+              screenshotEvidence: render.evidence,
+            });
+          }
           const artifact = checkpoint(
             ToolIds.InspectPage,
             "page_quality",
@@ -576,7 +1081,7 @@ export function createPageBuilderTools(
               pageGatePassed: true,
               payloads: gate.payloads,
               evidence: [
-                "PageContentDSL、HTML、安全、截图和质量门槛全部通过",
+                "HTML、安全、截图和质量门槛全部通过；兼容摘要由 Harness 生成",
               ],
             });
           execution.currentLockVersion =
@@ -646,6 +1151,81 @@ export function createPageBuilderTools(
         }),
     }),
   };
+
+  return guardPageBuilderStateTransitions(tools, execution);
+}
+
+function normalizePageCreatorHtml(html: string) {
+  const normalized = normalizeWideSingleColumnBreakpoints(html);
+  return typeof normalized === "string" ? normalized : html;
+}
+
+/**
+ * activeTools 负责减少模型选择面，这里再做执行时状态核对，防止同一步的
+ * 旧工具调用在前一个工具已改变状态后继续写入。
+ */
+function guardPageBuilderStateTransitions<
+  Tools extends Record<string, Record<string, unknown>>,
+>(tools: Tools, execution: PageBuilderExecution): Tools {
+  return Object.fromEntries(
+    Object.entries(tools).map(([toolName, definition]) => {
+      const execute = definition.execute;
+      if (typeof execute !== "function") return [toolName, definition];
+
+      return [
+        toolName,
+        {
+          ...definition,
+          execute(this: unknown, input: unknown, options: unknown) {
+            const activeTools = resolvePageBuilderActiveTools(execution);
+            if (
+              STATE_GUARDED_PAGE_TOOL_IDS.has(toolName) &&
+              !activeTools.includes(toolName as PageBuilderToolName)
+            ) {
+              return failure(
+                "PAGE_TOOL_STATE_STALE",
+                `页面状态已经推进，不能继续执行 ${toolName}。`,
+                [`当前只允许：${activeTools.join(", ") || "无"}。`],
+              );
+            }
+            return execute.call(this, input, options);
+          },
+        },
+      ];
+    }),
+  ) as Tools;
+}
+
+function buildAgentLoopQualityReport(input: {
+  pageId: string;
+  content: PageContentDSL;
+  html: string;
+  assets: AssetGenerationResult[];
+  browserIssues: Parameters<typeof buildPageQualityReport>[0]["browserIssues"];
+  screenshotEvidence: Parameters<
+    typeof buildPageQualityReport
+  >[0]["screenshotEvidence"];
+}) {
+  const observed = (summary: string) => ({ score: 90, summary });
+  return buildPageQualityReport({
+    pageId: input.pageId,
+    modelDimensions: {
+      contentAccuracy: observed("内容合同已通过；整课语义由 Reviewer 复核。"),
+      courseCoherence: observed("页面职责已映射；跨页连贯性由 Reviewer 复核。"),
+      layoutQuality: observed("布局以真实浏览器证据为准。"),
+      styleConsistency: observed("视觉选择由 Page Creator 自主完成。"),
+      htmlRuntime: { score: 100, summary: "HTML 与运行时合同已通过。" },
+      assetUsability: observed("素材覆盖与浏览器加载状态已检查。"),
+    },
+    heuristicIssues: basicLayoutHeuristics({
+      content: input.content,
+      html: input.html,
+      assets: input.assets,
+    }),
+    modelIssues: [],
+    browserIssues: input.browserIssues,
+    screenshotEvidence: input.screenshotEvidence,
+  });
 }
 
 export type PageBuilderTools = ReturnType<
@@ -665,7 +1245,36 @@ export function resolvePageBuilderActiveTools(
   }
 
   const available = new Set(snapshot.workOrder.allowedTools);
-  const base: PageBuilderToolName[] = [ToolIds.ReadPageContext];
+  const blockEligibility = evaluatePageBlockEligibility(execution);
+  if (blockEligibility.ok) {
+    if (
+      !execution.legacyModelPipeline &&
+      !execution.progress.workspaceRead
+    ) {
+      return available.has(ToolIds.ReadPageWorkspace)
+        ? [ToolIds.ReadPageWorkspace]
+        : [];
+    }
+    if (
+      !execution.legacyModelPipeline &&
+      execution.progress.workspaceDirty
+    ) {
+      return available.has(ToolIds.RenderPage)
+        ? [ToolIds.RenderPage]
+        : [];
+    }
+    return available.has(ToolIds.BlockPage) ? [ToolIds.BlockPage] : [];
+  }
+  if (
+    !execution.legacyModelPipeline &&
+    execution.progress.workspaceDirty
+  ) {
+    return available.has(ToolIds.RenderPage) ? [ToolIds.RenderPage] : [];
+  }
+  const base: PageBuilderToolName[] = [
+    ToolIds.ReadPageContext,
+    ToolIds.ReadPageWorkspace,
+  ];
   const requiresPageDesignSkill =
     available.has(ToolIds.ReadLocalResource) &&
     Boolean(execution.localResourceSession);
@@ -675,6 +1284,16 @@ export function resolvePageBuilderActiveTools(
   if (execution.pageTask.referenceUsages.length > 0) {
     base.push(ToolIds.SearchReferences);
   }
+  if (!execution.legacyModelPipeline && !execution.progress.contextRead) {
+    return available.has(ToolIds.ReadPageContext)
+      ? [ToolIds.ReadPageContext]
+      : [];
+  }
+  if (!execution.legacyModelPipeline && !execution.progress.workspaceRead) {
+    return available.has(ToolIds.ReadPageWorkspace)
+      ? [ToolIds.ReadPageWorkspace]
+      : [];
+  }
   if (
     execution.initialWorkOrder.kind === "fix_page" &&
     !execution.progress.contextRead
@@ -683,7 +1302,28 @@ export function resolvePageBuilderActiveTools(
   }
 
   let actions: PageBuilderToolName[];
-  if (
+  if (!execution.legacyModelPipeline) {
+    if (execution.progress.workspaceDirty) {
+      actions = [ToolIds.RenderPage];
+    } else if (
+      snapshot.quality?.decision === "pass" &&
+      !snapshot.quality.shouldRepair
+    ) {
+      actions = [ToolIds.SubmitPage];
+    } else if (snapshot.content && snapshot.html && !snapshot.quality) {
+      actions =
+        execution.latestRenderEvidence?.htmlRevision ===
+        snapshot.html.revision
+          ? [ToolIds.InspectPage]
+          : [ToolIds.RenderPage];
+    } else if (!snapshot.html) {
+      // 先产出可渲染初稿。若生图使 HTML checkpoint 失效，也必须先把最新
+      // URI 写回 workspace，禁止连续生成多张图片后才第一次观察页面。
+      actions = [ToolIds.EditPageWorkspace];
+    } else {
+      actions = [ToolIds.EditPageWorkspace, ToolIds.GeneratePageImage];
+    }
+  } else if (
     execution.initialWorkOrder.kind === "fix_page" &&
     !hasPageBuilderSubstantiveFix(execution, current)
   ) {
@@ -732,11 +1372,19 @@ export function resolvePageBuilderActiveTools(
         : [];
   }
 
-  if (evaluatePageBlockEligibility(execution).ok) {
-    actions.push(ToolIds.BlockPage);
+  if (
+    execution.legacyModelPipeline &&
+    (snapshot.quality?.decision !== "pass" ||
+      snapshot.quality?.shouldRepair)
+  ) {
+    actions.push(
+      ToolIds.EditPageWorkspace,
+      ToolIds.GeneratePageImage,
+      ToolIds.RenderPage,
+    );
   }
 
-  return [...base, ...actions].filter((name) =>
+  return [...new Set([...base, ...actions])].filter((name) =>
     available.has(name),
   );
 }
@@ -1020,4 +1668,91 @@ function unchangedFixFailure(target: string) {
     `${target}与返工前完全相同，不能作为有效修订提交。`,
     ["根据 Review issue 产生可验证的目标差异后再继续。"],
   );
+}
+
+function buildAgentAuthoredPageContent(
+  execution: PageBuilderExecution,
+  metadata: PageWorkspaceMetadata,
+  assets: AssetGenerationResult[],
+): PageContentDSL {
+  const blocks: PageContentDSL["blocks"] = [];
+  const interaction: PageContentDSL["interaction"] = { type: "none" };
+  return PageContentDSLSchema.parse({
+    pageId: execution.pageId,
+    functionalTemplateId: execution.pagePlan.functionalTemplateId,
+    title: execution.pageTask.title,
+    narration: [],
+    blocks,
+    interaction,
+    usedReferences: metadata.usedReferences,
+    assetSlots: assets.map((result) => ({
+      id: result.request.assetSlotId,
+      type: result.asset?.type ?? fallbackAssetType(result.request.assetType),
+      role: result.asset?.role ?? fallbackAssetRole(result.request.assetType),
+      purpose: result.request.usage,
+      required: true,
+      altTextGuidance:
+        result.asset?.altText || result.request.usage,
+    })),
+    layoutHints: {
+      contentDensity:
+        execution.pageTask.teachingPoints.length >= 6 ? "dense" : "balanced",
+      visualPriority:
+        execution.pageTask.visualDesign?.theme ?? "以本页学习目标为视觉中心",
+      groupingStrategy: "由 Page Creator 根据教学目标自主构图",
+      readingOrder: [],
+    },
+    runtime: buildLessonRuntime({
+      page: execution.pagePlan,
+      blocks,
+      interaction,
+    }),
+  });
+}
+
+function fallbackAssetType(
+  kind: AssetGenerationResult["request"]["assetType"],
+) {
+  return kind === "icon" ? "icon" : "image";
+}
+
+function fallbackAssetRole(
+  kind: AssetGenerationResult["request"]["assetType"],
+) {
+  if (kind === "background") return "background";
+  if (kind === "texture") return "decorative";
+  return "inline";
+}
+
+function buildPageWorkspaceTask(execution: PageBuilderExecution) {
+  return `# Page Creator WorkOrder
+
+页面：${execution.pageTask.title}（${execution.pageId}）
+
+目标：${execution.pageTask.purpose}
+
+学习动作：${execution.pageTask.learnerAction}
+
+验收：${execution.initialWorkOrder.acceptance.join("；")}
+
+## 最小运行合同
+
+- 自主创作完整的 \`index.html\`，必须包含 doctype、viewport、内联 style 和唯一 main。
+- HTML 是页面内容真相，不需要同时填写内容 DSL，也不强制 data 标记或规划阶段的互动类型。
+- 简单探索优先使用 details/summary；普通 button 不会自动产生反馈，表单或平台互动必须能被 interactionSteps 回放证明。
+- 不写 script、内联事件、外链资源或远程 CSS。
+- 922×460 与 712×650 播放器不滚动；用画布级网格、叠层或环绕构图，并约束主视觉高度，不要纵向堆完后再缩字。
+- 构图、色彩、字体层级、内容关系和素材数量不受模板约束。
+`;
+}
+
+function buildPageWorkspaceInitialState(execution: PageBuilderExecution) {
+  const snapshot = loadPageBuilderWorkingSnapshot(execution);
+  if (!snapshot.html) return undefined;
+  return {
+    html: snapshot.html.html,
+    metadata: {
+      usedReferences: snapshot.content?.usedReferences ?? [],
+    },
+  };
 }

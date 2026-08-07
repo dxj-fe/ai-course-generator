@@ -16,8 +16,10 @@ import {
 } from "../../../../src/server/course/task/service";
 import {
   CourseRunLeaseUnavailableError,
+  CourseRunTransientExecutionError,
   type runCourseGeneration,
 } from "../../../../src/server/course/run/engine";
+import { BrowserHarnessUnavailableError } from "../../../../src/server/infra/browser/error";
 import { createCourseRunRepository } from "../../../../src/server/course/store/repository";
 import type {
   CourseGenerationState,
@@ -48,6 +50,45 @@ afterEach(async () => {
 });
 
 describe("course generation task service", () => {
+  it("运行时预检失败时保留 queued，且不启动 Agent Loop", async () => {
+    const ensureRuntimeReady = vi.fn(async () => {
+      throw new BrowserHarnessUnavailableError(new Error("launch failed"));
+    });
+    const fixture = createFixture({ ensureRuntimeReady });
+
+    await fixture.service.create({
+      ...agentTaskInput,
+      userPrompt: "生成三页太阳系互动课程",
+      pageCount: 3,
+    });
+
+    await expect(fixture.service.run(taskId)).rejects.toMatchObject({
+      code: "BROWSER_HARNESS_UNAVAILABLE",
+    });
+    expect(fixture.tasks.get(taskId)).toMatchObject({ status: "queued" });
+    expect(fixture.runCourse).not.toHaveBeenCalled();
+  });
+
+  it("Provider 瞬态故障时把任务放回 queued 并保留 checkpoint", async () => {
+    const runCourse = vi.fn(async () => {
+      throw new CourseRunTransientExecutionError(
+        Object.assign(new Error("provider timeout"), { status: 504 }),
+      );
+    }) as typeof runCourseGeneration;
+    const fixture = createFixture({ runCourse });
+
+    await fixture.service.create({
+      ...agentTaskInput,
+      userPrompt: "生成三页太阳系互动课程",
+      pageCount: 3,
+    });
+
+    await expect(fixture.service.run(taskId)).resolves.toBeUndefined();
+    expect(fixture.tasks.get(taskId)).toMatchObject({ status: "queued" });
+    expect(fixture.tasks.get(taskId)?.error).toBeUndefined();
+    expect(runCourse).toHaveBeenCalledOnce();
+  });
+
   it("persists Reference Packs and forwards them to the course run", async () => {
     const terminal = courseState("failed", 2);
     const runCourse = vi.fn(async () => terminal) as typeof runCourseGeneration;

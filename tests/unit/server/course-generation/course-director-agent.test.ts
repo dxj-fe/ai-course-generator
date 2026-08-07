@@ -108,10 +108,9 @@ describe("Course Director Agent", () => {
     const prepared = await prepareArchitectureRound("accept-preloaded");
     let toolOutput: unknown;
     const createAgent = createFakeFactory(async (settings) => {
-      expect(settings.prompt).toContain("遮掉长/短/强/弱标签");
-      expect(settings.prompt).toContain("从源头沿单路径追到接收者");
+      expect(settings.prompt).toContain("用户目标、学习进程、页面职责");
       expect(settings.prompt).toContain("给零基础用户做一门四页太阳系互动课");
-      expect(settings.prompt).toContain("同图的波长与路径长度必须使用不同编码");
+      expect(settings.prompt).toContain("不按模板 ID、布局槽位");
       const activeTools = (
         await settings.prepareStep({
           messages: [],
@@ -252,20 +251,9 @@ describe("Course Director Agent", () => {
 
     let rejectedRevision: unknown;
     const createAgent = createFakeFactory(async (settings) => {
-      const summary = await executeTool(
-        settings.tools,
-        "get_run_summary",
-        {},
+      expect(settings.prompt).toContain(
+        '"architectureRevisionRounds":0',
       );
-      expect(summary).toMatchObject({
-        ok: true,
-        data: {
-          remainingBudget: {
-            architectureRevisionRounds: 0,
-          },
-        },
-      });
-      await executeTool(settings.tools, "inspect_architecture", {});
       rejectedRevision = await executeTool(
         settings.tools,
         "request_architecture_revision",
@@ -275,7 +263,7 @@ describe("Course Director Agent", () => {
         (
           await settings.prepareStep({
             messages: [],
-            stepNumber: 3,
+            stepNumber: 1,
             steps: [],
           })
         ).activeTools,

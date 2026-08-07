@@ -11,10 +11,12 @@ import {
   toCourseGenerationCauseCode,
 } from "@/server/course/projection/public-error";
 
-export const RUN_LEASE_MS = 15 * 60_000;
+// lease 只负责防止活跃 Worker 重复领取，不应变成进程崩溃后的固定 15 分钟
+// 等待。真正执行 Agent 时会按该 WorkOrder 的总预算再续期。
+export const RUN_LEASE_MS = 2 * 60_000;
 export const AGENT_ATTEMPT_LEASE_GRACE_MS = 60_000;
 
-const WORK_ORDER_LEASE_MS = 10 * 60_000;
+const WORK_ORDER_LEASE_MS = 2 * 60_000;
 
 export function normalizeConcurrency(value: number | undefined) {
   if (value === undefined) return 3;

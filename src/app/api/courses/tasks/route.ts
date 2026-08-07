@@ -6,7 +6,10 @@ import {
   createTraceId,
   toAiErrorPayload,
 } from "@/server/infra/ai/error";
-import { getWebServices } from "@/server/setup/web";
+import {
+  getWebServices,
+  shouldExecuteCourseTasksInline,
+} from "@/server/setup/web";
 
 export const runtime = "nodejs";
 export const maxDuration = 900;
@@ -31,19 +34,21 @@ export async function POST(request: Request) {
       : payload;
     const task = await courseTasks.create(input);
 
-    after(async () => {
-      try {
-        await courseTasks.run(task.taskId);
-      } catch (error) {
-        const classified = toAiErrorPayload(error, task.traceId);
-        console.error("[course-task] 后台任务执行失败", {
-          taskId: task.taskId,
-          traceId: task.traceId,
-          errorCode: classified.code,
-          errorMessage: classified.message,
-        }, error);
-      }
-    });
+    if (shouldExecuteCourseTasksInline()) {
+      after(async () => {
+        try {
+          await courseTasks.run(task.taskId);
+        } catch (error) {
+          const classified = toAiErrorPayload(error, task.traceId);
+          console.error("[course-task] 后台任务执行失败", {
+            taskId: task.taskId,
+            traceId: task.traceId,
+            errorCode: classified.code,
+            errorMessage: classified.message,
+          }, error);
+        }
+      });
+    }
 
     return Response.json(task, {
       status: 202,

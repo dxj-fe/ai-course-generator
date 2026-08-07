@@ -1,6 +1,6 @@
 # 课芽 AI 课程生成器
 
-课芽是一个基于 Next.js、React、AI SDK 与 SQLite 的全栈课程生成应用。用户在 `/chat` 提交学习需求，系统通过课程架构、页面制作、课程调度和整课审查四类 Agent 生成可交互课程，并在 `/course` 中持续保存和播放结果。
+课芽是一个基于 Next.js、React、AI SDK 与 SQLite 的全栈课程生成应用。用户在 `/chat` 提交学习需求，Course Lead、并行 Page Creator 与 Course Reviewer 通过共享 WorkOrder 和 Artifact 协作生成可交互课程，并在 `/course` 中持续保存和播放结果。
 
 ## 产品入口
 
@@ -19,33 +19,28 @@
 
 ```bash
 pnpm install
+pnpm run browser:install
 cp .env.local.example .env.local
 pnpm dev
 ```
 
-语言模型按 `cheap`、`balanced`、`strong` 三个档位配置。每个档位必须显式选择 `ark` 或 `generic`，并配置对应模型名：
+所有文本 Agent 固定使用 Volcengine Ark 的 Doubao Seed 2.0 Pro（`doubao-seed-2-0-pro-260215`），避免在排障期间混入 mini/lite 的能力差异：
 
 ```dotenv
-MODEL_PROVIDER_CHEAP=ark
-MODEL_PROVIDER_BALANCED=ark
-MODEL_PROVIDER_STRONG=ark
-
 ARK_API_KEY=your_key
-ARK_MODEL_ID_CHEAP=your_model
-ARK_MODEL_ID_BALANCED=your_model
-ARK_MODEL_ID_STRONG=your_model
+ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 ```
 
-使用通用供应商时，设置 `MODEL_API_KEY`、`MODEL_BASE_URL` 和三个 `MODEL_NAME_*`。图片生成默认复用 Ark，也可完整设置 `IMAGE_*`。
+图片生成是 Page Creator 按需调用的 Tool，默认复用 Ark，也可完整设置 `IMAGE_*`。`pnpm dev` 会同时启动 Web 与 Course Worker；后者独立持有 Agent Loop、Chromium 和任务恢复。部署时也可分别运行 `pnpm run start:web` 与 `pnpm run worker:course`。
 
 ## 生成流程
 
-1. `/chat` 创建任务并建立会话关联。
-2. Curriculum Architect 生成课程事实、目标、统一规则与逐页任务。
-3. Course Director 按依赖关系派发 Page Builder。
-4. Page Builder 依次生成内容 DSL、素材、HTML 和质量证据。
-5. Course Reviewer 核对目标覆盖、跨页连贯性和当前封口产物。
-6. 通过审查后发布课程；需要返工时只重建受影响的产物链。
+1. `/chat` 创建任务并入队，Web 进程立即返回。
+2. Course Worker 预检 Doubao 2.0 Pro 与 Chromium 后领取任务。
+3. Course Lead 设计课程蓝图，并按依赖关系派发并行 Page Creator。
+4. Page Creator 在 Agent Loop 中自由制作 HTML，按需调用生图与浏览器检查 Tool。
+5. Course Reviewer 通过真实渲染截图、DOM、控制台和互动结果进行独立审查。
+6. Course Lead 决定发布或定向返工；运行环境故障只释放执行权并保留检查点。
 
 任务进度通过带 `traceId + sequence` 游标的 SSE 传输。数据库只接受当前结构，不读取历史格式。
 

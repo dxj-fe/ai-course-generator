@@ -52,6 +52,7 @@ export function createTaskServiceFixture(
     createTaskId?: () => string;
     createCourseId?: () => string;
     createTraceId?: () => string;
+    ensureRuntimeReady?: () => PromiseLike<unknown>;
   } = {},
 ) {
   const tasks = new Map<string, CourseTaskRecord>();
@@ -181,6 +182,8 @@ export function createTaskServiceFixture(
     createCourseId: overrides.createCourseId ?? (() => courseId),
     createTraceId: overrides.createTraceId ?? (() => traceId),
     logSink,
+    ensureRuntimeReady:
+      overrides.ensureRuntimeReady ?? (async () => undefined),
   });
 
   return {

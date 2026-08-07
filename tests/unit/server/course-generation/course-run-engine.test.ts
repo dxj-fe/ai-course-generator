@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ModelTier } from "../../../../src/server/infra/ai/model-router";
+import { AgentIds } from "../../../../src/server/agent/ids";
 import { AgentTerminalNotCommittedError } from "../../../../src/server/agent/runtime";
 import type { RunCourseDirectorAgentInput } from "../../../../src/server/agent/plugins/agents/course/director-handler";
 import type { CurriculumArchitectAgentInput } from "../../../../src/server/agent/plugins/agents/course/architect-handler";
@@ -22,6 +23,7 @@ import {
 } from "../../../../src/server/course/store/repository";
 import type { RunPageBuilderAgentInput } from "../../../../src/server/agent/plugins/agents/course/page-builder-handler";
 import { encodeCourseTaskSseMessage } from "../../../../src/server/course/task/sse";
+import { BrowserHarnessUnavailableError } from "../../../../src/server/infra/browser/error";
 import {
   PageContentDSLSchema,
   QualityReportSchema,
@@ -51,7 +53,7 @@ afterEach(async () => {
 });
 
 describe("CourseRunEngine", () => {
-  it("严格按架构、主 Agent 派发、依赖波次、整课审查和发布顺序运行", async () => {
+  it("Course Lead 提交计划后直接派发页面，并在独立审查后完成发布决定", async () => {
     const prepared = await prepare("happy-path");
     const calls: string[] = [];
     let activePages = 0;
@@ -65,17 +67,6 @@ describe("CourseRunEngine", () => {
     const fakes = createSuccessfulFakes(prepared.repository, {
       onArchitect(input) {
         calls.push("architect");
-        expect(pageOrders(prepared.repository, input.workOrder.taskId)).toEqual(
-          [],
-        );
-      },
-      onArchitectureDirector(input) {
-        calls.push("director:architecture");
-        expect(
-          prepared.repository.workOrders.load(
-            submittedArchitect(prepared.repository, input.workOrder.taskId).id,
-          )?.status,
-        ).toBe("submitted");
         expect(pageOrders(prepared.repository, input.workOrder.taskId)).toEqual(
           [],
         );
@@ -121,8 +112,9 @@ describe("CourseRunEngine", () => {
           ),
         ).toBe(true);
       },
-      onReviewDirector() {
-        calls.push("director:review");
+      onReviewDirector(input) {
+        calls.push("lead:review");
+        expect(input.workOrder.agentId).toBe(AgentIds.CourseLead);
       },
     });
 
@@ -136,10 +128,8 @@ describe("CourseRunEngine", () => {
 
     expect(result.status, JSON.stringify(result.errors)).toBe("completed");
     expect(maxActivePages).toBe(2);
+    expect(calls).not.toContain("director:architecture");
     expect(calls.indexOf("architect")).toBeLessThan(
-      calls.indexOf("director:architecture"),
-    );
-    expect(calls.indexOf("director:architecture")).toBeLessThan(
       calls.indexOf("page:page-cover:start"),
     );
     expect(calls.indexOf("page:page-concept:done")).toBeLessThan(
@@ -152,7 +142,7 @@ describe("CourseRunEngine", () => {
       calls.indexOf("reviewer"),
     );
     expect(calls.indexOf("reviewer")).toBeLessThan(
-      calls.indexOf("director:review"),
+      calls.indexOf("lead:review"),
     );
 
     const storedRun = requiredRun(
@@ -165,6 +155,53 @@ describe("CourseRunEngine", () => {
         .listByTask(prepared.input.taskId)
         .filter(({ kind }) => kind === "review_course"),
     ).toHaveLength(1);
+  });
+
+  it("Page Agent 完成后立即补充下一页，不等待同批最慢页面", async () => {
+    const prepared = await prepare("parallel-refill");
+    const architecture = {
+      ...createArchitecture(),
+      pageTasks: createArchitecture().pageTasks.map((pageTask) => ({
+        ...pageTask,
+        buildDependsOnPageIds: [],
+      })),
+    };
+    let releaseSlowPage: (() => void) | undefined;
+    const slowPage = new Promise<void>((resolve) => {
+      releaseSlowPage = resolve;
+    });
+    let markNextPageStarted: (() => void) | undefined;
+    const nextPageStarted = new Promise<void>((resolve) => {
+      markNextPageStarted = resolve;
+    });
+
+    const run = createCourseRunEngine({
+      repository: prepared.repository,
+      now: prepared.now,
+      createWorkerId: () => "engine-refill-worker",
+      getModel: fakeGetModel,
+      ...createSuccessfulFakes(prepared.repository, {
+        architecture,
+        async beforePageCommit(_input, pageTask) {
+          if (pageTask.pageId === "page-cover") await slowPage;
+          if (pageTask.pageId === "page-practice") {
+            markNextPageStarted?.();
+          }
+        },
+      }),
+    }).run(prepared.input);
+
+    const refilledBeforeSlowPage = await Promise.race([
+      nextPageStarted.then(() => true),
+      new Promise<false>((resolve) =>
+        setTimeout(() => resolve(false), 200),
+      ),
+    ]);
+    releaseSlowPage?.();
+    const result = await run;
+
+    expect(refilledBeforeSlowPage).toBe(true);
+    expect(result.status).toBe("completed");
   });
 
   it("CourseRun 已终态时只投影结果，不重新领取 lease 或重复调用 Agent", async () => {
@@ -338,7 +375,35 @@ describe("CourseRunEngine", () => {
     ).toBe("queued");
   });
 
-  it("供应商瞬时错误只切换一次 fallback，并且架构提交副作用只落库一次", async () => {
+  it("Browser Harness 故障释放 lease 并保留可恢复 WorkOrder", async () => {
+    const prepared = await prepare("browser-runtime-unavailable");
+    const baseFakes = createSuccessfulFakes(prepared.repository);
+    const runPageBuilder = vi.fn(async () => {
+      throw new BrowserHarnessUnavailableError(new Error("browser closed"));
+    });
+
+    await expect(
+      createCourseRunEngine({
+        repository: prepared.repository,
+        now: prepared.now,
+        createWorkerId: () => "engine-browser-runtime-worker",
+        getModel: fakeGetModel,
+        ...baseFakes,
+        runPageBuilder,
+      }).run(prepared.input),
+    ).rejects.toMatchObject({ code: "BROWSER_HARNESS_UNAVAILABLE" });
+
+    const run = requiredRun(
+      prepared.repository.runs.loadByTaskId(prepared.input.taskId),
+    );
+    expect(run.leaseOwner).toBeUndefined();
+    expect(run.phase).not.toBe("failed");
+    const pages = pageOrders(prepared.repository, prepared.input.taskId);
+    expect(pages.some(({ status }) => status === "failed")).toBe(false);
+    expect(pages.some(({ status }) => status === "queued")).toBe(true);
+  });
+
+  it("供应商瞬时错误保留 WorkOrder，并用同一个 strong 模型恢复", async () => {
     const prepared = await prepare("model-fallback");
     const baseFakes = createSuccessfulFakes(prepared.repository);
     const architectModels: ModelTier[] = [];
@@ -361,17 +426,25 @@ describe("CourseRunEngine", () => {
       },
     );
 
-    const result = await createCourseRunEngine({
+    const engine = createCourseRunEngine({
       repository: prepared.repository,
       now: prepared.now,
       createWorkerId: () => "engine-fallback-worker",
       getModel: fakeGetModel,
       ...baseFakes,
       runArchitect,
-    }).run(prepared.input);
+    });
+
+    await expect(engine.run(prepared.input)).rejects.toMatchObject({
+      code: "COURSE_RUN_TRANSIENT_EXECUTION_ERROR",
+    });
+    expect(submittedArchitect(prepared.repository, prepared.input.taskId).status)
+      .toBe("queued");
+
+    const result = await engine.run(prepared.input);
 
     expect(result.status).toBe("completed");
-    expect(architectModels).toEqual(["balanced", "strong"]);
+    expect(architectModels).toEqual(["strong", "strong"]);
     expect(architectAttempts).toBe(2);
     expect(
       prepared.repository.artifacts.listByTask(
@@ -386,7 +459,7 @@ describe("CourseRunEngine", () => {
     ).toHaveLength(1);
   });
 
-  it("Agent 未提交终态时切换 fallback，避免瞬时工具循环异常直接终止课程", async () => {
+  it("Agent 连续未提交终态时最多重试两次，不无限循环", async () => {
     const prepared = await prepare("terminal-not-committed-fallback");
     const baseFakes = createSuccessfulFakes(prepared.repository);
     const architectModels: ModelTier[] = [];
@@ -400,31 +473,36 @@ describe("CourseRunEngine", () => {
         architectAttempts += 1;
         const tier = (dependencies?.model as { tier: ModelTier }).tier;
         architectModels.push(tier);
-        if (architectAttempts === 1) {
-          throw new AgentTerminalNotCommittedError(input.workOrder.id);
-        }
-        return baseFakes.runArchitect(input);
+        throw new AgentTerminalNotCommittedError(input.workOrder.id);
       },
     );
 
-    const result = await createCourseRunEngine({
+    const engine = createCourseRunEngine({
       repository: prepared.repository,
       now: prepared.now,
       createWorkerId: () => "engine-terminal-fallback-worker",
       getModel: fakeGetModel,
       ...baseFakes,
       runArchitect,
-    }).run(prepared.input);
+    });
 
-    expect(result.status).toBe("completed");
-    expect(architectModels).toEqual(["balanced", "strong"]);
-    expect(architectAttempts).toBe(2);
+    await expect(engine.run(prepared.input)).rejects.toMatchObject({
+      code: "COURSE_RUN_TRANSIENT_EXECUTION_ERROR",
+    });
+    await expect(engine.run(prepared.input)).rejects.toMatchObject({
+      code: "COURSE_RUN_TRANSIENT_EXECUTION_ERROR",
+    });
+    const result = await engine.run(prepared.input);
+
+    expect(result.status).toBe("failed");
+    expect(architectModels).toEqual(["strong", "strong", "strong"]);
+    expect(architectAttempts).toBe(3);
     expect(
       prepared.repository.artifacts.listByTask(
         prepared.input.taskId,
         "course_architecture",
       ),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
   });
 
   it.each([
@@ -642,6 +720,7 @@ describe("CourseRunEngine", () => {
 });
 
 type SuccessfulFakeHooks = {
+  architecture?: CourseArchitecture;
   onArchitect?(input: CurriculumArchitectAgentInput): void;
   onArchitectureDirector?(input: RunCourseDirectorAgentInput): void;
   beforePageCommit?(
@@ -660,7 +739,7 @@ function createSuccessfulFakes(
   repository: CourseRunRepository,
   hooks: SuccessfulFakeHooks = {},
 ) {
-  const architecture = createArchitecture();
+  const architecture = hooks.architecture ?? createArchitecture();
 
   return {
     async runArchitect(input: CurriculumArchitectAgentInput) {

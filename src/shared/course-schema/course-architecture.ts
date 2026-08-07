@@ -98,7 +98,7 @@ export const CourseRulesSchema = z
     terminology: z.array(z.string().trim().min(1).max(120)).max(60),
     visualDirection: z.string().trim().min(2).max(500),
     visualStyle: VisualStyleSchema,
-    styleTemplateId: z.string().min(1).max(80),
+    styleTemplateId: z.string().min(1).max(80).default("agent-authored"),
     teachingPattern: z.array(z.string().trim().min(1).max(240)).min(1).max(20),
   })
   .strict();
@@ -145,7 +145,7 @@ export const PageTaskSchema = z
     pageId: DomainIdSchema,
     order: z.number().int().positive(),
     title: z.string().trim().min(1).max(160),
-    pageType: PageTypeSchema,
+    pageType: PageTypeSchema.default("knowledge_card"),
     purpose: z.string().trim().min(2).max(500),
     objectiveIds: z.array(DomainIdSchema).min(1).max(20),
     buildDependsOnPageIds: z.array(DomainIdSchema).max(20),
@@ -153,10 +153,14 @@ export const PageTaskSchema = z
     learnerAction: z.string().trim().min(2).max(500),
     assessment: z.string().trim().min(2).max(500).optional(),
     referenceUsages: SourceUsagesSchema,
-    functionalTemplateId: z.string().min(1).max(80),
-    styleTemplateId: z.string().min(1).max(80),
-    interactionType: PageInteractionTypeSchema,
-    assetNeeds: z.array(PageAssetNeedSchema).max(12),
+    functionalTemplateId: z
+      .string()
+      .min(1)
+      .max(80)
+      .default("agent-authored"),
+    styleTemplateId: z.string().min(1).max(80).default("agent-authored"),
+    interactionType: PageInteractionTypeSchema.default("none"),
+    assetNeeds: z.array(PageAssetNeedSchema).max(12).default([]),
     visualDesign: PageVisualDesignSchema.optional(),
     acceptance: PageTaskAcceptanceSchema,
   })
@@ -179,16 +183,6 @@ export const PageTaskSchema = z
         code: "custom",
         message: "页面不能把自己作为生成依赖",
         path: ["buildDependsOnPageIds"],
-      });
-    }
-    if (
-      page.acceptance.requiresInteraction &&
-      page.interactionType === "none"
-    ) {
-      context.addIssue({
-        code: "custom",
-        message: "要求互动的页面不能使用 none interactionType",
-        path: ["interactionType"],
       });
     }
   });

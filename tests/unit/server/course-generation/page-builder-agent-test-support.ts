@@ -5,6 +5,7 @@ import path from "node:path";
 import { expect, vi } from "vitest";
 
 import { createPageBuilderExecution } from "../../../../src/server/agent/plugins/contexts/course/page-builder";
+import { AgentToolSets } from "../../../../src/server/agent/ids";
 import type { PageBuilderModelSteps } from "../../../../src/server/agent/plugins/tools/course/page-builder-model-steps";
 import type { PageBuilderTools } from "../../../../src/server/agent/plugins/tools/course/page-builder";
 import { createCourseRunRepository } from "../../../../src/server/course/store/repository";
@@ -117,6 +118,7 @@ export async function preparePageBuilder(
         leaseOwner: ENGINE_OWNER,
       },
       architectWorkOrderId: submitted.workOrder.id,
+      pageAllowedTools: [...AgentToolSets.CoursePageBuilderRuntime],
       now: "2026-07-29T12:00:02.000Z",
     });
   const queued = requiredPageOrder(
@@ -136,7 +138,9 @@ export async function preparePageBuilder(
     traceId: run.traceId,
     creationBrief: createBrief(),
     referencePacks: [createReferencePack()],
+    workspaceRoot: path.join(directory, "agent-workspaces"),
   });
+  execution.legacyModelPipeline = true;
   return {
     repository,
     run: dispatched.run,
@@ -264,7 +268,14 @@ export async function prepareContentFixPageBuilder(
     traceId: prepared.run.traceId,
     creationBrief: createBrief(),
     referencePacks: [createReferencePack()],
+    workspaceRoot: path.join(
+      prepared.execution.workspace.directory,
+      "..",
+      "..",
+      "..",
+    ),
   });
+  execution.legacyModelPipeline = true;
   const revisedContent = PageContentDSLSchema.parse({
     ...baselineContent,
     narration: ["返工后的内容已经消除跨页重复。"],
@@ -456,14 +467,11 @@ export function scriptedPageBuilderFactory(
           steps: [],
         });
         expect(prepared.activeTools).toContain(toolName);
-        if (toolName === "generate_page_content") {
-          expect(prepared.toolChoice).toBe("required");
-        } else {
-          expect(prepared.toolChoice).toEqual({
-            type: "tool",
-            toolName,
-          });
-        }
+        expect(
+          prepared.toolChoice === "required" ||
+            (typeof prepared.toolChoice === "object" &&
+              prepared.toolChoice?.toolName === toolName),
+        ).toBe(true);
         await executeTool(
           settings.tools,
           toolName,

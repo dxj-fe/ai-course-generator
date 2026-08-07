@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   enforceSequentialToolCalls,
-  getHtmlLanguageModelIdentity,
   getLanguageModelIdentity,
 } from "../../../../src/server/infra/ai/model-provider";
 
@@ -11,7 +10,7 @@ afterEach(() => {
 });
 
 describe("model provider", () => {
-  it("disables parallel tool calls for stateful Agent tools", () => {
+  it("externalizes reasoning to the loop and disables parallel stateful tool calls", () => {
     expect(
       enforceSequentialToolCalls({
         model: "test-model",
@@ -20,14 +19,28 @@ describe("model provider", () => {
     ).toEqual({
       model: "test-model",
       tools: [{ type: "function" }],
+      thinking: { type: "disabled" },
       parallel_tool_calls: false,
     });
 
     const body = { model: "test-model" };
-    expect(enforceSequentialToolCalls(body)).toBe(body);
+    expect(enforceSequentialToolCalls(body)).toEqual({
+      model: "test-model",
+      thinking: { type: "disabled" },
+    });
+
+    expect(
+      enforceSequentialToolCalls({
+        model: "test-model",
+        thinking: { type: "disabled" },
+      }),
+    ).toEqual({
+      model: "test-model",
+      thinking: { type: "disabled" },
+    });
   });
 
-  it("keeps strong and balanced fallback identities distinct across providers", () => {
+  it("所有旧 tier 都解析为同一个 doubao 2.0 pro 身份", () => {
     vi.stubEnv("MODEL_PROVIDER_STRONG", "generic");
     vi.stubEnv("MODEL_PROVIDER_BALANCED", "ark");
     vi.stubEnv("MODEL_API_KEY", "generic-test-key");
@@ -37,22 +50,13 @@ describe("model provider", () => {
     vi.stubEnv("ARK_MODEL_ID_BALANCED", "doubao-mini");
 
     expect(getLanguageModelIdentity("strong")).toBe(
-      "model-provider/gpt-5.5",
+      "volcengine-ark/doubao-seed-2-0-pro-260215",
     );
     expect(getLanguageModelIdentity("balanced")).toBe(
-      "volcengine-ark/doubao-mini",
+      "volcengine-ark/doubao-seed-2-0-pro-260215",
     );
-    expect(getLanguageModelIdentity("strong")).not.toBe(
+    expect(getLanguageModelIdentity("strong")).toBe(
       getLanguageModelIdentity("balanced"),
-    );
-  });
-
-  it("preserves the concrete identity of the dedicated HTML model", () => {
-    vi.stubEnv("ARK_HTML_MODEL_ID", "doubao-code-preview");
-    vi.stubEnv("ARK_API_KEY", "ark-test-key");
-
-    expect(getHtmlLanguageModelIdentity()).toBe(
-      "volcengine-ark/doubao-code-preview",
     );
   });
 });

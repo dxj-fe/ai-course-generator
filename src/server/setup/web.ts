@@ -7,6 +7,8 @@ import { createCourseTaskStore } from "@/server/course/store/task";
 import { createCourseTaskEventBus } from "@/server/course/task/event-bus";
 import { createCourseGenerationTaskService } from "@/server/course/task/service";
 import { createHtmlPreviewStore } from "@/server/preview/store";
+import { ensureCourseGenerationRuntimeReady } from "@/server/course/runtime/readiness";
+export { shouldExecuteCourseTasksInline } from "@/server/course/task/execution-mode";
 
 export type WebServices = Readonly<{
   courseEvents: ReturnType<typeof createCourseTaskEventBus>;
@@ -36,6 +38,7 @@ export function createWebServices(): WebServices {
     courseTasks: createCourseGenerationTaskService({
       courseStore: courses,
       eventBus: courseEvents,
+      ensureRuntimeReady: ensureCourseGenerationRuntimeReady,
       taskStore: courseTaskStore,
     }),
     conversationHistory: createConversationHistoryService({

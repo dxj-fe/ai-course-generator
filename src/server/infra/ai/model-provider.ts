@@ -1,7 +1,6 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 
 import {
-  getHtmlModelConfig,
   getImageModelConfig,
   getModelConfig,
 } from "@/config/env";
@@ -9,16 +8,6 @@ import type { ModelTier } from "./model-router";
 
 export function getLanguageModel(tier: ModelTier) {
   return createLanguageModel(getModelConfig(tier));
-}
-
-export function getHtmlLanguageModel() {
-  const config = getHtmlModelConfig();
-  return config ? createLanguageModel(config) : undefined;
-}
-
-export function getHtmlLanguageModelIdentity() {
-  const config = getHtmlModelConfig();
-  return config ? getModelIdentity(config) : undefined;
 }
 
 function createLanguageModel(config: ReturnType<typeof getModelConfig>) {
@@ -63,7 +52,17 @@ export function getImageModel() {
 export function enforceSequentialToolCalls(
   body: Record<string, unknown>,
 ): Record<string, unknown> {
-  return Array.isArray(body.tools) && body.tools.length > 0
-    ? { ...body, parallel_tool_calls: false }
-    : body;
+  return {
+    ...body,
+    // Seed 2.0 默认会对每个工具步骤进行深度思考。当前在线 Chat API 不支持
+    // auto，而固定深思会把单步延迟放大到数分钟。这里关闭内部深思，把推理
+    // 外化到可观察的 Agent Loop、工具反馈和检查点；模型仍统一使用 Pro。
+    thinking:
+      body.thinking ?? {
+        type: "disabled",
+      },
+    ...(Array.isArray(body.tools) && body.tools.length > 0
+      ? { parallel_tool_calls: false }
+      : {}),
+  };
 }

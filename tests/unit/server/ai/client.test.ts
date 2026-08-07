@@ -6,19 +6,14 @@ const { convertToModelMessagesMock, generateTextMock } = vi.hoisted(() => ({
   generateTextMock: vi.fn(),
 }));
 
-const {
-  getHtmlLanguageModelMock,
-  getHtmlLanguageModelIdentityMock,
-  getLanguageModelMock,
-  getLanguageModelIdentityMock,
-} = vi.hoisted(() => ({
-    getHtmlLanguageModelMock: vi.fn(),
-    getHtmlLanguageModelIdentityMock: vi.fn(),
+const { getLanguageModelMock, getLanguageModelIdentityMock } = vi.hoisted(
+  () => ({
     getLanguageModelMock: vi.fn((tier: string) => ({ tier })),
     getLanguageModelIdentityMock: vi.fn(
       (tier: string) => `test-provider/${tier}-model`,
     ),
-  }));
+  }),
+);
 
 vi.mock("ai", () => ({
   convertToModelMessages: convertToModelMessagesMock,
@@ -28,8 +23,6 @@ vi.mock("ai", () => ({
 }));
 
 vi.mock("../../../../src/server/infra/ai/model-provider", () => ({
-  getHtmlLanguageModel: getHtmlLanguageModelMock,
-  getHtmlLanguageModelIdentity: getHtmlLanguageModelIdentityMock,
   getLanguageModel: getLanguageModelMock,
   getLanguageModelIdentity: getLanguageModelIdentityMock,
 }));
@@ -46,66 +39,32 @@ describe("AI client", () => {
       .mockReset()
       .mockResolvedValue([{ role: "user", content: "converted" }]);
     generateTextMock.mockReset();
-    getHtmlLanguageModelMock.mockReset().mockReturnValue(undefined);
-    getHtmlLanguageModelIdentityMock.mockReset().mockReturnValue(undefined);
     aiResultCache.clear();
   });
 
-  it(
-    "routes HTML generation through the dedicated model before the strong tier",
-    async () => {
-      const htmlModel = { dedicated: "html" };
-      getHtmlLanguageModelMock.mockReturnValue(htmlModel);
-      getHtmlLanguageModelIdentityMock.mockReturnValue(
-        "volcengine-ark/doubao-code-preview",
-      );
-      generateTextMock
-        .mockRejectedValueOnce({ statusCode: 503 })
-        .mockResolvedValueOnce({ text: "<!doctype html>", usage: {} });
-
-      await expect(
-        generateTextSafe({
-          capability: "html",
-          messages: [],
-          traceId: "dedicated-html-test",
-        }),
-      ).resolves.toEqual({ text: "<!doctype html>", usage: {} });
-
-      expect(generateTextMock.mock.calls.map(([input]) => input.model)).toEqual([
-        htmlModel,
-        { tier: "strong" },
-      ]);
-    },
-  );
-
-  it("routes HTML repair directly through the strong tier", async () => {
-    getHtmlLanguageModelMock.mockReturnValue({ dedicated: "html" });
-    getHtmlLanguageModelIdentityMock.mockReturnValue(
-      "volcengine-ark/doubao-code-preview",
-    );
+  it.each(["html", "html-repair"] as const)(
+    "%s 固定使用 strong 路由",
+    async (capability) => {
     generateTextMock.mockResolvedValue({
       text: "<!doctype html>",
       usage: {},
     });
 
     await generateTextSafe({
-      capability: "html-repair",
+      capability,
       messages: [],
-      traceId: "html-repair-tier-test",
+      traceId: `${capability}-tier-test`,
     });
 
     expect(generateTextMock).toHaveBeenCalledOnce();
     expect(generateTextMock.mock.calls[0]?.[0].model).toEqual({
       tier: "strong",
     });
-  });
+    },
+  );
 
-  it("logs the concrete dedicated HTML model identity", async () => {
+  it("记录实际使用的 strong 模型身份", async () => {
     const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
-    getHtmlLanguageModelMock.mockReturnValue({ dedicated: "html" });
-    getHtmlLanguageModelIdentityMock.mockReturnValue(
-      "volcengine-ark/doubao-code-preview",
-    );
     generateTextMock.mockResolvedValue({
       text: "<!doctype html>",
       usage: {},
@@ -114,59 +73,35 @@ describe("AI client", () => {
     await generateTextSafe({
       capability: "html",
       messages: [],
-      traceId: "dedicated-html-identity-test",
+      traceId: "html-identity-test",
     });
 
     expect(infoSpy).toHaveBeenCalledWith(
       "[ai]",
       expect.objectContaining({
         event: "generate:finish",
-        model: "volcengine-ark/doubao-code-preview",
+        model: "test-provider/strong-model",
       }),
     );
     infoSpy.mockRestore();
   });
 
-  it("does not leave the dedicated HTML model for a non-transient failure", async () => {
-    getHtmlLanguageModelMock.mockReturnValue({ dedicated: "html" });
-    getHtmlLanguageModelIdentityMock.mockReturnValue(
-      "volcengine-ark/doubao-code-preview",
-    );
+  it("模型失败时不切换到 mini 或其他 tier", async () => {
     generateTextMock.mockRejectedValue({ statusCode: 400 });
 
     await expect(
       generateTextSafe({
         capability: "html",
         messages: [],
-        traceId: "dedicated-html-request-error-test",
+        traceId: "html-request-error-test",
       }),
     ).rejects.toEqual({ statusCode: 400 });
 
     expect(generateTextMock).toHaveBeenCalledOnce();
   });
 
-  it("keeps the existing HTML tier route when no dedicated model is configured", async () => {
-    generateTextMock.mockResolvedValue({
-      text: "<!doctype html>",
-      usage: {},
-    });
-
-    await generateTextSafe({
-      capability: "html",
-      messages: [],
-      traceId: "html-tier-route-test",
-    });
-
-    expect(generateTextMock).toHaveBeenCalledOnce();
-    expect(generateTextMock.mock.calls[0]?.[0].model).toEqual({
-      tier: "strong",
-    });
-  });
-
-  it("falls back once for a transient strong-model failure", async () => {
-    generateTextMock
-      .mockRejectedValueOnce({ statusCode: 503 })
-      .mockResolvedValueOnce({ output: { value: "ok" }, usage: {} });
+  it("瞬态失败也不回退到较弱模型", async () => {
+    generateTextMock.mockRejectedValueOnce({ statusCode: 503 });
 
     await expect(
       generateStructuredObjectSafe({
@@ -178,18 +113,15 @@ describe("AI client", () => {
         timeoutMs: 120_000,
         traceId: "model-fallback-test",
       }),
-    ).resolves.toEqual({ value: "ok" });
+    ).rejects.toEqual({ statusCode: 503 });
 
-    expect(generateTextMock).toHaveBeenCalledTimes(2);
+    expect(generateTextMock).toHaveBeenCalledOnce();
     expect(generateTextMock.mock.calls.map(([input]) => input.model)).toEqual([
       { tier: "strong" },
-      { tier: "balanced" },
     ]);
     expect(generateTextMock.mock.calls.map(([input]) => input.timeout)).toEqual([
       120_000,
-      60_000,
     ]);
-    expect(getHtmlLanguageModelMock).not.toHaveBeenCalled();
   });
 
   it("passes multimodal UI messages to structured generation without logging them as a prompt", async () => {

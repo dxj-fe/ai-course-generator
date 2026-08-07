@@ -152,7 +152,7 @@ export function createCourseRunCommands(
             courseId: run.courseId,
             causedByReviewIssueIds: [],
             dependencyWorkOrderIds: [],
-            agentId: AgentIds.CourseDirector,
+            agentId: AgentIds.CourseLead,
             kind: "director_round",
             scope: { type: "course" },
             status: "queued",

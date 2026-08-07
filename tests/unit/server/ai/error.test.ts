@@ -4,6 +4,7 @@ import {
   AiSchemaValidationError,
   toAiErrorPayload,
 } from "../../../../src/server/infra/ai/error";
+import { BrowserHarnessUnavailableError } from "../../../../src/server/infra/browser/error";
 
 describe("AI errors", () => {
   it("keeps user cancellation distinct from provider timeout", () => {
@@ -72,14 +73,27 @@ describe("AI errors", () => {
     });
   });
 
-  it("classifies an invalid tier provider selector as configuration", () => {
+  it("把缺少 Ark Key 识别为配置错误", () => {
     expect(
       toAiErrorPayload(
-        new Error('MODEL_PROVIDER_STRONG must be either "ark" or "generic".'),
+        new Error("Missing required environment variable: ARK_API_KEY"),
         "trace-config",
       ),
     ).toMatchObject({
       code: "CONFIG_ERROR",
+    });
+  });
+
+  it("把 Browser Harness 故障与模型错误分开", () => {
+    expect(
+      toAiErrorPayload(
+        new BrowserHarnessUnavailableError(new Error("launch failed")),
+        "trace-runtime",
+      ),
+    ).toEqual({
+      code: "RUNTIME_ERROR",
+      message: "生课运行环境暂时不可用，任务已保留并等待恢复。",
+      traceId: "trace-runtime",
     });
   });
 });

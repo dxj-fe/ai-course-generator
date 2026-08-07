@@ -192,7 +192,7 @@ describe("basicLayoutHeuristics", () => {
     ).not.toContain("ASSET_REQUIRED_SLOT_EMPTY");
   });
 
-  it("does not treat a shared stylesheet class as a slot-specific asset binding", () => {
+  it("accepts an approved asset URI without requiring a unique DSL slot binding", () => {
     const content = {
       ...pageContentDsl,
       assetSlots: [
@@ -222,7 +222,7 @@ describe("basicLayoutHeuristics", () => {
         html,
         assets: [readyBackgroundAsset(content.pageId)],
       }).map(({ code }) => code),
-    ).toContain("ASSET_REQUIRED_SLOT_EMPTY");
+    ).not.toContain("ASSET_REQUIRED_SLOT_EMPTY");
   });
 
   it("does not turn a safely contained opaque fallback into a repair loop", () => {
@@ -281,7 +281,7 @@ describe("basicLayoutHeuristics", () => {
     ).not.toContain("ASSET_TRANSPARENCY_UNAVAILABLE");
   });
 
-  it("keeps transparency warnings actionable when the opaque image is not isolated", () => {
+  it("does not require an opaque image to carry a DSL slot wrapper", () => {
     const content = {
       ...pageContentDsl,
       assetSlots: [
@@ -306,7 +306,7 @@ describe("basicLayoutHeuristics", () => {
         html,
         assets: [readyTransparentFallbackAsset(content.pageId)],
       }).map(({ code }) => code),
-    ).toContain("ASSET_TRANSPARENCY_UNAVAILABLE");
+    ).not.toContain("ASSET_TRANSPARENCY_UNAVAILABLE");
   });
 });
 

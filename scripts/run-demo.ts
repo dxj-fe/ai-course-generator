@@ -17,7 +17,6 @@ import {
   getImageModelConfig,
   getModelConfig,
 } from "@/config/env";
-import type { ModelTier } from "@/server/infra/ai/model-router";
 import {
   CourseHistoryDetailResponseSchema,
   CourseTaskCreateResponseSchema,
@@ -37,7 +36,6 @@ const DEMO_BASELINES = [
   { id: "solar-system", fileName: "solar-system.json" },
   { id: "ai-literacy", fileName: "ai-literacy.json" },
 ] as const;
-const MODEL_TIERS: ModelTier[] = ["cheap", "balanced", "strong"];
 const TASK_TIMEOUT_MS = 45 * 60 * 1_000;
 const SERVER_START_TIMEOUT_MS = 3 * 60 * 1_000;
 
@@ -180,15 +178,13 @@ function assertLocalDemoProviderConfig() {
   const configs: NamedProviderConfig[] = [];
   const issues: string[] = [];
 
-  for (const tier of MODEL_TIERS) {
-    try {
-      configs.push({
-        label: `文本模型 ${tier}`,
-        config: getModelConfig(tier),
-      });
-    } catch (error) {
-      issues.push(`文本模型 ${tier} 配置不完整：${configErrorMessage(error)}`);
-    }
+  try {
+    configs.push({
+      label: "文本模型 doubao 2.0 pro",
+      config: getModelConfig("strong"),
+    });
+  } catch (error) {
+    issues.push(`文本模型配置不完整：${configErrorMessage(error)}`);
   }
 
   try {
@@ -374,7 +370,7 @@ export function buildDemoTaskInput(baseline: DemoBaseline) {
     },
     pageCount: baseline.pageCount,
     executionMode: "parallel" as const,
-    concurrency: 1,
+    concurrency: Math.min(3, baseline.pageCount),
   };
 }
 
@@ -591,6 +587,7 @@ export function buildDemoServerEnvironment(
     ),
     // 固定 Demo 只验证本次创建的 Task，不能顺带恢复数据库中的历史任务。
     COURSE_TASK_STARTUP_RECOVERY: "0",
+    COURSE_TASK_INLINE_EXECUTION: "1",
     PAGE_QA_SCREENSHOTS_ENABLED: "true",
     // Demo 构建目录位于项目内；强制轮询避免 Watchpack 为缓存树打开过多句柄。
     WATCHPACK_POLLING: "true",

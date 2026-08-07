@@ -21,32 +21,25 @@ describe("Prompt Registry", () => {
     );
     expect(architect).toContain("<available_skills />");
     expect(architect).toContain("# 课程设计");
-    expect(architect).toContain(
-      "`coursePack.facts` 要保留事实的适用条件、观察对象、相对变化和可观察结果",
-    );
-    expect(architect).toContain("不能用“被消耗”替代机制");
-    expect(architect).toContain("精确范围、倍数和阈值");
-    expect(architect).toContain(
-      "reveal/explore 页的 `teachingPoints` 就是学习者实际观察的关系锚点",
-    );
-    expect(architect).toContain("每个视觉通道只承担一种关键含义");
-    expect(architect).toContain("箭头只表示传播方向");
+    expect(architect).toContain("不是挑模板");
+    expect(architect).toContain("不要预先决定卡片数量");
+    expect(architect).toContain("不规划 pageType、interactionType");
+    expect(architect).toContain("Harness 会为旧投影补兼容默认值");
 
     const director = await system.prompts.render(
       PromptIds.CourseDirectorSystem,
       {},
     );
-    expect(director).toContain("无引用且不可推导的精确倍数");
-    expect(director).toContain("从源头沿一条路径追到接收者");
-    expect(director).toContain("接收者接到错误分支");
-    expect(director).toContain("不能因为主题属于自然现象");
+    expect(director).toContain("Course Lead");
+    expect(director).toContain("Reviewer 的页面证据");
+    expect(director).toContain("不选择模板");
 
     await expect(
       system.prompts.render(PromptIds.CourseArchitectSystem, {}),
     ).rejects.toThrow("缺少 availableSkills");
   });
 
-  it("Page Builder Prompt 明确首轮生成优先于默认 Repair", async () => {
+  it("Page Builder Prompt 明确文件编辑与浏览器观察循环", async () => {
     const skills = await createProjectSkillRegistry();
     const system = await createAgentSystem(skills);
 
@@ -59,8 +52,10 @@ describe("Prompt Registry", () => {
       },
     );
 
-    expect(prompt).toContain("第一次就把它做成");
-    expect(prompt).toContain("QA 只用于发现首稿的具体缺口");
+    expect(prompt).toContain("edit_page_workspace");
+    expect(prompt).toContain("render_page");
+    expect(prompt).toContain("不存在强制 data 标记");
+    expect(prompt).toContain("QA 只用于发现具体缺口");
     expect(prompt).toContain("# 课程页面设计");
     expect(prompt).toContain("read_local_resource");
     expect(prompt).toContain("当前 pageId：page-02");

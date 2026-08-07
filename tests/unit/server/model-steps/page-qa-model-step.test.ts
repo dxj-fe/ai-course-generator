@@ -640,7 +640,7 @@ describe("PageQAModelStep", () => {
     expect(state.report?.decision).toBe("pass");
   });
 
-  it("keeps browser capture failures as non-blocking infrastructure evidence", async () => {
+  it("blocks delivery when required browser capture evidence is unavailable", async () => {
     const failedEvidence = {
       captures: [
         { width: 922, height: 460 },
@@ -664,7 +664,8 @@ describe("PageQAModelStep", () => {
 
     expect(state.status).toBe("completed");
     expect(state.report?.screenshotEvidence).toEqual(failedEvidence);
-    expect(state.report?.decision).toBe("pass");
+    expect(state.report?.decision).toBe("revise");
+    expect(state.report?.shouldRepair).toBe(true);
     expect(state.report?.issues[0]?.code).toBe("SCREENSHOT_CAPTURE_FAILED");
   });
 

@@ -71,6 +71,40 @@ describe("page quality rules", () => {
     ]);
   });
 
+  it("允许可用的多栏工作区保留独立滚动面板", () => {
+    const report = buildPageQualityReport({
+      id: "quality-scroll-panels",
+      createdAt: "2026-08-06T18:50:00+08:00",
+      pageId: "page-evidence-workbench",
+      modelDimensions: dimensions,
+      heuristicIssues: [],
+      browserIssues: [
+        {
+          code: "BROWSER_NESTED_VERTICAL_OVERFLOW",
+          dimension: "layoutQuality",
+          severity: "warning",
+          source: "browser",
+          message: "3 个证据面板可独立滚动。",
+          location: {
+            pageId: "page-evidence-workbench",
+            viewport: "922x460",
+            description: "三栏证据工作台",
+          },
+          repairHint: "仅在裁切或操作不可达时改为自然滚动。",
+        },
+      ],
+      modelIssues: [],
+      requireScreenshotEvidence: false,
+    });
+
+    expect(report.shouldRepair).toBe(false);
+    expect(report.decision).toBe("pass");
+    expect(report.issues[0]).toMatchObject({
+      code: "BROWSER_NESTED_VERTICAL_OVERFLOW",
+      severity: "warning",
+    });
+  });
+
   it("没有可定位问题时把低分保留为观测信号，不自动启动 Repair", () => {
     const report = buildPageQualityReport({
       id: "quality-course-coherence",
@@ -234,7 +268,7 @@ describe("page quality rules", () => {
     ]);
   });
 
-  it("keeps missing screenshot infrastructure as a warning", () => {
+  it("blocks delivery when required screenshot evidence is missing", () => {
     const report = buildPageQualityReport({
       id: "quality-screenshot-gate",
       createdAt: "2026-07-24T15:00:00+08:00",
@@ -244,14 +278,67 @@ describe("page quality rules", () => {
       modelIssues: [],
     });
 
-    expect(report.shouldRepair).toBe(false);
-    expect(report.decision).toBe("pass");
+    expect(report.shouldRepair).toBe(true);
+    expect(report.decision).toBe("revise");
     expect(report.issues).toMatchObject([
       {
         code: "SCREENSHOT_EVIDENCE_MISSING",
-        severity: "warning",
+        severity: "error",
         source: "browser",
       },
     ]);
+  });
+
+  it("blocks delivery when any required viewport capture fails", () => {
+    const capturedAt = "2026-07-24T15:00:00+08:00";
+    const metrics = {
+      documentWidth: 922,
+      documentHeight: 460,
+      horizontalOverflowPx: 0,
+      clippedElementCount: 0,
+      zeroSizeInteractiveCount: 0,
+    };
+    const report = buildPageQualityReport({
+      id: "quality-screenshot-partial",
+      createdAt: capturedAt,
+      pageId: "page-screenshot-partial",
+      modelDimensions: dimensions,
+      heuristicIssues: [],
+      modelIssues: [],
+      screenshotEvidence: {
+        captures: [
+          {
+            status: "captured",
+            artifactId: "desktop",
+            viewport: { width: 922, height: 460 },
+            metrics,
+            capturedAt,
+          },
+          {
+            status: "failed",
+            viewport: { width: 712, height: 650 },
+            reason: "浏览器不可用",
+          },
+          {
+            status: "captured",
+            artifactId: "mobile",
+            viewport: { width: 366, height: 500 },
+            metrics: { ...metrics, documentWidth: 366, documentHeight: 500 },
+            capturedAt,
+          },
+        ],
+      },
+    });
+
+    expect(report.shouldRepair).toBe(true);
+    expect(report.decision).toBe("revise");
+    expect(report.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "SCREENSHOT_CAPTURE_FAILED",
+          severity: "error",
+        }),
+      ]),
+    );
   });
 });

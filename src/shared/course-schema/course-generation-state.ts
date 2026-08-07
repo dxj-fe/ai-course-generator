@@ -96,6 +96,7 @@ export const CourseGenerationCauseCodeSchema = z.enum([
   "AUTH_ERROR",
   "CONFIG_ERROR",
   "MODEL_ERROR",
+  "RUNTIME_ERROR",
 ]);
 
 /**

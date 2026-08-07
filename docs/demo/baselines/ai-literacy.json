@@ -1,0 +1,20 @@
+{
+  "id": "ai-literacy",
+  "name": "生成式 AI 素养",
+  "prompt": "为非技术职场人士生成一门 4 页生成式 AI 素养课程，帮助学习者理解模型能力边界、核验输出并安全处理敏感信息。",
+  "pageCount": 4,
+  "requiredConcepts": [
+    { "label": "模型输出", "anyOf": ["生成式 AI", "模型", "输出"] },
+    { "label": "核验", "anyOf": ["核验", "事实", "来源", "幻觉"] },
+    { "label": "信息安全", "anyOf": ["敏感信息", "隐私", "安全"] }
+  ],
+  "quality": {
+    "minOverallScore": 82,
+    "minDimensionScore": 78,
+    "requireScreenshotEvidence": true
+  },
+  "manualReview": {
+    "minimumTotal": 20,
+    "minimumDimension": 3
+  }
+}

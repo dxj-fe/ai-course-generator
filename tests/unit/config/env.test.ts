@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getCoursePlannerTimeoutMs,
   getHtmlEngineerTimeoutMs,
-  getHtmlModelConfig,
   getImageModelConfig,
   getModelConfig,
 } from "../../../src/config/env";
@@ -46,15 +45,9 @@ describe("getImageModelConfig", () => {
 });
 
 describe("getModelConfig", () => {
-  it("routes every product tier to Doubao when all selectors use Ark", () => {
-    vi.stubEnv("MODEL_PROVIDER_STRONG", "ark");
-    vi.stubEnv("MODEL_PROVIDER_BALANCED", "ark");
-    vi.stubEnv("MODEL_PROVIDER_CHEAP", "ark");
+  it("所有文本能力固定使用 doubao 2.0 pro", () => {
     vi.stubEnv("ARK_API_KEY", "ark-test-key");
-    vi.stubEnv("ARK_MODEL_ID_STRONG", "doubao-seed");
-    vi.stubEnv("ARK_MODEL_ID_BALANCED", "doubao-seed");
-    vi.stubEnv("ARK_MODEL_ID_CHEAP", "doubao-seed");
-    vi.stubEnv("MODEL_API_KEY", "");
+    vi.stubEnv("ARK_BASE_URL", "");
 
     expect(
       (["strong", "balanced", "cheap"] as const).map((tier) =>
@@ -63,113 +56,37 @@ describe("getModelConfig", () => {
     ).toEqual([
       expect.objectContaining({
         providerName: "volcengine-ark",
-        modelName: "doubao-seed",
+        modelName: "doubao-seed-2-0-pro-260215",
       }),
       expect.objectContaining({
         providerName: "volcengine-ark",
-        modelName: "doubao-seed",
+        modelName: "doubao-seed-2-0-pro-260215",
       }),
       expect.objectContaining({
         providerName: "volcengine-ark",
-        modelName: "doubao-seed",
+        modelName: "doubao-seed-2-0-pro-260215",
       }),
     ]);
   });
 
-  it("requires a model for every selected tier", () => {
-    vi.stubEnv("MODEL_PROVIDER_STRONG", "ark");
-    vi.stubEnv("MODEL_PROVIDER_CHEAP", "ark");
-    vi.stubEnv("ARK_API_KEY", "ark-test-key");
-    vi.stubEnv("ARK_MODEL_ID_STRONG", "strong-model");
-    vi.stubEnv("ARK_MODEL_ID_CHEAP", "");
-
-    expect(getModelConfig("strong").modelName).toBe("strong-model");
-    expect(() => getModelConfig("cheap")).toThrow(
-      "Missing required environment variable: ARK_MODEL_ID_CHEAP",
-    );
-  });
-
-  it("selects Ark and generic providers independently for each tier", () => {
+  it("只要求 Ark API Key，并忽略旧的分层与通用模型覆盖", () => {
     vi.stubEnv("MODEL_PROVIDER_STRONG", "generic");
-    vi.stubEnv("MODEL_PROVIDER_BALANCED", "ark");
-    vi.stubEnv("MODEL_PROVIDER_CHEAP", "ark");
-    vi.stubEnv("MODEL_API_KEY", "generic-test-key");
-    vi.stubEnv("MODEL_BASE_URL", "https://models.example.test/api");
-    vi.stubEnv("MODEL_NAME_STRONG", "gpt-5.5");
-    vi.stubEnv("ARK_API_KEY", "ark-test-key");
-    vi.stubEnv("ARK_MODEL_ID_BALANCED", "doubao-mini");
-    vi.stubEnv("ARK_MODEL_ID_CHEAP", "doubao-mini");
-
-    expect(getModelConfig("strong")).toEqual({
-      apiKey: "generic-test-key",
-      baseURL: "https://models.example.test/api",
-      modelName: "gpt-5.5",
-      providerName: "model-provider",
-    });
-    expect(getModelConfig("balanced")).toEqual({
-      apiKey: "ark-test-key",
-      baseURL: "https://ark.cn-beijing.volces.com/api/v3",
-      modelName: "doubao-mini",
-      providerName: "volcengine-ark",
-    });
-    expect(getModelConfig("cheap").providerName).toBe("volcengine-ark");
-  });
-
-  it("requires an explicit provider selector", () => {
-    vi.stubEnv("MODEL_PROVIDER_STRONG", "");
-    vi.stubEnv("ARK_API_KEY", "ark-test-key");
-    vi.stubEnv("ARK_MODEL_ID_STRONG", "doubao-mini");
-    vi.stubEnv("MODEL_API_KEY", "generic-test-key");
-    vi.stubEnv("MODEL_BASE_URL", "https://models.example.test/api");
-    vi.stubEnv("MODEL_NAME_STRONG", "gpt-5.5");
-
-    expect(() => getModelConfig("strong")).toThrow(
-      "Missing required environment variable: MODEL_PROVIDER_STRONG",
-    );
-  });
-
-  it("does not silently switch providers when the selected provider is incomplete", () => {
-    vi.stubEnv("MODEL_PROVIDER_STRONG", "generic");
+    vi.stubEnv("MODEL_NAME_STRONG", "legacy-model");
+    vi.stubEnv("ARK_MODEL_ID_STRONG", "legacy-mini");
     vi.stubEnv("MODEL_API_KEY", "");
     vi.stubEnv("ARK_API_KEY", "ark-test-key");
-    vi.stubEnv("ARK_MODEL_ID_STRONG", "doubao-mini");
 
-    expect(() => getModelConfig("strong")).toThrow(
-      "Missing required environment variable: MODEL_API_KEY",
+    expect(getModelConfig("strong").modelName).toBe(
+      "doubao-seed-2-0-pro-260215",
     );
   });
 
-  it.each(["ARK", "openai", "model-provider"])(
-    "rejects an invalid tier provider selector: %s",
-    (selector) => {
-      vi.stubEnv("MODEL_PROVIDER_STRONG", selector);
-
-      expect(() => getModelConfig("strong")).toThrow(
-        'MODEL_PROVIDER_STRONG must be either "ark" or "generic".',
-      );
-    },
-  );
-});
-
-describe("getHtmlModelConfig", () => {
-  it("uses the dedicated Ark HTML model when configured", () => {
-    vi.stubEnv("ARK_HTML_MODEL_ID", "doubao-code");
-    vi.stubEnv("ARK_API_KEY", "ark-test-key");
-    vi.stubEnv("ARK_BASE_URL", "");
-
-    expect(getHtmlModelConfig()).toEqual({
-      apiKey: "ark-test-key",
-      baseURL: "https://ark.cn-beijing.volces.com/api/v3",
-      modelName: "doubao-code",
-      providerName: "volcengine-ark",
-    });
-  });
-
-  it("does not require Ark configuration when the HTML override is unset", () => {
-    vi.stubEnv("ARK_HTML_MODEL_ID", "");
+  it("缺少 Ark API Key 时立即失败", () => {
     vi.stubEnv("ARK_API_KEY", "");
 
-    expect(getHtmlModelConfig()).toBeUndefined();
+    expect(() => getModelConfig("strong")).toThrow(
+      "Missing required environment variable: ARK_API_KEY",
+    );
   });
 });
 
@@ -202,7 +119,7 @@ describe("getCoursePlannerTimeoutMs", () => {
   it("allows a complete multi-section plan more time than ordinary structured calls", () => {
     vi.stubEnv("AI_PLANNER_TIMEOUT_MS", "");
 
-    expect(getCoursePlannerTimeoutMs()).toBe(150_000);
+    expect(getCoursePlannerTimeoutMs()).toBe(300_000);
   });
 
   it("accepts a bounded local override", () => {

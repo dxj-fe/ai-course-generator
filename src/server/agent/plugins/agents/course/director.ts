@@ -22,9 +22,10 @@ export const courseDirectorAgent = defineAgent({
   skills: [],
   modelCapability: "planner",
   runtime: {
-    maxSteps: 5,
-    maxToolCalls: 5,
-    timeoutMs: 120_000,
-    maxOutputTokens: 12_000,
+    maxSteps: 3,
+    maxToolCalls: 3,
+    // 证据已由 Harness 完整加载，本回合只有一次终态决策。
+    timeoutMs: 60_000,
+    maxOutputTokens: 4_000,
   },
 });

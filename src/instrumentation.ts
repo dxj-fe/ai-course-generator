@@ -5,7 +5,7 @@
 export async function register() {
   if (
     process.env.NEXT_RUNTIME !== "nodejs" ||
-    process.env.COURSE_TASK_STARTUP_RECOVERY === "0"
+    process.env.COURSE_TASK_STARTUP_RECOVERY !== "1"
   ) {
     return;
   }

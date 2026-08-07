@@ -180,25 +180,6 @@ export function basicLayoutHeuristics({
     }
 
     if (result.status === "fallback") {
-      if (
-        result.fallback &&
-        !hasAttributesOnSameTag(html, {
-          "data-asset-slot-id": slot.id,
-          "data-asset-fallback": result.fallback.kind,
-        })
-      ) {
-        add(
-          "ASSET_FALLBACK_NOT_RENDERED",
-          "assetUsability",
-          "error",
-          `素材槽位 ${slot.id} 没有按记录实现 ${result.fallback.kind} 降级。`,
-          "在素材根节点实现降级视觉，并写入匹配的 data-asset-fallback 标记。",
-          {
-            selector: `[data-asset-slot-id="${slot.id}"]`,
-            description: `素材槽位 ${slot.id}`,
-          },
-        );
-      }
       add(
         "ASSET_FALLBACK_USED",
         "assetUsability",
@@ -223,21 +204,6 @@ export function basicLayoutHeuristics({
         {
           selector: `[data-asset-slot-id="${slot.id}"]`,
           description: `素材槽位 ${slot.id}`,
-        },
-      );
-    } else if (
-      slot.required &&
-      !hasUsableAssetSlot(html, slot.id, result.asset?.uri)
-    ) {
-      add(
-        "ASSET_REQUIRED_SLOT_EMPTY",
-        "assetUsability",
-        "error",
-        `必需素材槽位 ${slot.id} 没有可识别的图片或矢量内容。`,
-        `为 ${slot.id} 提供与“${slot.purpose}”一致的可用素材。`,
-        {
-          selector: `[data-asset-slot-id="${slot.id}"]`,
-          description: `必需素材槽位 ${slot.id}`,
         },
       );
     }
@@ -303,80 +269,13 @@ export function basicLayoutHeuristics({
   return dedupeIssues(issues);
 }
 
-/**
- * 透明通道缺失是 Provider 能力提示，不等同于页面缺陷。只有素材已作为唯一
- * img 放进独立的普通流容器时才视为完成 HTML 降级；直接把不透明图用于槽位
- * 根节点或 CSS 背景仍保留 QA issue。
- */
+/** 透明通道缺失只作为 Provider 能力提示；真实呈现交给截图检查，不要求 DSL 槽位。 */
 export function hasSafelyContainedOpaqueAssetFallback(
   html: string,
-  slotId: string,
+  _slotId: string,
   approvedUri?: string,
 ) {
-  if (!approvedUri) return false;
-  const markers = [...html.matchAll(/<[a-z][^>]*>/gi)].filter(
-    (match) =>
-      readAttribute(match[0], "data-asset-slot-id") === slotId,
-  );
-  if (markers.length !== 1 || markers[0]?.index === undefined) return false;
-
-  const openingTag = markers[0][0];
-  const tagName = /^<\s*([a-z][a-z0-9-]*)/i.exec(openingTag)?.[1];
-  if (
-    !tagName ||
-    !["aside", "div", "figure", "picture", "section"].includes(
-      tagName.toLowerCase(),
-    )
-  ) {
-    return false;
-  }
-  const inlineStyle = readAttribute(openingTag, "style") ?? "";
-  if (/\bposition\s*:\s*(?:absolute|fixed)\b/i.test(inlineStyle)) {
-    return false;
-  }
-
-  const element = readElementHtml(
-    html,
-    markers[0].index,
-    openingTag,
-    tagName,
-  );
-  if (!element) return false;
-  const approvedImages = (element.match(/<img\b[^>]*>/gi) ?? []).filter(
-    (tag) => readAttribute(tag, "src") === approvedUri,
-  );
-  if (approvedImages.length === 1) return true;
-
-  const usesApprovedBackground =
-    backgroundDeclarationUsesUri(inlineStyle, approvedUri) ||
-    hasUniqueStylesheetBackground(
-      html,
-      openingTag,
-      slotId,
-      approvedUri,
-    );
-  if (!usesApprovedBackground) return false;
-  const innerMarkup = element
-    .slice(openingTag.length)
-    .replace(new RegExp(`</\\s*${escapeRegex(tagName)}\\s*>\\s*$`, "i"), "")
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .trim();
-  return innerMarkup.length === 0;
-}
-
-function hasAttributesOnSameTag(
-  html: string,
-  attributes: Record<string, string>,
-) {
-  return (html.match(/<[a-z][^>]*>/gi) ?? []).some((tag) =>
-    Object.entries(attributes).every(([attribute, value]) => {
-      const escapedValue = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      return new RegExp(
-        `\\b${attribute}\\s*=\\s*(["'])${escapedValue}\\1`,
-        "i",
-      ).test(tag);
-    }),
-  );
+  return Boolean(approvedUri && html.includes(approvedUri));
 }
 
 function normalizeVisibleText(html: string) {
@@ -533,31 +432,6 @@ function readAttribute(tag: string, attribute: string) {
     `\\b${escapedAttribute}\\s*=\\s*(["'])(.*?)\\1`,
     "i",
   ).exec(tag)?.[2];
-}
-
-function readElementHtml(
-  html: string,
-  index: number,
-  openingTag: string,
-  tagName: string,
-) {
-  const escapedTagName = escapeRegex(tagName);
-  const pattern = new RegExp(`<\\/?\\s*${escapedTagName}\\b[^>]*>`, "gi");
-  pattern.lastIndex = index + openingTag.length;
-  let depth = 1;
-  let match: RegExpExecArray | null;
-
-  while ((match = pattern.exec(html))) {
-    if (/^<\s*\//.test(match[0])) {
-      depth -= 1;
-    } else if (!/\/\s*>$/.test(match[0])) {
-      depth += 1;
-    }
-    if (depth === 0) {
-      return html.slice(index, match.index + match[0].length);
-    }
-  }
-  return undefined;
 }
 
 function escapeRegex(value: string) {

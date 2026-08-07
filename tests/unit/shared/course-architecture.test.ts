@@ -56,6 +56,32 @@ describe("多 Agent 课程架构 Schema", () => {
     expect(architecture.coursePack.terms[0].sourceUsages).toEqual([]);
   });
 
+  it("由 Harness 补齐迁移期模板、页型、互动和素材默认字段", () => {
+    const candidate = structuredClone(createArchitecture()) as unknown as {
+      blueprint: { courseRules: Record<string, unknown> };
+      pageTasks: Array<Record<string, unknown>>;
+    };
+    delete candidate.blueprint.courseRules.styleTemplateId;
+    for (const page of candidate.pageTasks) {
+      delete page.pageType;
+      delete page.functionalTemplateId;
+      delete page.styleTemplateId;
+      delete page.interactionType;
+      delete page.assetNeeds;
+    }
+
+    const parsed = CourseArchitectureSchema.parse(candidate);
+
+    expect(parsed.blueprint.courseRules.styleTemplateId).toBe("agent-authored");
+    expect(parsed.pageTasks[0]).toMatchObject({
+      pageType: "knowledge_card",
+      functionalTemplateId: "agent-authored",
+      styleTemplateId: "agent-authored",
+      interactionType: "none",
+      assetNeeds: [],
+    });
+  });
+
   it("拒绝重复 objective ID", () => {
     const architecture = createArchitecture();
     architecture.blueprint.objectives[1].id =

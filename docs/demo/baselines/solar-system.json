@@ -1,0 +1,20 @@
+{
+  "id": "solar-system",
+  "name": "太阳系入门",
+  "prompt": "为 8–10 岁学生生成一门 5 页太阳系入门课程，让学习者建立空间关系，并能解释恒星、行星和卫星的区别。",
+  "pageCount": 5,
+  "requiredConcepts": [
+    { "label": "太阳", "anyOf": ["太阳", "恒星"] },
+    { "label": "行星", "anyOf": ["行星", "公转", "轨道"] },
+    { "label": "卫星", "anyOf": ["卫星", "月球"] }
+  ],
+  "quality": {
+    "minOverallScore": 82,
+    "minDimensionScore": 78,
+    "requireScreenshotEvidence": true
+  },
+  "manualReview": {
+    "minimumTotal": 20,
+    "minimumDimension": 3
+  }
+}

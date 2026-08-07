@@ -24,7 +24,11 @@ import {
   resolvePageBuilderActiveTools,
 } from "../../../../src/server/agent/plugins/tools/course/page-builder";
 import { createReadLocalResourceTool } from "../../../../src/server/agent/plugins/tools/system";
-import { runPageBuilderAgent } from "../../../../src/server/agent/plugins/agents/course/page-builder-handler";
+import {
+  preparePageBuilderStep,
+  prunePageBuilderRenderEvidenceMessages,
+  runPageBuilderAgent,
+} from "../../../../src/server/agent/plugins/agents/course/page-builder-handler";
 import { assertFixSubmissionUsesCurrentCheckpoints } from "../../../../src/server/course/policy/page-fix";
 import {
   AgentTerminalNotCommittedError,
@@ -67,6 +71,112 @@ afterEach(async () => {
 });
 
 describe("Page Builder ToolLoopAgent", () => {
+  it("新 Page Creator 由 Harness 预加载上下文和 workspace，第一轮直接创作 HTML", async () => {
+    const prepared = await preparePageBuilder();
+    const stop = new Error("已完成首步检查");
+
+    await expect(
+      runPageBuilderAgent(
+        {
+          repository: prepared.repository,
+          workOrder: prepared.workOrder,
+          workOrderLeaseOwner: PAGE_OWNER,
+          runLeaseOwner: ENGINE_OWNER,
+          traceId: prepared.run.traceId,
+          creationBrief: createBrief(),
+          referencePacks: [createReferencePack()],
+        },
+        {
+          createAgent: (settings) => ({
+            generate: async ({ prompt }) => {
+              expect(prompt).toContain("Harness 已预加载的封口上下文与 workspace");
+              expect(prompt).toContain('"coursePack"');
+              const firstStep = await settings.prepareStep({
+                messages: [],
+                stepNumber: 0,
+                steps: [],
+              });
+              expect(firstStep).toMatchObject({
+                toolChoice: {
+                  type: "tool",
+                  toolName: "edit_page_workspace",
+                },
+              });
+              throw stop;
+            },
+          }),
+          model: {},
+          now: () => "2026-07-29T12:03:30.000Z",
+        },
+      ),
+    ).rejects.toBe(stop);
+  });
+
+  it("只向模型保留最新一轮截图证据，避免多模态上下文随修订次数膨胀", () => {
+    const oldEvidence = {
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: "下面是刚刚渲染的页面 revision 2。",
+        },
+        { type: "file", data: new Uint8Array([1]), mediaType: "image/png" },
+      ],
+    };
+    const normalMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "继续修订页面。" }],
+    };
+
+    expect(
+      prunePageBuilderRenderEvidenceMessages([
+        normalMessage,
+        oldEvidence,
+      ]),
+    ).toEqual([normalMessage]);
+  });
+
+  it("最终编辑后的机械 render 步骤会移除旧截图并固定单一工具选择", async () => {
+    const prepared = await preparePageBuilder();
+    prepared.execution.legacyModelPipeline = false;
+    prepared.execution.latestRenderEvidence = {
+      htmlRevision: 1,
+      evidence: { captures: [] },
+      issues: [],
+      images: [],
+    };
+    prepared.execution.injectedRenderRevision = 1;
+    prepared.execution.progress.workspaceDirty = true;
+    const oldEvidence = {
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: "下面是刚刚渲染的页面 revision 1。",
+        },
+        {
+          type: "file",
+          data: new Uint8Array([1]),
+          mediaType: "image/png",
+        },
+      ],
+    };
+    const normalMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "已完成最终编辑。" }],
+    };
+
+    const preparedStep = preparePageBuilderStep(prepared.execution, [
+      oldEvidence,
+      normalMessage,
+    ]);
+    expect(preparedStep).toMatchObject({
+      messages: [normalMessage],
+      toolChoice: { type: "tool", toolName: "render_page" },
+    });
+    expect(preparedStep.activeTools).toContain("render_page");
+  });
+
   it("只把按需读取的页面设计 reference 注入内容和 HTML Model Step", async () => {
     const prepared = await preparePageBuilder();
     const registry = await createProjectSkillRegistry();
@@ -155,6 +265,244 @@ describe("Page Builder ToolLoopAgent", () => {
       resolvePageBuilderActiveTools(prepared.execution),
     ).not.toContain("resolve_page_assets");
     expect(steps.resolveAssets).not.toHaveBeenCalled();
+  });
+
+  it("Page Creator 编辑 workspace 后由 Harness 自动完成渲染和质量检查", async () => {
+    const prepared = await preparePageBuilder();
+    prepared.execution.legacyModelPipeline = false;
+    const content = pageContent();
+    const steps = modelSteps({
+      content,
+      quality: passingQuality(),
+    });
+    const captureScreenshot = vi.fn(async () => ({
+      evidence: {
+        captures: [
+          { width: 922, height: 460 },
+          { width: 712, height: 650 },
+          { width: 366, height: 500 },
+        ].map((viewport, index) => ({
+          status: "captured" as const,
+          artifactId: `workspace-shot-${index}`,
+          viewport,
+          metrics: {
+            documentWidth: viewport.width,
+            documentHeight: viewport.height,
+            horizontalOverflowPx: 0,
+            verticalOverflowPx: 0,
+            clippedElementCount: 0,
+            zeroSizeInteractiveCount: 0,
+          },
+          capturedAt: "2026-07-29T12:01:00.000Z",
+        })),
+      },
+      issues: [],
+      modelImages: [
+        {
+          viewport: { width: 922, height: 460 },
+          png: new Uint8Array([137, 80, 78, 71]),
+        },
+      ],
+    }));
+    const tools = createPageBuilderTools(prepared.execution, {
+      modelSteps: steps,
+      captureScreenshot,
+    });
+    const html = `<!doctype html>
+<html lang="zh-CN"><head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html,body,main{width:100%;min-height:100%;margin:0}main{display:grid;grid-template-columns:1fr 1fr;gap:24px}@media (max-width: 768px){main{grid-template-columns:1fr}}</style>
+</head><body><main>
+<header><h1>恒星与行星的区别</h1><p>先用是否自身发光来区分恒星和行星。</p></header>
+<article><h2>恒星</h2><p>恒星能够自身发光发热，太阳就是一颗恒星。</p><p>判断重点是能否自身发光。</p></article>
+<article><h2>行星</h2><p>行星不会自身发光，并且会围绕恒星运行。</p><p>地球是围绕太阳运行的行星。</p></article>
+<section>
+<p>展开卡片查看判断依据。</p>
+<details><summary>恒星</summary><p>能够自身发光发热。</p></details>
+<details><summary>行星</summary><p>不会自身发光。</p></details>
+</section></main></body></html>`;
+
+    await executeTool(tools, "read_page_context", { pageId: PAGE_ID });
+    await executeTool(tools, "read_page_workspace", { pageId: PAGE_ID });
+
+    const edited = await executeTool(tools, "edit_page_workspace", {
+      pageId: PAGE_ID,
+      mode: "write",
+      html,
+    });
+
+    expect(edited).toMatchObject({
+      ok: true,
+      committed: true,
+      data: {
+        decision: "pass",
+        screenshotCount: 1,
+      },
+    });
+    expect(captureScreenshot).toHaveBeenCalledOnce();
+    expect(steps.generateContent).not.toHaveBeenCalled();
+    expect(steps.generateHtml).not.toHaveBeenCalled();
+    expect(steps.inspectPage).not.toHaveBeenCalled();
+    const snapshot = loadPageBuilderSnapshot(prepared.execution);
+    expect(snapshot).toMatchObject({
+      content: { pageId: PAGE_ID, blocks: [], interaction: { type: "none" } },
+      quality: { decision: "pass" },
+    });
+    expect(snapshot.html?.html).toContain("max-width: 520px");
+  });
+
+  it("Page Creator 三轮实质修订仍失败后只开放 block_page，避免无界空转", async () => {
+    const prepared = await preparePageBuilder();
+    prepared.execution.legacyModelPipeline = false;
+    const captures = [
+      { width: 922, height: 460 },
+      { width: 712, height: 650 },
+      { width: 366, height: 500 },
+    ].map((viewport, index) => ({
+      status: "captured" as const,
+      artifactId: `failed-shot-${index}`,
+      viewport,
+      metrics: {
+        documentWidth: viewport.width,
+        documentHeight: viewport.height,
+        horizontalOverflowPx: 0,
+        verticalOverflowPx: 0,
+        clippedElementCount: 0,
+        zeroSizeInteractiveCount: 0,
+        inertButtonCount: 1,
+      },
+      capturedAt: "2026-07-29T12:01:00.000Z",
+    }));
+    const captureScreenshot = vi.fn(async () => ({
+      evidence: { captures },
+      issues: captures.map((capture) => ({
+        code: "BROWSER_INERT_BUTTON",
+        dimension: "htmlRuntime" as const,
+        severity: "error" as const,
+        source: "browser" as const,
+        message: "按钮没有可信运行时或原生表单行为。",
+        location: {
+          pageId: PAGE_ID,
+          viewport: `${capture.viewport.width}x${capture.viewport.height}`,
+          selector: "button",
+          description: "无法完成动作的按钮",
+        },
+        repairHint: "移除伪交互或改用原生 details。",
+      })),
+      modelImages: [],
+    }));
+    const tools = createPageBuilderTools(prepared.execution, {
+      modelSteps: modelSteps({
+        content: pageContent(),
+        quality: passingQuality(),
+      }),
+      captureScreenshot,
+    });
+
+    await executeTool(tools, "read_page_context", { pageId: PAGE_ID });
+    await executeTool(tools, "read_page_workspace", { pageId: PAGE_ID });
+    for (let revision = 0; revision <= 3; revision += 1) {
+      const html = `<!doctype html><html lang="zh-CN"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>main{min-height:100vh}</style></head><body><main><h1>恒星与行星</h1><p>修订 ${revision}</p><button>提交判断</button></main></body></html>`;
+      await executeTool(tools, "edit_page_workspace", {
+        pageId: PAGE_ID,
+        mode: "write",
+        html,
+      });
+
+      const activeTools = resolvePageBuilderActiveTools(prepared.execution);
+      if (revision < 3) {
+        expect(activeTools).toContain("edit_page_workspace");
+        expect(activeTools).not.toContain("block_page");
+      } else {
+        expect(activeTools).toEqual(["block_page"]);
+      }
+    }
+  });
+
+  it("修订预算耗尽后由 Harness 直接提交阻塞终态，不再等待模型做机械调用", async () => {
+    const prepared = await preparePageBuilder();
+    const captures = [
+      { width: 922, height: 460 },
+      { width: 712, height: 650 },
+      { width: 366, height: 500 },
+    ].map((viewport, index) => ({
+      status: "captured" as const,
+      artifactId: `blocked-shot-${index}`,
+      viewport,
+      metrics: {
+        documentWidth: viewport.width,
+        documentHeight: viewport.height,
+        horizontalOverflowPx: 0,
+        verticalOverflowPx: 0,
+        clippedElementCount: 0,
+        zeroSizeInteractiveCount: 0,
+        inertButtonCount: 1,
+      },
+      capturedAt: "2026-07-29T12:01:00.000Z",
+    }));
+    let agentRunCount = 0;
+
+    const result = await runPageBuilderAgent(
+      {
+        repository: prepared.repository,
+        workOrder: prepared.workOrder,
+        workOrderLeaseOwner: PAGE_OWNER,
+        runLeaseOwner: ENGINE_OWNER,
+        traceId: prepared.run.traceId,
+        creationBrief: createBrief(),
+        referencePacks: [createReferencePack()],
+        workspaceRoot: prepared.execution.workspace.directory,
+      },
+      {
+        captureScreenshot: vi.fn(async () => ({
+          evidence: { captures },
+          issues: [
+            {
+              code: "BROWSER_INERT_BUTTON",
+              dimension: "htmlRuntime" as const,
+              severity: "error" as const,
+              source: "browser" as const,
+              message: "按钮没有可信运行时或原生表单行为。",
+              location: {
+                pageId: PAGE_ID,
+                viewport: "922x460",
+                selector: "button",
+                description: "无法完成动作的按钮",
+              },
+              repairHint: "移除伪交互或改用原生 details。",
+            },
+          ],
+          modelImages: [],
+        })),
+        createAgent: (settings) => ({
+          generate: async ({ abortSignal }) => {
+            agentRunCount += 1;
+            for (let revision = 0; revision <= 3; revision += 1) {
+              await executeTool(
+                settings.tools,
+                "edit_page_workspace",
+                {
+                  pageId: PAGE_ID,
+                  mode: "write",
+                  html: `<!doctype html><html lang="zh-CN"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>main{min-height:100vh}</style></head><body><main><h1>恒星与行星</h1><p>修订 ${revision}</p><button>提交判断</button></main></body></html>`,
+                },
+                abortSignal,
+              );
+            }
+            return {};
+          },
+        }),
+        model: {},
+        now: () => "2026-07-29T12:03:30.000Z",
+      },
+    );
+
+    expect(agentRunCount).toBe(1);
+    expect(result.status).toBe("blocked");
+    expect(
+      prepared.repository.workOrders.load(prepared.workOrder.id)?.error
+        ?.message,
+    ).toContain("BROWSER_INERT_BUTTON");
   });
 
   it("QA 发现内容问题后只开放内容修复，并在修复后重建下游产物", async () => {
@@ -1060,6 +1408,16 @@ describe("Page Builder ToolLoopAgent", () => {
         modelSteps: declinedSteps,
       }),
       "read_page_context",
+      { pageId: PAGE_ID },
+    );
+    expect(resolvePageBuilderActiveTools(recovered)).toEqual([
+      "read_page_workspace",
+    ]);
+    await executeTool(
+      createPageBuilderTools(recovered, {
+        modelSteps: declinedSteps,
+      }),
+      "read_page_workspace",
       { pageId: PAGE_ID },
     );
     expect(resolvePageBuilderActiveTools(recovered)).toContain(

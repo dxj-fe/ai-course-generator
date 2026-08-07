@@ -1,0 +1,20 @@
+{
+  "id": "mars-exploration",
+  "name": "火星探索与水的证据",
+  "prompt": "为 12–15 岁学生生成一门 4 页火星探索课程，让学习者根据地貌和矿物证据判断火星过去是否可能存在液态水。",
+  "pageCount": 4,
+  "requiredConcepts": [
+    { "label": "火星环境", "anyOf": ["火星", "大气", "地表"] },
+    { "label": "液态水证据", "anyOf": ["液态水", "河道", "矿物", "证据"] },
+    { "label": "科学推断", "anyOf": ["推断", "假设", "不确定性"] }
+  ],
+  "quality": {
+    "minOverallScore": 82,
+    "minDimensionScore": 78,
+    "requireScreenshotEvidence": true
+  },
+  "manualReview": {
+    "minimumTotal": 20,
+    "minimumDimension": 3
+  }
+}

@@ -133,7 +133,9 @@ export function HtmlPreviewFrame({
   const srcDoc = useMemo(
     () =>
       trustedRuntime
-        ? buildTrustedLessonSrcDoc(html, trustedRuntime)
+        ? buildTrustedLessonSrcDoc(html, trustedRuntime, {
+            viewportFit: false,
+          })
         : html,
     [html, trustedRuntime],
   );
@@ -241,7 +243,7 @@ export function HtmlPreviewFrame({
           referrerPolicy="no-referrer"
           ref={iframeRef}
           sandbox={trustedRuntime ? "allow-scripts" : ""}
-          scrolling="no"
+          scrolling={chrome === "learner" ? "auto" : "no"}
           srcDoc={srcDoc}
           title={title}
         />

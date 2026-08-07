@@ -53,6 +53,7 @@ import {
 import { getAgentSystem } from "@/server/setup/agent";
 import { runPromisePool } from "@/server/infra/concurrency/pool";
 import { runInTransaction } from "@/server/infra/database/connection";
+import { isBrowserHarnessUnavailableError } from "@/server/infra/browser/error";
 import {
   CourseArchitectureSchema,
   WorkOrderSchema,
@@ -63,7 +64,33 @@ import {
   type WorkOrder,
 } from "@/shared/course-schema";
 const MAX_ENGINE_TRANSITIONS = 1_000;
+const MAX_TRANSIENT_EXECUTION_ATTEMPTS = 3;
 const TERMINAL_PHASES = new Set(["completed", "failed", "cancelled"]);
+
+/**
+ * Provider 瞬态故障不应终态化整课。上层 Task Service 会把任务放回 queued，
+ * 下一次仍使用同一个 Pro 模型并从 WorkOrder checkpoint 继续。
+ */
+export class CourseRunTransientExecutionError extends Error {
+  readonly code = "COURSE_RUN_TRANSIENT_EXECUTION_ERROR";
+  readonly retryable = true;
+
+  constructor(readonly originalError: unknown) {
+    super("课程 Agent 遇到瞬态执行故障，将从最近检查点重试。");
+    this.name = "CourseRunTransientExecutionError";
+  }
+}
+
+export function isCourseRunTransientExecutionError(
+  error: unknown,
+): error is CourseRunTransientExecutionError {
+  return (
+    error instanceof CourseRunTransientExecutionError ||
+    (error instanceof Error &&
+      "code" in error &&
+      error.code === "COURSE_RUN_TRANSIENT_EXECUTION_ERROR")
+  );
+}
 export type CourseRunEngineInput = {
   taskId: string;
   courseId: string;
@@ -264,13 +291,12 @@ async function runCourseToTerminal(
         if (!architectureRef) {
           throw new Error("submitted Architect WorkOrder 缺少课程架构");
         }
-        createCourseRunCommands(repository).createDirectorRound({
+        repository.acceptArchitectureAndDispatchPages({
           fence: toFence(
             requiredRun(repository.runs.load(run.id), run.id),
             workerId,
           ),
-          purpose: "review_architecture",
-          inputArtifactRefs: [architectureRef],
+          architectWorkOrderId: submittedArchitect.id,
           now: dependencies.now(),
         });
         await checkpoint();
@@ -279,9 +305,10 @@ async function runCourseToTerminal(
 
       const currentPageOrders = currentRunnablePageOrders(run, orders);
       if (currentPageOrders.length > 0) {
-        const batch = currentPageOrders.slice(0, concurrency);
         const results = await runPromisePool(
-          batch,
+          // 把当前全部可运行页面交给固定并发池。池会在任一 Page Agent 完成后
+          // 立即领取下一页，不能按 concurrency 切成整批后等待最慢页面。
+          currentPageOrders,
           (workOrder) =>
             executeOrder(
               workOrder,
@@ -362,6 +389,14 @@ async function runCourseToTerminal(
     throw new Error("CourseRunEngine 超过最大状态迁移次数");
   } catch (error) {
     if (isAbortError(error, context.abortSignal)) throw error;
+    // Browser 进程故障是 Worker 基础设施问题，不能终态化
+    // WorkOrder/CourseRun。finally 会释放 lease，Task Service 将任务放回 queued。
+    if (
+      isBrowserHarnessUnavailableError(error) ||
+      isCourseRunTransientExecutionError(error)
+    ) {
+      throw error;
+    }
     console.error("[course-run]", {
       event: "engine:error",
       traceId: input.traceId,
@@ -593,6 +628,10 @@ async function executeOrder(
           releaseWorkOrder(claimed.id, owner, dependencies);
           throw error;
         }
+        if (isBrowserHarnessUnavailableError(error)) {
+          releaseWorkOrder(claimed.id, owner, dependencies);
+          throw error;
+        }
         const terminal = dependencies.repository.workOrders.load(
           claimed.id,
         );
@@ -614,6 +653,14 @@ async function executeOrder(
           fallbackAvailable: hasFallback,
           ...serializeErrorForLog(error),
         });
+        if (
+          !hasFallback &&
+          isRetryableAgentExecutionError(error) &&
+          current.executionAttempt < MAX_TRANSIENT_EXECUTION_ATTEMPTS
+        ) {
+          releaseWorkOrder(claimed.id, owner, dependencies);
+          throw new CourseRunTransientExecutionError(error);
+        }
         if (!hasFallback || !isRetryableAgentExecutionError(error)) break;
       }
     }
@@ -628,6 +675,14 @@ async function executeOrder(
     );
   } catch (error) {
     if (isAbortError(error, context.abortSignal)) {
+      releaseWorkOrder(claimed.id, owner, dependencies);
+      throw error;
+    }
+    if (isBrowserHarnessUnavailableError(error)) {
+      releaseWorkOrder(claimed.id, owner, dependencies);
+      throw error;
+    }
+    if (isCourseRunTransientExecutionError(error)) {
       releaseWorkOrder(claimed.id, owner, dependencies);
       throw error;
     }

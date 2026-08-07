@@ -25,6 +25,60 @@ export function collectBrowserIssues(
     description: "Playwright 固定视口渲染结果",
   };
   const issues: QualityIssue[] = [];
+  const pageError = evidence.diagnostics?.pageErrors[0];
+  if (pageError) {
+    issues.push({
+      code: "BROWSER_PAGE_ERROR",
+      dimension: "htmlRuntime",
+      severity: "error",
+      source: "browser",
+      message: `页面运行时异常：${pageError}`,
+      location,
+      repairHint: "修复导致 pageerror 的页面结构或可信互动标记后重新渲染。",
+    });
+  }
+  const consoleError = evidence.diagnostics?.console.find(
+    ({ type }) => type === "error" || type === "assert",
+  );
+  if (consoleError) {
+    issues.push({
+      code: "BROWSER_CONSOLE_ERROR",
+      dimension: "htmlRuntime",
+      severity: "error",
+      source: "browser",
+      message: `控制台错误：${consoleError.text}`,
+      location,
+      repairHint: "根据控制台错误修正页面后重新渲染。",
+    });
+  }
+  const requestFailure = evidence.diagnostics?.requestFailures[0];
+  if (requestFailure) {
+    issues.push({
+      code: "BROWSER_REQUEST_FAILED",
+      dimension: "assetUsability",
+      severity: "error",
+      source: "browser",
+      message: `资源请求失败：${requestFailure.method} ${requestFailure.url}`,
+      location,
+      repairHint:
+        "只使用 generate_page_image 返回的内部 URI，并确认素材仍可由 Browser Harness 读取。",
+    });
+  }
+  const failedInteractionStep = evidence.diagnostics?.interaction.find(
+    ({ status }) => status === "failed",
+  );
+  if (failedInteractionStep) {
+    issues.push({
+      code: "BROWSER_INTERACTION_STEP_FAILED",
+      dimension: "htmlRuntime",
+      severity: "error",
+      source: "browser",
+      message: `互动回放失败（${failedInteractionStep.action}）：${failedInteractionStep.detail}`,
+      location,
+      repairHint:
+        "检查目标 selector、控件可见性和可信运行时标记，修正后重新执行互动回放。",
+    });
+  }
   if (evidence.metrics.horizontalOverflowPx > 0) {
     issues.push({
       code: "BROWSER_HORIZONTAL_OVERFLOW",
@@ -48,22 +102,28 @@ export function collectBrowserIssues(
     issues.push({
       code: "BROWSER_VERTICAL_OVERFLOW",
       dimension: "layoutQuality",
-      severity: isNarrowViewport ? "warning" : "error",
+      severity: "warning",
       source: "browser",
       message: isNarrowViewport
         ? `移动端页面采用纵向阅读，文档比首屏长 ${verticalOverflowPx}px。`
-        : `页面产生 ${verticalOverflowPx}px 纵向溢出。`,
-      location,
-      repairHint: isNarrowViewport
-        ? "保留页面根节点自然滚动；只在出现裁切、嵌套滚动或主操作不可达时返工。"
-        : "压缩单页内容或在规划阶段拆分页面，确保横向播放器画布内完整可见。",
+        : `页面内容比当前画布长 ${verticalOverflowPx}px，可在学习器内纵向滚动阅读。`,
+      location: {
+        ...location,
+        ...(evidence.metrics.largestVisualSelector
+          ? { selector: evidence.metrics.largestVisualSelector }
+          : {}),
+      },
+      repairHint:
+        "学习器允许页面自然纵向滚动；只在正文被裁切、横向溢出或核心操作不可达时返工。",
     });
   }
   if ((evidence.metrics.nestedVerticalOverflowCount ?? 0) > 0) {
     issues.push({
       code: "BROWSER_NESTED_VERTICAL_OVERFLOW",
       dimension: "layoutQuality",
-      severity: "error",
+      // 多栏证据台、时间线和表单工作区允许使用独立滚动面板。单凭 overflow-y
+      // 不能证明页面不可用；真实裁切、操作不可达和不可读缩放由独立指标拦截。
+      severity: "warning",
       source: "browser",
       message: `${evidence.metrics.nestedVerticalOverflowCount} 个嵌套区域产生纵向滚动。`,
       location: {
@@ -71,41 +131,46 @@ export function collectBrowserIssues(
         description: "播放器画布中的嵌套滚动区域",
       },
       repairHint:
-        "移除正文或互动容器的 overflow-y 滚动，将超出单页容量的内容拆到相邻页面。",
+        "若这是有意设计的多栏工作区可保留；仅在内容被裁切或核心操作不可达时改为页面自然滚动。",
     });
   }
   if (evidence.metrics.clippedElementCount > 0) {
+    const clippedSelectors =
+      evidence.metrics.clippedElementSelectors ?? [];
     issues.push({
       code: "BROWSER_CONTENT_CLIPPED",
       dimension: "layoutQuality",
       severity: "error",
       source: "browser",
-      message: `${evidence.metrics.clippedElementCount} 个元素存在可测量的内容裁切。`,
-      location,
+      message: `${evidence.metrics.clippedElementCount} 个元素存在可测量的内容裁切${clippedSelectors.length > 0 ? `：${clippedSelectors.slice(0, 3).join("、")}` : ""}。`,
+      location: {
+        ...location,
+        ...(clippedSelectors[0]
+          ? { selector: clippedSelectors[0] }
+          : {}),
+      },
       repairHint:
-        "检查 overflow 与固定高度，确保正文和交互内容完整可见。",
+        clippedSelectors[0]
+          ? `优先检查 ${clippedSelectors[0]} 的 overflow、固定高度和内部正文；修复后重新渲染，不要盲目改动无关区域。`
+          : "检查 overflow 与固定高度，确保正文和交互内容完整可见。",
     });
   }
   if (
     (evidence.metrics.primaryActionBelowFoldCount ?? 0) > 0
   ) {
-    const isNarrowViewport = evidence.viewport.width < 640;
     issues.push({
       code: "BROWSER_PRIMARY_ACTION_BELOW_FOLD",
       dimension: "layoutQuality",
-      severity: isNarrowViewport ? "warning" : "error",
+      severity: "warning",
       source: "browser",
-      message: isNarrowViewport
-        ? `${evidence.metrics.primaryActionBelowFoldCount} 个课程主操作位于移动端首屏之后，可通过页面滚动到达。`
-        : `${evidence.metrics.primaryActionBelowFoldCount} 个课程主操作未完整出现在播放器首屏内。`,
+      message: `${evidence.metrics.primaryActionBelowFoldCount} 个课程主操作位于首屏之后，可通过页面滚动到达。`,
       location: {
         ...location,
         selector: '[data-interaction-type="navigate"]',
         description: "播放器首屏中的课程导航主操作",
       },
-      repairHint: isNarrowViewport
-        ? "仅在操作不可达或被裁切时返工；移动端自然纵向阅读允许主操作位于首屏之后。"
-        : "压缩首屏装饰、标题或重复信息，让核心说明与主操作在当前播放器视口完整可见。",
+      repairHint:
+        "仅在操作不可达或被裁切时返工；自然纵向阅读允许主操作位于首屏之后。",
     });
   }
   if (evidence.metrics.zeroSizeInteractiveCount > 0) {
@@ -118,6 +183,22 @@ export function collectBrowserIssues(
       location,
       repairHint:
         "为交互控件提供可见尺寸和明确标签，或移除不可操作的隐藏控件。",
+    });
+  }
+  if ((evidence.metrics.inertButtonCount ?? 0) > 0) {
+    issues.push({
+      code: "BROWSER_INERT_BUTTON",
+      dimension: "htmlRuntime",
+      severity: "error",
+      source: "browser",
+      message: `${evidence.metrics.inertButtonCount} 个按钮没有可信运行时或原生表单行为。`,
+      location: {
+        ...location,
+        selector: "button",
+        description: "无法完成任何动作的按钮",
+      },
+      repairHint:
+        "移除伪交互，改用可原生工作的 details/form，或接入可信互动运行时并通过 interactionSteps 回放验证。",
     });
   }
   if ((evidence.metrics.touchTargetUnder24Count ?? 0) > 0) {

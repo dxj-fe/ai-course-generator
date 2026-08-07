@@ -1,9 +1,13 @@
 import type { ModelTier } from "@/server/infra/ai/model-router";
 
 const DEFAULT_ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
+export const DOUBAO_SEED_2_PRO_MODEL_ID =
+  "doubao-seed-2-0-pro-260215";
 const DEFAULT_ARK_IMAGE_MODEL_ID = "doubao-seedream-4-5-251128";
 const DEFAULT_HTML_ENGINEER_TIMEOUT_MS = 240_000;
-const DEFAULT_COURSE_PLANNER_TIMEOUT_MS = 150_000;
+// Seed 2.0 Pro 的完整课程规划在真实 Provider 中可能超过 150 秒；Planner
+// 本身已有 WorkOrder 级 5 分钟上限，因此默认直接使用完整预算，避免中途截断。
+const DEFAULT_COURSE_PLANNER_TIMEOUT_MS = 300_000;
 const MIN_HTML_ENGINEER_TIMEOUT_MS = 30_000;
 const MAX_HTML_ENGINEER_TIMEOUT_MS = 300_000;
 const MIN_COURSE_PLANNER_TIMEOUT_MS = 60_000;
@@ -23,50 +27,14 @@ function requireEnv(name: string) {
   return value;
 }
 
-type LanguageModelProvider = "ark" | "generic";
-
-function resolveLanguageModelProvider(tier: ModelTier): LanguageModelProvider {
-  const selectorName = `MODEL_PROVIDER_${tier.toUpperCase()}`;
-  const selector = requireEnv(selectorName);
-
-  if (selector === "ark" || selector === "generic") {
-    return selector;
-  }
-
-  throw new Error(`${selectorName} must be either "ark" or "generic".`);
-}
-
 export function getModelConfig(tier: ModelTier) {
-  const suffix = `_${tier.toUpperCase()}`;
-
-  if (resolveLanguageModelProvider(tier) === "ark") {
-    return {
-      apiKey: requireEnv("ARK_API_KEY"),
-      baseURL: optionalEnv("ARK_BASE_URL") || DEFAULT_ARK_BASE_URL,
-      modelName: requireEnv(`ARK_MODEL_ID${suffix}`),
-      providerName: "volcengine-ark",
-    };
-  }
-
-  return {
-    apiKey: requireEnv("MODEL_API_KEY"),
-    baseURL: requireEnv("MODEL_BASE_URL"),
-    modelName: requireEnv(`MODEL_NAME${suffix}`),
-    providerName: "model-provider",
-  };
-}
-
-/**
- * HTML 生成可优先使用方舟的代码模型；未配置时由既有 tier 路由处理。
- */
-export function getHtmlModelConfig() {
-  const modelName = optionalEnv("ARK_HTML_MODEL_ID");
-  if (!modelName) return undefined;
-
+  void tier;
+  // 保留 ModelTier 参数仅为了不破坏已持久的 Agent 运行协议；
+  // 实际文本模型不再按档位分流。
   return {
     apiKey: requireEnv("ARK_API_KEY"),
     baseURL: optionalEnv("ARK_BASE_URL") || DEFAULT_ARK_BASE_URL,
-    modelName,
+    modelName: DOUBAO_SEED_2_PRO_MODEL_ID,
     providerName: "volcengine-ark",
   };
 }
@@ -94,8 +62,7 @@ export function getHtmlEngineerTimeoutMs() {
 }
 
 /**
- * Planner 一次需要生成完整课程结构。返回主模型与跨供应商 fallback
- * 各自可用的单次超时；fallback 不再分走主模型的执行时间。
+ * Planner 一次需要生成完整课程结构，因此允许独立设置较长超时。
  */
 export function getCoursePlannerTimeoutMs() {
   const raw = optionalEnv("AI_PLANNER_TIMEOUT_MS");

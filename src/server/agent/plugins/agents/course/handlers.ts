@@ -36,8 +36,18 @@ export function createCourseAgentHandlerPlugins(
 
   return Object.freeze([
     {
-      id: AgentIds.CourseArchitect,
+      id: AgentIds.CourseLead,
       execute: async (request) => {
+        if (request.workOrder.kind === "director_round") {
+          await implementations.runDirector(
+            {
+              ...commonInput(request),
+              creationBrief: request.creationBrief,
+            },
+            { model: request.model },
+          );
+          return;
+        }
         await implementations.runArchitect(
           {
             ...commonInput(request),

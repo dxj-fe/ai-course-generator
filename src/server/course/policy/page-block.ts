@@ -8,10 +8,11 @@ import {
 import { planRepairRound } from "@/server/course/page/repair-plan";
 
 /**
- * 首次呈现后只允许一次基于证据的定向修订。修订结果仍未通过时保留模型产物
- * 作为失败证据并阻塞 WorkOrder，不再进入下一轮修复或固定模板回退。
+ * 旧 Model Step 只允许一次定向 Repair；Page Creator Agent Loop 可以基于真实
+ * 浏览器证据自主修订三轮。两条路径耗尽预算后都保留最后产物并阻塞，不回退模板。
  */
 export const MAX_PAGE_QUALITY_REVISIONS = 1;
+export const MAX_AGENT_LOOP_QUALITY_REVISIONS = 3;
 
 export type PageBlockEligibility =
   | {
@@ -31,6 +32,9 @@ export type PageBlockEligibility =
 export function evaluatePageBlockEligibility(
   execution: PageBuilderExecution,
 ): PageBlockEligibility {
+  const revisionLimit = execution.legacyModelPipeline
+    ? MAX_PAGE_QUALITY_REVISIONS
+    : MAX_AGENT_LOOP_QUALITY_REVISIONS;
   const snapshot = loadPageBuilderWorkingSnapshot(execution);
   if (!hasPageBuilderSubstantiveFix(execution)) {
     return {
@@ -78,7 +82,7 @@ export function evaluatePageBlockEligibility(
   }
 
   const repairCount = countPageBuilderRepairs(execution);
-  if (repairCount >= MAX_PAGE_QUALITY_REVISIONS) {
+  if (repairCount >= revisionLimit) {
     return {
       ok: true,
       evidence: [
@@ -108,7 +112,7 @@ export function evaluatePageBlockEligibility(
     ok: false,
     message: "当前问题仍有正常生成或定向修订路径，不能提前阻塞页面。",
     feedback: [
-      `按确定性 repair 计划继续修订；只有 repair 明确 declined、计划无法授权修复，或用尽 ${MAX_PAGE_QUALITY_REVISIONS} 轮修订后才能阻塞。`,
+      `按确定性 repair 计划继续修订；只有 repair 明确 declined、计划无法授权修复，或用尽 ${revisionLimit} 轮修订后才能阻塞。`,
     ],
   };
 }

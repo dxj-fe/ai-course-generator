@@ -21,7 +21,7 @@ const VIEWPORT_FIT_STYLE = `<style id="keya-viewport-fit-style">
     box-sizing: border-box !important;
   }
   html[data-keya-viewport-fit="ready"][data-keya-canvas-mode="fluid"] body,
-  html[data-keya-viewport-fit="ready"][data-keya-canvas-mode="fluid"] main[data-page-id] {
+  html[data-keya-viewport-fit="ready"][data-keya-canvas-mode="fluid"] main {
     width: 100% !important;
     height: 100% !important;
     min-width: 0 !important;
@@ -64,7 +64,7 @@ const VIEWPORT_FIT_SCRIPT = `<script id="keya-viewport-fit">
       const canvasNodes = [
         root,
         body,
-        body.querySelector("main[data-page-id]"),
+        body.querySelector("main"),
       ];
       for (const node of canvasNodes) {
         if (!(node instanceof HTMLElement)) continue;
@@ -78,7 +78,7 @@ const VIEWPORT_FIT_SCRIPT = `<script id="keya-viewport-fit">
         node.style.setProperty("box-sizing", "border-box", "important");
       }
       body.style.setProperty("overflow", "visible", "important");
-      const lessonRoot = body.querySelector("main[data-page-id]");
+      const lessonRoot = body.querySelector("main");
       if (lessonRoot instanceof HTMLElement) {
         lessonRoot.style.setProperty("overflow", "visible", "important");
       }
@@ -236,7 +236,7 @@ const VIEWPORT_FIT_SCRIPT = `<script id="keya-viewport-fit">
     if ("ResizeObserver" in window) {
       const resizeObserver = new ResizeObserver(scheduleFit);
       resizeObserver.observe(body);
-      const lessonRoot = body.querySelector("main[data-page-id]");
+      const lessonRoot = body.querySelector("main");
       if (lessonRoot instanceof HTMLElement) resizeObserver.observe(lessonRoot);
     }
 

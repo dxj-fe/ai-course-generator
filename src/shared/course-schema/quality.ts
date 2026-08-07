@@ -53,9 +53,15 @@ const QualityScreenshotMetricsSchema = z
     documentHeight: z.number().int().nonnegative(),
     horizontalOverflowPx: z.number().int().nonnegative(),
     verticalOverflowPx: z.number().int().nonnegative().optional(),
+    requiredViewportScale: z.number().min(0).max(1).optional(),
     nestedVerticalOverflowCount: z.number().int().nonnegative().optional(),
     clippedElementCount: z.number().int().nonnegative(),
+    clippedElementSelectors: z
+      .array(z.string().min(1).max(240))
+      .max(8)
+      .optional(),
     zeroSizeInteractiveCount: z.number().int().nonnegative(),
+    inertButtonCount: z.number().int().nonnegative().optional(),
     touchTargetUnder24Count: z.number().int().nonnegative().optional(),
     touchTargetUnder44Count: z.number().int().nonnegative().optional(),
     primaryActionBelowFoldCount: z.number().int().nonnegative().optional(),
@@ -69,12 +75,60 @@ const QualityScreenshotMetricsSchema = z
   })
   .strict();
 
+const QualityBrowserDiagnosticsSchema = z
+  .object({
+    console: z
+      .array(
+        z
+          .object({
+            type: z.string().min(1).max(40),
+            text: z.string().max(500),
+          })
+          .strict(),
+      )
+      .max(20),
+    pageErrors: z.array(z.string().min(1).max(500)).max(20),
+    requestFailures: z
+      .array(
+        z
+          .object({
+            method: z.string().min(1).max(20),
+            url: z.string().min(1).max(500),
+            error: z.string().min(1).max(300),
+          })
+          .strict(),
+      )
+      .max(20),
+    dom: z
+      .object({
+        elementCount: z.number().int().nonnegative(),
+        interactiveCount: z.number().int().nonnegative(),
+        landmarkCount: z.number().int().nonnegative(),
+        visibleTextChars: z.number().int().nonnegative(),
+        outline: z.array(z.string().min(1).max(300)).max(80).optional(),
+      })
+      .strict(),
+    interaction: z
+      .array(
+        z
+          .object({
+            action: z.string().min(1).max(80),
+            status: z.enum(["passed", "failed", "skipped"]),
+            detail: z.string().min(1).max(300),
+          })
+          .strict(),
+      )
+      .max(20),
+  })
+  .strict();
+
 const QualityScreenshotCaptureBaseSchema = z
   .object({
     status: QualityScreenshotStatusSchema,
     artifactId: z.string().min(1).max(120).optional(),
     viewport: QualityScreenshotViewportSchema,
     metrics: QualityScreenshotMetricsSchema.optional(),
+    diagnostics: QualityBrowserDiagnosticsSchema.optional(),
     capturedAt: z.string().datetime({ offset: true }).optional(),
     reason: z.string().min(2).max(300).optional(),
   })

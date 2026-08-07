@@ -61,7 +61,7 @@ describe("trusted lesson runtime", () => {
     const srcDoc = buildFittedLessonSrcDoc(html);
 
     expect(srcDoc).toContain(
-      'html[data-keya-viewport-fit="ready"][data-keya-canvas-mode="fluid"] main[data-page-id]',
+      'html[data-keya-viewport-fit="ready"][data-keya-canvas-mode="fluid"] main',
     );
     expect(srcDoc).toContain(
       'if (root.dataset.keyaCanvasMode !== "fluid") return',
@@ -108,6 +108,28 @@ describe("trusted lesson runtime", () => {
     expect(srcDoc).toContain('id="keya-trusted-runtime"');
     expect(srcDoc).not.toContain('id="keya-viewport-fit"');
     expect(srcDoc).not.toContain('id="keya-viewport-fit-style"');
+    expect(srcDoc).toContain('id="keya-scrollable-lesson-style"');
+  });
+
+  it("uses the unique main as the runtime root without requiring authored data markers", () => {
+    const html = buildValidGeneratedHtml(pageContentDsl).replace(
+      ` data-page-id="${pageContentDsl.pageId}"`,
+      "",
+    );
+    const srcDoc = buildTrustedLessonSrcDoc(
+      html,
+      {
+        pageId: pageContentDsl.pageId,
+        interaction: { type: "none" },
+        runtime: { ...runtime, completionRule: { type: "view" } },
+      },
+      { viewportFit: false },
+    );
+
+    expect(srcDoc).toContain(
+      'const root = markedRoot || (mainRoots.length === 1 ? mainRoots[0] : null)',
+    );
+    expect(srcDoc).toContain('root.setAttribute("data-page-id", config.pageId)');
   });
 
   it("accepts only the strict host message protocol", () => {

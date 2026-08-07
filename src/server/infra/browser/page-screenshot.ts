@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { chromium, type Browser, type Page } from "playwright";
+import { type Browser, type Page } from "playwright";
 
 import { loadGeneratedAsset } from "@/server/infra/file/generated-asset";
 import {
@@ -19,6 +19,11 @@ import {
 } from "@/shared/html-preview";
 
 import { collectBrowserIssues } from "./page-screenshot-issues";
+import { getCourseBrowser } from "./browser-pool";
+import {
+  isBrowserProcessFailure,
+  toBrowserHarnessUnavailableError,
+} from "./error";
 
 const QA_VIEWPORTS = [
   { name: "desktop", viewport: { width: 922, height: 460 } },
@@ -39,12 +44,23 @@ type ScreenshotCapture = QualityScreenshotCapture;
 export type BrowserScreenshotSnapshot = {
   png: Uint8Array;
   metrics: BrowserScreenshotMetrics;
+  diagnostics?: NonNullable<QualityScreenshotCapture["diagnostics"]>;
 };
 
 export type PageScreenshotModelImage = {
   viewport: BrowserViewport;
   png: Uint8Array;
 };
+
+export type BrowserInteractionStep =
+  | { action: "click" | "check" | "expectVisible"; selector: string }
+  | { action: "fill" | "expectText"; selector: string; value: string }
+  | {
+      action: "expectAttribute";
+      selector: string;
+      attribute: string;
+      value: string;
+    };
 
 export type VisualProminenceCandidate = {
   areaRatio: number;
@@ -138,6 +154,7 @@ export async function capturePageScreenshot(
     abortSignal?: AbortSignal;
     traceId?: string;
     attempt?: number;
+    interactionSteps?: BrowserInteractionStep[];
   },
   options: CapturePageScreenshotOptions = {},
 ): Promise<PageScreenshotResult> {
@@ -178,6 +195,7 @@ export async function capturePageScreenshot(
         pageId: input.pageId,
         traceId: input.traceId,
         attempt: input.attempt,
+        interactionSteps: input.interactionSteps,
       })
     : await captureAllWithPlaywright({
         html: input.html,
@@ -187,6 +205,7 @@ export async function capturePageScreenshot(
         pageId: input.pageId,
         traceId: input.traceId,
         attempt: input.attempt,
+        interactionSteps: input.interactionSteps,
       });
   throwIfAborted(input.abortSignal);
 
@@ -235,6 +254,9 @@ export async function capturePageScreenshot(
         artifactId,
         viewport: outcome.viewport,
         metrics: outcome.snapshot.metrics,
+        ...(outcome.snapshot.diagnostics
+          ? { diagnostics: outcome.snapshot.diagnostics }
+          : {}),
         capturedAt,
       });
       serverPaths.set(outcome.name, serverPath);
@@ -273,9 +295,10 @@ async function captureWithInjectedBrowser(input: {
   pageId: string;
   traceId?: string;
   attempt?: number;
+  interactionSteps?: BrowserInteractionStep[];
   captureBrowser: NonNullable<CapturePageScreenshotOptions["captureBrowser"]>;
 }): Promise<CaptureOutcome[]> {
-  return Promise.all(
+  const outcomes = await Promise.all(
     QA_VIEWPORTS.map(async ({ name, viewport }) => {
       try {
         const snapshot = await withTimeout(
@@ -304,6 +327,8 @@ async function captureWithInjectedBrowser(input: {
       }
     }),
   );
+  throwOnCaptureFailure(outcomes);
+  return outcomes;
 }
 
 async function captureAllWithPlaywright(input: {
@@ -314,11 +339,12 @@ async function captureAllWithPlaywright(input: {
   pageId: string;
   traceId?: string;
   attempt?: number;
+  interactionSteps?: BrowserInteractionStep[];
 }): Promise<CaptureOutcome[]> {
   let browser: Browser;
   try {
     browser = await withTimeout(
-      chromium.launch({ headless: true }),
+      getCourseBrowser(),
       input.timeoutMs,
       input.abortSignal,
     );
@@ -332,49 +358,66 @@ async function captureAllWithPlaywright(input: {
       code: "SCREENSHOT_BROWSER_LAUNCH_FAILED",
       error,
     });
-    return QA_VIEWPORTS.map(({ name, viewport }) => ({
-      name,
-      viewport,
-      error,
-    }));
+    throw toBrowserHarnessUnavailableError(error);
   }
 
-  try {
-    return await Promise.all(
-      QA_VIEWPORTS.map(async ({ name, viewport }) => {
-        try {
-          const snapshot = await withTimeout(
-            captureViewport(browser, {
-              html: input.html,
-              timeoutMs: input.timeoutMs,
-              viewport,
-              runtimeConfig: input.runtimeConfig,
-              pageId: input.pageId,
-              traceId: input.traceId,
-              attempt: input.attempt,
-            }),
-            input.timeoutMs,
-            input.abortSignal,
-          );
-          return { name, viewport, snapshot };
-        } catch (error) {
-          if (isAbortError(error)) throw error;
-          logScreenshotError({
-            traceId: input.traceId,
-            pageId: input.pageId,
-            phase: "capture",
-            attempt: input.attempt,
-            code: "SCREENSHOT_CAPTURE_FAILED",
-            viewport,
-            error,
-          });
-          return { name, viewport, error };
-        }
-      }),
-    );
-  } finally {
-    await browser.close();
+  const outcomes: CaptureOutcome[] = [];
+  // 多个 Page Agent 可以并行，但同一页三视口顺序取证，避免 3 页同时创建
+  // 9 个 BrowserContext 后把正常页面误判成 12 秒截图超时。
+  for (const { name, viewport } of QA_VIEWPORTS) {
+    try {
+      const snapshot = await withTimeout(
+        captureViewport(browser, {
+          html: input.html,
+          timeoutMs: input.timeoutMs,
+          viewport,
+          runtimeConfig: input.runtimeConfig,
+          pageId: input.pageId,
+          traceId: input.traceId,
+          attempt: input.attempt,
+          interactionSteps: input.interactionSteps,
+        }),
+        input.timeoutMs,
+        input.abortSignal,
+      );
+      outcomes.push({ name, viewport, snapshot });
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      if (isBrowserProcessFailure(error)) {
+        logScreenshotError({
+          traceId: input.traceId,
+          pageId: input.pageId,
+          phase: "browser:runtime",
+          attempt: input.attempt,
+          code: "SCREENSHOT_BROWSER_RUNTIME_FAILED",
+          viewport,
+          error,
+        });
+        throw toBrowserHarnessUnavailableError(error);
+      }
+      logScreenshotError({
+        traceId: input.traceId,
+        pageId: input.pageId,
+        phase: "capture",
+        attempt: input.attempt,
+        code: "SCREENSHOT_CAPTURE_FAILED",
+        viewport,
+        error,
+      });
+      outcomes.push({ name, viewport, error });
+    }
   }
+  throwOnCaptureFailure(outcomes);
+  return outcomes;
+}
+
+function throwOnCaptureFailure(outcomes: CaptureOutcome[]) {
+  const captureFailure = outcomes.find(({ error }) => error)?.error;
+  if (!captureFailure) return;
+
+  // 截图缺失是 Browser Harness 故障，不是页面质量问题。交给 WorkOrder
+  // 瞬态重试，禁止把基础设施超时写成 PageQuality 后让 Agent 错误修稿。
+  throw toBrowserHarnessUnavailableError(captureFailure);
 }
 
 async function captureViewport(
@@ -387,6 +430,7 @@ async function captureViewport(
     pageId: string;
     traceId?: string;
     attempt?: number;
+    interactionSteps?: BrowserInteractionStep[];
   },
 ): Promise<BrowserScreenshotSnapshot> {
   const context = await browser.newContext({
@@ -413,6 +457,41 @@ async function captureViewport(
       });
     });
     const page = await context.newPage();
+    const diagnostics: NonNullable<
+      QualityScreenshotCapture["diagnostics"]
+    > = {
+      console: [],
+      pageErrors: [],
+      requestFailures: [],
+      dom: {
+        elementCount: 0,
+        interactiveCount: 0,
+        landmarkCount: 0,
+        visibleTextChars: 0,
+      },
+      interaction: [],
+    };
+    page.on("console", (message) => {
+      if (diagnostics.console.length >= 20) return;
+      diagnostics.console.push({
+        type: message.type().slice(0, 40) || "log",
+        text: message.text().slice(0, 500),
+      });
+    });
+    page.on("pageerror", (error) => {
+      if (diagnostics.pageErrors.length >= 20) return;
+      diagnostics.pageErrors.push(error.message.slice(0, 500));
+    });
+    page.on("requestfailed", (request) => {
+      if (diagnostics.requestFailures.length >= 20) return;
+      diagnostics.requestFailures.push({
+        method: request.method().slice(0, 20),
+        url: request.url().slice(0, 500),
+        error:
+          request.failure()?.errorText.slice(0, 300) ??
+          "request failed",
+      });
+    });
     page.setDefaultTimeout(input.timeoutMs);
     await page.emulateMedia({ reducedMotion: "reduce" });
     const htmlWithBase = input.html.replace(
@@ -464,20 +543,107 @@ async function captureViewport(
         ...(body ? [body] : []),
         ...contentElements,
       ];
-      const clippedElementCount = layoutElements.filter((element) => {
+      const clippedElements = layoutElements.filter((element) => {
+        // html/body 的整页尺寸差已经由 requiredViewportScale 统一衡量。
+        // 固定画布常用 body{overflow:hidden} 配合 contain-fit；再把根节点记成
+        // 内容裁切会把可读的 74% 画布重复判成硬失败，并诱导 Agent 盲修。
+        if (element === root || element === body) return false;
         // object-fit、受控画框和圆角裁切是素材呈现手段，不是正文丢失。
         // 素材占比另有独立指标；这里仅统计正文或互动内容的真实裁切。
-        if (element.closest("[data-asset-slot-id]")) {
+        if (
+          element.closest("[data-asset-slot-id]") ||
+          element.matches("img,svg,canvas,video,[aria-hidden='true']")
+        ) {
           return false;
         }
         const style = getComputedStyle(element);
         const clipsX = ["hidden", "clip"].includes(style.overflowX);
         const clipsY = ["hidden", "clip"].includes(style.overflowY);
-        return (
-          (clipsX && element.scrollWidth > element.clientWidth + 1) ||
-          (clipsY && element.scrollHeight > element.clientHeight + 1)
-        );
-      }).length;
+        const overflowsX =
+          clipsX && element.scrollWidth > element.clientWidth + 1;
+        const overflowsY =
+          clipsY && element.scrollHeight > element.clientHeight + 1;
+        if (!overflowsX && !overflowsY) return false;
+
+        // overflow:hidden 也常用于轨道、光晕和装饰性舞台。scrollWidth/
+        // scrollHeight 只能证明有几何体越界，不能证明正文丢失。只有实际文字
+        // 或交互控件的可见盒越过裁切边界，才报告硬错误。
+        const clipRect = element.getBoundingClientRect();
+        const semanticElements: HTMLElement[] = [
+          element,
+          ...Array.from(element.querySelectorAll<HTMLElement>("*")),
+        ];
+        return semanticElements.some((semanticElement) => {
+          const semanticRects: DOMRect[] = [];
+          if (
+            semanticElement.matches(
+              "input,select,textarea,button,a,[role='button']",
+            )
+          ) {
+            semanticRects.push(semanticElement.getBoundingClientRect());
+          }
+          for (const node of semanticElement.childNodes) {
+            if (
+              node.nodeType !== Node.TEXT_NODE ||
+              !(node.textContent ?? "").trim()
+            ) {
+              continue;
+            }
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            semanticRects.push(...Array.from(range.getClientRects()));
+          }
+          return semanticRects.some(
+            (rect) =>
+              rect.width > 0 &&
+              rect.height > 0 &&
+              ((overflowsX &&
+                (rect.left < clipRect.left - 1 ||
+                  rect.right > clipRect.right + 1)) ||
+                (overflowsY &&
+                  (rect.top < clipRect.top - 1 ||
+                    rect.bottom > clipRect.bottom + 1))),
+          );
+        });
+      });
+      const clippedElementSelectors = [
+        ...new Set(
+          clippedElements.map((element) => {
+            const selectorSegments: string[] = [];
+            let selectorNode: HTMLElement | null = element;
+            while (selectorNode && selectorNode !== document.body) {
+              const blockId = selectorNode.getAttribute("data-block-id");
+              if (blockId) {
+                selectorSegments.unshift(
+                  `[data-block-id="${CSS.escape(blockId)}"]`,
+                );
+                break;
+              }
+              if (selectorNode.id) {
+                selectorSegments.unshift(`#${CSS.escape(selectorNode.id)}`);
+                break;
+              }
+              const tagName = selectorNode.tagName.toLowerCase();
+              const sameTagSiblings = selectorNode.parentElement
+                ? Array.from(selectorNode.parentElement.children).filter(
+                    (sibling) => sibling.tagName === selectorNode!.tagName,
+                  )
+                : [];
+              selectorSegments.unshift(
+                sameTagSiblings.length > 1
+                  ? `${tagName}:nth-of-type(${sameTagSiblings.indexOf(selectorNode) + 1})`
+                  : tagName,
+              );
+              selectorNode = selectorNode.parentElement;
+            }
+            if (selectorNode === document.body) {
+              selectorSegments.unshift("body");
+            }
+            return selectorSegments.join(" > ");
+          }),
+        ),
+      ].slice(0, 8);
+      const clippedElementCount = clippedElements.length;
       const nestedVerticalOverflowCount = contentElements.filter((element) => {
         const style = getComputedStyle(element);
         return (
@@ -503,9 +669,7 @@ async function captureViewport(
         );
       });
       const viewportArea = Math.max(1, window.innerWidth * window.innerHeight);
-      const lessonRoot = document.querySelector<HTMLElement>(
-        "main[data-page-id]",
-      );
+      const lessonRoot = document.querySelector<HTMLElement>("main");
       const mainViewportCoverageRatio =
         root.dataset.keyaCanvasMode === "fluid" && lessonRoot
           ? (() => {
@@ -537,43 +701,6 @@ async function captureViewport(
         );
         return area + width * height;
       }, 0);
-      const stableSelector = (element: HTMLElement) => {
-        const segments: string[] = [];
-        let current: HTMLElement | null = element;
-        while (current && current !== document.body) {
-          const assetSlotId = current.getAttribute("data-asset-slot-id");
-          if (assetSlotId) {
-            segments.unshift(
-              `[data-asset-slot-id="${CSS.escape(assetSlotId)}"]`,
-            );
-            return segments.join(" > ");
-          }
-          const blockId = current.getAttribute("data-block-id");
-          if (blockId) {
-            segments.unshift(`[data-block-id="${CSS.escape(blockId)}"]`);
-            return segments.join(" > ");
-          }
-          if (current.id) {
-            segments.unshift(`#${CSS.escape(current.id)}`);
-            return segments.join(" > ");
-          }
-
-          const tagName = current.tagName.toLowerCase();
-          const sameTagSiblings = current.parentElement
-            ? Array.from(current.parentElement.children).filter(
-                (sibling) => sibling.tagName === current!.tagName,
-              )
-            : [];
-          const segment =
-            sameTagSiblings.length > 1
-              ? `${tagName}:nth-of-type(${sameTagSiblings.indexOf(current) + 1})`
-              : tagName;
-          segments.unshift(segment);
-          current = current.parentElement;
-        }
-        segments.unshift("body");
-        return segments.join(" > ");
-      };
       const visualCandidates = Array.from(
         document.querySelectorAll<HTMLElement>(
           visualProminenceSelector,
@@ -609,11 +736,49 @@ async function captureViewport(
             }
             current = current.parentElement;
           }
+          const selectorSegments: string[] = [];
+          let selectorNode: HTMLElement | null = element;
+          while (selectorNode && selectorNode !== document.body) {
+            const assetSlotId =
+              selectorNode.getAttribute("data-asset-slot-id");
+            if (assetSlotId) {
+              selectorSegments.unshift(
+                `[data-asset-slot-id="${CSS.escape(assetSlotId)}"]`,
+              );
+              break;
+            }
+            const blockId = selectorNode.getAttribute("data-block-id");
+            if (blockId) {
+              selectorSegments.unshift(
+                `[data-block-id="${CSS.escape(blockId)}"]`,
+              );
+              break;
+            }
+            if (selectorNode.id) {
+              selectorSegments.unshift(`#${CSS.escape(selectorNode.id)}`);
+              break;
+            }
+            const tagName = selectorNode.tagName.toLowerCase();
+            const sameTagSiblings = selectorNode.parentElement
+              ? Array.from(selectorNode.parentElement.children).filter(
+                  (sibling) => sibling.tagName === selectorNode!.tagName,
+                )
+              : [];
+            selectorSegments.unshift(
+              sameTagSiblings.length > 1
+                ? `${tagName}:nth-of-type(${sameTagSiblings.indexOf(selectorNode) + 1})`
+                : tagName,
+            );
+            selectorNode = selectorNode.parentElement;
+          }
+          if (selectorNode === document.body) {
+            selectorSegments.unshift("body");
+          }
           return {
             areaRatio: Math.min(1, (width * height) / viewportArea),
             effectiveOpacity,
             hasNegativeLayer,
-            selector: stableSelector(element),
+            selector: selectorSegments.join(" > "),
           };
         });
       const feedbackVisibleByDefaultCount = Array.from(
@@ -635,16 +800,31 @@ async function captureViewport(
         root.scrollHeight,
         body?.scrollHeight ?? 0,
       );
+      const requiredViewportScale = Math.min(
+        1,
+        window.innerWidth / Math.max(1, documentWidth),
+        window.innerHeight / Math.max(1, documentHeight),
+      );
+      const inertButtonCount = interactiveElements.filter((element) => {
+        if (!(element instanceof HTMLButtonElement)) return false;
+        if (element.closest("[data-interaction-type]")) return false;
+        const form = element.closest("form");
+        const type = (element.getAttribute("type") ?? "submit").toLowerCase();
+        return !form || !["submit", "reset"].includes(type);
+      }).length;
       return {
         documentWidth,
         documentHeight,
         horizontalOverflowPx: Math.max(0, root.scrollWidth - root.clientWidth),
         verticalOverflowPx: Math.max(0, documentHeight - window.innerHeight),
+        requiredViewportScale,
         nestedVerticalOverflowCount,
         clippedElementCount,
+        clippedElementSelectors,
         zeroSizeInteractiveCount: interactiveRects.filter(
           (rect) => rect.width < 1 || rect.height < 1,
         ).length,
+        inertButtonCount,
         visibleInteractiveSizes: visibleInteractiveRects.map((rect) => ({
           width: rect.width,
           height: rect.height,
@@ -662,20 +842,62 @@ async function captureViewport(
         mainViewportCoverageRatio,
         visibleContentAreaRatio: Math.min(1, visibleArea / viewportArea),
         visualCandidates,
+        dom: {
+          elementCount: contentElements.length,
+          interactiveCount: interactiveElements.length,
+          landmarkCount: document.querySelectorAll(
+            "main,nav,aside,header,footer,section[aria-label],section[aria-labelledby]",
+          ).length,
+          visibleTextChars: (body?.innerText ?? "").trim().length,
+          outline: Array.from(
+            document.querySelectorAll<HTMLElement>(
+              "main,h1,h2,h3,button,input,textarea,select,[data-block-id],[data-interaction-type],[data-interaction-item-id]",
+            ),
+          )
+            .slice(0, 80)
+            .map((element) => {
+              const attributes = [
+                element.id ? `#${element.id}` : "",
+                element.dataset.blockId
+                  ? `[data-block-id=${element.dataset.blockId}]`
+                  : "",
+                element.dataset.interactionType
+                  ? `[data-interaction-type=${element.dataset.interactionType}]`
+                  : "",
+                element.dataset.interactionItemId
+                  ? `[data-interaction-item-id=${element.dataset.interactionItemId}]`
+                  : "",
+              ].join("");
+              const text = (
+                element.innerText ||
+                element.getAttribute("aria-label") ||
+                ""
+              )
+                .replace(/\s+/g, " ")
+                .trim()
+                .slice(0, 180);
+              return `${element.tagName.toLowerCase()}${attributes}${text ? ` :: ${text}` : ""}`.slice(
+                0,
+                300,
+              );
+            }),
+        },
       };
     }, VISUAL_PROMINENCE_SELECTOR);
     const {
       visualCandidates,
       visibleInteractiveSizes,
+      dom,
       ...baseMetrics
     } = evaluated;
+    diagnostics.dom = dom;
     const metrics: BrowserScreenshotMetrics = {
       ...baseMetrics,
       ...countAuthoredTouchTargets(visibleInteractiveSizes),
       ...resolveDominantVisualMetrics(visualCandidates),
     };
     const png = await page.screenshot({ type: "png", fullPage: false });
-    const interactionMetrics = await exerciseInteraction(
+    const interactionResult = await exerciseInteraction(
       page,
       input.runtimeConfig,
       {
@@ -684,8 +906,38 @@ async function captureViewport(
         attempt: input.attempt,
         viewport: input.viewport,
       },
+      input.interactionSteps,
     );
-    return { metrics: { ...metrics, ...interactionMetrics }, png };
+    const { diagnosticSteps, ...interactionMetrics } = interactionResult;
+    diagnostics.interaction.push(
+      ...(diagnosticSteps.length > 0
+        ? diagnosticSteps
+        : [
+            interactionMetrics.interactionSubmitTested === undefined
+              ? {
+                  action: "exercise-interaction",
+                  status: "skipped" as const,
+                  detail: "当前页面没有可由 Harness 自动回放的 choice 互动。",
+                }
+              : interactionMetrics.interactionSubmitTested &&
+                  interactionMetrics.interactionFeedbackVisible
+                ? {
+                    action: "submit-choice",
+                    status: "passed" as const,
+                    detail: "选择控件、提交动作和反馈显示均已验证。",
+                  }
+                : {
+                    action: "submit-choice",
+                    status: "failed" as const,
+                    detail: "选择互动没有完成受控提交或未显示反馈。",
+                  },
+          ]),
+    );
+    return {
+      metrics: { ...metrics, ...interactionMetrics },
+      png,
+      diagnostics,
+    };
   } finally {
     await context.close();
   }
@@ -710,13 +962,25 @@ async function exerciseInteraction(
     attempt?: number;
     viewport: BrowserViewport;
   },
+  interactionSteps: BrowserInteractionStep[] = [],
 ): Promise<
   Pick<
     BrowserScreenshotMetrics,
     "interactionSubmitTested" | "interactionFeedbackVisible"
-  >
+  > & {
+    diagnosticSteps: Array<{
+      action: string;
+      status: "passed" | "failed" | "skipped";
+      detail: string;
+    }>;
+  }
 > {
-  if (runtimeConfig?.interaction.type !== "choice") return {};
+  if (interactionSteps.length > 0) {
+    return runControlledInteractionSteps(page, interactionSteps);
+  }
+  if (runtimeConfig?.interaction.type !== "choice") {
+    return { diagnosticSteps: [] };
+  }
 
   const firstControl = page
     .locator(
@@ -732,6 +996,7 @@ async function exerciseInteraction(
     return {
       interactionSubmitTested: false,
       interactionFeedbackVisible: false,
+      diagnosticSteps: [],
     };
   }
 
@@ -773,6 +1038,7 @@ async function exerciseInteraction(
       interactionSubmitTested: true,
       interactionFeedbackVisible:
         (await feedback.count()) > 0 && (await feedback.isVisible()),
+      diagnosticSteps: [],
     };
   } catch (error) {
     if (diagnostics) {
@@ -789,14 +1055,88 @@ async function exerciseInteraction(
     return {
       interactionSubmitTested: false,
       interactionFeedbackVisible: false,
+      diagnosticSteps: [],
     };
   }
+}
+
+async function runControlledInteractionSteps(
+  page: Page,
+  steps: BrowserInteractionStep[],
+) {
+  const diagnosticSteps: Array<{
+    action: string;
+    status: "passed" | "failed" | "skipped";
+    detail: string;
+  }> = [];
+  for (const step of steps.slice(0, 20)) {
+    const locator = page.locator(step.selector).first();
+    try {
+      if ((await locator.count()) === 0) {
+        throw new Error(`找不到 selector：${step.selector}`);
+      }
+      switch (step.action) {
+        case "click":
+          await locator.click();
+          break;
+        case "check":
+          await locator.check();
+          break;
+        case "fill":
+          await locator.fill(step.value);
+          break;
+        case "expectVisible":
+          if (!(await locator.isVisible())) throw new Error("元素不可见");
+          break;
+        case "expectText": {
+          const actual = (await locator.textContent()) ?? "";
+          if (!actual.includes(step.value)) {
+            throw new Error(`文本未包含：${step.value}`);
+          }
+          break;
+        }
+        case "expectAttribute": {
+          const actual = await locator.getAttribute(step.attribute);
+          if (actual !== step.value) {
+            throw new Error(
+              `${step.attribute} 预期 ${step.value}，实际 ${actual ?? "null"}`,
+            );
+          }
+          break;
+        }
+      }
+      diagnosticSteps.push({
+        action: step.action,
+        status: "passed",
+        detail: step.selector.slice(0, 240),
+      });
+    } catch (error) {
+      diagnosticSteps.push({
+        action: step.action,
+        status: "failed",
+        detail: (error instanceof Error ? error.message : String(error)).slice(
+          0,
+          300,
+        ),
+      });
+      break;
+    }
+  }
+  return {
+    diagnosticSteps,
+  };
 }
 
 function logScreenshotError(input: {
   traceId?: string;
   pageId: string;
-  phase: "browser:launch" | "capture" | "interaction" | "storage:mkdir" | "storage:write";
+  phase:
+    | "browser:launch"
+    | "browser:runtime"
+    | "capture"
+    | "interaction"
+    | "storage:mkdir"
+    | "storage:write";
   attempt?: number;
   code: string;
   viewport?: BrowserViewport;

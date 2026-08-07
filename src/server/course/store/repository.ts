@@ -75,7 +75,7 @@ import {
 } from "@/server/course/store/work-order";
 
 const ARCHITECT_DEFAULTS = getAgentWorkOrderDefaults(
-  AgentIds.CourseArchitect,
+  AgentIds.CourseLead,
 );
 const PAGE_DEFAULTS = getAgentWorkOrderDefaults(
   AgentIds.CoursePageBuilder,
@@ -316,7 +316,7 @@ export function createCourseRunRepository(
             courseId: input.courseId,
             causedByReviewIssueIds: [],
             dependencyWorkOrderIds: [],
-            agentId: AgentIds.CourseArchitect,
+            agentId: AgentIds.CourseLead,
             kind: "architect_course",
             scope: { type: "course" },
             status: "queued",
@@ -628,8 +628,8 @@ export function createCourseRunRepository(
           traceId: input.traceId,
           type: "architecture_submitted",
           stage: "planning",
-          agent: AgentIds.CourseArchitect,
-          safeSummary: "课程架构已提交，等待主 Agent 验收",
+          agent: AgentIds.CourseLead,
+          safeSummary: "Course Lead 已提交课程计划，等待并行页面派发",
           payload: {
             workOrderId: current.id,
             architectureRef: artifactRef,
@@ -764,7 +764,7 @@ export function createCourseRunRepository(
           traceId: run.traceId,
           type: "architecture_accepted",
           stage: "building",
-          agent: AgentIds.CourseDirector,
+          agent: architectWorkOrder.agentId,
           safeSummary: `课程架构已接受，已派发 ${pageWorkOrders.length} 个页面任务`,
           payload: {
             architectureRef,

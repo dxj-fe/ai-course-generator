@@ -23,6 +23,8 @@ import {
 } from "./tool-runner";
 import { isCommittedTerminalToolResult } from "./tool-result";
 
+const DEFAULT_AGENT_STEP_TIMEOUT_MS = 240_000;
+
 export type AgentTerminalStatus = "accepted" | "blocked" | "submitted";
 
 export type PersistedAgentTerminal<Terminal> = {
@@ -215,9 +217,12 @@ export class AgentRunner<Tools extends ToolSet, Terminal> {
     throwIfAgentAborted(request.abortSignal);
 
     const executionGuard: ExecutionGuard = {};
+    const runStartedAt = Date.now();
+    let modelStepStartedAt = runStartedAt;
     let currentStepNumber = 1;
     let toolOrdinal = 0;
     const ledgerHandles = new Map<string, Promise<unknown>>();
+    const toolStartedAt = new Map<string, number>();
     const budgetMeter =
       request.budgetMeter ??
       new AtomicBudgetMeter({
@@ -256,7 +261,6 @@ export class AgentRunner<Tools extends ToolSet, Terminal> {
       maxOutputTokens: request.budget.maxOutputTokens,
       model: request.model,
       onToolExecutionStart: async (event) => {
-        if (!request.toolLedger) return;
         const toolName = event.toolCall?.toolName;
         if (!toolName) {
           throw new FatalAgentRuntimeError(
@@ -266,6 +270,16 @@ export class AgentRunner<Tools extends ToolSet, Terminal> {
         }
         toolOrdinal += 1;
         const key = toolLedgerKey(event);
+        toolStartedAt.set(key, Date.now());
+        console.info("[agent-runner]", {
+          event: "agent-step:tool-start",
+          traceId: request.traceId,
+          workOrderId: request.workOrderId,
+          stepNumber: currentStepNumber,
+          toolName,
+          modelDurationMs: Date.now() - modelStepStartedAt,
+        });
+        if (!request.toolLedger) return;
         const handle = Promise.resolve(
           request.toolLedger.begin({
             agentStepNumber: currentStepNumber,
@@ -279,6 +293,19 @@ export class AgentRunner<Tools extends ToolSet, Terminal> {
         await handle;
       },
       onToolExecutionEnd: async (event) => {
+        const key = toolLedgerKey(event);
+        const startedAt = toolStartedAt.get(key);
+        console.info("[agent-runner]", {
+          event: "agent-step:tool-end",
+          traceId: request.traceId,
+          workOrderId: request.workOrderId,
+          stepNumber: currentStepNumber,
+          toolName: event.toolCall?.toolName,
+          toolDurationMs:
+            startedAt === undefined ? undefined : Date.now() - startedAt,
+          outcome: event.toolOutput.type,
+        });
+        toolStartedAt.delete(key);
         const terminalToolError =
           event.toolOutput.type === "tool-error" &&
           typeof event.toolCall?.toolName === "string" &&
@@ -289,7 +316,7 @@ export class AgentRunner<Tools extends ToolSet, Terminal> {
               )
             : undefined;
         if (request.toolLedger) {
-          const handle = ledgerHandles.get(toolLedgerKey(event));
+          const handle = ledgerHandles.get(key);
           if (!handle) {
             throw new FatalAgentRuntimeError(
               "TOOL_LEDGER_START_MISSING",
@@ -333,6 +360,7 @@ export class AgentRunner<Tools extends ToolSet, Terminal> {
           activeTools,
         );
 
+        modelStepStartedAt = Date.now();
         return {
           ...prepared,
           activeTools,
@@ -346,11 +374,18 @@ export class AgentRunner<Tools extends ToolSet, Terminal> {
       tools: guardedTools,
     });
 
+    console.info("[agent-runner]", {
+      event: "agent-run:start",
+      traceId: request.traceId,
+      workOrderId: request.workOrderId,
+      maxSteps: request.budget.maxSteps,
+      maxToolCalls: request.budget.maxToolCalls,
+    });
     try {
       await agent.generate({
         abortSignal: request.abortSignal,
         prompt: request.prompt,
-        timeout: request.budget.timeout,
+        timeout: withDefaultStepTimeout(request.budget.timeout),
       });
     } catch (error) {
       const runtimeError = executionGuard.fatalError ?? error;
@@ -368,6 +403,7 @@ export class AgentRunner<Tools extends ToolSet, Terminal> {
           runtimeError instanceof Error
             ? runtimeError.stack?.slice(0, 8_000)
             : undefined,
+        durationMs: Date.now() - runStartedAt,
       });
       throw runtimeError;
     }
@@ -387,6 +423,15 @@ export class AgentRunner<Tools extends ToolSet, Terminal> {
     if (!terminal) {
       throw new AgentTerminalNotCommittedError(request.workOrderId);
     }
+
+    console.info("[agent-runner]", {
+      event: "agent-run:completed",
+      traceId: request.traceId,
+      workOrderId: request.workOrderId,
+      status: terminal.status,
+      durationMs: Date.now() - runStartedAt,
+      budget: budgetMeter.snapshot(),
+    });
 
     return {
       ...terminal,
@@ -488,6 +533,28 @@ function validateTimeout<Tools extends ToolSet>(
       "timeout 对象必须设置正整数 totalMs，保证整个 Agent run 有硬上限。",
     );
   }
+}
+
+/**
+ * 总预算防止 Agent Loop 无限制运行；单步预算则防止某一次 Provider 请求
+ * 独占整个任务预算。调用方显式设置 stepMs 时保持其选择。
+ */
+function withDefaultStepTimeout<Tools extends ToolSet>(
+  timeout: TimeoutConfiguration<Tools>,
+): TimeoutConfiguration<Tools> {
+  if (typeof timeout === "number") {
+    return {
+      totalMs: timeout,
+      stepMs: Math.min(timeout, DEFAULT_AGENT_STEP_TIMEOUT_MS),
+    };
+  }
+
+  return {
+    ...timeout,
+    stepMs:
+      timeout.stepMs ??
+      Math.min(timeout.totalMs!, DEFAULT_AGENT_STEP_TIMEOUT_MS),
+  };
 }
 
 function validateActiveTools(
