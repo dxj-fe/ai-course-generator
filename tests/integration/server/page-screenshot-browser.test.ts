@@ -24,12 +24,15 @@ describe.runIf(process.env.KEYA_BROWSER_INTEGRATION === "true")(
       );
     });
 
-    afterAll(async () => {
-      await closeCourseBrowser();
-      if (rootDir) {
-        await rm(rootDir, { recursive: true, force: true });
-      }
-    });
+    afterAll(
+      async () => {
+        await closeCourseBrowser();
+        if (rootDir) {
+          await rm(rootDir, { recursive: true, force: true });
+        }
+      },
+      30_000,
+    );
 
     it(
       "可点击隐藏原生控件的可见 label，并忽略素材画框中的预期裁切",
@@ -64,6 +67,147 @@ describe.runIf(process.env.KEYA_BROWSER_INTEGRATION === "true")(
             "BROWSER_INTERACTION_SUBMIT_UNTESTED",
           ]),
         );
+      },
+      30_000,
+    );
+
+    it(
+      "required interaction 会真实展开 details 并验证可观察状态变化",
+      async () => {
+        const result = await capturePageScreenshot(
+          {
+            pageId: "page-native-details",
+            requiresInteraction: true,
+            traceId: "trace-browser-native-details",
+            html: `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>原生展开互动</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body, main { width: 1920px; height: 1080px; margin: 0; overflow: hidden; }
+    main { padding: 120px; background: #f5f1e8; }
+    summary { min-height: 96px; padding: 28px; font-size: 36px; cursor: pointer; }
+    details p { padding: 32px; font-size: 30px; }
+  </style>
+</head>
+<body><main><h1>为什么音调会变高？</h1><details><summary>点击揭晓</summary><p>振动越快，音调越高。</p></details></main></body>
+</html>`,
+          },
+          { enabled: true, rootDir, timeoutMs: 12_000 },
+        );
+
+        expect(result.issues.map(({ code }) => code)).not.toEqual(
+          expect.arrayContaining([
+            "BROWSER_REQUIRED_INTERACTION_MISSING",
+            "BROWSER_INTERACTION_STEP_FAILED",
+          ]),
+        );
+        for (const capture of result.evidence.captures ?? []) {
+          expect(capture.diagnostics?.interaction).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                action: "toggle-details",
+                status: "passed",
+              }),
+            ]),
+          );
+        }
+      },
+      30_000,
+    );
+
+    it(
+      "即使 details 有效，也拒绝同页只改变自身数值而没有反馈的 range",
+      async () => {
+        const result = await capturePageScreenshot(
+          {
+            pageId: "page-fake-range",
+            requiresInteraction: true,
+            traceId: "trace-browser-fake-range",
+            html: `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>伪滑块互动</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body, main { width: 1920px; height: 1080px; margin: 0; overflow: hidden; }
+    main { padding: 120px; background: #fff8e8; }
+    input[type=range] { width: 800px; height: 72px; }
+    input[value="3"] + output::after { content: "音调变高"; }
+    output { display: block; min-height: 96px; font-size: 36px; }
+  </style>
+</head>
+<body><main><h1>拖动滑块改变振动</h1><details><summary>先看提示</summary><p>拖动后观察结果。</p></details><input type="range" min="1" max="3" value="1"><output></output></main></body>
+</html>`,
+          },
+          { enabled: true, rootDir, timeoutMs: 12_000 },
+        );
+
+        expect(result.issues).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              code: "BROWSER_INTERACTION_STEP_FAILED",
+              severity: "error",
+            }),
+          ]),
+        );
+        for (const capture of result.evidence.captures ?? []) {
+          expect(capture.diagnostics?.interaction).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                action: "change-range",
+                status: "failed",
+              }),
+            ]),
+          );
+        }
+      },
+      30_000,
+    );
+
+    it(
+      "拒绝课程正文中裸露的 HTML 标记，但允许 code 中的教学示例",
+      async () => {
+        const result = await capturePageScreenshot(
+          {
+            pageId: "page-visible-raw-markup",
+            traceId: "trace-browser-visible-raw-markup",
+            html: `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>正文标记检查</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body, main { width: 1920px; height: 1080px; margin: 0; overflow: hidden; }
+    main { padding: 120px; background: #fff8e8; font-size: 42px; }
+  </style>
+</head>
+<body><main><h1>力臂规律</h1><p>动力臂越长，span class="highlight">省力效果越明显</p><code>&lt;span class="highlight"&gt;</code></main></body>
+</html>`,
+          },
+          { enabled: true, rootDir, timeoutMs: 12_000 },
+        );
+
+        expect(result.issues).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              code: "BROWSER_RAW_MARKUP_VISIBLE",
+              severity: "error",
+            }),
+          ]),
+        );
+        for (const capture of result.evidence.captures ?? []) {
+          expect(capture.diagnostics?.dom.rawMarkupSamples).toEqual([
+            'span class="highlight">',
+          ]);
+        }
       },
       30_000,
     );

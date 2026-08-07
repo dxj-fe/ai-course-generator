@@ -26,12 +26,14 @@ import {
 } from "@/server/course/run/engine-support";
 import {
   CourseRunLeaseUnavailableError,
+  isCourseRunLeaseUnavailableError,
   releaseOwnedWorkOrders,
   releaseRunLease,
   releaseRunningOrdersAfterTraceAdoption,
   releaseWorkOrder,
   renewExecutionLeases,
   renewRunLease,
+  renewRunLeaseForWorkOrder,
 } from "@/server/course/run/engine-leases";
 export {
   CourseRunLeaseUnavailableError,
@@ -235,8 +237,39 @@ async function runCourseToTerminal(
       const orders = repository.workOrders.listByTask(run.taskId);
       const blocking = findBlockingCurrentOrder(run, orders);
       if (blocking) {
-        failRunForWorkOrder(run, blocking, workerId, dependencies);
-        return checkpoint();
+        const qualityRef = recoverableBlockedPageQualityRef(
+          run,
+          blocking,
+        );
+        if (qualityRef) {
+          const recoveryRound =
+            createCourseRunCommands(repository).createDirectorRound({
+              fence: toFence(run, workerId),
+              purpose: "recover_page_block",
+              inputArtifactRefs: [
+                run.activeArchitecture!.architectureRef,
+                qualityRef,
+              ],
+              now: dependencies.now(),
+            });
+          if (
+            recoveryRound.status === "queued" ||
+            recoveryRound.status === "running"
+          ) {
+            await executeOrder(
+              recoveryRound,
+              input,
+              context,
+              workerId,
+              dependencies,
+            );
+            await checkpoint();
+            continue;
+          }
+        } else {
+          failRunForWorkOrder(run, blocking, workerId, dependencies);
+          return checkpoint();
+        }
       }
 
       const pendingDirector = newestOrder(
@@ -393,7 +426,8 @@ async function runCourseToTerminal(
     // WorkOrder/CourseRun。finally 会释放 lease，Task Service 将任务放回 queued。
     if (
       isBrowserHarnessUnavailableError(error) ||
-      isCourseRunTransientExecutionError(error)
+      isCourseRunTransientExecutionError(error) ||
+      isCourseRunLeaseUnavailableError(error)
     ) {
       throw error;
     }
@@ -517,11 +551,21 @@ async function executeOrder(
 ) {
   await assertEngineExecutionActive(context);
   const owner = `${runLeaseOwner}:${workOrder.id}`.slice(0, 160);
+  const claimNow = dependencies.now();
+  // 必须先让父租约覆盖完整子阶段，再领取子 WorkOrder。反过来会产生父租约
+  // 已过期、子租约仍活跃的裂脑窗口。
+  renewRunLeaseForWorkOrder(
+    workOrder,
+    runLeaseOwner,
+    input.traceId,
+    dependencies,
+    claimNow,
+  );
   const claimed = dependencies.repository.workOrders.claim(
     workOrder.id,
     {
       owner,
-      now: dependencies.now(),
+      now: claimNow,
       durationMs: workOrderLeaseDuration(workOrder),
       authorize: () => {
         const currentRun = requiredRun(
@@ -549,10 +593,26 @@ async function executeOrder(
     ) {
       return;
     }
+    if (process.env.NODE_ENV !== "test") {
+      console.warn("[course-run]", {
+        event: "work-order:lease-wait",
+        traceId: input.traceId,
+        taskId: input.taskId,
+        workOrderId: workOrder.id,
+        stage: stageForOrder(workOrder),
+        currentStatus: current?.status,
+        currentLeaseOwner: current?.leaseOwner,
+        currentLeaseExpiresAt: current?.leaseExpiresAt,
+        recoveryWorkerId: runLeaseOwner,
+        processId: process.pid,
+      });
+    }
     throw new CourseRunLeaseUnavailableError(
       `WorkOrder ${workOrder.id} 暂时无法领取`,
+      "work_order_held",
     );
   }
+  const claimedAt = Date.now();
   dependencies.repository.events.append(
     {
       taskId: claimed.taskId,
@@ -595,6 +655,20 @@ async function executeOrder(
       Boolean(tier) && values.indexOf(tier) === index,
   );
   let lastError: unknown;
+  if (process.env.NODE_ENV !== "test") {
+    console.info("[course-run]", {
+      event: "agent:dispatch",
+      traceId: input.traceId,
+      taskId: input.taskId,
+      workOrderId: claimed.id,
+      agentId,
+      stage: stageForOrder(claimed),
+      preparationDurationMs: Date.now() - claimedAt,
+      workOrderLeaseExpiresAt: claimed.leaseExpiresAt,
+      runLeaseOwner,
+      processId: process.pid,
+    });
+  }
   try {
     for (let index = 0; index < tiers.length; index += 1) {
       await assertEngineExecutionActive(context);
@@ -803,6 +877,26 @@ function findBlockingCurrentOrder(
     currentBranch.filter(
       ({ status }) => status === "blocked" || status === "failed",
     ),
+  );
+}
+
+function recoverableBlockedPageQualityRef(
+  run: CourseRun,
+  workOrder: WorkOrder,
+) {
+  if (
+    workOrder.status !== "blocked" ||
+    (workOrder.kind !== "build_page" &&
+      workOrder.kind !== "fix_page") ||
+    !run.activeArchitecture ||
+    !workOrder.inputArtifactRefs.some(
+      ({ id }) => id === run.activeArchitecture!.architectureRef.id,
+    )
+  ) {
+    return undefined;
+  }
+  return workOrder.submission?.artifactRefs.find(
+    ({ kind }) => kind === "page_quality",
   );
 }
 

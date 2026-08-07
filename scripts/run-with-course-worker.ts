@@ -14,6 +14,10 @@ const environment: NodeJS.ProcessEnv = {
   ...process.env,
   COURSE_TASK_INLINE_EXECUTION: "0",
   COURSE_TASK_STARTUP_RECOVERY: "0",
+  NODE_OPTIONS: appendNodeOption(
+    process.env.NODE_OPTIONS,
+    "--disable-warning=ExperimentalWarning",
+  ),
 };
 if (mode === "dev" && !environment.WATCHPACK_POLLING) {
   environment.WATCHPACK_POLLING = "true";
@@ -55,4 +59,11 @@ function stop(signal: NodeJS.Signals) {
   for (const child of children) {
     if (child.exitCode === null) child.kill(signal);
   }
+}
+
+function appendNodeOption(current: string | undefined, option: string) {
+  const normalized = current?.trim();
+  if (!normalized) return option;
+  if (normalized.split(/\s+/).includes(option)) return normalized;
+  return `${normalized} ${option}`;
 }

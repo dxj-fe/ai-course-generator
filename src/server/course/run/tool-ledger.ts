@@ -34,9 +34,11 @@ export function createCourseToolLedger(
     0,
     ...existing.map(({ toolOrdinal }) => toolOrdinal),
   );
+  let nextToolOrdinal = ordinalOffset;
 
   return {
     begin(input) {
+      nextToolOrdinal += 1;
       return store.begin({
         workOrderId: workOrder.id,
         executionAttempt: workOrder.executionAttempt,
@@ -44,7 +46,9 @@ export function createCourseToolLedger(
           1,
           input.agentStepNumber + ordinalOffset,
         ),
-        toolOrdinal: input.toolOrdinal + ordinalOffset,
+        // Runner 与 Harness 都可能在同一 Agent Run 内执行工具，统一由
+        // 持久化 ledger 分配序号，不能分别从 1 开始造成冲突。
+        toolOrdinal: nextToolOrdinal,
         toolCallId: input.toolCallId,
         toolName: input.toolName,
         input: input.input,

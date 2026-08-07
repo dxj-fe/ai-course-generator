@@ -6,11 +6,38 @@ import {
 import type {
   CourseRun,
   CourseTaskRecord,
+  WorkOrder,
 } from "../../../../src/shared/course-schema";
 
 const NOW = "2026-07-29T08:00:00.000Z";
 
 describe("course task recovery scanner", () => {
+  it("默认逐门恢复课程，避免叠加课程内部的 Page Agent 并发", async () => {
+    const first = task("task-default-serial-first", "queued");
+    const second = task("task-default-serial-second", "queued");
+    let active = 0;
+    let maxActive = 0;
+    const scanner = createCourseTaskRecoveryScanner({
+      taskStore: {
+        list: async () => ({ items: [first, second], unavailableCount: 0 }),
+        loadControlIntent: async () => undefined,
+      },
+      runStore: { loadByTaskId: () => undefined },
+      runTask: async () => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await Promise.resolve();
+        active -= 1;
+      },
+      now: () => NOW,
+    });
+
+    const report = await scanner.scanOnce();
+
+    expect(report.processedTaskIds).toEqual([first.taskId, second.taskId]);
+    expect(maxActive).toBe(1);
+  });
+
   it("只领取 queued 和 lease 已失效的课程任务", async () => {
     const queued = task("task-recover-queued", "queued");
     const stale = task("task-recover-stale", "running");
@@ -64,6 +91,47 @@ describe("course task recovery scanner", () => {
       queued.taskId,
       stale.taskId,
     ]);
+  });
+
+  it("父 CourseRun 已过期但子 WorkOrder lease 仍活跃时不接管", async () => {
+    const activeChild = task("task-recover-active-child", "running");
+    const runTask = vi.fn(async () => undefined);
+    const scanner = createCourseTaskRecoveryScanner({
+      taskStore: {
+        list: async () => ({
+          items: [activeChild],
+          unavailableCount: 0,
+        }),
+        loadControlIntent: async () => undefined,
+      },
+      runStore: {
+        loadByTaskId: () =>
+          run(activeChild, {
+            leaseOwner: "expired-parent-worker",
+            leaseExpiresAt: "2026-07-29T07:59:59.000Z",
+          }),
+      },
+      workOrderStore: {
+        listByTask: () =>
+          [
+            {
+              status: "running",
+              leaseOwner: "active-page-worker",
+              leaseExpiresAt: "2026-07-29T08:03:00.000Z",
+            },
+          ] as unknown as WorkOrder[],
+      },
+      runTask,
+      now: () => NOW,
+    });
+
+    const report = await scanner.scanOnce();
+
+    expect(report.candidateTaskIds).toEqual([]);
+    expect(report.skippedActiveLeaseTaskIds).toEqual([
+      activeChild.taskId,
+    ]);
+    expect(runTask).not.toHaveBeenCalled();
   });
 
   it("并发 scanOnce 复用同一批次，单个失败不阻止其他任务恢复", async () => {

@@ -67,6 +67,11 @@ describe("trusted lesson runtime", () => {
       'if (root.dataset.keyaCanvasMode !== "fluid") return',
     );
     expect(srcDoc).toContain(
+      'if (root.dataset.keyaCanvasMode !== "fluid") {',
+    );
+    expect(srcDoc).toContain("body.offsetHeight");
+    expect(srcDoc).toContain("lessonRoot.offsetHeight");
+    expect(srcDoc).toContain(
       'node.style.setProperty("width", "100%", "important")',
     );
     expect(srcDoc).toContain(

@@ -95,6 +95,17 @@ export type CourseRevisionCommands = {
     acceptedReview: WorkOrder;
     architectWorkOrder: WorkOrder;
   };
+  requestBlockedPageReplan(input: {
+    fence: CourseRunCommandFence;
+    blockedWorkOrderId: string;
+    directorWorkOrderId: string;
+    directorRound: DirectorRoundCommit;
+    now?: string;
+  }): {
+    run: CourseRun;
+    blockedWorkOrder: WorkOrder;
+    architectWorkOrder: WorkOrder;
+  };
   failCourse(input: {
     fence: CourseRunCommandFence;
     code: string;
@@ -545,6 +556,113 @@ export function createCourseRevisionCommands(
           );
         }
         return { run: nextRun, acceptedReview, architectWorkOrder };
+      });
+    },
+
+    requestBlockedPageReplan(input) {
+      const now = input.now ?? new Date().toISOString();
+      return runInTransaction(database, () => {
+        const run = loadFencedRun(repository, input.fence);
+        const blockedWorkOrder = requiredWorkOrder(
+          repository.workOrders.load(input.blockedWorkOrderId),
+          input.blockedWorkOrderId,
+        );
+        const activeArchitecture = run.activeArchitecture;
+        if (!activeArchitecture) {
+          throw new Error("页面阻塞恢复需要当前课程架构");
+        }
+        if (
+          blockedWorkOrder.status !== "blocked" ||
+          (blockedWorkOrder.kind !== "build_page" &&
+            blockedWorkOrder.kind !== "fix_page") ||
+          !blockedWorkOrder.inputArtifactRefs.some(
+            ({ id }) => id === activeArchitecture.architectureRef.id,
+          )
+        ) {
+          throw new Error("指定 WorkOrder 不是当前架构分支的阻塞页面");
+        }
+
+        const idempotencyKey = `${run.taskId}:page-block-replan:${blockedWorkOrder.id}`;
+        const existing =
+          repository.workOrders.loadByIdempotencyKey(idempotencyKey);
+        if (existing) {
+          completeDirectorRoundInTransaction(
+            repository,
+            input.directorRound,
+            now,
+          );
+          return {
+            run,
+            blockedWorkOrder,
+            architectWorkOrder: existing,
+          };
+        }
+        if (run.replanRound >= MAX_REPLAN_ROUNDS) {
+          throw new Error("整课重新规划已达到上限");
+        }
+
+        const currentArchitect = requiredWorkOrder(
+          repository.workOrders.load(
+            activeArchitecture.submissionWorkOrderId,
+          ),
+          activeArchitecture.submissionWorkOrderId,
+        );
+        if (
+          currentArchitect.kind !== "architect_course" ||
+          currentArchitect.status !== "accepted"
+        ) {
+          throw new Error("页面阻塞恢复要求当前课程架构已接受");
+        }
+        const evidenceRefs = uniqueArtifactRefs([
+          activeArchitecture.architectureRef,
+          ...(blockedWorkOrder.submission?.artifactRefs ??
+            blockedWorkOrder.checkpointArtifactRefs),
+        ]);
+        const architectWorkOrder = repository.workOrders.insert(
+          createArchitectWorkOrder({
+            run,
+            parentWorkOrderId: input.directorWorkOrderId,
+            supersedes: currentArchitect,
+            inputArtifactRefs: evidenceRefs,
+            revision: currentArchitect.revision + 1,
+            now,
+            idempotencyKey,
+          }),
+        );
+        const nextRun = CourseRunSchema.parse({
+          ...run,
+          lockVersion: run.lockVersion + 1,
+          phase: "revising",
+          currentManifestHash: undefined,
+          currentReview: undefined,
+          replanRound: run.replanRound + 1,
+        });
+        updateRun(repository, run, nextRun, input.fence.leaseOwner, now);
+        repository.events.appendInTransaction({
+          taskId: run.taskId,
+          traceId: run.traceId,
+          type: "course_replan_requested",
+          stage: "planning",
+          agent: AgentIds.CourseDirector,
+          safeSummary:
+            "单页职责在无滚动舞台内无法可靠完成，主 Agent 已重新分配课程内容",
+          payload: {
+            blockedWorkOrderId: blockedWorkOrder.id,
+            architectWorkOrderId: architectWorkOrder.id,
+            evidenceRefs,
+          },
+          createdAt: now,
+        });
+        completeDirectorRoundInTransaction(
+          repository,
+          input.directorRound,
+          now,
+        );
+        return {
+          run: nextRun,
+          blockedWorkOrder,
+          architectWorkOrder,
+        };
       });
     },
 

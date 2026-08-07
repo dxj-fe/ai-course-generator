@@ -198,6 +198,89 @@ describe("Playwright screenshot QA evidence", () => {
     );
   });
 
+  it("rejects a page that promises interaction but renders no interactive DOM", async () => {
+    const result = await capturePageScreenshot(
+      {
+        pageId: "page-required-interaction",
+        html,
+        requiresInteraction: true,
+      },
+      {
+        enabled: true,
+        rootDir: "/tmp/ai-course-generator-required-interaction",
+        captureBrowser: vi.fn().mockImplementation(async ({ viewport }) => ({
+          png: new Uint8Array([137, 80, 78, 71]),
+          metrics: {
+            ...cleanMetrics,
+            documentWidth: viewport.width,
+            documentHeight: viewport.height,
+          },
+          diagnostics: {
+            console: [],
+            pageErrors: [],
+            requestFailures: [],
+            dom: {
+              elementCount: 20,
+              interactiveCount: 0,
+              landmarkCount: 1,
+              visibleTextChars: 120,
+            },
+            interaction: [],
+          },
+        })),
+      },
+    );
+
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "BROWSER_REQUIRED_INTERACTION_MISSING",
+          severity: "error",
+        }),
+      ]),
+    );
+  });
+
+  it("rejects raw HTML markup that leaks into visible lesson copy", async () => {
+    const result = await capturePageScreenshot(
+      { pageId: "page-raw-markup", html },
+      {
+        enabled: true,
+        rootDir: "/tmp/ai-course-generator-raw-markup",
+        captureBrowser: vi.fn().mockImplementation(async ({ viewport }) => ({
+          png: new Uint8Array([137, 80, 78, 71]),
+          metrics: {
+            ...cleanMetrics,
+            documentWidth: viewport.width,
+            documentHeight: viewport.height,
+          },
+          diagnostics: {
+            console: [],
+            pageErrors: [],
+            requestFailures: [],
+            dom: {
+              elementCount: 20,
+              interactiveCount: 0,
+              landmarkCount: 1,
+              visibleTextChars: 120,
+              rawMarkupSamples: ['span class="highlight">'],
+            },
+            interaction: [],
+          },
+        })),
+      },
+    );
+
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "BROWSER_RAW_MARKUP_VISIBLE",
+          severity: "error",
+        }),
+      ]),
+    );
+  });
+
   it("rejects buttons that have neither trusted runtime nor native form behavior", async () => {
     const result = await capturePageScreenshot(
       { pageId: "page-inert-button", html },
@@ -264,6 +347,7 @@ describe("Playwright screenshot QA evidence", () => {
 
     expect(new Set(result.issues.map(({ code }) => code))).toEqual(
       new Set([
+        "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
         "BROWSER_VERTICAL_OVERFLOW",
         "BROWSER_NESTED_VERTICAL_OVERFLOW",
         "BROWSER_PRIMARY_ACTION_BELOW_FOLD",
@@ -389,6 +473,35 @@ describe("Playwright screenshot QA evidence", () => {
     expect(
       result.issues.some(({ code }) => code === "BROWSER_VERTICAL_OVERFLOW"),
     ).toBe(false);
+  });
+
+  it("rejects a viewport-fitted document that silently exceeds the 16:9 authoring stage", async () => {
+    const result = await capturePageScreenshot(
+      { pageId: "page-stage-aspect-overflow", html },
+      {
+        enabled: true,
+        rootDir: "/tmp/ai-course-generator-stage-aspect-overflow",
+        captureBrowser: vi.fn().mockImplementation(async ({ viewport }) => ({
+          png: new Uint8Array([137, 80, 78, 71]),
+          metrics: {
+            ...cleanMetrics,
+            documentWidth: 1920,
+            documentHeight: 1096,
+            verticalOverflowPx: 0,
+            requiredViewportScale: viewport.height / 1096,
+          },
+        })),
+      },
+    );
+
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
+          severity: "error",
+        }),
+      ]),
+    );
   });
 
   it("evaluates touch targets in authored CSS pixels", () => {

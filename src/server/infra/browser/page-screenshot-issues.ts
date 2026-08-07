@@ -20,6 +20,7 @@ export function collectBrowserIssues(
   pageId: string,
   evidence: ScreenshotCapture,
   content?: PageContentDSL,
+  requirements: { requiresInteraction?: boolean } = {},
 ): QualityIssue[] {
   if (evidence.status !== "captured" || !evidence.metrics) return [];
   const location = {
@@ -82,6 +83,42 @@ export function collectBrowserIssues(
         "检查目标 selector、控件可见性和可信运行时标记，修正后重新执行互动回放。",
     });
   }
+  if (
+    requirements.requiresInteraction &&
+    evidence.diagnostics?.dom.interactiveCount === 0
+  ) {
+    issues.push({
+      code: "BROWSER_REQUIRED_INTERACTION_MISSING",
+      dimension: "htmlRuntime",
+      severity: "error",
+      source: "browser",
+      message: "课程架构要求本页可操作，但真实 DOM 中没有可交互控件。",
+      location: {
+        ...location,
+        selector: "main",
+        description: "页面学习互动",
+      },
+      repairHint:
+        "根据本页 learnerAction 自主设计一个真实可操作且有状态反馈的互动；保留自由 HTML 构图，不需要套用 DSL 插槽。",
+    });
+  }
+  const rawMarkupSample = evidence.diagnostics?.dom.rawMarkupSamples?.[0];
+  if (rawMarkupSample) {
+    issues.push({
+      code: "BROWSER_RAW_MARKUP_VISIBLE",
+      dimension: "contentAccuracy",
+      severity: "error",
+      source: "browser",
+      message: `页面把 HTML 标记当成正文展示：${rawMarkupSample}`,
+      location: {
+        ...location,
+        selector: "main",
+        description: "课程正文中的裸露 HTML 标记",
+      },
+      repairHint:
+        "补齐或移除误写的 HTML 起始符号；如果课程确实讲解代码，请把示例放进 code/pre 元素。",
+    });
+  }
   if (evidence.metrics.horizontalOverflowPx > 0) {
     issues.push({
       code: "BROWSER_HORIZONTAL_OVERFLOW",
@@ -99,17 +136,30 @@ export function collectBrowserIssues(
     evidence.viewport.width / SLIDE_DESIGN_WIDTH,
     evidence.viewport.height / SLIDE_DESIGN_HEIGHT,
   );
+  const exceedsAuthoredStage =
+    evidence.metrics.documentWidth >
+      SLIDE_DESIGN_WIDTH + MAX_LAYOUT_ROUNDING_OVERFLOW_PX ||
+    evidence.metrics.documentHeight >
+      SLIDE_DESIGN_HEIGHT + MAX_LAYOUT_ROUNDING_OVERFLOW_PX;
+  const actualStageScale =
+    evidence.metrics.requiredViewportScale ??
+    Math.min(
+      1,
+      evidence.viewport.width / Math.max(1, evidence.metrics.documentWidth),
+      evidence.viewport.height / Math.max(1, evidence.metrics.documentHeight),
+    );
   if (
-    evidence.metrics.requiredViewportScale !== undefined &&
-    evidence.metrics.requiredViewportScale <
-      expectedStageScale * MIN_EXPECTED_STAGE_SCALE_RATIO
+    exceedsAuthoredStage ||
+    (evidence.metrics.requiredViewportScale !== undefined &&
+      evidence.metrics.requiredViewportScale <
+        expectedStageScale * MIN_EXPECTED_STAGE_SCALE_RATIO)
   ) {
     issues.push({
       code: "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
       dimension: "layoutQuality",
       severity: "error",
       source: "browser",
-      message: `页面内容超过 1920×1080 舞台，被额外缩放到预期比例的 ${Math.round((evidence.metrics.requiredViewportScale / Math.max(expectedStageScale, 0.001)) * 100)}%。`,
+      message: `页面内容超过 1920×1080 舞台，被额外缩放到预期比例的 ${Math.round((actualStageScale / Math.max(expectedStageScale, 0.001)) * 100)}%。`,
       location,
       repairHint:
         "减少重复信息并重组二维构图；必要内容仍超载时要求 Course Lead 拆页，禁止继续缩字或依赖整体缩放。",

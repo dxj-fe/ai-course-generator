@@ -31,6 +31,8 @@ import {
   AgentTerminalNotCommittedError,
   AgentRunner,
   AtomicBudgetMeter,
+  isAgentToolResult,
+  type AgentToolLedger,
   type AgentRunnerResult,
   type RuntimeAgentFactory,
 } from "@/server/agent/runtime";
@@ -64,6 +66,14 @@ const PASSIVE_PAGE_TOOL_IDS = new Set<string>([
   ToolIds.ReadPageWorkspace,
   ToolIds.ReadLocalResource,
   ToolIds.SearchReferences,
+]);
+const HARNESS_PAGE_TOOL_IDS = new Set<string>([
+  ToolIds.ReadPageContext,
+  ToolIds.ReadPageWorkspace,
+  ToolIds.RenderPage,
+  ToolIds.InspectPage,
+  ToolIds.SubmitPage,
+  ToolIds.BlockPage,
 ]);
 
 /**
@@ -132,12 +142,27 @@ export async function runPageBuilderAgent(
   const budgetMeter = new AtomicBudgetMeter({
     maxToolCalls: budget.maxToolCalls,
   });
+  const toolLedger = createCourseToolLedger(
+    execution.repository.toolOperations,
+    execution.initialWorkOrder,
+  );
   const request = {
     abortSignal: input.abortSignal,
     activeTools: resolvePageBuilderActiveTools(execution),
     authorizeToolCall: (toolCall) =>
       assertPageBuilderToolCall(execution, toolCall, now()),
     beforeToolCall: input.beforeToolCall,
+    afterToolExecution: async () => {
+      const advanced = await advanceDeterministicPageTransitions({
+        budgetMeter,
+        beforeToolCall: input.beforeToolCall,
+        execution,
+        now,
+        toolLedger,
+        tools,
+      });
+      return Boolean(advanced.terminal);
+    },
     budget,
     budgetMeter,
     instructions,
@@ -158,10 +183,7 @@ export async function runPageBuilderAgent(
           : 1,
     temperature: 0.35,
     terminalToolNames: [ToolIds.SubmitPage, ToolIds.BlockPage],
-    toolLedger: createCourseToolLedger(
-      execution.repository.toolOperations,
-      execution.initialWorkOrder,
-    ),
+    toolLedger,
     tools,
     traceId: execution.traceId,
     workOrderId: execution.initialWorkOrder.id,
@@ -171,14 +193,15 @@ export async function runPageBuilderAgent(
     loadPageBuilderCheckpointCount(execution);
   const agentLoopStartedAt = Date.now();
   for (let continuation = 0; continuation < 3; continuation += 1) {
-    const alreadyFinalized = await finalizeDeterministicPageTerminal({
+    const alreadyAdvanced = await advanceDeterministicPageTransitions({
       budgetMeter,
       beforeToolCall: input.beforeToolCall,
       execution,
       now,
+      toolLedger,
       tools,
     });
-    if (alreadyFinalized) return alreadyFinalized;
+    if (alreadyAdvanced.terminal) return alreadyAdvanced.terminal;
     try {
       const remainingTimeoutMs = Math.max(
         1,
@@ -202,14 +225,15 @@ export async function runPageBuilderAgent(
       // submit/block 已由持久化状态唯一确定时，不值得再请求模型完成机械
       // 工具调用。真实任务证明 Provider 会在这里继续输出或等待到 300 秒，
       // 造成 checkpoint 已齐全却反复重试。Harness 直接执行相同受控终态工具。
-      const finalized = await finalizeDeterministicPageTerminal({
+      const advanced = await advanceDeterministicPageTransitions({
         budgetMeter,
         beforeToolCall: input.beforeToolCall,
         execution,
         now,
+        toolLedger,
         tools,
       });
-      if (finalized) return finalized;
+      if (advanced.terminal) return advanced.terminal;
       const nextCheckpointCount =
         loadPageBuilderCheckpointCount(execution);
       if (
@@ -227,64 +251,124 @@ export async function runPageBuilderAgent(
   );
 }
 
-async function finalizeDeterministicPageTerminal(input: {
+async function advanceDeterministicPageTransitions(input: {
   budgetMeter: AtomicBudgetMeter;
   beforeToolCall?: () => void | PromiseLike<void>;
   execution: ReturnType<typeof createPageBuilderExecution>;
   now: () => string;
+  toolLedger: AgentToolLedger;
   tools: PageBuilderTools;
-}): Promise<AgentRunnerResult<Submission> | undefined> {
-  const activeTools = resolvePageBuilderActiveTools(input.execution);
-  if (
-    activeTools.length !== 1 ||
-    (activeTools[0] !== ToolIds.SubmitPage &&
-      activeTools[0] !== ToolIds.BlockPage)
-  ) {
-    return undefined;
+}): Promise<{
+  advanced: boolean;
+  terminal?: AgentRunnerResult<Submission>;
+}> {
+  let advanced = false;
+  for (let transition = 0; transition < 8; transition += 1) {
+    const activeTools = resolvePageBuilderActiveTools(input.execution);
+    const toolName = resolveHarnessPageTool(activeTools);
+    if (!toolName) return { advanced };
+
+    const toolInput = buildHarnessPageToolInput(
+      input.execution,
+      toolName,
+    );
+    await input.beforeToolCall?.();
+    assertPageBuilderToolCall(
+      input.execution,
+      { toolName, input: toolInput },
+      input.now(),
+    );
+    const reservation = input.budgetMeter.reserve(toolName);
+    const toolCallId = [
+      "harness-transition",
+      input.execution.initialWorkOrder.executionAttempt,
+      reservation.sequence,
+      toolName,
+    ].join(":");
+    const handle = await input.toolLedger.begin({
+      agentStepNumber: reservation.sequence,
+      input: toolInput,
+      toolCallId,
+      toolName,
+      toolOrdinal: reservation.sequence,
+    });
+    const candidate = input.tools[toolName] as unknown as {
+      execute(
+        value: unknown,
+        options: {
+          abortSignal?: AbortSignal;
+          messages: [];
+          toolCallId: string;
+        },
+      ): AsyncIterable<unknown> | PromiseLike<unknown> | unknown;
+    };
+    let output: unknown;
+    try {
+      output = await resolveToolOutput(
+        candidate.execute(toolInput, {
+          abortSignal: input.execution.abortSignal,
+          messages: [],
+          toolCallId,
+        }),
+      );
+      await input.toolLedger.complete({ handle, output });
+    } catch (error) {
+      await input.toolLedger.fail({ error, handle });
+      throw error;
+    }
+    advanced = true;
+
+    const terminal = parsePageBuilderTerminal(
+      input.execution,
+      await loadPageBuilderTerminal(input.execution),
+    );
+    if (terminal) {
+      return {
+        advanced,
+        terminal: {
+          ...terminal,
+          budget: input.budgetMeter.snapshot(),
+        },
+      };
+    }
+    if (!isAgentToolResult(output) || !output.ok) {
+      return { advanced };
+    }
   }
 
-  const toolName = activeTools[0];
-  const toolInput =
-    toolName === ToolIds.SubmitPage
-      ? { pageId: input.execution.pageId }
-      : buildDeterministicBlockInput(input.execution);
-  await input.beforeToolCall?.();
-  assertPageBuilderToolCall(
-    input.execution,
-    { toolName, input: toolInput },
-    input.now(),
-  );
-  input.budgetMeter.reserve(toolName);
+  throw new Error("页面 Harness 机械状态推进超过安全上限");
+}
 
-  const candidate = input.tools[toolName] as unknown as {
-    execute(
-      value: unknown,
-      options: {
-        abortSignal?: AbortSignal;
-        messages: [];
-        toolCallId: string;
-      },
-    ): AsyncIterable<unknown> | PromiseLike<unknown> | unknown;
-  };
-  await resolveToolOutput(
-    candidate.execute(toolInput, {
-      abortSignal: input.execution.abortSignal,
-      messages: [],
-      toolCallId: [
-        "harness-terminal",
-        input.execution.initialWorkOrder.executionAttempt,
-        toolName,
-      ].join(":"),
-    }),
+function resolveHarnessPageTool(
+  activeTools: string[],
+): (keyof PageBuilderTools & string) | undefined {
+  if (
+    activeTools.length === 1 &&
+    (activeTools[0] === ToolIds.ReadPageContext ||
+      activeTools[0] === ToolIds.ReadPageWorkspace)
+  ) {
+    return activeTools[0] as keyof PageBuilderTools & string;
+  }
+  const actionTools = activeTools.filter(
+    (toolName) => !PASSIVE_PAGE_TOOL_IDS.has(toolName),
   );
-
-  const terminal = parsePageBuilderTerminal(
-    input.execution,
-    await loadPageBuilderTerminal(input.execution),
-  );
-  return terminal
-    ? { ...terminal, budget: input.budgetMeter.snapshot() }
+  return actionTools.length === 1 &&
+    HARNESS_PAGE_TOOL_IDS.has(actionTools[0]!)
+    ? (actionTools[0] as keyof PageBuilderTools & string)
     : undefined;
+}
+
+function buildHarnessPageToolInput(
+  execution: ReturnType<typeof createPageBuilderExecution>,
+  toolName: keyof PageBuilderTools & string,
+) {
+  if (toolName === ToolIds.BlockPage) {
+    return buildDeterministicBlockInput(execution);
+  }
+  if (toolName === ToolIds.ReadPageWorkspace) {
+    return { pageId: execution.pageId, offset: 0, maxChars: 12_000 };
+  }
+  return { pageId: execution.pageId };
 }
 
 function buildDeterministicBlockInput(
@@ -359,6 +443,12 @@ export function preparePageBuilderStep(
     render &&
     render.images.length > 0 &&
     execution.injectedRenderRevision !== render.htmlRevision;
+  const revisionMessages = shouldInject
+    ? compactPageBuilderRevisionMessages(compactedMessages)
+    : compactedMessages;
+  const currentHtml = shouldInject
+    ? loadPageBuilderWorkingSnapshot(execution).html?.html
+    : undefined;
   if (shouldInject) {
     execution.injectedRenderRevision = render.htmlRevision;
   }
@@ -380,7 +470,7 @@ export function preparePageBuilderStep(
     ...(shouldInject
       ? {
           messages: [
-            ...compactedMessages,
+            ...revisionMessages,
             {
               role: "user",
               content: [
@@ -389,6 +479,21 @@ export function preparePageBuilderStep(
                   text: [
                     `下面是刚刚渲染的页面 revision ${render.htmlRevision}。`,
                     `Browser Harness 报告 ${render.issues.length} 个问题。`,
+                    ...render.issues.slice(0, 8).map((issue) =>
+                      [
+                        issue.code,
+                        issue.location?.selector
+                          ? `（${issue.location.selector}）`
+                          : "",
+                        `：${issue.message}`,
+                        issue.repairHint
+                          ? ` 修复方向：${issue.repairHint}`
+                          : "",
+                      ].join(""),
+                    ),
+                    currentHtml
+                      ? `当前 workspace index.html（只基于这一版修订，不要复述历史版本）：\n${currentHtml}`
+                      : "当前 HTML 已在 workspace；需要源码时调用 read_page_workspace。",
                     "请直接观察三视口截图，自主判断继续 edit_page_workspace，还是进入 inspect_page。",
                   ].join("\n"),
                 },
@@ -441,6 +546,39 @@ export function prunePageBuilderRenderEvidenceMessages(
   });
 }
 
+/**
+ * 质量修订只保留系统消息和最初任务封口；旧 HTML tool call、tool result 和
+ * 解释文本会随轮次线性膨胀。当前 HTML 与当前浏览器证据由 Harness 重新注入，
+ * 因而无需把多个完整旧版本继续发给 Provider。
+ */
+export function compactPageBuilderRevisionMessages(
+  messages: unknown[],
+) {
+  return messages.filter((message) => {
+    if (typeof message !== "object" || message === null) return false;
+    const candidate = message as { role?: unknown; content?: unknown };
+    if (candidate.role === "system") return true;
+    if (candidate.role !== "user") return false;
+    const text = extractMessageText(candidate.content);
+    return (
+      text.includes("Harness 已预加载的封口上下文与 workspace") &&
+      !text.includes(PAGE_RENDER_EVIDENCE_MARKER)
+    );
+  });
+}
+
+function extractMessageText(content: unknown) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .flatMap((part) => {
+      if (typeof part !== "object" || part === null) return [];
+      const text = (part as { text?: unknown }).text;
+      return typeof text === "string" ? [text] : [];
+    })
+    .join("\n");
+}
+
 function buildPageBuilderPrompt(
   execution: ReturnType<typeof createPageBuilderExecution>,
   workspace?: Awaited<
@@ -485,6 +623,14 @@ function buildPageBuilderPrompt(
     `完成页面《${execution.pageTask.title}》。`,
     `页面职责：${execution.pageTask.purpose}`,
     `学习动作：${execution.pageTask.learnerAction}`,
+    "运行时硬边界：只交付自包含 HTML 和内联 CSS/内联 SVG；禁止 script、Tailwind/CDN、link、@import、远程字体/图片、on* 事件和 iframe。请使用系统字体 fallback 与无脚本原生 HTML/CSS 互动，避免把安全返工浪费成第二次模型调用。",
+    "结构硬边界：必须输出完整 HTML 文档，body 内必须有且只能有一个 main；首稿就满足该结构，不要等待 Harness 返工。",
+    "画布硬边界：body/main 采用 1920×1080 固定画布并裁切装饰层，正文、控件和反馈必须全部落在画布内；计算 padding、标题、间距和内容区总高度，禁止用内部滚动条隐藏超量内容。交互控件或其关联 label 在 authored canvas 上至少 72px 高，以保证缩放后仍可操作。无可信原生行为时不要输出 button；无脚本选择题不得使用“checkbox + 假提交按钮 + 永不显示的反馈”，应改用 details/summary 或 input:checked + label/CSS 的真实反馈。range 的 value 属性不会随拖动更新，禁止用 CSS [value] 伪造滑块反馈。",
+    ...(execution.pageTask.acceptance.requiresInteraction
+      ? [
+          "本页 requiresInteraction=true：首稿必须包含真实可操作的原生 DOM 控件。优先使用 details/summary，或 input 与 label 的组合；仅写“点击查看”、普通 div、悬停效果或视觉按钮不算互动。",
+        ]
+      : []),
     ...(execution.fixPlan
       ? [
           `返工类型：${execution.fixPlan.kind}`,

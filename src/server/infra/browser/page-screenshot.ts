@@ -151,6 +151,8 @@ export async function capturePageScreenshot(
     pageId: string;
     html: string;
     content?: PageContentDSL;
+    /** 来自 CourseArchitecture 的最低互动承诺，不规定具体控件或 DSL 结构。 */
+    requiresInteraction?: boolean;
     abortSignal?: AbortSignal;
     traceId?: string;
     attempt?: number;
@@ -202,6 +204,7 @@ export async function capturePageScreenshot(
         timeoutMs,
         abortSignal: input.abortSignal,
         runtimeConfig,
+        requiresInteraction: input.requiresInteraction,
         pageId: input.pageId,
         traceId: input.traceId,
         attempt: input.attempt,
@@ -280,7 +283,9 @@ export async function capturePageScreenshot(
   return {
     evidence,
     issues: captures.flatMap((capture) =>
-      collectBrowserIssues(input.pageId, capture, input.content),
+      collectBrowserIssues(input.pageId, capture, input.content, {
+        requiresInteraction: input.requiresInteraction,
+      }),
     ),
     serverPath: serverPaths.get("desktop"),
     ...(modelImages.length > 0 ? { modelImages } : {}),
@@ -336,6 +341,7 @@ async function captureAllWithPlaywright(input: {
   timeoutMs: number;
   abortSignal?: AbortSignal;
   runtimeConfig?: TrustedLessonRuntimeConfig;
+  requiresInteraction?: boolean;
   pageId: string;
   traceId?: string;
   attempt?: number;
@@ -372,6 +378,7 @@ async function captureAllWithPlaywright(input: {
           timeoutMs: input.timeoutMs,
           viewport,
           runtimeConfig: input.runtimeConfig,
+          requiresInteraction: input.requiresInteraction,
           pageId: input.pageId,
           traceId: input.traceId,
           attempt: input.attempt,
@@ -427,6 +434,7 @@ async function captureViewport(
     timeoutMs: number;
     viewport: BrowserViewport;
     runtimeConfig?: TrustedLessonRuntimeConfig;
+    requiresInteraction?: boolean;
     pageId: string;
     traceId?: string;
     attempt?: number;
@@ -521,7 +529,7 @@ async function captureViewport(
       const body = document.body;
       const interactiveElements = Array.from(
         document.querySelectorAll<HTMLElement>(
-          "a[href],button,input,select,textarea,[role='button'],[tabindex]",
+          "a[href],button,input,select,textarea,summary,[role='button'],[tabindex]",
         ),
       );
       const interactiveRects = interactiveElements.map((element) => {
@@ -794,12 +802,40 @@ async function captureViewport(
           rect.height > 0
         );
       }).length;
-
-      const documentWidth = Math.max(root.scrollWidth, body?.scrollWidth ?? 0);
-      const documentHeight = Math.max(
-        root.scrollHeight,
-        body?.scrollHeight ?? 0,
+      const rawMarkupSamples: string[] = [];
+      const rawMarkupPattern =
+        /(?:<\/?[a-z][^<>\n]{0,100}>|\b(?:span|div|p|strong|em|section|article|label|input|button)\s+(?:class|id|style|data-[\w-]+)\s*=\s*["'][^"']*["']\s*>)/gi;
+      const textWalker = document.createTreeWalker(
+        lessonRoot ?? body,
+        NodeFilter.SHOW_TEXT,
       );
+      let textNode = textWalker.nextNode();
+      while (textNode && rawMarkupSamples.length < 5) {
+        const parent = textNode.parentElement;
+        if (!parent?.closest("code,pre,samp,kbd")) {
+          const text = (textNode.textContent ?? "").trim();
+          const match = text.match(rawMarkupPattern)?.[0];
+          if (match) rawMarkupSamples.push(match.slice(0, 200));
+        }
+        textNode = textWalker.nextNode();
+      }
+
+      const fixedCanvas = root.dataset.keyaCanvasMode !== "fluid";
+      // viewport-fit 会暂时把 body overflow 改为 visible；固定舞台上的装饰性
+      // 绝对定位元素因此可能扩大 scrollHeight。质量合同应测作者声明的舞台，
+      // 真实正文裁切和交互越界分别由 clipped/primary-action 指标负责。
+      const documentWidth = fixedCanvas
+        ? Math.max(
+            body?.offsetWidth ?? 0,
+            lessonRoot?.offsetWidth ?? 0,
+          )
+        : Math.max(root.scrollWidth, body?.scrollWidth ?? 0);
+      const documentHeight = fixedCanvas
+        ? Math.max(
+            body?.offsetHeight ?? 0,
+            lessonRoot?.offsetHeight ?? 0,
+          )
+        : Math.max(root.scrollHeight, body?.scrollHeight ?? 0);
       const requiredViewportScale = Math.min(
         1,
         window.innerWidth / Math.max(1, documentWidth),
@@ -855,6 +891,7 @@ async function captureViewport(
             "main,nav,aside,header,footer,section[aria-label],section[aria-labelledby]",
           ).length,
           visibleTextChars: (body?.innerText ?? "").trim().length,
+          ...(rawMarkupSamples.length > 0 ? { rawMarkupSamples } : {}),
           outline: Array.from(
             document.querySelectorAll<HTMLElement>(
               "main,h1,h2,h3,button,input,textarea,select,[data-block-id],[data-interaction-type],[data-interaction-item-id]",
@@ -913,6 +950,7 @@ async function captureViewport(
         viewport: input.viewport,
       },
       input.interactionSteps,
+      input.requiresInteraction,
     );
     const { diagnosticSteps, ...interactionMetrics } = interactionResult;
     diagnostics.interaction.push(
@@ -972,6 +1010,7 @@ async function exerciseInteraction(
     viewport: BrowserViewport;
   },
   interactionSteps: BrowserInteractionStep[] = [],
+  requiresInteraction = false,
 ): Promise<
   Pick<
     BrowserScreenshotMetrics,
@@ -988,7 +1027,9 @@ async function exerciseInteraction(
     return runControlledInteractionSteps(page, interactionSteps);
   }
   if (runtimeConfig?.interaction.type !== "choice") {
-    return { diagnosticSteps: [] };
+    return requiresInteraction
+      ? exerciseNativeInteraction(page)
+      : { diagnosticSteps: [] };
   }
 
   const firstControl = page
@@ -1067,6 +1108,183 @@ async function exerciseInteraction(
       diagnosticSteps: [],
     };
   }
+}
+
+async function exerciseNativeInteraction(page: Page): Promise<{
+  diagnosticSteps: Array<{
+    action: string;
+    status: "passed" | "failed" | "skipped";
+    detail: string;
+  }>;
+}> {
+  const diagnosticSteps: Array<{
+    action: string;
+    status: "passed" | "failed" | "skipped";
+    detail: string;
+  }> = [];
+  const control = page
+    .locator(
+      "input:not([type='hidden']):visible,select:visible,textarea:visible",
+    )
+    .first();
+  if ((await control.count()) > 0) {
+    const before = await captureNativeInteractionFingerprint(page, control);
+    const tagName = await control.evaluate((element) =>
+      element.tagName.toLowerCase(),
+    );
+    const inputType =
+      tagName === "input"
+        ? await control.getAttribute("type")
+        : undefined;
+    let action = `change-${tagName}`;
+    let changed = false;
+
+    if (tagName === "select") {
+      const values = await control
+        .locator("option")
+        .evaluateAll((options) =>
+          options.map((option) => (option as HTMLOptionElement).value),
+        );
+      const current = await control.inputValue();
+      const next = values.find((value) => value !== current);
+      if (next !== undefined) {
+        await control.selectOption(next);
+        changed = (await control.inputValue()) === next;
+      }
+    } else if (
+      tagName === "textarea" ||
+      inputType === "text" ||
+      inputType === null
+    ) {
+      await control.fill("Keya QA");
+      changed = (await control.inputValue()) === "Keya QA";
+    } else if (inputType === "checkbox" || inputType === "radio") {
+      const beforeChecked = await control.isChecked();
+      await control.check();
+      changed = (await control.isChecked()) !== beforeChecked;
+      action = `check-${inputType}`;
+    } else if (inputType === "range") {
+      await control.evaluate((element) => {
+        const input = element as HTMLInputElement;
+        const previous = input.value;
+        const next = previous === input.max ? input.min : input.max;
+        input.value = next || "1";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        return input.value !== previous;
+      });
+      // 课程页禁止自定义 script，纯 CSS 无法根据 range 的实时 value
+      // property 驱动外部教学反馈；原生滑块自身移动不能算学习结果。
+      changed = false;
+      action = "change-range";
+    } else {
+      diagnosticSteps.push(
+        nativeInteractionStep(
+          "exercise-native-control",
+          false,
+          "",
+          `当前 ${tagName}${inputType ? `[type=${inputType}]` : ""} 没有受控回放策略。`,
+        ),
+      );
+    }
+
+    if (!diagnosticSteps.some(({ action: current }) => current === "exercise-native-control")) {
+      const after = await captureNativeInteractionFingerprint(page, control);
+      diagnosticSteps.push(
+        nativeInteractionStep(
+          action,
+          changed && before !== after,
+          "原生控件操作后，页面出现了控件自身以外的可观察状态或反馈变化。",
+          "控件值虽然改变，但页面没有产生控件自身以外的可观察状态或反馈；这属于伪互动。",
+        ),
+      );
+    }
+  }
+
+  // 先验证 input/select 等状态控件，再展开 details。否则 details 刚触发的
+  // transition/animation 仍在运行时，会被后续控件指纹误认为自身反馈。
+  const summary = page.locator("details > summary:visible").first();
+  if ((await summary.count()) > 0) {
+    const details = summary.locator("..");
+    const before = await captureNativeInteractionFingerprint(page, summary);
+    await summary.click();
+    const opened = await details.evaluate(
+      (element) => element instanceof HTMLDetailsElement && element.open,
+    );
+    const after = await captureNativeInteractionFingerprint(page, summary);
+    diagnosticSteps.push(
+      nativeInteractionStep(
+        "toggle-details",
+        opened && before !== after,
+        "details/summary 已展开并产生可观察状态变化。",
+        "details/summary 点击后没有展开或页面没有可观察变化。",
+      ),
+    );
+  }
+
+  if (diagnosticSteps.length === 0) {
+    diagnosticSteps.push(
+      nativeInteractionStep(
+        "exercise-native-control",
+        false,
+        "",
+        "页面虽声明互动，但没有可由 Harness 回放的原生状态控件。",
+      ),
+    );
+  }
+  return { diagnosticSteps };
+}
+
+function nativeInteractionStep(
+  action: string,
+  passed: boolean,
+  passedDetail: string,
+  failedDetail: string,
+) {
+  return {
+    action,
+    status: passed ? ("passed" as const) : ("failed" as const),
+    detail: passed ? passedDetail : failedDetail,
+  };
+}
+
+async function captureNativeInteractionFingerprint(
+  page: Page,
+  control: ReturnType<Page["locator"]>,
+) {
+  return control.evaluate((activeControl) => {
+    const root = document.querySelector("main") ?? document.body;
+    const elements = [root, ...Array.from(root.querySelectorAll("*"))]
+      .filter((element) => element !== activeControl)
+      .slice(0, 400);
+    return JSON.stringify(
+      elements.map((element) => {
+        const html = element as HTMLElement;
+        const style = getComputedStyle(html);
+        const before = getComputedStyle(html, "::before");
+        const after = getComputedStyle(html, "::after");
+        const rect = html.getBoundingClientRect();
+        return [
+          html.tagName,
+          html.id,
+          html.getAttribute("open"),
+          html.getAttribute("hidden"),
+          html.getAttribute("aria-expanded"),
+          style.display,
+          style.visibility,
+          style.opacity,
+          style.color,
+          style.backgroundColor,
+          style.transform,
+          style.animationName,
+          Math.round(rect.width * 10) / 10,
+          Math.round(rect.height * 10) / 10,
+          before.content,
+          after.content,
+        ];
+      }),
+    );
+  });
 }
 
 async function runControlledInteractionSteps(

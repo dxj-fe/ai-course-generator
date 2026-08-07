@@ -312,6 +312,8 @@ export function createPageBuilderTools(
       pageId: execution.pageId,
       html: html.html,
       content,
+      requiresInteraction:
+        execution.pageTask.acceptance.requiresInteraction,
       abortSignal: options.abortSignal ?? execution.abortSignal,
       traceId: execution.traceId,
       attempt: html.revision,
@@ -1157,8 +1159,36 @@ export function createPageBuilderTools(
 }
 
 function normalizePageCreatorHtml(html: string) {
-  const normalized = normalizeWideSingleColumnBreakpoints(html);
-  return typeof normalized === "string" ? normalized : html;
+  const withoutProviderReasoningTags = html
+    .replace(/<think\b[^>]*>[\s\S]*?<\/think\s*>/gi, "")
+    .replace(/<\/?think(?:[_-][a-z0-9]+)*\b[^>]*>/gi, "");
+  const lower = withoutProviderReasoningTags.toLowerCase();
+  const doctypeStart = lower.indexOf("<!doctype");
+  const htmlStart = lower.indexOf("<html");
+  const documentStart =
+    doctypeStart >= 0 ? doctypeStart : htmlStart;
+  const htmlEnd = lower.lastIndexOf("</html>");
+  // 部分 OpenAI-compatible Provider 会把工具参数中的完整 HTML 再包一层
+  // CDATA、Markdown fence 或解释文本。HTML 文档本身已经有稳定 envelope，
+  // 在工具边界提取它比让 Agent 再耗一个模型回合清理格式更可靠。
+  const extractedDocument =
+    documentStart >= 0 && htmlEnd >= documentStart
+      ? withoutProviderReasoningTags.slice(
+          documentStart,
+          htmlEnd + "</html>".length,
+        )
+      : withoutProviderReasoningTags;
+  const selfContainedDocument = extractedDocument
+    // 页面运行时禁止外链；字体 link/@import 只影响非关键字体加载，删除后
+    // 现有 font-family fallback 仍成立，无需再消耗模型回合做机械清理。
+    .replace(/<link\b[^>]*>/gi, "")
+    .replace(/@import\s+[^;]+;/gi, "");
+  const normalized = normalizeWideSingleColumnBreakpoints(
+    selfContainedDocument,
+  );
+  return typeof normalized === "string"
+    ? normalized
+    : selfContainedDocument;
 }
 
 /**

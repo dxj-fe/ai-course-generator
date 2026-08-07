@@ -39,7 +39,8 @@ export type CourseDirectorToolName =
 
 export type DirectorRoundKind =
   | "review_architecture"
-  | "decide_course_review";
+  | "decide_course_review"
+  | "recover_page_block";
 
 export type CourseDirectorExecutionInput = {
   creationBrief: CourseCreationBrief;
@@ -64,9 +65,12 @@ export type CourseDirectorExecution = {
   reviewRef?: ArtifactRef & { kind: "course_review" };
   review?: CourseReview;
   reviewWorkOrder?: WorkOrder;
+  blockedPageRef?: ArtifactRef & { kind: "page_quality" };
+  blockedPageWorkOrder?: WorkOrder;
   inspections: {
     architecture: boolean;
     courseReview: boolean;
+    pageBlock: boolean;
   };
   failCourseAuthorization?: {
     code: string;
@@ -113,9 +117,12 @@ export function createCourseDirectorExecution(
   }
 
   const sealedReviewRef = findInputRef(workOrder, "course_review");
+  const sealedBlockedPageRef = findInputRef(workOrder, "page_quality");
   const roundKind: DirectorRoundKind = sealedReviewRef
     ? "decide_course_review"
-    : "review_architecture";
+    : sealedBlockedPageRef
+      ? "recover_page_block"
+      : "review_architecture";
   const architectureRef =
     findInputRef(workOrder, "course_architecture") ??
     run.activeArchitecture?.architectureRef;
@@ -163,6 +170,7 @@ export function createCourseDirectorExecution(
 
   let review: CourseReview | undefined;
   let reviewWorkOrder: WorkOrder | undefined;
+  let blockedPageWorkOrder: WorkOrder | undefined;
   if (sealedReviewRef) {
     if (
       run.activeArchitecture?.architectureRef.id !== architectureRef.id
@@ -206,6 +214,50 @@ export function createCourseDirectorExecution(
         "整课 Review 不是 CourseRun 当前 submitted 版本。",
       );
     }
+  } else if (sealedBlockedPageRef) {
+    if (
+      run.activeArchitecture?.architectureRef.id !== architectureRef.id
+    ) {
+      throw fatal(
+        "DIRECTOR_ACTIVE_ARCHITECTURE_CHANGED",
+        "页面阻塞证据引用的课程架构已不是当前版本。",
+      );
+    }
+    const qualityArtifact = input.repository.artifacts.load(
+      sealedBlockedPageRef.id,
+    );
+    assertArtifactRef(qualityArtifact, sealedBlockedPageRef);
+    blockedPageWorkOrder = requiredWorkOrder(
+      input.repository.workOrders.load(
+        qualityArtifact.createdByWorkOrderId,
+      ),
+      qualityArtifact.createdByWorkOrderId,
+    );
+    if (
+      blockedPageWorkOrder.status !== "blocked" ||
+      (blockedPageWorkOrder.kind !== "build_page" &&
+        blockedPageWorkOrder.kind !== "fix_page") ||
+      !blockedPageWorkOrder.submission?.artifactRefs.some(
+        ({ id }) => id === sealedBlockedPageRef.id,
+      ) ||
+      !blockedPageWorkOrder.inputArtifactRefs.some(
+        ({ id }) => id === architectureRef.id,
+      )
+    ) {
+      throw fatal(
+        "DIRECTOR_PAGE_BLOCK_INPUT_INVALID",
+        "页面阻塞证据不是当前架构分支的有效 blocked Submission。",
+      );
+    }
+    if (
+      architectWorkOrder.status !== "accepted" ||
+      (run.phase !== "building" && run.phase !== "revising")
+    ) {
+      throw fatal(
+        "DIRECTOR_PAGE_BLOCK_STATE_INVALID",
+        "页面阻塞恢复只能处理已接受架构的构建阶段。",
+      );
+    }
   } else if (
     architectWorkOrder.status !== "submitted" ||
     (run.phase !== "planning" && run.phase !== "revising")
@@ -232,9 +284,14 @@ export function createCourseDirectorExecution(
       | undefined,
     review,
     reviewWorkOrder,
+    blockedPageRef: sealedBlockedPageRef as
+      | (ArtifactRef & { kind: "page_quality" })
+      | undefined,
+    blockedPageWorkOrder,
     inspections: {
       architecture: false,
       courseReview: false,
+      pageBlock: false,
     },
     workOrderLeaseOwner: input.workOrderLeaseOwner,
     runLeaseOwner: input.runLeaseOwner,
@@ -350,7 +407,7 @@ export function resolveCourseDirectorActiveTools(
       ToolIds.RequestArchitectureRevision,
       ToolIds.AcceptArchitectureAndDispatchPages,
     );
-  } else {
+  } else if (execution.roundKind === "decide_course_review") {
     tools.push(ToolIds.InspectCourseReview);
     if (execution.review?.decision === "pass") {
       tools.push(ToolIds.AcceptCourseReviewAndPublish);
@@ -359,6 +416,8 @@ export function resolveCourseDirectorActiveTools(
     } else if (execution.review?.decision === "replan") {
       tools.push(ToolIds.RequestReplan);
     }
+  } else {
+    tools.push(ToolIds.RequestReplan);
   }
   if (
     requiredDirectorInspectionCompleted(execution) &&
@@ -489,6 +548,10 @@ export function resolveCourseDirectorFailureEligibility(
       ...execution.failCourseAuthorization,
     };
   }
+  const run = requiredRun(
+    execution.repository.runs.load(execution.initialRun.id),
+    execution.initialRun.id,
+  );
 
   if (execution.roundKind === "review_architecture") {
     return {
@@ -498,10 +561,21 @@ export function resolveCourseDirectorFailureEligibility(
     };
   }
 
-  const run = requiredRun(
-    execution.repository.runs.load(execution.initialRun.id),
-    execution.initialRun.id,
-  );
+  if (execution.roundKind === "recover_page_block") {
+    if (run.replanRound >= MAX_REPLAN_ROUNDS) {
+      return {
+        code: "COURSE_REPLAN_BUDGET_EXHAUSTED",
+        eligible: true,
+        message: `页面阻塞后的重新规划已达到 ${MAX_REPLAN_ROUNDS} 轮上限。`,
+      };
+    }
+    return {
+      eligible: false,
+      message:
+        "当前页面阻塞仍可通过重新分配页面职责恢复，应先创建新版课程架构。",
+    };
+  }
+
   if (execution.review?.decision === "revise_pages") {
     if (run.courseRevisionRound >= MAX_COURSE_REVISION_ROUNDS) {
       return {
@@ -538,9 +612,12 @@ export function resolveCourseDirectorFailureEligibility(
 function requiredDirectorInspectionCompleted(
   execution: CourseDirectorExecution,
 ) {
-  return execution.roundKind === "review_architecture"
-    ? execution.inspections.architecture
-    : execution.inspections.courseReview;
+  if (execution.roundKind === "review_architecture") {
+    return execution.inspections.architecture;
+  }
+  return execution.roundKind === "decide_course_review"
+    ? execution.inspections.courseReview
+    : execution.inspections.pageBlock;
 }
 
 export function inspectCourseArchitecture(
@@ -648,6 +725,50 @@ export function inspectCurrentCourseReview(
     coverage: execution.review.coverage,
     issues: execution.review.issues,
     currentManifestHash: execution.initialRun.currentManifestHash,
+  };
+}
+
+export function inspectBlockedPage(
+  execution: CourseDirectorExecution,
+) {
+  if (
+    !execution.blockedPageRef ||
+    !execution.blockedPageWorkOrder ||
+    execution.blockedPageWorkOrder.scope.type !== "page"
+  ) {
+    throw fatal(
+      "DIRECTOR_PAGE_BLOCK_INPUT_MISSING",
+      "当前不是页面阻塞恢复回合。",
+    );
+  }
+  const qualityArtifact = execution.repository.artifacts.load(
+    execution.blockedPageRef.id,
+  );
+  const quality = qualityArtifact?.payload as
+    | {
+        decision?: unknown;
+        overallScore?: unknown;
+        issues?: Array<{
+          code?: unknown;
+          severity?: unknown;
+          message?: unknown;
+          repairHint?: unknown;
+        }>;
+      }
+    | undefined;
+  return {
+    pageId: execution.blockedPageWorkOrder.scope.pageId,
+    workOrderId: execution.blockedPageWorkOrder.id,
+    error: execution.blockedPageWorkOrder.error,
+    evidence: execution.blockedPageWorkOrder.submission?.evidence ?? [],
+    qualityRef: execution.blockedPageRef,
+    quality: quality
+      ? {
+          decision: quality.decision,
+          overallScore: quality.overallScore,
+          issues: quality.issues?.slice(0, 12),
+        }
+      : undefined,
   };
 }
 

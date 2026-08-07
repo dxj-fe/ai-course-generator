@@ -4,10 +4,11 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ModelTier } from "../../../../src/server/infra/ai/model-router";
-import { AgentIds } from "../../../../src/server/agent/ids";
+import { AgentIds, ToolIds } from "../../../../src/server/agent/ids";
 import { AgentTerminalNotCommittedError } from "../../../../src/server/agent/runtime";
 import type { RunCourseDirectorAgentInput } from "../../../../src/server/agent/plugins/agents/course/director-handler";
 import type { CurriculumArchitectAgentInput } from "../../../../src/server/agent/plugins/agents/course/architect-handler";
+import { courseArchitectAgent } from "../../../../src/server/agent/plugins/agents/course/architect";
 import type { CourseReviewerExecutionInput } from "../../../../src/server/agent/plugins/contexts/course/reviewer";
 import { sanitizePublicCourseState } from "../../../../src/server/course/projection/public-error";
 import { createCourseRevisionCommands } from "../../../../src/server/course/run/revision-commands";
@@ -204,6 +205,149 @@ describe("CourseRunEngine", () => {
     expect(result.status).toBe("completed");
   });
 
+  it("单页质量阻塞交回 Course Lead 重新分配职责，不直接终止整课", async () => {
+    const prepared = await prepare("page-block-replan");
+    const baseFakes = createSuccessfulFakes(prepared.repository);
+    let blockedOnce = false;
+    const runPageBuilder = async (input: RunPageBuilderAgentInput) => {
+      const pageId =
+        input.workOrder.scope.type === "page"
+          ? input.workOrder.scope.pageId
+          : undefined;
+      if (pageId !== "page-concept" || blockedOnce) {
+        return baseFakes.runPageBuilder(input);
+      }
+      blockedOnce = true;
+      const architecture = createArchitecture();
+      const pageTask = architecture.pageTasks.find(
+        ({ pageId: candidate }) => candidate === pageId,
+      )!;
+      const payloads = pagePayloads(architecture, pageTask);
+      const quality = QualityReportSchema.parse({
+        ...payloads.quality,
+        overallScore: 72,
+        dimensions: {
+          ...payloads.quality.dimensions,
+          layoutQuality: {
+            score: 55,
+            summary: "单页职责过载，三视口需要继续整体缩小。",
+            issueCodes: ["BROWSER_VIEWPORT_SCALE_TOO_SMALL"],
+            repairHints: ["重新分配本页次要解释。"],
+          },
+        },
+        issues: [
+          {
+            code: "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
+            dimension: "layoutQuality",
+            severity: "error",
+            source: "browser",
+            message: "页面在小视口被整体缩小，正文不可可靠阅读。",
+            location: {
+              pageId,
+              viewport: "640x360",
+              description: "完整 16:9 舞台",
+            },
+            repairHint: "由 Course Lead 缩小或重新分配页面职责。",
+          },
+        ],
+        shouldRepair: true,
+        decision: "revise",
+      });
+      let expectedLockVersion = input.workOrder.lockVersion;
+      for (const checkpoint of [
+        { kind: "page_content" as const, payload: payloads.content },
+        { kind: "page_html" as const, payload: payloads.html },
+        { kind: "page_quality" as const, payload: quality },
+      ]) {
+        const saved = prepared.repository.checkpointPageArtifact({
+          workOrderId: input.workOrder.id,
+          expectedWorkOrderLockVersion: expectedLockVersion,
+          workOrderLeaseOwner: input.workOrderLeaseOwner,
+          runLeaseOwner: input.runLeaseOwner,
+          traceId: input.traceId,
+          toolName: "test_page_checkpoint",
+          kind: checkpoint.kind,
+          payload: checkpoint.payload,
+          now: nextTimestamp(),
+        });
+        expectedLockVersion = saved.workOrder.lockVersion;
+      }
+      prepared.repository.blockPageWorkOrder({
+        workOrderId: input.workOrder.id,
+        expectedWorkOrderLockVersion: expectedLockVersion,
+        workOrderLeaseOwner: input.workOrderLeaseOwner,
+        runLeaseOwner: input.runLeaseOwner,
+        traceId: input.traceId,
+        code: "PAGE_WORK_ORDER_BLOCKED",
+        message: "本页职责超过单个无滚动舞台的可靠承载范围。",
+        evidence: ["三视口质量报告连续失败"],
+        now: nextTimestamp(),
+      });
+      return undefined as never;
+    };
+    const runDirector = async (input: RunCourseDirectorAgentInput) => {
+      const qualityRef = input.workOrder.inputArtifactRefs.find(
+        ({ kind }) => kind === "page_quality",
+      );
+      if (!qualityRef) return baseFakes.runDirector(input);
+      const blockedWorkOrder = prepared.repository.workOrders
+        .listByTask(input.workOrder.taskId)
+        .find(
+          ({ status, submission }) =>
+            status === "blocked" &&
+            submission?.artifactRefs.some(({ id }) => id === qualityRef.id),
+        );
+      if (!blockedWorkOrder) throw new Error("测试缺少阻塞页面");
+      const run = requiredRun(
+        prepared.repository.runs.loadByTaskId(input.workOrder.taskId),
+      );
+      createCourseRevisionCommands(
+        prepared.repository,
+      ).requestBlockedPageReplan({
+        fence: fence(run, input.runLeaseOwner),
+        blockedWorkOrderId: blockedWorkOrder.id,
+        directorWorkOrderId: input.workOrder.id,
+        directorRound: {
+          workOrderId: input.workOrder.id,
+          expectedLockVersion: input.workOrder.lockVersion,
+          leaseOwner: input.workOrderLeaseOwner,
+          action: ToolIds.RequestReplan,
+          summary: "测试主 Agent 重新分配页面职责。",
+          artifactRefs: [qualityRef],
+        },
+        now: nextTimestamp(),
+      });
+      return undefined as never;
+    };
+
+    const result = await createCourseRunEngine({
+      repository: prepared.repository,
+      now: prepared.now,
+      createWorkerId: () => "engine-page-block-replan-worker",
+      getModel: fakeGetModel,
+      ...baseFakes,
+      runDirector,
+      runPageBuilder,
+    }).run(prepared.input);
+
+    expect(result.status, JSON.stringify(result.errors)).toBe("completed");
+    const storedRun = requiredRun(
+      prepared.repository.runs.loadByTaskId(prepared.input.taskId),
+    );
+    expect(storedRun.replanRound).toBe(1);
+    expect(storedRun.phase).toBe("completed");
+    expect(
+      prepared.repository.workOrders
+        .listByTask(prepared.input.taskId)
+        .filter(({ kind }) => kind === "architect_course"),
+    ).toHaveLength(2);
+    expect(
+      prepared.repository.events
+        .list(prepared.input.taskId)
+        .some(({ type }) => type === "course_failed"),
+    ).toBe(false);
+  });
+
   it("CourseRun 已终态时只投影结果，不重新领取 lease 或重复调用 Agent", async () => {
     const prepared = await prepare("terminal-reconcile");
     await createCourseRunEngine({
@@ -277,6 +421,107 @@ describe("CourseRunEngine", () => {
     }
 
     await expect(firstRun).resolves.toMatchObject({ status: "completed" });
+  });
+
+  it("领取子 WorkOrder 前先让父 CourseRun lease 覆盖完整阶段预算", async () => {
+    const prepared = await prepare("parent-lease-covers-child");
+    const controller = new AbortController();
+    let releaseDefinition: () => void = () => undefined;
+    let markDefinitionLoading: () => void = () => undefined;
+    const definitionGate = new Promise<void>((resolve) => {
+      releaseDefinition = resolve;
+    });
+    const definitionLoading = new Promise<void>((resolve) => {
+      markDefinitionLoading = resolve;
+    });
+
+    const execution = createCourseRunEngine({
+      repository: prepared.repository,
+      now: prepared.now,
+      createWorkerId: () => "engine-parent-lease-worker",
+      getModel: fakeGetModel,
+      getAgentDefinition: async () => {
+        markDefinitionLoading();
+        await definitionGate;
+        return courseArchitectAgent;
+      },
+    }).run(prepared.input, { abortSignal: controller.signal });
+    await definitionLoading;
+
+    const run = requiredRun(
+      prepared.repository.runs.loadByTaskId(prepared.input.taskId),
+    );
+    const architect = submittedArchitect(
+      prepared.repository,
+      prepared.input.taskId,
+    );
+    expect(run.leaseExpiresAt).toBeDefined();
+    expect(architect.leaseExpiresAt).toBeDefined();
+    expect(Date.parse(run.leaseExpiresAt!)).toBeGreaterThanOrEqual(
+      Date.parse(architect.leaseExpiresAt!),
+    );
+
+    controller.abort(new DOMException("测试结束", "AbortError"));
+    releaseDefinition();
+    await expect(execution).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("父 lease 过期但子 WorkOrder 仍活跃时只退出等待，不终态化课程", async () => {
+    const prepared = await prepare("active-child-lease");
+    const initialNow = "2026-07-29T14:00:10.000Z";
+    const recoveredNow = "2026-07-29T14:02:15.000Z";
+    const bootstrapped = prepared.repository.bootstrapCourseRun({
+      taskId: prepared.input.taskId,
+      courseId: prepared.input.courseId,
+      traceId: prepared.input.traceId,
+      now: initialNow,
+    });
+    const oldRun = prepared.repository.runs.claimLease({
+      runId: bootstrapped.run.id,
+      owner: "old-engine",
+      now: initialNow,
+      durationMs: 120_000,
+      expectedTraceId: prepared.input.traceId,
+    });
+    expect(oldRun).toBeDefined();
+    const oldWorkOrder = prepared.repository.workOrders.claim(
+      bootstrapped.architectWorkOrder.id,
+      {
+        owner: "old-engine:architect",
+        now: initialNow,
+        durationMs: 180_000,
+      },
+    );
+    expect(oldWorkOrder).toBeDefined();
+
+    const execution = createCourseRunEngine({
+      repository: prepared.repository,
+      now: () => recoveredNow,
+      createWorkerId: () => "recovery-engine",
+      getModel: fakeGetModel,
+      ...createSuccessfulFakes(prepared.repository),
+    }).run(prepared.input);
+
+    await expect(execution).rejects.toMatchObject({
+      name: "CourseRunLeaseUnavailableError",
+      reason: "work_order_held",
+    });
+    const run = requiredRun(
+      prepared.repository.runs.loadByTaskId(prepared.input.taskId),
+    );
+    expect(run.phase).toBe("planning");
+    expect(run.leaseOwner).toBeUndefined();
+    expect(
+      prepared.repository.events
+        .list(prepared.input.taskId)
+        .some(({ type }) => type === "course_failed"),
+    ).toBe(false);
+    expect(
+      submittedArchitect(prepared.repository, prepared.input.taskId),
+    ).toMatchObject({
+      status: "running",
+      leaseOwner: "old-engine:architect",
+    });
   });
 
   it("中途取消会释放 Run 和 WorkOrder lease，下一次执行可从原状态恢复", async () => {

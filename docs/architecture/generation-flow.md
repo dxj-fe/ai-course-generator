@@ -22,6 +22,8 @@
 
 `buildDependsOnPageIds` 只允许表达“必须读取前页实际产物”的生成依赖。三页及以上课程至少要有两个可直接从 CourseArchitecture 开工的页面，否则 Architecture Gate 要求 Lead 删除伪串行依赖。所有依赖已满足的页面进入同一个固定并发池，Demo 与默认运行最多三路 Page Creator 并发；任一页面完成后立即补入下一张可运行 WorkOrder，不等待整批页面一起结束。
 
+显式 Worker 默认逐门执行课程，避免课程级并发与单课三路页面并发相乘。单个 Agent 的 Provider 回合最多等待 150 秒且不使用 SDK 隐式重试；超时后 Task 回到 queued，从同一 workspace 和 Artifact checkpoint 继续，而不是清空页面或切换模型。
+
 ## Page Creator Loop
 
 每个页面 WorkOrder 拥有独立目录：
@@ -44,6 +46,8 @@ Harness 在第一次 Provider 调用前已经把 CourseContext、PageTask、已�
 → submit_page / block_page
 ```
 
+其中上下文/workspace 状态登记、编辑后的 render、浏览器证据到 PageQuality 的 inspect，以及唯一 submit/block 都由 Harness 在工具边界直接推进并写入持久化工具账本。模型只在真正需要创作 HTML、决定是否生图或选择修订方向时继续下一回合，避免一个几十毫秒的确定性工具先等待几十秒 Provider。
+
 核心页面创作不再委托给一次性 Page Writer、HTML Engineer 或 Page QA 模型。新建 Page WorkOrder 的 ToolSet 只包含上下文读取、workspace 读写、按需生图、资料检索、渲染、检查和提交；旧生成/修复 Tool 只在运行时为历史 WorkOrder 提供恢复能力。`page.json` 只保存实际使用的授权资料引用，不保存页面块、互动或视觉结构。HTML 是新页面的内容真相；Harness 在 checkpoint 时根据 PageTask 和 HTML 自动生成旧下游暂时需要的兼容 Artifact。`PageContentDSL` 仍作为播放器、Artifact 与历史任务的迁移期读模型存在，但不再由 Page Creator 输出，也不主导新页面构图。
 
 页面 Gate 只要求完整 HTML、安全 envelope、单一 `<main>`、引用权限和可交付质量，不要求 `data-page-id`、`data-block-id`、固定 runtime 标记、固定互动类型或模板映射。页面可直接使用原生 HTML、CSS 和受信任运行时表达最适合当前教学目标的结构。
@@ -64,11 +68,13 @@ Harness 在第一次 Provider 调用前已经把 CourseContext、PageTask、已�
 
 截图会在下一轮作为多模态输入回灌给同一个 Page Creator。新链路的 `edit_page_workspace` 在同一工具调用中完成 HTML checkpoint、Playwright 渲染和质量 Artifact；独立 `render_page` / `inspect_page` 仍用于受控互动步骤、点查和历史兼容，不再要求模型机械串联。Course Reviewer 默认读取最多 20 页的桌面截图概览以及全课紧凑诊断，需要时再加载目标页三视口原图。
 
-模型输入只保留最新一轮三视口 PNG，旧截图会从消息中移除，但历史工具结果和修订记录保留。这样 Agent 能持续看到当前页面，又不会因多轮累计大图耗尽外部 Provider 的多模态上下文。相同 HTML 与相同元数据的 workspace 写入会被拒绝，避免空转。
+模型修订输入只保留最初封口任务、唯一当前 HTML、当前精确 Browser issue 和最新一轮三视口 PNG；旧截图、旧完整 HTML tool call 和旧工具结果都会移出 Provider 上下文。持久化 Artifact、workspace 与工具账本仍保留完整恢复证据。这样 Agent 能持续看到当前页面，又不会因多轮累计大图和多个 HTML 版本把正常回合拖到总预算。相同 HTML 与相同元数据的 workspace 写入会被拒绝，避免空转。
 
 workspace 以 WorkOrder 为稳定身份，不随 `executionAttempt` 换目录。Worker 或 Provider 中断后先复用本地未提交文件；若文件缺失，才从最新 `page_html` checkpoint 初始化。因此本地文件承担 Agent 工作区，SQLite Artifact 承担可靠 checkpoint，两者不会互相覆盖正在创作的新版本。
 
-课程页统一在 1920×1080 的固定 16:9 舞台内创作，学习器和 Browser Harness 使用同一 contain-fit 运行时同比缩放到 1280×720、960×540 和 640×360，并禁止 iframe、根页面与嵌套内容区产生横向或纵向滚动。QA 同时保留缩放前的原始文档尺寸，防止长页面被缩小后伪装成“无溢出”；横向/纵向溢出、真实正文或互动裁切、失效按钮、控制台错误和互动回放失败均阻断交付。内容超出一页时由 Course Lead 拆分页面，Page Creator 重新排版或使用渐进互动，不通过缩小正文或滚动区硬塞。
+课程页统一在 1920×1080 的固定 16:9 舞台内创作，学习器和 Browser Harness 使用同一 contain-fit 运行时同比缩放到 1280×720、960×540 和 640×360，并禁止 iframe、根页面与嵌套内容区产生横向或纵向滚动。固定画布的原始尺寸取 authored `body/main`，不会因光晕、轨道或动画短暂越界把整页误缩小；文字 Range 与交互盒裁切仍独立阻断。横向/纵向溢出、真实正文或互动裁切、失效按钮、控制台错误和互动回放失败均阻断交付。内容超出一页时 Page Creator 先重新排版或使用渐进互动；多轮证据修订仍无法通过时提交 blocked PageQuality。Engine 唤醒 Course Lead：页数可变时拆页，用户固定页数时在现有页面间重新分配职责，不把单页 blocked 直接写成整课失败。
+
+原始文档超出 1920×1080 的八像素测量容差会直接阻断，即使 contain-fit 后没有滚动。CourseArchitecture 的 `requiresInteraction` 不映射为固定 DSL 插槽；Harness 会用 Playwright 真实操作 details、选择控件、文本控件或 range，并确认控件之外出现 DOM、可见样式或反馈变化。只有控件外观而没有教学结果变化的伪互动不能通过。
 
 Worker 停止时关闭 Browser Pool。生产环境先执行 `npm run browser:install` 安装与 Playwright 包匹配的 Chromium 及系统依赖。
 
@@ -90,7 +96,9 @@ Reviewer 检查学习目标覆盖、事实与引用、跨页连贯、视觉完�
 
 返工仍受 WorkOrder、allowedTools、预算、lease、CAS 和幂等工具账本约束。普通模型文本不构成完成，只有终态 Tool 成功提交才会推进任务。
 
-Page Creator 走 `page-writer` 强档模型路由，每个 WorkOrder 的所有 continuation 共享 300 秒 deadline，页面初稿后最多进行三轮基于 Browser Harness 的质量修订。当唯一合法动作只剩 `submit_page` 或 `block_page` 时，Harness 直接调用同一个持久化终态工具，不再让 Provider 为机械封口承担一次长尾请求。旧 Model Step 恢复链路仍沿用一次定向 Repair。
+Course Lead 与 Page Creator 都使用 300 秒 WorkOrder 总预算；Reviewer 为 120 秒、Final Lead 为 60 秒。每个 WorkOrder 的 continuation 共享 deadline，页面初稿后最多进行三轮基于 Browser Harness 的质量修订。Planner 曾同时声明 300 秒配置上限和 120 秒 WorkOrder，真实 Provider 在 120.084 秒被错误截断；现已统一为 300 秒，瞬态长尾仍从 checkpoint 有界重试。旧 Model Step 恢复链路仍沿用一次定向 Repair。
+
+领取任何子 WorkOrder 前，Engine 先把父 CourseRun 租约续到至少覆盖子任务完整预算；恢复 Worker 同时检查父租约和所有 running 子租约。租约竞争只返回 queued 等待，不会调用 `failCourse`。
 
 ## 质量基准与迁移边界
 

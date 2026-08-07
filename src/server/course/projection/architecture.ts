@@ -294,11 +294,74 @@ function cognitiveLevelFor(
 }
 
 function defaultAudienceAgeRange(description: string) {
+  const explicitRange = description.match(
+    /(\d{1,2})\s*(?:-|–|—|至|到|~)\s*(\d{1,2})\s*岁/,
+  );
+  if (explicitRange) {
+    const first = Number(explicitRange[1]);
+    const second = Number(explicitRange[2]);
+    return {
+      min: Math.min(first, second),
+      max: Math.max(first, second),
+      label: ensureMinimumText(truncate(description, 40), 2),
+    };
+  }
+
+  const explicitAge = description.match(/(\d{1,2})\s*岁/);
+  if (explicitAge) {
+    const age = Number(explicitAge[1]);
+    return {
+      min: age,
+      max: age,
+      label: ensureMinimumText(truncate(description, 40), 2),
+    };
+  }
+
+  const gradeAge = inferChineseGradeAge(description);
+  if (gradeAge) {
+    return {
+      ...gradeAge,
+      label: ensureMinimumText(truncate(description, 40), 2),
+    };
+  }
+
   return {
     min: 16,
     max: 65,
     label: ensureMinimumText(truncate(description, 40), 2),
   };
+}
+
+function inferChineseGradeAge(description: string) {
+  const gradeNumbers: Record<string, number> = {
+    一: 1,
+    二: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    七: 7,
+    八: 8,
+    九: 9,
+  };
+  const primary = description.match(/小学\s*([一二三四五六1-6])\s*年级/);
+  if (primary) {
+    const grade = Number(primary[1]) || gradeNumbers[primary[1]!]!;
+    const age = grade + 5;
+    return { min: age, max: age + 1 };
+  }
+
+  const secondary = description.match(/(初中|高中|初|高)\s*([一二三1-3])/);
+  if (secondary) {
+    const grade = Number(secondary[2]) || gradeNumbers[secondary[2]!]!;
+    const baseAge = secondary[1] === "高中" || secondary[1] === "高" ? 15 : 12;
+    const age = baseAge + grade - 1;
+    return { min: age, max: age + 1 };
+  }
+
+  if (/幼儿园|学龄前/.test(description)) return { min: 3, max: 6 };
+  if (/小学生/.test(description)) return { min: 6, max: 12 };
+  return undefined;
 }
 
 function uniqueStrings(values: readonly string[]) {

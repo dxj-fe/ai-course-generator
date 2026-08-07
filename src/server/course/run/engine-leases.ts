@@ -20,6 +20,7 @@ export class CourseRunLeaseUnavailableError extends Error {
     message: string,
     readonly reason:
       | "lease_held"
+      | "work_order_held"
       | "trace_adoption_blocked" = "lease_held",
   ) {
     super(message);
@@ -53,6 +54,19 @@ export function renewExecutionLeases(
     );
   }
   const now = dependencies.now();
+  // 父租约必须先于子租约续期；任何中途退出都只能留下“父长子短”，不能
+  // 再制造恢复 Worker 可接管父运行但无法领取子工作单的窗口。
+  renewOwnedRunLease(
+    workOrder.taskId,
+    traceId,
+    runLeaseOwner,
+    Math.max(
+      RUN_LEASE_MS,
+      workOrder.budget.timeoutMs + AGENT_ATTEMPT_LEASE_GRACE_MS,
+    ),
+    dependencies,
+    now,
+  );
   const renewedWorkOrder = dependencies.repository.workOrders.renewLease({
     workOrderId: workOrder.id,
     owner: workOrderLeaseOwner,
@@ -78,33 +92,28 @@ export function renewExecutionLeases(
     );
   }
 
-  const run = dependencies.repository.runs.loadByTaskId(workOrder.taskId);
-  if (
-    !run ||
-    run.traceId !== traceId ||
-    run.leaseOwner !== runLeaseOwner
-  ) {
-    throw new CourseRunLeaseUnavailableError("CourseRun 执行权已变化");
-  }
-  const renewedRun = dependencies.repository.runs.renewLease({
-    runId: run.id,
-    owner: runLeaseOwner,
-    now,
-    durationMs: Math.max(
-      RUN_LEASE_MS,
-      workOrder.budget.timeoutMs + AGENT_ATTEMPT_LEASE_GRACE_MS,
-    ),
-    expectedTraceId: traceId,
-    authorize: () =>
-      assertCourseRunTaskExecutionActive(
-        dependencies.repository.runs.database,
-        run,
-      ),
-  });
-  if (!renewedRun) {
-    throw new CourseRunLeaseUnavailableError("CourseRun lease 续期失败");
-  }
   return renewedWorkOrder;
+}
+
+/**
+ * 领取子 WorkOrder 前先延长父 CourseRun。这样即使进程在子领取与 Agent
+ * 启动之间退出，恢复 Worker 也不会在子租约仍有效时提前接管父运行。
+ */
+export function renewRunLeaseForWorkOrder(
+  workOrder: WorkOrder,
+  owner: string,
+  traceId: string,
+  dependencies: LeaseDependencies,
+  now = dependencies.now(),
+) {
+  return renewOwnedRunLease(
+    workOrder.taskId,
+    traceId,
+    owner,
+    workOrderLeaseDuration(workOrder),
+    dependencies,
+    now,
+  );
 }
 
 export function renewRunLease(
@@ -118,6 +127,40 @@ export function renewRunLease(
     now: dependencies.now(),
     durationMs: RUN_LEASE_MS,
     expectedTraceId: run.traceId,
+    authorize: () =>
+      assertCourseRunTaskExecutionActive(
+        dependencies.repository.runs.database,
+        run,
+      ),
+  });
+  if (!renewed) {
+    throw new CourseRunLeaseUnavailableError("CourseRun lease 续期失败");
+  }
+  return renewed;
+}
+
+function renewOwnedRunLease(
+  taskId: string,
+  traceId: string,
+  owner: string,
+  durationMs: number,
+  dependencies: LeaseDependencies,
+  now: string,
+) {
+  const run = dependencies.repository.runs.loadByTaskId(taskId);
+  if (
+    !run ||
+    run.traceId !== traceId ||
+    run.leaseOwner !== owner
+  ) {
+    throw new CourseRunLeaseUnavailableError("CourseRun 执行权已变化");
+  }
+  const renewed = dependencies.repository.runs.renewLease({
+    runId: run.id,
+    owner,
+    now,
+    durationMs,
+    expectedTraceId: traceId,
     authorize: () =>
       assertCourseRunTaskExecutionActive(
         dependencies.repository.runs.database,

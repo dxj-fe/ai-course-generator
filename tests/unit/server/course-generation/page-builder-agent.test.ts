@@ -25,6 +25,7 @@ import {
 } from "../../../../src/server/agent/plugins/tools/course/page-builder";
 import { createReadLocalResourceTool } from "../../../../src/server/agent/plugins/tools/system";
 import {
+  compactPageBuilderRevisionMessages,
   preparePageBuilderStep,
   prunePageBuilderRenderEvidenceMessages,
   runPageBuilderAgent,
@@ -91,6 +92,14 @@ describe("Page Builder ToolLoopAgent", () => {
             generate: async ({ prompt }) => {
               expect(prompt).toContain("Harness 已预加载的封口上下文与 workspace");
               expect(prompt).toContain('"coursePack"');
+              expect(prompt).toContain("禁止 script、Tailwind/CDN、link、@import");
+              expect(prompt).toContain("有且只能有一个 main");
+              expect(prompt).toContain("本页 requiresInteraction=true");
+              expect(prompt).toContain("details/summary");
+              expect(prompt).toContain("无可信原生行为时不要输出 button");
+              expect(prompt).toContain("authored canvas 上至少 72px 高");
+              expect(prompt).toContain("input:checked + label/CSS");
+              expect(prompt).toContain("禁止用 CSS [value] 伪造滑块反馈");
               const firstStep = await settings.prepareStep({
                 messages: [],
                 stepNumber: 0,
@@ -136,6 +145,37 @@ describe("Page Builder ToolLoopAgent", () => {
     ).toEqual([normalMessage]);
   });
 
+  it("质量修订丢弃旧 HTML 工具历史，只保留封口任务", () => {
+    const promptMessage = {
+      role: "user",
+      content: "完成页面。Harness 已预加载的封口上下文与 workspace。",
+    };
+    const systemMessage = { role: "system", content: "页面 Agent" };
+    const oldHtmlCall = {
+      role: "assistant",
+      content: [
+        {
+          type: "tool-call",
+          toolName: "edit_page_workspace",
+          input: { html: "<main>旧版超长 HTML</main>" },
+        },
+      ],
+    };
+    const oldToolResult = {
+      role: "tool",
+      content: [{ type: "tool-result", output: "旧质量结果" }],
+    };
+
+    expect(
+      compactPageBuilderRevisionMessages([
+        systemMessage,
+        promptMessage,
+        oldHtmlCall,
+        oldToolResult,
+      ]),
+    ).toEqual([systemMessage, promptMessage]);
+  });
+
   it("最终编辑后的机械 render 步骤会移除旧截图并固定单一工具选择", async () => {
     const prepared = await preparePageBuilder();
     prepared.execution.legacyModelPipeline = false;
@@ -175,6 +215,42 @@ describe("Page Builder ToolLoopAgent", () => {
       toolChoice: { type: "tool", toolName: "render_page" },
     });
     expect(preparedStep.activeTools).toContain("render_page");
+  });
+
+  it("把 Browser Harness 的具体问题和修复方向连同截图注入下一轮", async () => {
+    const prepared = await preparePageBuilder();
+    prepared.execution.legacyModelPipeline = false;
+    prepared.execution.latestRenderEvidence = {
+      htmlRevision: 2,
+      evidence: { captures: [] },
+      issues: [
+        {
+          code: "BROWSER_CONTENT_CLIPPED",
+          dimension: "layoutQuality",
+          severity: "error",
+          source: "browser",
+          message: "body > main 存在内容裁切。",
+          location: {
+            pageId: PAGE_ID,
+            selector: "body > main",
+            viewport: "1280x720",
+            description: "Playwright 固定视口渲染结果",
+          },
+          repairHint: "重新计算固定画布的内容总高度。",
+        },
+      ],
+      images: [
+        {
+          viewport: { width: 1280, height: 720 },
+          png: new Uint8Array([1]),
+        },
+      ],
+    };
+
+    const preparedStep = preparePageBuilderStep(prepared.execution, []);
+    expect(JSON.stringify(preparedStep.messages)).toContain(
+      "BROWSER_CONTENT_CLIPPED（body > main）：body > main 存在内容裁切。 修复方向：重新计算固定画布的内容总高度。",
+    );
   });
 
   it("只把按需读取的页面设计 reference 注入内容和 HTML Model Step", async () => {
@@ -311,7 +387,8 @@ describe("Page Builder ToolLoopAgent", () => {
     const html = `<!doctype html>
 <html lang="zh-CN"><head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<style>html,body,main{width:100%;min-height:100%;margin:0}main{display:grid;grid-template-columns:1fr 1fr;gap:24px}@media (max-width: 768px){main{grid-template-columns:1fr}}</style>
+<link rel="stylesheet" href="https://fonts.example.invalid/course.css">
+<style>@import url('https://fonts.example.invalid/course.css');html,body,main{width:100%;min-height:100%;margin:0}main{display:grid;grid-template-columns:1fr 1fr;gap:24px}@media (max-width: 768px){main{grid-template-columns:1fr}}</style>
 </head><body><main>
 <header><h1>恒星与行星的区别</h1><p>先用是否自身发光来区分恒星和行星。</p></header>
 <article><h2>恒星</h2><p>恒星能够自身发光发热，太阳就是一颗恒星。</p><p>判断重点是能否自身发光。</p></article>
@@ -328,7 +405,7 @@ describe("Page Builder ToolLoopAgent", () => {
     const edited = await executeTool(tools, "edit_page_workspace", {
       pageId: PAGE_ID,
       mode: "write",
-      html,
+      html: `<think_never_used_hash>内部推理</think_never_used_hash>\n<![CDATA[${html}]]>`,
     });
 
     expect(edited).toMatchObject({
@@ -349,6 +426,11 @@ describe("Page Builder ToolLoopAgent", () => {
       quality: { decision: "pass" },
     });
     expect(snapshot.html?.html).toContain("max-width: 520px");
+    expect(snapshot.html?.html).toMatch(/^<!doctype html>/i);
+    expect(snapshot.html?.html).not.toContain("CDATA");
+    expect(snapshot.html?.html).not.toContain("think_never_used");
+    expect(snapshot.html?.html).not.toContain("fonts.example.invalid");
+    expect(snapshot.html?.html).not.toContain("@import");
   });
 
   it("Page Creator 三轮实质修订仍失败后只开放 block_page，避免无界空转", async () => {

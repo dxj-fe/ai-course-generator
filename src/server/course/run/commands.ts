@@ -52,7 +52,10 @@ const REVIEWER_DEFAULTS = getAgentWorkOrderDefaults(
 export type CourseRunCommands = {
   createDirectorRound(input: {
     fence: CourseRunCommandFence;
-    purpose: "review_architecture" | "decide_course_review";
+    purpose:
+      | "review_architecture"
+      | "decide_course_review"
+      | "recover_page_block";
     inputArtifactRefs: ArtifactRef[];
     now?: string;
   }): WorkOrder;
@@ -164,7 +167,9 @@ export function createCourseRunCommands(
             acceptance: [
               input.purpose === "review_architecture"
                 ? "根据用户目标和课程矩阵明确接受或退回课程架构"
-                : "根据当前整课 Review 明确发布、局部返工或重新规划",
+                : input.purpose === "decide_course_review"
+                  ? "根据当前整课 Review 明确发布、局部返工或重新规划"
+                  : "根据页面阻塞证据重新分配页面职责，不能让单页失败直接终止整课",
             ],
             allowedTools: DIRECTOR_DEFAULTS.allowedTools,
             budget: DIRECTOR_DEFAULTS.budget,
@@ -181,12 +186,16 @@ export function createCourseRunCommands(
           stage:
             input.purpose === "review_architecture"
               ? "planning"
-              : "course_review",
+              : input.purpose === "decide_course_review"
+                ? "course_review"
+                : "repair",
           agent: "course-run-engine",
           safeSummary:
             input.purpose === "review_architecture"
               ? "课程架构已交给主 Agent 做目标验收"
-              : "整课报告已交给主 Agent做最终决策",
+              : input.purpose === "decide_course_review"
+                ? "整课报告已交给主 Agent 做最终决策"
+                : "页面阻塞证据已交给主 Agent 重新分配课程职责",
           payload: { workOrderId: workOrder.id, purpose: input.purpose },
           createdAt: now,
         });

@@ -93,6 +93,7 @@ export function basicLayoutHeuristics({
   }
 
   const visibleText = normalizeVisibleText(html);
+  const fixedCourseStage = hasFixedCourseStage(html);
   if (visibleText.length > 3_000) {
     add(
       "TEXT_OVERLOAD",
@@ -230,7 +231,10 @@ export function basicLayoutHeuristics({
     }
   }
 
-  if (/(?:^|[;{])\s*(?:min-)?width\s*:\s*(?:[89]\d{2}|[1-9]\d{3,})px/i.test(html)) {
+  if (
+    !fixedCourseStage &&
+    /(?:^|[;{])\s*(?:min-)?width\s*:\s*(?:[89]\d{2}|[1-9]\d{3,})px/i.test(html)
+  ) {
     add(
       "LAYOUT_FIXED_WIDTH_RISK",
       "layoutQuality",
@@ -243,6 +247,7 @@ export function basicLayoutHeuristics({
 
   if (
     /overflow\s*:\s*hidden/i.test(html) &&
+    !fixedCourseStage &&
     !/data-keya-layout-guard\s*=\s*["']current["']/i.test(html)
   ) {
     add(
@@ -267,6 +272,14 @@ export function basicLayoutHeuristics({
   }
 
   return dedupeIssues(issues);
+}
+
+function hasFixedCourseStage(html: string) {
+  return (
+    /<main\b/i.test(html) &&
+    /width\s*:\s*1920px/i.test(html) &&
+    /height\s*:\s*1080px/i.test(html)
+  );
 }
 
 /** 透明通道缺失只作为 Provider 能力提示；真实呈现交给截图检查，不要求 DSL 槽位。 */

@@ -75,6 +75,22 @@ describe("CourseArchitecture 当前投影", () => {
       functionalTemplateId: "interactive-quiz",
     });
   });
+
+  it("从用户受众描述推导学龄范围，不把小学课程投影为成人课程", () => {
+    const architecture = architectureFixture();
+    architecture.blueprint.audience.description = "小学五年级学生";
+
+    const projected = projectCourseArchitecture(
+      architecture,
+      creationBriefFixture(),
+    );
+
+    expect(projected.intent.audienceAgeRange).toEqual({
+      min: 10,
+      max: 11,
+      label: "小学五年级学生",
+    });
+  });
 });
 
 function creationBriefFixture() {

@@ -27,6 +27,7 @@ import {
   CourseCreationBriefSchema,
   CourseArchitectureSchema,
   CourseReviewSchema,
+  QualityReportSchema,
   ReferencePackSchema,
   WorkOrderSchema,
   type ArtifactRef,
@@ -61,8 +62,8 @@ const ARCHITECT_SUBMISSION_CALIBRATION = `# 提交前校准
 - factual claim 有授权资料时附真实引用；没有资料时保持审慎，不伪造来源。
 - 不提交 pageType、interactionType、functionalTemplateId、styleTemplateId 或 assetNeeds；Harness 为旧投影补兼容默认值。
 - Page Creator 会在制作页面时自行决定表现方式、互动和是否调用生图工具。
-- 第一次提交只填写轻量 draft：{"draft":规划草案,"architecture":null,"patches":null}。稳定 ID、Brief 已确认字段和兼容默认值由 Harness 投影。
-- 门禁失败或已有可恢复候选后，用 {"draft":null,"architecture":null,"patches":[{"path":"反馈字段路径","value":"新值"}]} 做最小修复。architecture 仅供历史恢复兼容，不要在新规划中使用。
+- 第一次提交填写轻量 draft。稳定 ID、Brief 已确认字段和兼容默认值由 Harness 投影。
+- 门禁失败后直接修正轻量 draft 再提交；Harness 只采纳门禁指出的字段变化，不要求模型编写补丁 DSL。architecture/patches 仅供历史恢复兼容。
 `;
 
 const ArchitectureCandidateInputSchema = z
@@ -249,7 +250,7 @@ function createCurriculumArchitectTools(context: ArchitectToolContext) {
     }),
     [ToolIds.SubmitCourseArchitecture]: tool({
       description:
-        "提交轻量课程规划。新规划传 {draft: 规划草案, architecture: null, patches: null}，Harness 自动补稳定 ID、Brief 字段和兼容默认值；已有候选后传 {draft: null, architecture: null, patches: [{path: 点路径, value: 新值}]}。architecture 只供历史恢复兼容。工具会执行确定性检查，通过后才原子保存并结束 WorkOrder。",
+        "提交轻量课程规划。新规划和门禁修订都提交 draft，Harness 自动补稳定 ID、Brief 字段和兼容默认值，并只采纳门禁指出的修订范围；architecture/patches 仅供历史恢复兼容。工具会执行确定性检查，通过后才原子保存并结束 WorkOrder。",
       inputSchema: ArchitectureSubmissionInputSchema,
       execute: (input) => {
         const resolved = resolveArchitectureSubmission(context, input);
@@ -622,6 +623,7 @@ Harness 预加载的资料证据：${JSON.stringify(referenceEvidence)}
 该候选的确定性门禁反馈：${JSON.stringify(resumableCandidate?.issues ?? [])}
 
 如果有可恢复候选，不要从头重写；仅修复列出的确定性问题，保留已通过的页面职责、样式与事实。
+若返工上下文包含 blocked_page_quality，说明某页在真实三视口中经过多轮修订仍无法可靠承载。保持用户指定页数不变，把该页的次要解释或学习动作重新分配到其他页面，并缩小每页唯一职责；不要只改措辞后原样提交。
 新规划调用 submit_course_architecture 时使用 {"draft":轻量规划,"architecture":null,"patches":null}。不要生成 courseId、pageId、objectiveId、兼容模板字段或重复 Brief；Harness 会投影为完整执行合同。
 修复可恢复候选时使用 {"draft":null,"architecture":null,"patches":[{"path":"点路径","value":"新值"}]}，只替换反馈字段。
 如果 brief 的 sectionCount 是数字，必须严格生成该页数；如果是 auto 或没填，用满足目标所需的最少页面。`;
@@ -712,20 +714,25 @@ function resolveArchitectureSubmission(
     Object.hasOwn(parsed.data, "draft") &&
     parsed.data.draft !== null &&
     parsed.data.draft !== undefined;
-  const hasArchitecture =
+  const hasArchitectureInput =
     Object.hasOwn(parsed.data, "architecture") &&
     parsed.data.architecture !== null &&
     parsed.data.architecture !== undefined;
+  // OpenAI-compatible Provider 偶尔会把 required nullable 字段也填成对象，
+  // 即使 Prompt 已明确要求 null。当前创作以 draft 为最高优先级；出现冗余
+  // architecture/patches 时在 Harness 边界忽略它们，避免为机械 envelope
+  // 连续浪费多个 Pro 模型回合。
+  const hasArchitecture = !hasDraft && hasArchitectureInput;
   const hasProposal = hasDraft || hasArchitecture;
   const hasPatches =
+    !hasProposal &&
     Object.hasOwn(parsed.data, "patches") &&
-    (!isEmptyArchitecturePatchEnvelope(parsed.data.patches) ||
-      !hasProposal);
-  if (Number(hasDraft) + Number(hasArchitecture) + Number(hasPatches) !== 1) {
+    (!isEmptyArchitecturePatchEnvelope(parsed.data.patches) || !hasProposal);
+  if (!hasProposal && !hasPatches) {
     return {
       ok: false,
       result: architecturePatchFailureResult(
-        "draft、architecture 与 patches 的有效值必须三选一：新规划传轻量 draft；历史恢复可传 architecture；已有候选后传 patches 数组。",
+        "缺少有效 draft。新规划和门禁修订都应提交轻量 draft；architecture/patches 只用于历史恢复。",
       ),
     };
   }
@@ -1441,6 +1448,30 @@ function buildRevisionContext(
             }),
           ),
           summary: parsed.data.summary,
+        });
+      }
+      continue;
+    }
+    if (ref.kind === "page_quality") {
+      const parsed = QualityReportSchema.safeParse(artifact.payload);
+      if (parsed.success) {
+        artifacts.push({
+          kind: "blocked_page_quality",
+          artifactId: ref.id,
+          pageId:
+            parsed.data.target.type === "page"
+              ? parsed.data.target.pageId
+              : undefined,
+          decision: parsed.data.decision,
+          overallScore: parsed.data.overallScore,
+          issues: parsed.data.issues.slice(0, 12).map(
+            ({ code, severity, message, repairHint }) => ({
+              code,
+              severity,
+              message,
+              repairHint,
+            }),
+          ),
         });
       }
     }

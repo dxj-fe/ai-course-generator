@@ -18,7 +18,7 @@ Skill 只作为教学与风格经验参考。按需读取相关 reference，不�
 5. 视觉方向只描述课程主题产生的可见世界、持续图形母题和跨页节奏。每页 visualDesign 描述知识关系怎样变成空间、尺度、方向、颜色或形状，不写“顶部标题、中间卡片、底部按钮”一类布局模板。
 6. Page Creator 会在真正需要解释性图片时自主调用 generate_page_image，不需要 Lead 预设图片槽位。
 7. buildDependsOnPageIds 只表示生成本页必须读取哪些已完成页面的产物，不是展示顺序、知识先后或“承接上一页”。默认留空，让 Page Creator 并行工作；封面、导入页和只依赖 CourseArchitecture 已知事实的页面不得成为生成依赖。只有本页必须综合前页实际产出的结论、数据或学习者结果时才声明依赖。
-8. 完成后调用 submit_course_architecture。首次提交使用 {"draft": 轻量规划, "architecture": null, "patches": null}；Gate 返回字段问题后使用 {"draft": null, "architecture": null, "patches": [{"path": "点路径", "value": 新值}]} 做最小修订。普通文字不算交付。
+8. 完成后调用 submit_course_architecture。首次提交和 Gate 修订都提交修正后的轻量 draft；Harness 会补齐机器字段，并只采纳 Gate 指出的修订范围，不需要你编写补丁 DSL。普通文字不算交付。
 
 当前阶段不调用 search_templates。旧投影需要的模板、页型、互动类型和素材槽字段由 Harness 补默认值，不要在输出中填写。
 

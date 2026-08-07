@@ -214,13 +214,41 @@ export function createCourseDirectorTools(
 
     [ToolIds.RequestReplan]: tool({
       description:
-        "确认当前 replan Review 指向全局规划错误，接受该结论并创建新版 Architect WorkOrder。",
+        "确认当前 replan Review 或页面阻塞证据指向职责分配问题，并创建新版 Architect WorkOrder。",
       inputSchema: EmptyInputSchema,
       execute: () =>
         runTerminal(
           ToolIds.RequestReplan,
           "整课问题需要重新规划，已创建新版 Architect WorkOrder。",
           () => {
+            if (execution.roundKind === "recover_page_block") {
+              const blockedWorkOrder = execution.blockedPageWorkOrder;
+              if (!blockedWorkOrder) {
+                throw new DirectorActionRejectedError(
+                  "DIRECTOR_PAGE_BLOCK_INPUT_MISSING",
+                  "页面阻塞恢复回合缺少 blocked WorkOrder。",
+                );
+              }
+              const result = revisions.requestBlockedPageReplan({
+                fence: fence(execution),
+                blockedWorkOrderId: blockedWorkOrder.id,
+                directorWorkOrderId: execution.initialWorkOrder.id,
+                directorRound: directorCommit(
+                  execution,
+                  ToolIds.RequestReplan,
+                  "页面职责超出单页可靠承载范围，已创建新版课程架构任务。",
+                  execution.blockedPageRef
+                    ? [execution.blockedPageRef]
+                    : [],
+                ),
+                now: now(),
+              });
+              return {
+                replanRound: result.run.replanRound,
+                blockedWorkOrderId: result.blockedWorkOrder.id,
+                architectWorkOrderId: result.architectWorkOrder.id,
+              };
+            }
             const reviewWorkOrder = requiredReviewWorkOrder(execution);
             const result = revisions.requestReplan({
               fence: fence(execution),

@@ -775,7 +775,8 @@ async function executeTask(
     // CourseRun lease 的输家只退出，不能把仍由赢家执行的课程误标为失败。
     if (isCourseRunLeaseUnavailableError(error)) {
       if (
-        error.reason === "trace_adoption_blocked" &&
+        (error.reason === "trace_adoption_blocked" ||
+          error.reason === "work_order_held") &&
         currentTask?.status === "running" &&
         currentTask.traceId === running.traceId
       ) {

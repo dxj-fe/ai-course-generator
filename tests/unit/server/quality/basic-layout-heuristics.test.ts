@@ -51,6 +51,19 @@ describe("basicLayoutHeuristics", () => {
     );
   });
 
+  it("不把平台约定的 1920×1080 固定舞台误报成窄屏溢出", () => {
+    const html = buildValidGeneratedHtml(pageContentDsl).replace(
+      "body { margin: 0; }",
+      "body { margin: 0; overflow: hidden; } main { width: 1920px; height: 1080px; overflow: hidden; }",
+    );
+    const codes = basicLayoutHeuristics({ content: pageContentDsl, html }).map(
+      ({ code }) => code,
+    );
+
+    expect(codes).not.toContain("LAYOUT_FIXED_WIDTH_RISK");
+    expect(codes).not.toContain("LAYOUT_CLIPPING_RISK");
+  });
+
   it("requires a real visual element inside each required asset slot", () => {
     const content = {
       ...pageContentDsl,

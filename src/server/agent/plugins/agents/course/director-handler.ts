@@ -7,6 +7,7 @@ import {
   buildCourseDirectorRunSummary,
   COURSE_DIRECTOR_TERMINAL_TOOLS,
   createCourseDirectorExecution,
+  inspectBlockedPage,
   inspectCourseArchitecture,
   inspectCurrentCourseReview,
   loadCourseDirectorTerminal,
@@ -136,6 +137,16 @@ function buildCourseDirectorPrompt(
     ].join("\n");
   }
 
+  if (execution.roundKind === "recover_page_block") {
+    return [
+      "当前是页面阻塞恢复回合。",
+      `验收要求：${JSON.stringify(execution.initialWorkOrder.acceptance)}`,
+      `初始 RunSummary：${JSON.stringify(summary)}`,
+      `已封口的页面阻塞证据：${JSON.stringify(decisionEvidence)}`,
+      "页面已经完成 Browser Harness 观察和有证据修订，仍无法在无滚动 16:9 舞台可靠承载。不要直接终止整课；还有 replan 预算时，直接调用 request_replan，把内容重新分配给同一页数的页面。不要先调用读取工具。",
+    ].join("\n");
+  }
+
   return [
     "当前是整课 Review 决策回合。",
     `验收要求：${JSON.stringify(execution.initialWorkOrder.acceptance)}`,
@@ -151,6 +162,11 @@ function preloadDirectorDecisionEvidence(
   if (execution.roundKind === "review_architecture") {
     execution.inspections.architecture = true;
     return inspectCourseArchitecture(execution);
+  }
+
+  if (execution.roundKind === "recover_page_block") {
+    execution.inspections.pageBlock = true;
+    return inspectBlockedPage(execution);
   }
 
   execution.inspections.courseReview = true;

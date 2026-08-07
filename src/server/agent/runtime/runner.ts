@@ -23,7 +23,10 @@ import {
 } from "./tool-runner";
 import { isCommittedTerminalToolResult } from "./tool-result";
 
-const DEFAULT_AGENT_STEP_TIMEOUT_MS = 240_000;
+// 单次 Provider 长尾不能吃完整个 WorkOrder。真实 Doubao 压测中，正常页面
+// 回合通常在 45–100 秒内完成；150 秒仍无响应时尽快让持久化 WorkOrder
+// 从 checkpoint 恢复，比 SDK 在同一 HTTP 回合里盲重试到总预算耗尽更可靠。
+const DEFAULT_AGENT_STEP_TIMEOUT_MS = 150_000;
 
 export type AgentTerminalStatus = "accepted" | "blocked" | "submitted";
 
@@ -119,6 +122,7 @@ export type AgentToolLedger = {
 export type RuntimeAgentFactorySettings<Tools extends ToolSet> = {
   activeTools: string[];
   instructions: string;
+  maxRetries: number;
   maxOutputTokens: number;
   model: unknown;
   onToolExecutionStart: (
@@ -163,6 +167,13 @@ export type AgentRunnerRequest<Tools extends ToolSet> = {
   authorizeToolCall: AuthorizeAgentToolCall;
   /** 在每次真实工具执行前重新核对持久化任务控制态。 */
   beforeToolCall?: () => void | PromiseLike<void>;
+  /**
+   * 工具提交 checkpoint 后允许 Harness 推进不需要模型判断的机械状态。
+   * 返回 true 时本轮在进入下一次 Provider 调用前停止，并重读持久化终态。
+   */
+  afterToolExecution?: (
+    event: RuntimeToolExecutionEndEvent,
+  ) => boolean | PromiseLike<boolean>;
   budget: AgentRunnerBudget<Tools>;
   budgetMeter?: AtomicBudgetMeter;
   instructions: string;
@@ -217,6 +228,7 @@ export class AgentRunner<Tools extends ToolSet, Terminal> {
     throwIfAgentAborted(request.abortSignal);
 
     const executionGuard: ExecutionGuard = {};
+    let harnessStopRequested = false;
     const runStartedAt = Date.now();
     let modelStepStartedAt = runStartedAt;
     let currentStepNumber = 1;
@@ -258,6 +270,9 @@ export class AgentRunner<Tools extends ToolSet, Terminal> {
     const agent = this.createAgent({
       activeTools: initialActiveTools,
       instructions: request.instructions,
+      // Agent Loop 和 WorkOrder 已提供持久化恢复。关闭 SDK 内部的隐式重试，
+      // 避免一次 150 秒长尾被原地放大成多次相同请求。
+      maxRetries: 0,
       maxOutputTokens: request.budget.maxOutputTokens,
       model: request.model,
       onToolExecutionStart: async (event) => {
@@ -347,6 +362,13 @@ export class AgentRunner<Tools extends ToolSet, Terminal> {
           executionGuard.fatalError ??=
             terminalToolError ?? toError(event.toolOutput.error);
         }
+        if (
+          !executionGuard.fatalError &&
+          event.toolOutput.type !== "tool-error" &&
+          (await request.afterToolExecution?.(event))
+        ) {
+          harnessStopRequested = true;
+        }
       },
       prepareStep: async (input) => {
         currentStepNumber = input.stepNumber + 1;
@@ -368,7 +390,12 @@ export class AgentRunner<Tools extends ToolSet, Terminal> {
           toolChoice,
         };
       },
-      stopWhen: [fatalStop, terminalStop, stepLimit],
+      stopWhen: [
+        fatalStop,
+        terminalStop,
+        () => harnessStopRequested,
+        stepLimit,
+      ],
       temperature: request.temperature,
       toolChoice: "required",
       tools: guardedTools,

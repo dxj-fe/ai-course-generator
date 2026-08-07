@@ -95,6 +95,34 @@ const VIEWPORT_FIT_SCRIPT = `<script id="keya-viewport-fit">
     };
 
     const measureContentBounds = (viewportWidth, viewportHeight) => {
+      const lessonRoot = body.querySelector("main");
+      // 固定课件的缩放基准是作者声明的 body/main 舞台，不是所有后代元素的
+      // scroll bounds。光晕、轨道等装饰经常有意越过 1920×1080 后由舞台
+      // 裁切；把它们计入 contain-fit 会让整页缩成 94%，制造黑边和无效返工。
+      if (root.dataset.keyaCanvasMode !== "fluid") {
+        const bodyRect = body.getBoundingClientRect();
+        const lessonRect =
+          lessonRoot instanceof HTMLElement
+            ? lessonRoot.getBoundingClientRect()
+            : undefined;
+        return {
+          left: Math.min(0, bodyRect.left, lessonRect?.left ?? 0),
+          top: Math.min(0, bodyRect.top, lessonRect?.top ?? 0),
+          width: Math.max(
+            1,
+            viewportWidth,
+            body.offsetWidth,
+            lessonRoot instanceof HTMLElement ? lessonRoot.offsetWidth : 0,
+          ),
+          height: Math.max(
+            1,
+            viewportHeight,
+            body.offsetHeight,
+            lessonRoot instanceof HTMLElement ? lessonRoot.offsetHeight : 0,
+          ),
+        };
+      }
+
       let left = 0;
       let top = 0;
       let right = Math.max(viewportWidth, root.scrollWidth, body.scrollWidth);

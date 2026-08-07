@@ -28,7 +28,7 @@ const maxTasks = readInteger(
 );
 const concurrency = readInteger(
   "COURSE_TASK_WORKER_CONCURRENCY",
-  2,
+  1,
   1,
   5,
 );

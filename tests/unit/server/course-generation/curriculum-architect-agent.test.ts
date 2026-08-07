@@ -257,6 +257,26 @@ describe("Curriculum Architect Agent", () => {
     ).resolves.toMatchObject({ status: "submitted" });
   });
 
+  it("Provider 冗余填写 architecture 和 patches 时优先使用创作提案，不重复消耗模型回合", async () => {
+    const prepared = await prepareArchitectWorkOrder();
+    const createAgent = createFakeFactory(async (settings) => {
+      const submitted = await executeTool(
+        settings.tools,
+        "submit_course_architecture",
+        {
+          architecture: createArchitecture(),
+          patches: [{ path: "courseId", value: "不应采用" }],
+        },
+      );
+      expect(submitted).toMatchObject({ ok: true, committed: true });
+      return {};
+    });
+
+    await expect(
+      runPreparedAgent(prepared, createAgent),
+    ).resolves.toMatchObject({ status: "submitted" });
+  });
+
   it("恢复候选若已通过当前 Gate，会在 patches 提交入口直接落终态", async () => {
     const prepared = await prepareArchitectWorkOrder();
     prepared.repository.checkpointArchitectureCandidate({

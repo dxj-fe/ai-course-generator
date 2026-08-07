@@ -248,8 +248,9 @@ describe("AgentRunner", () => {
     });
   });
 
-  it("为只有总预算的 Agent Loop 补充单步 Provider 超时", async () => {
+  it("为只有总预算的 Agent Loop 补充单步 Provider 超时并关闭 SDK 隐式重试", async () => {
     let persisted: PersistedAgentTerminal<TestSubmission> | null = null;
+    let configuredMaxRetries: number | undefined;
     const generate = vi.fn(async () => {
       persisted = {
         status: "submitted",
@@ -258,7 +259,10 @@ describe("AgentRunner", () => {
       return {};
     });
     const runner = new AgentRunner<TestTools, TestSubmission>({
-      createAgent: createFakeFactory((_settings, input) => generate(input)),
+      createAgent: createFakeFactory((settings, input) => {
+        configuredMaxRetries = settings.maxRetries;
+        return generate(input);
+      }),
       terminalStateLoader: {
         load: async () => persisted,
         parse: (value) =>
@@ -280,11 +284,12 @@ describe("AgentRunner", () => {
     expect(generate).toHaveBeenCalledWith(
       expect.objectContaining({
         timeout: {
-          stepMs: 240_000,
+          stepMs: 150_000,
           totalMs: 900_000,
         },
       }),
     );
+    expect(configuredMaxRetries).toBe(0);
   });
 
   it("内存 ToolResult 即使声称 terminal，也不能代替 Repository 终态", async () => {
@@ -397,6 +402,61 @@ describe("AgentRunner", () => {
         terminal: true,
       }),
     });
+  });
+
+  it("checkpoint 后 Harness 已提交终态时不再发起下一次模型调用", async () => {
+    let persisted: PersistedAgentTerminal<TestSubmission> | null = null;
+    let stopObserved = false;
+    const afterToolExecution = vi.fn(async () => {
+      persisted = {
+        status: "submitted",
+        submission: { artifactId: "artifact-by-harness" },
+      };
+      return true;
+    });
+    const runner = new AgentRunner<TestTools, TestSubmission>({
+      createAgent: createFakeFactory(async (settings) => {
+        await settings.onToolExecutionEnd({
+          toolCall: {
+            input: {},
+            toolCallId: "tool-call-inspect",
+            toolName: "inspect",
+          },
+          toolOutput: {
+            output: {
+              committed: false,
+              data: { inspected: true },
+              ok: true,
+              summary: "已检查。",
+              terminal: false,
+            },
+            type: "tool-result",
+          },
+        });
+        stopObserved = (
+          await Promise.all(
+            settings.stopWhen.map((stop) =>
+              stop({ steps: [{ toolResults: [] }] }),
+            ),
+          )
+        ).some(Boolean);
+        return {};
+      }),
+      terminalStateLoader: {
+        load: async () => persisted,
+        parse: (value) =>
+          isPersistedTerminal(value) ? value : null,
+      },
+    });
+
+    await expect(
+      runner.run(createRequest({ afterToolExecution })),
+    ).resolves.toMatchObject({
+      status: "submitted",
+      submission: { artifactId: "artifact-by-harness" },
+    });
+    expect(afterToolExecution).toHaveBeenCalledTimes(1);
+    expect(stopObserved).toBe(true);
   });
 
   it("允许 Harness 在当前 activeTools 中指定唯一工具", async () => {

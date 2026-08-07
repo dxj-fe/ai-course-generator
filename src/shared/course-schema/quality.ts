@@ -106,6 +106,10 @@ const QualityBrowserDiagnosticsSchema = z
         landmarkCount: z.number().int().nonnegative(),
         visibleTextChars: z.number().int().nonnegative(),
         outline: z.array(z.string().min(1).max(300)).max(80).optional(),
+        rawMarkupSamples: z
+          .array(z.string().min(1).max(200))
+          .max(5)
+          .optional(),
       })
       .strict(),
     interaction: z

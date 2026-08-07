@@ -41,6 +41,7 @@ describe("Agent Registry", () => {
     expect(courseArchitectAgent.tools).toContain(
       ToolIds.ReadLocalResource,
     );
+    expect(courseArchitectAgent.runtime.timeoutMs).toBe(300_000);
     expect(coursePageBuilderAgent.skills).toEqual([
       SkillIds.CoursePageDesign,
     ]);

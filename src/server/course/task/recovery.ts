@@ -6,13 +6,20 @@ import {
   createCourseTaskStore,
   type CourseTaskStore,
 } from "@/server/course/store/task";
+import {
+  createWorkOrderStore,
+  type WorkOrderStore,
+} from "@/server/course/store/work-order";
 import type {
   CourseRun,
   CourseTaskRecord,
 } from "@/shared/course-schema";
 
 const DEFAULT_MAX_TASKS = 20;
-const DEFAULT_CONCURRENCY = 2;
+// 一门课程内部已经会并行运行最多 3 个 Page Agent。课程级再并行会把
+// Provider 瞬时调用放大到 6+，真实 Doubao 盲测已复现 300 秒长尾。
+// 默认逐门领取，保留课程内部的多 Agent 并行；有独立容量池时仍可显式调高。
+const DEFAULT_CONCURRENCY = 1;
 const TERMINAL_RUN_PHASES = new Set(["completed", "failed", "cancelled"]);
 
 export type CourseTaskRecoveryScanOptions = {
@@ -39,6 +46,7 @@ export type CourseTaskRecoveryScanReport = {
 type CourseTaskRecoveryDependencies = {
   taskStore: Pick<CourseTaskStore, "list" | "loadControlIntent">;
   runStore: Pick<CourseRunStore, "loadByTaskId">;
+  workOrderStore: Pick<WorkOrderStore, "listByTask">;
   runTask(taskId: string): Promise<unknown>;
   cancelTask(taskId: string): Promise<unknown>;
   reconcileTask(taskId: string): Promise<unknown>;
@@ -61,6 +69,8 @@ export function createCourseTaskRecoveryScanner(
   const dependencies: CourseTaskRecoveryDependencies = {
     taskStore: overrides.taskStore ?? createCourseTaskStore(),
     runStore: overrides.runStore ?? createCourseRunStore(),
+    workOrderStore:
+      overrides.workOrderStore ?? createWorkOrderStore(),
     runTask:
       overrides.runTask ??
       missingTaskServiceMethod("runTask"),
@@ -133,7 +143,15 @@ async function runRecoveryScan(
       }
       continue;
     }
-    if (hasActiveLease(run, now)) {
+    if (
+      !runIsTerminal(run) &&
+      (hasActiveLease(run, now) ||
+        hasActiveWorkOrderLease(
+          dependencies.workOrderStore,
+          task.taskId,
+          now,
+        ))
+    ) {
       skippedActiveLeaseTaskIds.push(task.taskId);
       continue;
     }
@@ -202,6 +220,22 @@ function hasActiveLease(run: CourseRun | undefined, now: string) {
   if (!run || TERMINAL_RUN_PHASES.has(run.phase)) return false;
   if (!run.leaseOwner || !run.leaseExpiresAt) return false;
   return Date.parse(run.leaseExpiresAt) > Date.parse(now);
+}
+
+function hasActiveWorkOrderLease(
+  store: Pick<WorkOrderStore, "listByTask">,
+  taskId: string,
+  now: string,
+) {
+  const nowMs = Date.parse(now);
+  return store.listByTask(taskId, ["running"]).some((workOrder) => {
+    if (!workOrder.leaseOwner || !workOrder.leaseExpiresAt) return false;
+    return Date.parse(workOrder.leaseExpiresAt) > nowMs;
+  });
+}
+
+function runIsTerminal(run: CourseRun | undefined) {
+  return Boolean(run && TERMINAL_RUN_PHASES.has(run.phase));
 }
 
 async function runWithConcurrency<Input, Output>(

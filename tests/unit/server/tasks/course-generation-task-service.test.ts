@@ -759,6 +759,29 @@ describe("course generation task service", () => {
     expect(messages).toEqual([]);
   });
 
+  it("恢复 Worker 遇到仍活跃的子 WorkOrder 时退回 queued 等待，不误标失败", async () => {
+    const runCourse = vi.fn(async () => {
+      throw new CourseRunLeaseUnavailableError(
+        "Architect WorkOrder 仍由旧 worker 执行",
+        "work_order_held",
+      );
+    }) as typeof runCourseGeneration;
+    const fixture = createFixture({ runCourse });
+    await fixture.service.create({
+      ...agentTaskInput,
+      userPrompt: "生成三页太阳系互动课程",
+    });
+
+    await expect(fixture.service.run(taskId)).resolves.toBeUndefined();
+
+    expect(fixture.tasks.get(taskId)).toMatchObject({
+      status: "queued",
+      traceId,
+    });
+    expect(fixture.courses.has(courseId)).toBe(false);
+    expect(fixture.errorLogs).toEqual([]);
+  });
+
   it("跨进程并发 create 时数据库只允许一张活动任务持有同一课程", async () => {
     const directory = await mkdtemp(
       path.join(tmpdir(), "task-service-course-claim-"),
