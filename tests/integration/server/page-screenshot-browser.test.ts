@@ -268,6 +268,76 @@ describe.runIf(process.env.KEYA_BROWSER_INTEGRATION === "true")(
     );
 
     it(
+      "固定画布不叠加作者整页缩放，并按作者像素检查触控区域",
+      async () => {
+        const content = PageContentDSLSchema.parse({
+          ...choiceContent(),
+          pageId: "page-fixed-canvas-touch-target",
+          interaction: { type: "none" },
+          runtime: {
+            sceneKind: "practice",
+            visualPrimitive: "none",
+            motionPlan: { intensity: "none", cuePoints: [] },
+            completionRule: { type: "view" },
+          },
+        });
+        const html = `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>固定画布触控检查</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 1920px; height: 1080px; margin: 0; }
+    body { transform-origin: top left; }
+    main { width: 100%; height: 100%; padding: 80px; }
+    label { position: relative; display: block; width: 320px; padding-left: 40px; font-size: 15px; line-height: 15px; }
+    input { position: absolute; opacity: 0; width: 0; height: 0; }
+    #standalone { position: static; opacity: 1; width: 20px; height: 20px; }
+    .checkmark { position: absolute; top: 0; left: 0; width: 24px; height: 24px; border: 2px solid currentColor; }
+    @media (max-width: 1280px) { body { transform: scale(.6667); } }
+    @media (max-width: 960px) { body { transform: scale(.5); } }
+    @media (max-width: 640px) { body { transform: scale(.3333); } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>根据掌握程度调整节奏</h1>
+    <label for="answer"><input id="answer" type="radio" name="answer"><span class="checkmark"></span>拉长复习间隔</label>
+    <input id="standalone" type="checkbox" aria-label="记录核验结果">
+  </main>
+</body>
+</html>`;
+
+        const result = await capturePageScreenshot(
+          {
+            pageId: content.pageId,
+            content,
+            html,
+            traceId: "trace-fixed-canvas-touch-target",
+          },
+          {
+            enabled: true,
+            rootDir,
+            timeoutMs: 12_000,
+          },
+        );
+
+        for (const capture of result.evidence.captures ?? []) {
+          expect(capture.status).toBe("captured");
+          expect(capture.metrics?.touchTargetUnder24Count).toBe(0);
+          expect(capture.metrics?.touchTargetUnder44Count).toBe(2);
+          expect(capture.metrics?.visibleContentAreaRatio).toBeGreaterThan(0.03);
+        }
+        expect(result.issues.map(({ code }) => code)).not.toContain(
+          "BROWSER_TOUCH_TARGET_UNDER_24",
+        );
+      },
+      30_000,
+    );
+
+    it(
       "整页 overflow hidden 只交给 contain-fit 比例判断，不重复误报根节点裁切",
       async () => {
         const result = await capturePageScreenshot(

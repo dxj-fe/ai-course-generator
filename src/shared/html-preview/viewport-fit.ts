@@ -12,6 +12,15 @@ const VIEWPORT_FIT_STYLE = `<style id="keya-viewport-fit-style">
     transition: none !important;
     will-change: transform;
   }
+  html[data-keya-viewport-fit="ready"] input[type="checkbox"],
+  html[data-keya-viewport-fit="ready"] input[type="radio"] {
+    min-width: 24px !important;
+    min-height: 24px !important;
+  }
+  html[data-keya-viewport-fit="ready"] label:has(input[type="checkbox"]),
+  html[data-keya-viewport-fit="ready"] label:has(input[type="radio"]) {
+    min-height: 24px !important;
+  }
   html[data-keya-viewport-fit="ready"][data-keya-canvas-mode="fluid"] {
     min-width: 0 !important;
     min-height: 0 !important;
@@ -41,10 +50,6 @@ const VIEWPORT_FIT_SCRIPT = `<script id="keya-viewport-fit">
     const body = document.body;
     if (!root || !body) return;
 
-    const originalTransform = body.style.getPropertyValue("transform");
-    const originalTransformPriority = body.style.getPropertyPriority("transform");
-    const originalTransformOrigin = body.style.getPropertyValue("transform-origin");
-    const originalTransformOriginPriority = body.style.getPropertyPriority("transform-origin");
     const watchedImages = new WeakSet();
     let animationFrame = 0;
     let fitting = false;
@@ -77,21 +82,11 @@ const VIEWPORT_FIT_SCRIPT = `<script id="keya-viewport-fit">
       }
     };
 
-    const restoreAuthorTransform = () => {
-      if (originalTransform) {
-        body.style.setProperty("transform", originalTransform, originalTransformPriority);
-      } else {
-        body.style.removeProperty("transform");
-      }
-      if (originalTransformOrigin) {
-        body.style.setProperty(
-          "transform-origin",
-          originalTransformOrigin,
-          originalTransformOriginPriority,
-        );
-      } else {
-        body.style.removeProperty("transform-origin");
-      }
+    const resetCanvasTransform = () => {
+      // body 是播放器拥有的固定画布。忽略作者在 media query 中附加的整页
+      // scale，避免它与 contain-fit 再次相乘；页面内部元素的 transform 不受影响。
+      body.style.setProperty("transform", "none", "important");
+      body.style.setProperty("transform-origin", "0 0", "important");
     };
 
     const measureContentBounds = (viewportWidth, viewportHeight) => {
@@ -152,7 +147,7 @@ const VIEWPORT_FIT_SCRIPT = `<script id="keya-viewport-fit">
       if (fitting) return;
       fitting = true;
       try {
-        restoreAuthorTransform();
+        resetCanvasTransform();
         normalizeFluidCanvas();
         root.style.setProperty("overflow", "visible", "important");
         body.style.setProperty("overflow", "visible", "important");
@@ -171,7 +166,6 @@ const VIEWPORT_FIT_SCRIPT = `<script id="keya-viewport-fit">
           (viewportWidth - bounds.width * scale) / 2 - bounds.left * scale;
         const offsetY =
           (viewportHeight - bounds.height * scale) / 2 - bounds.top * scale;
-        const authorTransform = getComputedStyle(body).transform;
         const transform =
           "translate(" +
           offsetX +
@@ -179,10 +173,7 @@ const VIEWPORT_FIT_SCRIPT = `<script id="keya-viewport-fit">
           offsetY +
           "px) scale(" +
           scale +
-          ")" +
-          (authorTransform && authorTransform !== "none"
-            ? " " + authorTransform
-            : "");
+          ")";
 
         body.style.setProperty("transform-origin", "0 0", "important");
         body.style.setProperty("transform", transform, "important");

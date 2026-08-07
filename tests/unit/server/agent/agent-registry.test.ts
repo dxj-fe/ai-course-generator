@@ -8,6 +8,7 @@ import {
 import {
   courseArchitectAgent,
   coursePageBuilderAgent,
+  courseReviewerAgent,
   getAgentWorkOrderDefaults,
 } from "../../../../src/server/agent/plugins";
 import { createAgentSystem } from "../../../../src/server/setup/agent";
@@ -52,6 +53,7 @@ describe("Agent Registry", () => {
     expect(coursePageBuilderAgent.tools).toContain(
       ToolIds.ReadLocalResource,
     );
+    expect(courseReviewerAgent.runtime.timeoutMs).toBe(300_000);
     const pageDefaults = getAgentWorkOrderDefaults(
       AgentIds.CoursePageBuilder,
     );

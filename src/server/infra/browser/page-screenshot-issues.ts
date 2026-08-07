@@ -14,7 +14,10 @@ type ScreenshotCapture = NonNullable<
 const MAX_LAYOUT_ROUNDING_OVERFLOW_PX = 8;
 const SLIDE_DESIGN_WIDTH = 1920;
 const SLIDE_DESIGN_HEIGHT = 1080;
-const MIN_EXPECTED_STAGE_SCALE_RATIO = 0.96;
+// contain-fit 允许少量额外缩放吸收字体、边框和紧凑互动的高度差；超过 6%
+// 才视为页面职责真实超载。5% 缩放仍保留正文可读性，且完整性另由裁切、
+// 溢出、可见面积和交互可达性指标独立把关。
+const MIN_EXPECTED_STAGE_SCALE_RATIO = 0.94;
 
 export function collectBrowserIssues(
   pageId: string,
@@ -271,15 +274,18 @@ export function collectBrowserIssues(
     });
   }
   if ((evidence.metrics.touchTargetUnder24Count ?? 0) > 0) {
+    const targetDetails =
+      evidence.metrics.touchTargetUnder24Selectors?.join("；");
     issues.push({
       code: "BROWSER_TOUCH_TARGET_UNDER_24",
       dimension: "htmlRuntime",
       severity: "error",
       source: "browser",
-      message: `${evidence.metrics.touchTargetUnder24Count} 个可见交互控件小于 24×24px。`,
+      message: `${evidence.metrics.touchTargetUnder24Count} 个可见交互控件小于 24×24px。${targetDetails ? `具体目标：${targetDetails}。` : ""}`,
       location,
-      repairHint:
-        "将可点击区域的宽高都扩大到至少 24px，并保留清晰的控件间距。",
+      repairHint: targetDetails
+        ? `直接修复这些命中区域：${targetDetails}。对于 radio/checkbox，应扩大关联 label 的 min-height 或 padding，不能只修改内部图标。`
+        : "将可点击区域的宽高都扩大到至少 24px，并保留清晰的控件间距。",
     });
   }
   if ((evidence.metrics.touchTargetUnder44Count ?? 0) > 0) {

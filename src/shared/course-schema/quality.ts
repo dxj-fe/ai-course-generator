@@ -63,6 +63,10 @@ const QualityScreenshotMetricsSchema = z
     zeroSizeInteractiveCount: z.number().int().nonnegative(),
     inertButtonCount: z.number().int().nonnegative().optional(),
     touchTargetUnder24Count: z.number().int().nonnegative().optional(),
+    touchTargetUnder24Selectors: z
+      .array(z.string().min(1).max(240))
+      .max(8)
+      .optional(),
     touchTargetUnder44Count: z.number().int().nonnegative().optional(),
     primaryActionBelowFoldCount: z.number().int().nonnegative().optional(),
     feedbackVisibleByDefaultCount: z.number().int().nonnegative().optional(),

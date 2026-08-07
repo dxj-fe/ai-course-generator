@@ -175,7 +175,7 @@ function createTaskEventStream(
       };
 
       const syncDurableState = async (initial = false) => {
-        if (closed || durablePollInFlight) return;
+        if (closed || durablePollInFlight) return false;
         durablePollInFlight = true;
 
         try {
@@ -183,7 +183,7 @@ function createTaskEventStream(
             courseStore.load(task.courseId),
             courseTasks.load(task.taskId),
           ]);
-          if (closed || !state || !currentTask) return;
+          if (closed || !state || !currentTask) return false;
 
           if (currentTask.traceId !== activeTraceId) {
             activeTraceId = currentTask.traceId;
@@ -197,7 +197,7 @@ function createTaskEventStream(
           }
           // resume 会先原子更新 TaskRecord，再由新 runner 接管 CourseRun。
           // 这段窄窗口内旧 checkpoint 仍属上一条 trace，不能把它发给新游标。
-          if (state.traceId !== activeTraceId) return;
+          if (state.traceId !== activeTraceId) return false;
 
           // 首次无游标连接仍保持 snapshot-first 合同。snapshot 的事件序号
           // 已是 durable sequence，随后只补发比 checkpoint 更新的数据库事件。
@@ -220,7 +220,7 @@ function createTaskEventStream(
             traceId: activeTraceId,
             afterSequence: durableReadSequence,
           });
-          if (batch.traceId && batch.traceId !== activeTraceId) return;
+          if (batch.traceId && batch.traceId !== activeTraceId) return false;
           const durablePageIds = new Set(
             publicState.pages.map(({ pageId }) => pageId),
           );
@@ -232,7 +232,7 @@ function createTaskEventStream(
             // state 与 event 分两次读取，可能刚好跨过一次 checkpoint 提交。
             // 保留 durable cursor，下一轮读取到同一版本后再发送，不能用旧
             // snapshot 为新页面事件背书。
-            return;
+            return false;
           }
           durableReadSequence = Math.max(
             durableReadSequence,
@@ -273,7 +273,7 @@ function createTaskEventStream(
               status: currentTask.status,
               state: publicState,
             });
-            return;
+            return true;
           }
 
           // 跨进程 worker 不会经过本进程 EventBus。只要持久化检查点有变化，
@@ -287,6 +287,7 @@ function createTaskEventStream(
               state: publicState,
             });
           }
+          return true;
         } catch (error) {
           console.error(
             "[course-task-sse]",
@@ -308,6 +309,7 @@ function createTaskEventStream(
             request.signal.removeEventListener("abort", close);
             controller.error(error);
           }
+          return false;
         } finally {
           durablePollInFlight = false;
         }
@@ -346,17 +348,26 @@ function createTaskEventStream(
       }
 
       void (async () => {
-        await syncDurableState(true);
+        const initialized = await syncDurableState(true);
         if (closed) return;
 
-        ready = true;
-        for (const message of buffered.splice(0)) {
-          handleLiveMessage(message);
+        const markReady = () => {
+          if (ready) return;
+          ready = true;
+          for (const message of buffered.splice(0)) {
+            handleLiveMessage(message);
+          }
+        };
+        if (initialized) {
+          markReady();
         }
 
         if (!closed) {
           durablePoll = setInterval(() => {
-            void syncDurableState();
+            void (async () => {
+              const synchronized = await syncDurableState(!ready);
+              if (!closed && synchronized) markReady();
+            })();
           }, DURABLE_POLL_INTERVAL_MS);
           heartbeat = setInterval(() => {
             if (!closed) controller.enqueue(encoder.encode(": ping\n\n"));

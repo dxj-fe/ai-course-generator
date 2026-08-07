@@ -6,6 +6,7 @@ import {
   buildQaLessonSrcDoc,
   capturePageScreenshot,
   countAuthoredTouchTargets,
+  restoreAuthoredTouchTargetSizes,
   resolveDominantVisualMetrics,
   VISUAL_PROMINENCE_SELECTOR,
 } from "../../../../src/server/infra/browser/page-screenshot";
@@ -71,6 +72,9 @@ describe("Playwright screenshot QA evidence", () => {
               clippedElementSelectors: ["main > section"],
               zeroSizeInteractiveCount: 1,
               touchTargetUnder24Count: 1,
+              touchTargetUnder24Selectors: [
+                "label.answer[type=radio]「答案」 (120×18px)",
+              ],
               touchTargetUnder44Count: 2,
               primaryActionBelowFoldCount: 1,
             }
@@ -95,6 +99,11 @@ describe("Playwright screenshot QA evidence", () => {
       /^page-qa-evidence-.+-desktop$/,
     );
     expect(result.evidence.captures[0]!.viewport).toEqual({ width: 1280, height: 720 });
+    expect(
+      result.issues.find(
+        ({ code }) => code === "BROWSER_TOUCH_TARGET_UNDER_24",
+      )?.repairHint,
+    ).toContain("label.answer[type=radio]");
     expect(result.evidence.captures?.map(({ viewport }) => viewport)).toEqual([
       { width: 1280, height: 720 },
       { width: 960, height: 540 },
@@ -448,6 +457,41 @@ describe("Playwright screenshot QA evidence", () => {
     ).toBe(false);
   });
 
+  it("accepts five-percent contain-fit headroom but rejects seven-percent overload", async () => {
+    const captureAtRatio = (ratio: number) =>
+      capturePageScreenshot(
+        { pageId: `page-scale-${ratio}`, html },
+        {
+          enabled: true,
+          rootDir: `/tmp/ai-course-generator-scale-${ratio}`,
+          captureBrowser: vi.fn().mockImplementation(async ({ viewport }) => ({
+            png: new Uint8Array([137, 80, 78, 71]),
+            metrics: {
+              ...cleanMetrics,
+              documentWidth: viewport.width,
+              documentHeight: viewport.height,
+              requiredViewportScale:
+                Math.min(1, viewport.width / 1920, viewport.height / 1080) *
+                ratio,
+            },
+          })),
+        },
+      );
+
+    const accepted = await captureAtRatio(0.95);
+    const rejected = await captureAtRatio(0.93);
+    expect(
+      accepted.issues.some(
+        ({ code }) => code === "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
+      ),
+    ).toBe(false);
+    expect(
+      rejected.issues.filter(
+        ({ code }) => code === "BROWSER_VIEWPORT_SCALE_TOO_SMALL",
+      ),
+    ).toHaveLength(3);
+  });
+
   it("ignores at most eight pixels of line-box rounding overflow", async () => {
     const result = await capturePageScreenshot(
       {
@@ -513,6 +557,40 @@ describe("Playwright screenshot QA evidence", () => {
     ).toEqual({
       touchTargetUnder24Count: 2,
       touchTargetUnder44Count: 2,
+    });
+    expect(
+      countAuthoredTouchTargets([
+        { width: 23.999_999, height: 24 },
+      ]),
+    ).toEqual({
+      touchTargetUnder24Count: 0,
+      touchTargetUnder44Count: 1,
+    });
+  });
+
+  it("removes only the platform viewport-fit scale before evaluating touch targets", () => {
+    expect(
+      restoreAuthoredTouchTargetSizes(
+        [
+          { width: 12, height: 14 },
+          { width: 22, height: 22 },
+        ],
+        0.5,
+      ),
+    ).toEqual([
+      { width: 24, height: 28 },
+      { width: 44, height: 44 },
+    ]);
+    expect(
+      countAuthoredTouchTargets(
+        restoreAuthoredTouchTargetSizes(
+          [{ width: 12, height: 14 }],
+          0.5,
+        ),
+      ),
+    ).toEqual({
+      touchTargetUnder24Count: 0,
+      touchTargetUnder44Count: 1,
     });
   });
 

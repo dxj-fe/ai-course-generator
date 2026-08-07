@@ -105,12 +105,26 @@ export function countAuthoredTouchTargets(
 > {
   return {
     touchTargetUnder24Count: rects.filter(
-      (rect) => rect.width < 24 || rect.height < 24,
+      (rect) => rect.width < 23.99 || rect.height < 23.99,
     ).length,
     touchTargetUnder44Count: rects.filter(
-      (rect) => rect.width < 44 || rect.height < 44,
+      (rect) => rect.width < 43.99 || rect.height < 43.99,
     ).length,
   };
+}
+
+export function restoreAuthoredTouchTargetSizes(
+  rects: Array<{ width: number; height: number }>,
+  viewportFitScale: number,
+) {
+  const scale =
+    Number.isFinite(viewportFitScale) && viewportFitScale > 0
+      ? viewportFitScale
+      : 1;
+  return rects.map(({ width, height }) => ({
+    width: width / scale,
+    height: height / scale,
+  }));
 }
 
 export type PageScreenshotResult = {
@@ -520,6 +534,11 @@ async function captureViewport(
         () =>
           document.documentElement.dataset.keyaRuntime === "ready",
       );
+      await page.waitForFunction(
+        () =>
+          document.documentElement.dataset.keyaViewportFitScale !==
+          undefined,
+      );
       // 等待图片、字体和可信互动运行时完成首帧布局。
       await page.waitForTimeout(32);
     }
@@ -532,16 +551,71 @@ async function captureViewport(
           "a[href],button,input,select,textarea,summary,[role='button'],[tabindex]",
         ),
       );
-      const interactiveRects = interactiveElements.map((element) => {
+      const interactiveTargets = interactiveElements.map((element) => {
         const ownRect = element.getBoundingClientRect();
         const labels = (
           element as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
         ).labels;
-        const labelRect = labels?.[0]?.getBoundingClientRect();
-        // 原生表单控件关联的 label 整体都可点击，应按真实命中区域评估。
-        return labelRect && labelRect.width >= 1 && labelRect.height >= 1
-          ? labelRect
-          : ownRect;
+        const label = labels?.[0];
+        const target = label ?? element;
+        const tag = target.tagName.toLowerCase();
+        const id = target.id ? `#${target.id}` : "";
+        const className = Array.from(target.classList)
+          .slice(0, 2)
+          .map((name) => `.${name}`)
+          .join("");
+        const type =
+          element instanceof HTMLInputElement && element.type
+            ? `[type=${element.type}]`
+            : "";
+        const name = element.getAttribute("name");
+        const text = (
+          target.innerText ||
+          element.getAttribute("aria-label") ||
+          element.getAttribute("placeholder") ||
+          ""
+        )
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 80);
+        const description =
+          `${tag}${id}${className}${type}${name ? `[name=${name}]` : ""}${text ? `「${text}」` : ""}`.slice(
+            0,
+            200,
+          );
+        if (!label) {
+          return {
+            width: ownRect.width,
+            height: ownRect.height,
+            description,
+          };
+        }
+
+        // 原生表单控件关联的 label 及其可见子元素都属于同一个点击目标。
+        // 自定义 checkbox 常把 24px 图标绝对定位在仅一行高的 label 中；只量
+        // label 自身会漏掉图标的真实命中区域，并把合格控件误报成小于 24px。
+        const hitRects = [
+          label.getBoundingClientRect(),
+          ...Array.from(label.querySelectorAll<HTMLElement>("*")).map(
+            (child) => child.getBoundingClientRect(),
+          ),
+        ].filter((rect) => rect.width >= 1 && rect.height >= 1);
+        if (hitRects.length === 0) {
+          return {
+            width: ownRect.width,
+            height: ownRect.height,
+            description,
+          };
+        }
+        const left = Math.min(...hitRects.map((rect) => rect.left));
+        const top = Math.min(...hitRects.map((rect) => rect.top));
+        const right = Math.max(...hitRects.map((rect) => rect.right));
+        const bottom = Math.max(...hitRects.map((rect) => rect.bottom));
+        return {
+          width: right - left,
+          height: bottom - top,
+          description,
+        };
       });
       const contentElements = Array.from(
         document.querySelectorAll<HTMLElement>("body *"),
@@ -660,8 +734,8 @@ async function captureViewport(
           element.scrollHeight > element.clientHeight + 1
         );
       }).length;
-      const visibleInteractiveRects = interactiveRects.filter(
-        (rect) => rect.width >= 1 && rect.height >= 1,
+      const visibleInteractiveTargets = interactiveTargets.filter(
+        (target) => target.width >= 1 && target.height >= 1,
       );
       const navigateRoots = Array.from(
         document.querySelectorAll<HTMLElement>(
@@ -841,6 +915,9 @@ async function captureViewport(
         window.innerWidth / Math.max(1, documentWidth),
         window.innerHeight / Math.max(1, documentHeight),
       );
+      const viewportFitScale = Number.parseFloat(
+        root.dataset.keyaViewportFitScale ?? "1",
+      );
       const inertButtonCount = interactiveElements.filter((element) => {
         if (!(element instanceof HTMLButtonElement)) return false;
         if (element.closest("[data-interaction-type]")) return false;
@@ -860,17 +937,18 @@ async function captureViewport(
             ? 0
             : Math.max(0, documentHeight - window.innerHeight),
         requiredViewportScale,
+        viewportFitScale:
+          Number.isFinite(viewportFitScale) && viewportFitScale > 0
+            ? viewportFitScale
+            : 1,
         nestedVerticalOverflowCount,
         clippedElementCount,
         clippedElementSelectors,
-        zeroSizeInteractiveCount: interactiveRects.filter(
-          (rect) => rect.width < 1 || rect.height < 1,
+        zeroSizeInteractiveCount: interactiveTargets.filter(
+          (target) => target.width < 1 || target.height < 1,
         ).length,
         inertButtonCount,
-        visibleInteractiveSizes: visibleInteractiveRects.map((rect) => ({
-          width: rect.width,
-          height: rect.height,
-        })),
+        visibleInteractiveTargets,
         primaryActionBelowFoldCount: primaryActions.filter((element) => {
           const rect = element.getBoundingClientRect();
           return (
@@ -929,14 +1007,34 @@ async function captureViewport(
     }, VISUAL_PROMINENCE_SELECTOR);
     const {
       visualCandidates,
-      visibleInteractiveSizes,
+      visibleInteractiveTargets,
+      viewportFitScale,
       dom,
       ...baseMetrics
     } = evaluated;
     diagnostics.dom = dom;
+    const authoredInteractiveTargets = visibleInteractiveTargets.map(
+      (target) => ({
+        ...target,
+        ...restoreAuthoredTouchTargetSizes([target], viewportFitScale)[0]!,
+      }),
+    );
+    const undersizedTouchTargets = authoredInteractiveTargets.filter(
+      (target) => target.width < 23.99 || target.height < 23.99,
+    );
     const metrics: BrowserScreenshotMetrics = {
       ...baseMetrics,
-      ...countAuthoredTouchTargets(visibleInteractiveSizes),
+      ...countAuthoredTouchTargets(authoredInteractiveTargets),
+      ...(undersizedTouchTargets.length > 0
+        ? {
+            touchTargetUnder24Selectors: undersizedTouchTargets
+              .slice(0, 8)
+              .map(
+                (target) =>
+                  `${target.description} (${Math.round(target.width)}×${Math.round(target.height)}px)`,
+              ),
+          }
+        : {}),
       ...resolveDominantVisualMetrics(visualCandidates),
     };
     const png = await page.screenshot({ type: "png", fullPage: false });

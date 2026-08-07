@@ -36,6 +36,8 @@ describe("trusted lesson runtime", () => {
     );
 
     expect(srcDoc).toContain('id="keya-viewport-fit-style"');
+    expect(srcDoc).toContain('input[type="checkbox"]');
+    expect(srcDoc).toContain("min-width: 24px !important");
     expect(srcDoc).toContain('id="keya-viewport-fit"');
     expect(srcDoc).toContain('root.dataset.keyaViewportFit = "ready"');
     expect(srcDoc).toContain('window.addEventListener("resize", scheduleFit');
@@ -46,6 +48,10 @@ describe("trusted lesson runtime", () => {
     expect(srcDoc).not.toContain("data-keya-fit-expanded");
     expect(srcDoc).toContain('"translate("');
     expect(srcDoc).toContain('"px) scale("');
+    expect(srcDoc).toContain(
+      'body.style.setProperty("transform", "none", "important")',
+    );
+    expect(srcDoc).not.toContain("authorTransform");
     expect(srcDoc).not.toContain("postMessage");
     expect(srcDoc).not.toContain("interaction-started");
     expect(srcDoc).not.toContain("keya.lesson-runtime");

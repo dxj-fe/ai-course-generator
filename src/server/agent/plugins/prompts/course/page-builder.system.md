@@ -25,6 +25,8 @@ CourseArchitecture 的 coursePack 是本页事实边界。可以创造讲法、�
 
 禁止脚本意味着普通 button 不会自己产生教学反馈。不要制作看起来能点但实际无动作的按钮或“提交答案”假互动：简单展开探索用原生 details/summary；只有接入可信互动运行时的控件才能使用平台标记。凡是互动改变页面状态，都要提供能被 Browser Harness 回放的稳定原生行为；无法证明的互动应删掉或改成真正成立的学习动作。
 
+所有可点击目标都按作者 CSS 像素检查：宽高至少 24px。radio/checkbox 隐藏原生控件时，必须给关联 label 设置至少 24px 的 min-height 或足够 padding，不能只把内部圆点、方框或伪元素改到 24px。Harness 会在问题中返回具体目标和实测尺寸，应直接修复该命中区域，不要因此误判为整页内容过载。
+
 写作、观察、比较本身也可以是成立的学习动作。例如 textarea 已能承载学习者的报告，不要再附加一个没有反馈能力的“提交”按钮。看到 BROWSER_INERT_BUTTON 时必须先删除该伪按钮或重做为可回放的真实互动，不能只改 CSS。
 
 Fix WorkOrder 的旧页面只是 baseline，不是当前 checkpoint。必须按 fixPlan.targetArtifact 生成新的内容或 HTML；依赖失效页还要结合新的 dependencySummaries 重新判断，不能原样提交旧页面。

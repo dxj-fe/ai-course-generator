@@ -286,6 +286,45 @@ describe("course task Route Handlers", () => {
     expect(mocks.subscribers.has(taskId)).toBe(false);
   });
 
+  it("GET 在首个 course checkpoint 尚未创建时缓冲实时事件，直到 snapshot 可用", async () => {
+    vi.useFakeTimers();
+    const task = taskRecord();
+    let state: CourseGenerationState | undefined;
+    mocks.loadTask.mockResolvedValue(task);
+    mocks.loadCourse.mockImplementation(async () => state);
+
+    try {
+      const response = await GET(
+        new Request(`http://localhost/api/courses/tasks/${taskId}/events`),
+        routeContext(taskId),
+      );
+      const reader = response.body?.getReader();
+      expect(reader).toBeDefined();
+
+      await vi.advanceTimersByTimeAsync(0);
+      publish({
+        type: "event",
+        taskId,
+        courseId,
+        event: publicEvent(1),
+      });
+
+      state = runningState({ events: [publicEvent(1)] });
+      await vi.advanceTimersByTimeAsync(500);
+
+      const firstFrame = await readSseChunk(reader!);
+      expect(firstFrame).toContain(
+        `id: ${traceId}:1\nevent: snapshot\n`,
+      );
+      expect(firstFrame).not.toContain("\nevent: event\n");
+
+      await reader!.cancel();
+      expect(mocks.subscribers.has(taskId)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("GET 在统一发送边界清洗 EventBus，并让落后游标的 terminal 仍能关闭连接", async () => {
     const task = taskRecord();
     const state = runningState({ events: [publicEvent(1)] });
